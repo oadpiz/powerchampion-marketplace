@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useState } from "react";
-import { MODEL_USAGE, RECENT_REQUESTS } from "../lib/console-data";
+import { MODEL_USAGE, RECENT_REQUESTS, SEVEN_DAY_USAGE } from "../lib/console-data";
 import { openCheckout } from "./demo-checkout";
 import { useLocale } from "./locale-provider";
 
@@ -10,13 +10,6 @@ type ConsoleViewProps = {
   compact?: boolean;
   empty?: boolean;
 };
-
-const weeklyUsage = [42, 61, 49, 76, 58, 91, 72];
-const modelUsage = [
-  { model: "Qwen", percent: 48, className: "qwen" },
-  { model: "DeepSeek", percent: 31, className: "deepseek" },
-  { model: "Llama", percent: 21, className: "llama" },
-] as const;
 
 const recentRequests = [
   ["pc/qwen-coder", "2.8K", "242 ms"],
@@ -29,14 +22,30 @@ const DEMO_KEY = "pc_demo_••••••••••••7X4Q";
 export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps) {
   const { copy, locale } = useLocale();
   const [copyFeedback, setCopyFeedback] = useState<"copied" | "unavailable" | null>(null);
-  const usage = compact
-    ? modelUsage.map(({ model, percent }) => ({ model, percent, tokens: null }))
-    : MODEL_USAGE;
-  const modelSplitLabel = compact
-    ? copy.console.modelSplitLabel
-    : locale === "en"
-      ? "Model usage split: Qwen 48 percent, DeepSeek 32 percent, Llama 20 percent"
-      : "模型用量分布：Qwen 48%、DeepSeek 32%、Llama 20%";
+  const Heading = compact ? "h3" : "h2";
+  const totalTokens = SEVEN_DAY_USAGE.reduce((total, day) => total + day.tokensMillions, 0);
+  const totalSpend = SEVEN_DAY_USAGE.reduce((total, day) => total + day.spend, 0);
+  const maxTokens = Math.max(...SEVEN_DAY_USAGE.map((day) => day.tokensMillions));
+  const spendFormatter = new Intl.NumberFormat(locale === "en" ? "en-US" : "zh-Hant", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const formattedSpend = spendFormatter.format(totalSpend);
+  const dayLabels = locale === "en"
+    ? { Mon: "Mon", Tue: "Tue", Wed: "Wed", Thu: "Thu", Fri: "Fri", Sat: "Sat", Sun: "Sun" }
+    : { Mon: "週一", Tue: "週二", Wed: "週三", Thu: "週四", Fri: "週五", Sat: "週六", Sun: "週日" };
+  const dailyTrend = SEVEN_DAY_USAGE.map((day) => locale === "en"
+    ? `${dayLabels[day.day]} ${day.tokensMillions.toFixed(1)}M tokens / ${spendFormatter.format(day.spend)}`
+    : `${dayLabels[day.day]} ${day.tokensMillions.toFixed(1)}M 詞元 / ${spendFormatter.format(day.spend)}`
+  ).join(locale === "en" ? ", " : "、");
+  const modelSplitLabel = locale === "en"
+    ? `Model usage split: ${MODEL_USAGE.map((item) => `${item.model} ${item.percent} percent`).join(", ")}`
+    : `模型用量分布：${MODEL_USAGE.map((item) => `${item.model} ${item.percent}%`).join("、")}`;
+  const usageChartLabel = locale === "en"
+    ? `Seven-day illustrative usage: ${totalTokens.toFixed(1)} million tokens; illustrative spend ${formattedSpend}. Daily trend: ${dailyTrend}`
+    : `七日展示用量：${totalTokens.toFixed(1)}M 詞元；展示支出 ${formattedSpend}。每日趨勢：${dailyTrend}`;
 
   async function copyDemoKey() {
     try {
@@ -59,21 +68,22 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
 
       <div className="console-summary">
         <div className="balance-block">
-          <p>{copy.console.balance}</p>
+          <Heading>{copy.console.balance}</Heading>
           <strong>$184.20</strong>
           {!compact && <button className="console-add-credit" onClick={() => openCheckout()} type="button">{copy.console.addCredit}</button>}
         </div>
         <div className="usage-block">
           <div className="usage-heading">
-            <p>{copy.console.sevenDay}</p>
-            <strong>{empty ? "0" : "18.7M"} <span>{copy.console.tokens}</span></strong>
+            <Heading>{copy.console.sevenDay}</Heading>
+            <strong>{empty ? "0" : `${totalTokens.toFixed(1)}M`} <span>{copy.console.tokens}</span></strong>
           </div>
+          {!empty && <p className="spend-summary">{copy.console.illustrativeSpend}{locale === "en" ? ": " : "："}{formattedSpend}</p>}
           {empty ? (
             <p className="empty-usage">{copy.console.noUsage}</p>
           ) : (
-            <div aria-label={copy.console.usageChartLabel} className="usage-chart" role="img">
-              {weeklyUsage.map((height, index) => (
-                <span key={index} style={{ "--bar-height": `${height}%` } as CSSProperties} />
+            <div aria-label={usageChartLabel} className="usage-chart" role="img">
+              {SEVEN_DAY_USAGE.map((day) => (
+                <span aria-hidden="true" key={day.day} style={{ "--bar-height": `${(day.tokensMillions / maxTokens) * 100}%` } as CSSProperties} />
               ))}
             </div>
           )}
@@ -81,23 +91,26 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
       </div>
 
       {!empty && (
-        <div aria-label={modelSplitLabel} className="model-usage" role="img">
-          {usage.map((item) => (
-            <div className="model-usage-row" key={item.model}>
-              <span>{item.model}</span>
-              <div className="model-usage-track">
-                <span className={`model-usage-fill ${item.model.toLowerCase()}`} style={{ width: `${item.percent}%` }} />
+        <section className="model-usage-section">
+          <Heading className="console-subheading">{copy.console.modelSplit}</Heading>
+          <div aria-label={modelSplitLabel} className="model-usage" role="img">
+            {MODEL_USAGE.map((item) => (
+              <div className="model-usage-row" key={item.model}>
+                <span>{item.model}</span>
+                <div className="model-usage-track">
+                  <span className={`model-usage-fill ${item.model.toLowerCase()}`} style={{ width: `${item.percent}%` }} />
+                </div>
+                <strong>{item.percent}%{!compact ? ` · ${item.tokens}` : ""}</strong>
               </div>
-              <strong>{item.percent}%{item.tokens ? ` · ${item.tokens}` : ""}</strong>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {!compact && (
         <div className="console-details">
           <section aria-labelledby="recent-requests-title" className="recent-requests">
-            <h3 id="recent-requests-title">{copy.console.recent}</h3>
+            <h2 id="recent-requests-title">{copy.console.recent}</h2>
             {empty ? (
               <p className="empty-usage">{copy.console.noRecent}</p>
             ) : (
@@ -119,7 +132,7 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
             )}
           </section>
           <section aria-labelledby="demo-key-title" className="demo-key">
-            <h3 id="demo-key-title">{copy.console.apiKey}</h3>
+            <h2 id="demo-key-title">{copy.console.apiKey}</h2>
             <code>{DEMO_KEY}</code>
             <div className="demo-key-actions">
               <button onClick={copyDemoKey} type="button">{copy.console.copy}</button>

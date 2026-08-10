@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useLocale } from "./locale-provider";
+import { useModalIsolation } from "./use-modal-isolation";
 
 const destinations = [
   ["models", "/models"],
@@ -16,23 +17,22 @@ const destinations = [
   ["console", "/console"],
 ] as const;
 
-const footerLinks = [
-  ["Models", "/models"],
-  ["Pricing", "/pricing"],
-  ["Docs", "/docs"],
-  ["Console", "/console"],
-  ["Status", "#"],
-  ["Terms", "#"],
-  ["Privacy", "#"],
-] as const;
-
 const focusableSelector = 'a[href], button:not([disabled])';
+
+function dispatchCheckout(restoreFocusTarget?: HTMLElement | null) {
+  window.dispatchEvent(new CustomEvent("powerchampion:checkout", {
+    detail: restoreFocusTarget ? { restoreFocusTarget } : undefined,
+  }));
+}
 
 export function SiteShell({ children }: { children: ReactNode }) {
   const { copy, locale, setLocale } = useLocale();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const pendingMobileCheckoutRef = useRef(false);
+
+  useModalIsolation(isMobileMenuOpen, mobileMenuRef);
 
   useEffect(() => {
     if (!isMobileMenuOpen || !mobileMenuRef.current) {
@@ -46,6 +46,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
     firstFocusable?.focus();
 
     const containFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsMobileMenuOpen(false);
+        queueMicrotask(() => menuTriggerRef.current?.focus());
+        return;
+      }
       if (event.key !== "Tab") {
         return;
       }
@@ -72,23 +78,31 @@ export function SiteShell({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", containFocus);
   }, [isMobileMenuOpen]);
 
+  useEffect(() => {
+    if (isMobileMenuOpen || !pendingMobileCheckoutRef.current) {
+      return;
+    }
+
+    pendingMobileCheckoutRef.current = false;
+    queueMicrotask(() => dispatchCheckout(menuTriggerRef.current));
+  }, [isMobileMenuOpen]);
+
   const preventDisabledNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
   };
 
-  const dispatchCheckout = (restoreFocusTarget?: HTMLElement | null) => {
-    window.dispatchEvent(new CustomEvent("powerchampion:checkout", {
-      detail: restoreFocusTarget ? { restoreFocusTarget } : undefined,
-    }));
-  };
-
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
-    menuTriggerRef.current?.focus();
+    queueMicrotask(() => menuTriggerRef.current?.focus());
   };
 
   const openMobileMenu = () => {
     setIsMobileMenuOpen(true);
+  };
+
+  const openCheckoutFromMobileMenu = () => {
+    pendingMobileCheckoutRef.current = true;
+    setIsMobileMenuOpen(false);
   };
 
   return (
@@ -98,7 +112,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
         {/* vinext's Vite runtime does not provide next/link; this remains a root-relative semantic link. */}
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a className="site-brand" href="/">Power Champion</a>
-        <nav aria-label="Primary navigation" className="site-navigation">
+        <nav aria-label={copy.nav.primaryLabel} className="site-navigation">
           {destinations.map(([key, href]) => (
             <a href={href} key={key}>{copy.nav[key]}</a>
           ))}
@@ -133,12 +147,12 @@ export function SiteShell({ children }: { children: ReactNode }) {
           role="dialog"
         >
           <button aria-label={copy.nav.closeMenu} onClick={closeMobileMenu} type="button">×</button>
-          <nav aria-label="Mobile navigation">
+          <nav aria-label={copy.nav.mobileLabel}>
             {destinations.map(([key, href]) => (
               <a href={href} key={key} onClick={closeMobileMenu}>{copy.nav[key]}</a>
             ))}
           </nav>
-          <button className="token-button" onClick={() => { dispatchCheckout(menuTriggerRef.current); closeMobileMenu(); }} type="button">
+          <button className="token-button" onClick={openCheckoutFromMobileMenu} type="button">
             {copy.nav.getTokens}
           </button>
         </div>
@@ -146,15 +160,30 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
       {children}
 
-      <footer className="site-footer">
-        {footerLinks.map(([label, href]) => {
+      <footer aria-label={copy.footer.label} className="site-footer">
+        <nav aria-label={copy.footer.navigation}>
+        {([
+          [copy.footer.about, "/#about"],
+          [copy.nav.models, "/models"],
+          [copy.nav.pricing, "/pricing"],
+          [copy.nav.docs, "/docs"],
+          [copy.nav.console, "/console"],
+          [copy.footer.status, "#"],
+          [copy.footer.terms, "#"],
+          [copy.footer.privacy, "#"],
+        ] as const).map(([label, href]) => {
           const disabled = href === "#";
           return (
-            <a aria-disabled={disabled || undefined} aria-label={`Footer ${label}`} href={href} key={label} onClick={disabled ? preventDisabledNavigation : undefined}>
+            <a aria-disabled={disabled || undefined} href={href} key={label} onClick={disabled ? preventDisabledNavigation : undefined}>
               {label}
             </a>
           );
         })}
+        </nav>
+        <div aria-label={copy.shared.language} className="footer-locale-toggle" role="group">
+          <button aria-pressed={locale === "en"} onClick={() => setLocale("en")} type="button">English</button>
+          <button aria-pressed={locale === "zh"} onClick={() => setLocale("zh")} type="button">繁中</button>
+        </div>
       </footer>
     </div>
   );

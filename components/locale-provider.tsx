@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { COPY, type CopyDictionary, type Locale } from "../lib/content";
 
 type LocaleContextValue = {
@@ -13,6 +13,18 @@ const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<Locale>("en");
+  useEffect(() => {
+    const previousLanguage = document.documentElement.getAttribute("lang");
+    document.documentElement.lang = locale === "en" ? "en" : "zh-Hant";
+
+    return () => {
+      if (previousLanguage === null) {
+        document.documentElement.removeAttribute("lang");
+      } else {
+        document.documentElement.lang = previousLanguage;
+      }
+    };
+  }, [locale]);
   const value = useMemo(
     () => ({ locale, copy: COPY[locale], setLocale }),
     [locale],

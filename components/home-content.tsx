@@ -44,13 +44,14 @@ export function HomeContent() {
         </div>
       </section>
 
-      <section aria-label={copy.home.proofLabel} className="proof-strip">
+      <section aria-describedby="proof-disclosure" aria-label={copy.home.proofLabel} className="proof-strip">
         {proofPoints.map(([value, label]) => (
           <div className="proof-item" key={label}>
             <strong>{value}</strong>
             <span>{label}</span>
           </div>
         ))}
+        <p className="proof-disclosure" id="proof-disclosure">{copy.shared.illustrative}</p>
       </section>
 
       <section aria-labelledby="featured-models-title" className="home-section model-marketplace">
@@ -61,7 +62,7 @@ export function HomeContent() {
         </div>
         <div className="model-list">
           {featuredModels.map((model, index) => (
-            <article className={`model-row model-row-${model.id}`} key={model.id}>
+            <article aria-label={model.name} className={`model-row model-row-${model.id}`} key={model.id}>
               <span aria-hidden="true" className="model-rail" />
               <div className="model-index">0{index + 1}</div>
               <div className="model-identity">
@@ -76,6 +77,10 @@ export function HomeContent() {
                 <div>
                   <dt>{copy.models.speed}</dt>
                   <dd>{speedLabels[model.speed]}</dd>
+                </div>
+                <div>
+                  <dt>{copy.home.startingInputRate}</dt>
+                  <dd>${model.inputPerMillion.toFixed(2)} {copy.shared.perMillionInput}</dd>
                 </div>
               </dl>
               <a aria-label={`${copy.home.explore}: ${model.name}`} href="/models">↗</a>
@@ -119,11 +124,11 @@ export function HomeContent() {
         <ConsoleView compact />
       </section>
 
-      <section aria-labelledby="closing-title" className="closing-cta">
+      <section aria-labelledby="closing-title" className="closing-cta" id="about">
         <p className="eyebrow">Power Champion</p>
         <h2 id="closing-title">{copy.home.finalTitle}</h2>
         <p>{copy.home.finalLead}</p>
-        <a className="primary-link" href="/docs">{copy.docs.quickStart}</a>
+        <a className="primary-link" href="/docs">{copy.home.getStarted}</a>
       </section>
     </main>
   );

@@ -115,11 +115,59 @@ describe("ConsoleView", () => {
       </LocaleProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
     await user.click(screen.getByRole("button", { name: "複製" }));
 
     expect(writeText).toHaveBeenCalledWith("pc_demo_YOUR_KEY");
     expect(screen.getByRole("status")).toHaveTextContent("無法複製");
     expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
+  });
+
+  it("uses one exact model split in compact and full views", () => {
+    const { rerender } = render(<LocaleProvider><ConsoleView compact /></LocaleProvider>);
+
+    expect(screen.getByRole("img", {
+      name: "Model usage split: Qwen 48 percent, DeepSeek 32 percent, Llama 20 percent",
+    })).toBeInTheDocument();
+    expect(screen.getByText("48%")).toBeInTheDocument();
+    expect(screen.getByText("32%")).toBeInTheDocument();
+    expect(screen.getByText("20%")).toBeInTheDocument();
+    expect(screen.queryByText("31%")).not.toBeInTheDocument();
+    expect(screen.queryByText("21%")).not.toBeInTheDocument();
+
+    rerender(<LocaleProvider><ConsoleView /></LocaleProvider>);
+    expect(screen.getByRole("img", {
+      name: "Model usage split: Qwen 48 percent, DeepSeek 32 percent, Llama 20 percent",
+    })).toBeInTheDocument();
+  });
+
+  it("shows exact localized seven-day token and illustrative spend data", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell><ConsoleView compact /></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByText("Illustrative spend: $13.46")).toBeVisible();
+    expect(screen.getByRole("img", {
+      name: "Seven-day illustrative usage: 18.7 million tokens; illustrative spend $13.46. Daily trend: Mon 2.1M tokens / $1.36, Tue 2.4M tokens / $1.58, Wed 2.3M tokens / $1.49, Thu 2.8M tokens / $2.01, Fri 2.5M tokens / $1.74, Sat 3.1M tokens / $2.43, Sun 3.5M tokens / $2.85",
+    })).toBeInTheDocument();
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+
+    expect(screen.getByText("展示支出：US$13.46")).toBeVisible();
+    expect(screen.getByRole("img", {
+      name: "七日展示用量：18.7M 詞元；展示支出 US$13.46。每日趨勢：週一 2.1M 詞元 / US$1.36、週二 2.4M 詞元 / US$1.58、週三 2.3M 詞元 / US$1.49、週四 2.8M 詞元 / US$2.01、週五 2.5M 詞元 / US$1.74、週六 3.1M 詞元 / US$2.43、週日 3.5M 詞元 / US$2.85",
+    })).toBeInTheDocument();
+  });
+
+  it("uses h2 for every full console subsection after the page h1", () => {
+    render(<LocaleProvider><ConsoleView /></LocaleProvider>);
+
+    for (const heading of ["Available balance", "Seven-day usage", "Model split", "Recent requests", "Demo API key"]) {
+      expect(screen.getByRole("heading", { level: 2, name: heading })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
   });
 });

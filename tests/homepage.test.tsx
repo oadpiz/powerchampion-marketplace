@@ -42,7 +42,7 @@ describe("Power Champion homepage", () => {
     const user = userEvent.setup();
     renderInShell(<HomeContent />);
 
-    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
     expect(
       screen.getByRole("region", { name: "市集成效數據" }),
@@ -53,24 +53,72 @@ describe("Power Champion homepage", () => {
     expect(screen.getAllByText("快速")).toHaveLength(2);
     expect(screen.getByText("深度")).toBeInTheDocument();
     expect(screen.getByText("均衡")).toBeInTheDocument();
+    expect(screen.getAllByText("展示起始輸入費率")).toHaveLength(4);
+    expect(screen.getByText("$0.18 每百萬輸入 Token")).toBeVisible();
     expect(screen.getByText("$10 帳戶額度")).toBeInTheDocument();
     expect(screen.getByText("純額隨用隨付額度")).toBeInTheDocument();
     expect(screen.getByText("包含 5% 加碼額度")).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: "七日用量：18.7M 詞元" }),
+      screen.getByRole("img", { name: /七日展示用量：18\.7M 詞元；展示支出 US\$13\.46。每日趨勢/ }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("img", {
-        name: "模型用量分布：Qwen 48%、DeepSeek 31%、Llama 21%",
+        name: "模型用量分布：Qwen 48%、DeepSeek 32%、Llama 20%",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("associates one visible illustrative-data disclosure with every proof metric", () => {
+    renderInShell(<HomeContent />);
+
+    const proofStrip = screen.getByRole("region", { name: "Marketplace proof points" });
+    const disclosureId = proofStrip.getAttribute("aria-describedby");
+
+    expect(disclosureId).toBeTruthy();
+    expect(within(proofStrip).getByText("Illustrative data")).toHaveAttribute("id", disclosureId);
+    expect(within(proofStrip).getByText("28")).toBeInTheDocument();
+    expect(within(proofStrip).getByText("128K+")).toBeInTheDocument();
+    expect(within(proofStrip).getByText("99.98%")).toBeInTheDocument();
+  });
+
+  it("keeps illustrative starting input rates visible for all four featured models", () => {
+    renderInShell(<HomeContent />);
+
+    const expectedRates = [
+      ["Qwen", "$0.18 per 1M input"],
+      ["DeepSeek", "$0.27 per 1M input"],
+      ["Llama", "$0.16 per 1M input"],
+      ["Mistral", "$0.20 per 1M input"],
+    ] as const;
+
+    for (const [model, rate] of expectedRates) {
+      const row = screen.getByRole("article", { name: model });
+      expect(within(row).getByText("Illustrative starting input rate")).toBeVisible();
+      expect(within(row).getByText(rate)).toBeVisible();
+    }
+  });
+
+  it("uses the design-specified closing action without changing the Docs heading", () => {
+    renderInShell(<HomeContent />);
+
+    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute("href", "/docs");
+    expect(screen.queryByRole("link", { name: "Quick start" })).not.toBeInTheDocument();
+    expect(document.getElementById("about")).toBeInstanceOf(HTMLElement);
+  });
+
+  it("uses route-appropriate h3 headings in the compact console", () => {
+    renderInShell(<HomeContent />);
+
+    expect(screen.getByRole("heading", { level: 3, name: "Available balance" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Seven-day usage" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Model split" })).toBeInTheDocument();
   });
 
   it("localizes the full console demo request units", async () => {
     const user = userEvent.setup();
     renderInShell(<ConsoleView />);
 
-    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
     const recent = screen.getByRole("region", { name: "近期請求" });
     expect(within(recent).getByText("Qwen · 18.4K 詞元")).toBeInTheDocument();

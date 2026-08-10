@@ -69,6 +69,23 @@ describe("PricingCalculator", () => {
     expect(screen.queryByText("Estimated cost")).not.toBeInTheDocument();
   });
 
+  it("rejects empty and whitespace-only token fields with alert semantics", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <PricingCalculator />
+      </LocaleProvider>,
+    );
+
+    const input = screen.getByLabelText("Input tokens");
+    await user.clear(input);
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter non-negative token amounts.");
+    expect(screen.queryByText("Estimated cost")).not.toBeInTheDocument();
+
+    await user.type(input, "   ");
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter non-negative token amounts.");
+  });
+
   it("announces valid estimates politely", () => {
     render(
       <LocaleProvider>
@@ -248,7 +265,7 @@ describe("PricingPage", () => {
       </LocaleProvider>,
     );
 
-    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
     expect(screen.getByRole("heading", { name: "支出可預期，無需訂閱。" })).toBeInTheDocument();
     act(() => openCheckout("builder"));
 

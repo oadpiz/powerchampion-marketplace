@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CREDIT_PACKS, type CreditPack } from "../lib/pricing";
 import { useLocale } from "./locale-provider";
+import { useModalIsolation } from "./use-modal-isolation";
 
 type CheckoutStep = "choose" | "review" | "complete";
 type CheckoutEventDetail = {
@@ -28,6 +29,8 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
   const nextActionRef = useRef<HTMLButtonElement>(null);
   const completeCloseRef = useRef<HTMLButtonElement>(null);
   const previousStepRef = useRef<CheckoutStep>(step);
+
+  useModalIsolation(isOpen, dialogRef);
 
   const selectedPack = CREDIT_PACKS.find((pack) => pack.id === selectedPackId) ?? CREDIT_PACKS[0];
   const packLabels: Record<CreditPack["id"], string> = locale === "en"

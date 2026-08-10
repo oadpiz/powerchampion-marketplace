@@ -16,26 +16,85 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
 
-    expect(screen.getByRole("link", { name: "Models" })).toHaveAttribute(
+    const primaryNavigation = screen.getByRole("navigation", { name: "Primary navigation" });
+    expect(within(primaryNavigation).getByRole("link", { name: "Models" })).toHaveAttribute(
       "href",
       "/models",
     );
-    expect(screen.getByRole("link", { name: "Pricing" })).toHaveAttribute(
+    expect(within(primaryNavigation).getByRole("link", { name: "Pricing" })).toHaveAttribute(
       "href",
       "/pricing",
     );
-    expect(screen.getByRole("link", { name: "Docs" })).toHaveAttribute(
+    expect(within(primaryNavigation).getByRole("link", { name: "Docs" })).toHaveAttribute(
       "href",
       "/docs",
     );
-    expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute(
+    expect(within(primaryNavigation).getByRole("link", { name: "Console" })).toHaveAttribute(
       "href",
       "/console",
     );
 
-    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
-    expect(screen.getByRole("link", { name: "模型" })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "主要導覽" })).getByRole("link", { name: "模型" })).toBeInTheDocument();
+  });
+
+  it("synchronizes document language transiently", async () => {
+    const user = userEvent.setup();
+    document.documentElement.lang = "test-host-language";
+    const { unmount } = render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(document.documentElement).toHaveAttribute("lang", "en");
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    expect(document.documentElement).toHaveAttribute("lang", "zh-Hant");
+
+    unmount();
+    expect(document.documentElement).toHaveAttribute("lang", "test-host-language");
+  });
+
+  it("localizes shell landmarks and footer content including its language switch", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
+    const footer = screen.getByRole("contentinfo", { name: "Footer" });
+    expect(within(footer).getByRole("link", { name: "About" })).toHaveAttribute("href", "/#about");
+    expect(within(footer).getByRole("link", { name: "Status" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(footer).getByRole("link", { name: "Terms" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(footer).getByRole("link", { name: "Privacy" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(footer).getByRole("button", { name: "繁中" })).toBeInTheDocument();
+
+    await user.click(within(footer).getByRole("button", { name: "繁中" }));
+
+    expect(screen.getByRole("navigation", { name: "主要導覽" })).toBeInTheDocument();
+    expect(screen.getByRole("contentinfo", { name: "頁尾" })).toBeInTheDocument();
+    expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "關於" }))
+      .toHaveAttribute("href", "/#about");
+    expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "服務狀態" }))
+      .toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("localizes the mobile navigation landmark", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    await user.click(screen.getByRole("button", { name: "開啟選單" }));
+
+    const dialog = screen.getByRole("dialog", { name: "開啟選單" });
+    expect(within(dialog).getByRole("navigation", { name: "行動版導覽" })).toBeInTheDocument();
   });
 
   it("opens and closes the mobile menu accessibly", async () => {
@@ -81,7 +140,7 @@ describe("SiteShell", () => {
     expect(checkoutEvents).toBe(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
     await user.click(screen.getByRole("button", { name: "開啟選單" }));
     expect(
       within(screen.getByRole("dialog", { name: "開啟選單" })).getByRole(
@@ -120,6 +179,38 @@ describe("SiteShell", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("isolates and restores the page while the mobile menu is open", async () => {
+    const user = userEvent.setup();
+    document.body.style.overflow = "clip";
+    render(
+      <LocaleProvider>
+        <SiteShell>
+          <main aria-hidden="false" data-testid="background-content">Content</main>
+        </SiteShell>
+      </LocaleProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Open menu" });
+    const background = screen.getByTestId("background-content");
+    await user.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Open menu" });
+    expect(background).toHaveAttribute("inert");
+    expect(background).toHaveAttribute("aria-hidden", "true");
+    expect(document.body.style.overflow).toBe("hidden");
+    expect(dialog).not.toHaveAttribute("inert");
+    expect(dialog).not.toHaveAttribute("aria-hidden", "true");
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Open menu" })).not.toBeInTheDocument();
+    expect(background).not.toHaveAttribute("inert");
+    expect(background).toHaveAttribute("aria-hidden", "false");
+    expect(document.body.style.overflow).toBe("clip");
+    expect(trigger).toHaveFocus();
+    document.body.style.removeProperty("overflow");
+  });
+
   it("returns checkout focus to the Get tokens trigger after Escape", async () => {
     const user = userEvent.setup();
     render(
@@ -143,6 +234,38 @@ describe("SiteShell", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("isolates and restores the shell while checkout is open", async () => {
+    const user = userEvent.setup();
+    document.body.style.overflow = "auto";
+    const { container } = render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+        <DemoCheckout />
+      </LocaleProvider>,
+    );
+
+    const shell = container.querySelector(".site-shell");
+    expect(shell).not.toBeNull();
+    shell!.setAttribute("aria-hidden", "false");
+    const trigger = within(screen.getByRole("banner")).getByRole("button", { name: "Get tokens" });
+    await user.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Add Power credit" });
+    expect(shell).toHaveAttribute("inert");
+    expect(shell).toHaveAttribute("aria-hidden", "true");
+    expect(document.body.style.overflow).toBe("hidden");
+    expect(dialog).not.toHaveAttribute("inert");
+    expect(dialog).not.toHaveAttribute("aria-hidden", "true");
+
+    await user.keyboard("{Escape}");
+
+    expect(shell).not.toHaveAttribute("inert");
+    expect(shell).toHaveAttribute("aria-hidden", "false");
+    expect(document.body.style.overflow).toBe("auto");
+    expect(trigger).toHaveFocus();
+    document.body.style.removeProperty("overflow");
+  });
+
   it("restores checkout focus to the still-mounted mobile menu trigger", async () => {
     const user = userEvent.setup();
     render(
@@ -162,6 +285,28 @@ describe("SiteShell", () => {
     await user.keyboard("{Escape}");
 
     expect(document.body.contains(menuTrigger)).toBe(true);
+    expect(menuTrigger).toHaveFocus();
+  });
+
+  it("hands off mobile isolation to checkout without unlocking the page", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+        <DemoCheckout />
+      </LocaleProvider>,
+    );
+
+    const menuTrigger = screen.getByRole("button", { name: "Open menu" });
+    await user.click(menuTrigger);
+    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Get tokens" }));
+
+    expect(screen.queryByRole("dialog", { name: "Open menu" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Add Power credit" })).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("hidden");
+
+    await user.keyboard("{Escape}");
+    expect(document.body.style.overflow).toBe("");
     expect(menuTrigger).toHaveFocus();
   });
 });

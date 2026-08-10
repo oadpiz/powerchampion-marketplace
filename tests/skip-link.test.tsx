@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import ConsolePage from "../app/console/page";
@@ -19,7 +19,7 @@ describe("skip navigation", () => {
     );
 
     expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveAttribute("href", "#main-content");
-    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
     expect(screen.getByRole("link", { name: "跳至主要內容" })).toHaveAttribute("href", "#main-content");
   });
 

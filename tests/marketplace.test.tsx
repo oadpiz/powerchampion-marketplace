@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -71,7 +71,7 @@ describe("ModelMarketplace", () => {
         <SiteShell><ModelMarketplace /></SiteShell>
       </LocaleProvider>,
     );
-    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
     await user.click(screen.getByRole("button", { name: "Qwen" }));
 
     expect(screen.getByRole("region", { name: "Qwen 詳細資料" })).toBeInTheDocument();

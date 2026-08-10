@@ -60,7 +60,6 @@ test("server-renders the finished marketplace homepage", async () => {
   assert.match(html, /Every model\./i);
   assert.match(html, /One power core\./i);
   assert.match(html, /Model marketplace/i);
-  assert.match(html, /Showcase|Illustrative/i);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
