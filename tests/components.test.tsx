@@ -142,4 +142,26 @@ describe("SiteShell", () => {
     expect(screen.queryByRole("dialog", { name: "Add Power credit" })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
+
+  it("restores checkout focus to the still-mounted mobile menu trigger", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
+        <DemoCheckout />
+      </LocaleProvider>,
+    );
+
+    const menuTrigger = screen.getByRole("button", { name: "Open menu" });
+    await user.click(menuTrigger);
+    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Get tokens" }));
+    expect(screen.getByRole("dialog", { name: "Add Power credit" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    expect(document.body.contains(menuTrigger)).toBe(true);
+    expect(menuTrigger).toHaveFocus();
+  });
 });

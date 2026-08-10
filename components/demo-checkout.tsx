@@ -5,7 +5,10 @@ import { CREDIT_PACKS, type CreditPack } from "../lib/pricing";
 import { useLocale } from "./locale-provider";
 
 type CheckoutStep = "choose" | "review" | "complete";
-type CheckoutEventDetail = { packId?: CreditPack["id"] };
+type CheckoutEventDetail = {
+  packId?: CreditPack["id"];
+  restoreFocusTarget?: HTMLElement | null;
+};
 
 const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
 
@@ -31,13 +34,18 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
   const close = () => {
     setIsOpen(false);
     setStep("choose");
-    queueMicrotask(() => triggerRef.current?.focus());
+    queueMicrotask(() => {
+      const target = triggerRef.current;
+      if (target?.isConnected) {
+        target.focus();
+      }
+    });
   };
 
   useEffect(() => {
     const handleCheckout = (event: Event) => {
-      const { packId } = (event as CustomEvent<CheckoutEventDetail>).detail ?? {};
-      triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const { packId, restoreFocusTarget } = (event as CustomEvent<CheckoutEventDetail>).detail ?? {};
+      triggerRef.current = restoreFocusTarget ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       setSelectedPackId(packId ?? CREDIT_PACKS[0].id);
       setStep("choose");
       setIsOpen(true);
@@ -104,7 +112,7 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
           </div>
           <button aria-label={copy.checkout.close} className="checkout-close" onClick={close} type="button">×</button>
         </div>
-        <ol aria-label={copy.checkout.title} className="checkout-steps">
+        <ol aria-label={copy.checkout.title} className="checkout-steps" style={{ fontSize: "13px" }}>
           <li aria-current={step === "choose" ? "step" : undefined}>{copy.checkout.choose}</li>
           <li aria-current={step === "review" ? "step" : undefined}>{copy.checkout.review}</li>
           <li aria-current={step === "complete" ? "step" : undefined}>{locale === "en" ? "Complete" : "完成"}</li>

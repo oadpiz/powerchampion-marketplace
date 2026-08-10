@@ -76,8 +76,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
     event.preventDefault();
   };
 
-  const dispatchCheckout = () => {
-    window.dispatchEvent(new Event("powerchampion:checkout"));
+  const dispatchCheckout = (restoreFocusTarget?: HTMLElement | null) => {
+    window.dispatchEvent(new CustomEvent("powerchampion:checkout", {
+      detail: restoreFocusTarget ? { restoreFocusTarget } : undefined,
+    }));
   };
 
   const closeMobileMenu = () => {
@@ -105,7 +107,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
             <button aria-pressed={locale === "en"} onClick={() => setLocale("en")} type="button">English</button>
             <button aria-pressed={locale === "zh"} onClick={() => setLocale("zh")} type="button">繁中</button>
           </div>
-          <button className="token-button" onClick={dispatchCheckout} type="button">{copy.nav.getTokens}</button>
+          <button className="token-button" onClick={() => dispatchCheckout()} type="button">{copy.nav.getTokens}</button>
           <button
             aria-controls="mobile-navigation"
             aria-expanded={isMobileMenuOpen}
@@ -135,7 +137,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
               <a href={href} key={key} onClick={closeMobileMenu}>{copy.nav[key]}</a>
             ))}
           </nav>
-          <button className="token-button" onClick={() => { dispatchCheckout(); closeMobileMenu(); }} type="button">
+          <button className="token-button" onClick={() => { dispatchCheckout(menuTriggerRef.current); closeMobileMenu(); }} type="button">
             {copy.nav.getTokens}
           </button>
         </div>

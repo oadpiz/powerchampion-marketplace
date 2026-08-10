@@ -404,7 +404,7 @@ button { color: inherit; }
   .rate-table-row { align-items: start; padding: 1rem 0; }
   .rate-table-row > span:not(:first-child), .rate-table-row strong { font-size: .8125rem; line-height: 1.45; }
   .checkout-header, .checkout-pack-list, .checkout-review, .checkout-complete { padding-inline: 1.2rem; }
-  .checkout-steps { gap: .45rem; padding-inline: 1.2rem; font-size: .75rem; }
+  .checkout-steps { gap: .45rem; padding-inline: 1.2rem; font-size: .8125rem; }
   .checkout-disclaimer { margin-inline: 1.2rem; }
   .checkout-actions { padding: 1.2rem; }
 }
