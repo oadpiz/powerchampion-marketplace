@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { DemoCheckout } from "../components/demo-checkout";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
@@ -116,6 +117,29 @@ describe("SiteShell", () => {
     expect(closeButton).toHaveFocus();
 
     await user.click(closeButton);
+    expect(trigger).toHaveFocus();
+  });
+
+  it("returns checkout focus to the Get tokens trigger after Escape", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
+        <DemoCheckout />
+      </LocaleProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Get tokens" });
+    await user.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Add Power credit" });
+    expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Add Power credit" })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
 });
