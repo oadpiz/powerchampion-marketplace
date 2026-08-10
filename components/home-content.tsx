@@ -1,0 +1,121 @@
+"use client";
+
+import { CREDIT_PACKS } from "../lib/pricing";
+import { MODEL_CATALOG } from "../lib/models";
+import { ConsoleView } from "./console-view";
+import { useLocale } from "./locale-provider";
+
+const proofPoints = [
+  ["28", "active model routes"],
+  ["128K+", "context available"],
+  ["99.98%", "illustrative availability"],
+] as const;
+
+export function HomeContent() {
+  const { copy, locale } = useLocale();
+  const featuredModels = MODEL_CATALOG.slice(0, 4);
+  const requestCheckout = () => {
+    window.dispatchEvent(new Event("powerchampion:checkout"));
+  };
+
+  return (
+    <main className="home-page">
+      <section aria-labelledby="home-title" className="hero">
+        <div className="hero-copy">
+          <p className="eyebrow">{copy.home.kicker}</p>
+          <h1 id="home-title">
+            {copy.home.title}
+            <span>{copy.home.accent}</span>
+          </h1>
+          <p className="hero-lead">{copy.home.lead}</p>
+          <div className="hero-actions">
+            <a className="primary-link" href="/models">{copy.home.explore}</a>
+            <a className="text-link" href="/pricing">{copy.home.viewPricing} <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="Marketplace proof points" className="proof-strip">
+        {proofPoints.map(([value, label]) => (
+          <div className="proof-item" key={label}>
+            <strong>{value}</strong>
+            <span>{label}</span>
+          </div>
+        ))}
+      </section>
+
+      <section aria-labelledby="featured-models-title" className="home-section model-marketplace">
+        <div className="section-intro">
+          <p className="eyebrow">{copy.models.kicker}</p>
+          <h2 id="featured-models-title">{copy.home.modelsTitle}</h2>
+          <p>{copy.home.modelsLead}</p>
+        </div>
+        <div className="model-list">
+          {featuredModels.map((model, index) => (
+            <article className={`model-row model-row-${model.id}`} key={model.id}>
+              <span aria-hidden="true" className="model-rail" />
+              <div className="model-index">0{index + 1}</div>
+              <div className="model-identity">
+                <h3>{model.name}</h3>
+                <p>{model.tagline[locale]}</p>
+              </div>
+              <dl className="model-facts">
+                <div>
+                  <dt>{copy.models.context}</dt>
+                  <dd>{model.context}</dd>
+                </div>
+                <div>
+                  <dt>{copy.models.speed}</dt>
+                  <dd>{model.speed}</dd>
+                </div>
+              </dl>
+              <a aria-label={`${copy.home.explore}: ${model.name}`} href="/models">↗</a>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="credit-title" className="home-section credit-section">
+        <div className="section-intro section-intro-split">
+          <div>
+            <p className="eyebrow">{copy.pricing.kicker}</p>
+            <h2 id="credit-title">{copy.home.creditTitle}</h2>
+          </div>
+          <p>{copy.home.creditLead}</p>
+        </div>
+        <div className="credit-grid">
+          {CREDIT_PACKS.map((pack) => (
+            <article className="credit-column" key={pack.id}>
+              <p className="credit-pack-name">{pack.id}</p>
+              <p className="credit-price"><span>$</span>{pack.price}</p>
+              <p className="credit-value">${pack.credit} account credit</p>
+              <p className="credit-bonus">
+                {pack.bonusPercent > 0 ? `Includes ${pack.bonusPercent}% bonus credit` : "Straightforward pay-as-you-go credit"}
+              </p>
+              <button className="credit-button" onClick={requestCheckout} type="button">{copy.nav.getTokens}</button>
+            </article>
+          ))}
+        </div>
+        <p className="showcase-note">{copy.pricing.demoNotice}</p>
+      </section>
+
+      <section aria-labelledby="console-title" className="home-section console-section">
+        <div className="section-intro section-intro-split">
+          <div>
+            <p className="eyebrow">{copy.console.demo}</p>
+            <h2 id="console-title">{copy.home.consoleTitle}</h2>
+          </div>
+          <p>{copy.home.consoleLead}</p>
+        </div>
+        <ConsoleView compact />
+      </section>
+
+      <section aria-labelledby="closing-title" className="closing-cta">
+        <p className="eyebrow">Power Champion</p>
+        <h2 id="closing-title">{copy.home.finalTitle}</h2>
+        <p>{copy.home.finalLead}</p>
+        <a className="primary-link" href="/docs">{copy.docs.quickStart}</a>
+      </section>
+    </main>
+  );
+}
