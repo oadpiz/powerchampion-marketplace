@@ -46,15 +46,13 @@ export function CodeSamples() {
   const [feedback, setFeedback] = useState<"copied" | "unavailable" | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const id = useId();
-  const tabId = `${id}-${language}-tab`;
-  const panelId = `${id}-${language}-panel`;
 
-  async function copySample() {
+  async function copySample(sample: SampleLanguage) {
     try {
       if (!navigator.clipboard?.writeText) {
         throw new Error("Clipboard unavailable");
       }
-      await navigator.clipboard.writeText(samples[language]);
+      await navigator.clipboard.writeText(samples[sample]);
       setFeedback("copied");
     } catch {
       setFeedback("unavailable");
@@ -71,7 +69,7 @@ export function CodeSamples() {
   return (
     <section aria-label={copy.docs.quickStart} className="code-samples">
       <div aria-label={copy.docs.quickStart} className="code-tabs" role="tablist">
-        {sampleLanguages.map((sample) => {
+        {sampleLanguages.map((sample, index) => {
           const selected = language === sample.id;
           return (
             <button
@@ -79,9 +77,8 @@ export function CodeSamples() {
               aria-selected={selected}
               id={`${id}-${sample.id}-tab`}
               key={sample.id}
-              onClick={() => selectLanguage(sampleLanguages.indexOf(sample))}
+              onClick={() => selectLanguage(index)}
               onKeyDown={(event) => {
-                const index = sampleLanguages.indexOf(sample);
                 if (event.key === "ArrowRight") {
                   event.preventDefault();
                   selectLanguage(index + 1);
@@ -91,7 +88,7 @@ export function CodeSamples() {
                   selectLanguage(index - 1);
                 }
               }}
-              ref={(element) => { tabRefs.current[sampleLanguages.indexOf(sample)] = element; }}
+              ref={(element) => { tabRefs.current[index] = element; }}
               role="tab"
               tabIndex={selected ? 0 : -1}
               type="button"
@@ -101,15 +98,28 @@ export function CodeSamples() {
           );
         })}
       </div>
-      <div aria-labelledby={tabId} className="code-sample-panel" id={panelId} role="tabpanel">
-        <div className="code-sample-actions">
-          <button onClick={copySample} type="button">{copy.docs.copy}</button>
-          <span aria-live="polite" role="status">
-            {feedback === "copied" ? copy.docs.copied : feedback === "unavailable" ? copy.shared.copyUnavailable : ""}
-          </span>
-        </div>
-        <pre><code>{samples[language]}</code></pre>
-      </div>
+      {sampleLanguages.map((sample) => {
+        const selected = language === sample.id;
+
+        return (
+          <div
+            aria-labelledby={`${id}-${sample.id}-tab`}
+            className="code-sample-panel"
+            hidden={!selected}
+            id={`${id}-${sample.id}-panel`}
+            key={sample.id}
+            role="tabpanel"
+          >
+            <div className="code-sample-actions">
+              <button onClick={() => copySample(sample.id)} type="button">{copy.docs.copy}</button>
+              <span aria-live="polite" role="status">
+                {selected && (feedback === "copied" ? copy.docs.copied : feedback === "unavailable" ? copy.shared.copyUnavailable : "")}
+              </span>
+            </div>
+            <pre><code>{samples[sample.id]}</code></pre>
+          </div>
+        );
+      })}
     </section>
   );
 }

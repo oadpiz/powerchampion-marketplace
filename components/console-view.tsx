@@ -98,7 +98,9 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
         <div className="console-details">
           <section aria-labelledby="recent-requests-title" className="recent-requests">
             <h3 id="recent-requests-title">{copy.console.recent}</h3>
-            {!empty && (
+            {empty ? (
+              <p className="empty-usage">{copy.console.noRecent}</p>
+            ) : (
               <div className="request-list">
                 {compact ? recentRequests.map(([model, tokens, latency]) => (
                   <div className="request-row" key={model}>
