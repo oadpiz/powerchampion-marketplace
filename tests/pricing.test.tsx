@@ -1,12 +1,14 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import "../app/globals.css";
 import PricingPage from "../app/pricing/page";
 import { DemoCheckout, openCheckout } from "../components/demo-checkout";
 import { LocaleProvider } from "../components/locale-provider";
 import { PricingCalculator } from "../components/pricing-calculator";
 import { SiteShell } from "../components/site-shell";
+import { MODEL_CATALOG } from "../lib/models";
 
 describe("PricingCalculator", () => {
   it("calculates the selected model estimate", async () => {
@@ -133,7 +135,7 @@ describe("DemoCheckout", () => {
     expect(close).toHaveFocus();
   });
 
-  it("keeps visible checkout step labels at least 13px", () => {
+  it("takes checkout step typography from the stylesheet rather than an inline override", () => {
     render(
       <LocaleProvider>
         <DemoCheckout open />
@@ -141,20 +143,43 @@ describe("DemoCheckout", () => {
     );
 
     const steps = within(screen.getByRole("dialog", { name: "Add Power credit" })).getByRole("list", { name: "Add Power credit" });
-    expect(Number.parseFloat(getComputedStyle(steps).fontSize)).toBeGreaterThanOrEqual(13);
+    expect(steps).not.toHaveAttribute("style");
+  });
+
+  it("keeps checkout step labels at least 13px in every stylesheet rule", async () => {
+    const css = await readFile(resolve(process.cwd(), "app/globals.css"), "utf8");
+    const rules = Array.from(
+      css.matchAll(/\.checkout-steps\s*\{[^}]*font-size:\s*([^;]+);/g),
+      ([, value]) => value,
+    );
+    const floors = rules.map((value) => {
+      const lengths = Array.from(
+        value.matchAll(/([\d.]+)(rem|px)/g),
+        ([, amount, unit]) => Number(amount) * (unit === "rem" ? 16 : 1),
+      );
+      return Math.min(...lengths);
+    });
+
+    expect(floors).toHaveLength(2);
+    expect(floors.every((floor) => floor >= 13)).toBe(true);
   });
 });
 
 describe("PricingPage", () => {
-  it("lists every showcase model rate", () => {
+  it("lists every showcase model input and output rate with units", () => {
     render(
       <LocaleProvider>
         <PricingPage />
       </LocaleProvider>,
     );
 
-    for (const name of ["Qwen", "DeepSeek", "Llama", "Mistral", "GLM", "MiniMax"]) {
-      expect(screen.getByRole("cell", { name })).toBeInTheDocument();
+    for (const model of MODEL_CATALOG) {
+      const row = screen.getAllByRole("row").find((candidate) => within(candidate).queryByRole("cell", { name: model.name }));
+      expect(row).toBeDefined();
+
+      const cells = within(row!).getAllByRole("cell");
+      expect(cells[1]).toHaveTextContent(`$${model.inputPerMillion.toFixed(2)} per 1M input`);
+      expect(cells[2]).toHaveTextContent(`$${model.outputPerMillion.toFixed(2)} per 1M output`);
     }
   });
 

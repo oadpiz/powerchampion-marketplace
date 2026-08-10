@@ -112,7 +112,7 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
           </div>
           <button aria-label={copy.checkout.close} className="checkout-close" onClick={close} type="button">×</button>
         </div>
-        <ol aria-label={copy.checkout.title} className="checkout-steps" style={{ fontSize: "13px" }}>
+        <ol aria-label={copy.checkout.title} className="checkout-steps">
           <li aria-current={step === "choose" ? "step" : undefined}>{copy.checkout.choose}</li>
           <li aria-current={step === "review" ? "step" : undefined}>{copy.checkout.review}</li>
           <li aria-current={step === "complete" ? "step" : undefined}>{locale === "en" ? "Complete" : "完成"}</li>
