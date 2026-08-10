@@ -1,5 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocaleProvider } from "../components/locale-provider";
 import { ModelMarketplace } from "../components/model-marketplace";
@@ -38,8 +40,28 @@ describe("ModelMarketplace", () => {
     await user.keyboard("{Enter}");
 
     expect(qwen).toHaveAttribute("aria-expanded", "true");
-    expect(document.getElementById(qwen.getAttribute("aria-controls") ?? ""))
-      .toHaveTextContent("pc/qwen-coder");
+    const details = document.getElementById(qwen.getAttribute("aria-controls") ?? "");
+    expect(details).not.toHaveAttribute("hidden");
+    expect(details).toHaveTextContent("pc/qwen-coder");
+  });
+
+  it("keeps a collapsed expansion control connected to its details region", () => {
+    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    const qwen = screen.getByRole("button", { name: "Qwen" });
+    const details = document.getElementById(qwen.getAttribute("aria-controls") ?? "");
+
+    expect(details).toHaveAttribute("hidden");
+    expect(details).toHaveAttribute("role", "region");
+    expect(details).toHaveTextContent("pc/qwen-coder");
+  });
+
+  it("keeps localized rate units visible at narrow widths", async () => {
+    const css = await readFile(resolve(process.cwd(), "app/globals.css"), "utf8");
+    const narrowRules = css.match(/@media \(max-width: 760px\) \{([\s\S]*?)\n\}/)?.[1];
+
+    expect(narrowRules).toMatch(
+      /\.marketplace-rate-unit\s*\{[^}]*display:\s*block;[^}]*font-size:\s*\.8125rem;/,
+    );
   });
 
   it("localizes the expanded details region", async () => {

@@ -100,11 +100,11 @@ export function ModelMarketplace() {
                 </dl>
                 <dl className="marketplace-summary-fact">
                   <dt>{copy.models.input}</dt>
-                  <dd>{formatRate(model.inputPerMillion)} <span>{copy.shared.perMillionInput}</span></dd>
+                  <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perMillionInput}</span></dd>
                 </dl>
                 <dl className="marketplace-summary-fact">
                   <dt>{copy.models.output}</dt>
-                  <dd>{formatRate(model.outputPerMillion)} <span>{copy.shared.perMillionOutput}</span></dd>
+                  <dd>{formatRate(model.outputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perMillionOutput}</span></dd>
                 </dl>
                 <button
                   aria-controls={detailsId}
@@ -116,31 +116,29 @@ export function ModelMarketplace() {
                 >
                   <span aria-hidden="true">{isExpanded ? "−" : "+"}</span>
                 </button>
-                {isExpanded && (
-                  <div aria-label={`${model.name} ${copy.models.details}`} className="marketplace-details" id={detailsId} role="region">
-                    <p className="marketplace-mobile-tagline">{model.tagline[locale]}</p>
-                    <dl>
-                      <div>
-                        <dt>{copy.models.modelId}</dt>
-                        <dd><code>{model.modelId}</code></dd>
-                      </div>
-                      <div>
-                        <dt>{copy.models.speed}</dt>
-                        <dd>{speedLabels[model.speed]}</dd>
-                      </div>
-                      <div>
-                        <dt>{copy.models.tools}</dt>
-                        <dd>{model.tools ? copy.models.enabled : copy.models.unavailable}</dd>
-                      </div>
-                      <div>
-                        <dt>{copy.models.availability}</dt>
-                        <dd className={model.available ? "marketplace-available" : "marketplace-unavailable"}>
-                          {model.available ? copy.models.available : copy.models.unavailable}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-                )}
+                <div aria-label={`${model.name} ${copy.models.details}`} className="marketplace-details" hidden={!isExpanded} id={detailsId} role="region">
+                  <p className="marketplace-mobile-tagline">{model.tagline[locale]}</p>
+                  <dl>
+                    <div>
+                      <dt>{copy.models.modelId}</dt>
+                      <dd><code>{model.modelId}</code></dd>
+                    </div>
+                    <div>
+                      <dt>{copy.models.speed}</dt>
+                      <dd>{speedLabels[model.speed]}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.models.tools}</dt>
+                      <dd>{model.tools ? copy.models.enabled : copy.models.unavailable}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.models.availability}</dt>
+                      <dd className={model.available ? "marketplace-available" : "marketplace-unavailable"}>
+                        {model.available ? copy.models.available : copy.models.unavailable}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
               </article>
             );
           })}

@@ -199,7 +199,7 @@ button { color: inherit; }
 .marketplace-summary-fact { margin: 0; }
 .marketplace-summary-fact dt, .marketplace-details dt { color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .6875rem; letter-spacing: .1em; text-transform: uppercase; }
 .marketplace-summary-fact dd, .marketplace-details dd { margin: .4rem 0 0; font-family: var(--font-geist-mono), monospace; font-size: .9rem; }
-.marketplace-summary-fact dd > span { display: block; margin-top: .25rem; color: var(--muted); font-family: var(--font-geist-sans), Arial, sans-serif; font-size: .7rem; }
+.marketplace-rate-unit { display: block; margin-top: .25rem; color: var(--muted); font-family: var(--font-geist-sans), Arial, sans-serif; font-size: .8125rem; line-height: 1.35; overflow-wrap: anywhere; }
 .marketplace-expand { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; padding: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 1.25rem; line-height: 1; }
 .marketplace-expand:hover { border-color: var(--cyan); color: var(--cyan); }
 .marketplace-details { grid-column: 2 / -1; margin: -.2rem 0 1.6rem; border-top: 1px solid var(--line); padding-top: 1.25rem; }
@@ -287,7 +287,7 @@ button { color: inherit; }
   .marketplace-tagline { display: none; }
   .marketplace-summary-fact dt { font-size: .56rem; letter-spacing: .06em; }
   .marketplace-summary-fact dd { margin-top: .25rem; font-size: .75rem; }
-  .marketplace-summary-fact dd > span { display: none; }
+  .marketplace-rate-unit { display: block; font-size: .8125rem; }
   .marketplace-expand { grid-area: expand; width: 30px; height: 30px; }
   .marketplace-details { grid-column: 2 / -1; margin: .2rem 0 0; padding-top: 1rem; }
   .marketplace-mobile-tagline { display: block; margin: 0 0 1rem; color: var(--muted); font-size: .875rem; line-height: 1.5; }
