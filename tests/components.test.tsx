@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { LocaleProvider } from "../components/locale-provider";
@@ -56,5 +56,66 @@ describe("SiteShell", () => {
     expect(
       screen.queryByRole("button", { name: "Close menu" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("offers localized checkout in the mobile menu and dispatches its event", async () => {
+    const user = userEvent.setup();
+    let checkoutEvents = 0;
+    const onCheckout = () => {
+      checkoutEvents += 1;
+    };
+    window.addEventListener("powerchampion:checkout", onCheckout);
+
+    render(
+      <LocaleProvider>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open menu" }));
+    const menu = screen.getByRole("dialog", { name: "Open menu" });
+    await user.click(within(menu).getByRole("button", { name: "Get tokens" }));
+    expect(checkoutEvents).toBe(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "繁中" }));
+    await user.click(screen.getByRole("button", { name: "開啟選單" }));
+    expect(
+      within(screen.getByRole("dialog", { name: "開啟選單" })).getByRole(
+        "button",
+        { name: "購買額度" },
+      ),
+    ).toBeInTheDocument();
+
+    window.removeEventListener("powerchampion:checkout", onCheckout);
+  });
+
+  it("contains focus in the mobile menu and returns it to the trigger", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
+      </LocaleProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Open menu" });
+    await user.click(trigger);
+
+    const menu = screen.getByRole("dialog", { name: "Open menu" });
+    const closeButton = within(menu).getByRole("button", { name: "Close menu" });
+    const checkoutButton = within(menu).getByRole("button", { name: "Get tokens" });
+    expect(closeButton).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(checkoutButton).toHaveFocus();
+    await user.tab();
+    expect(closeButton).toHaveFocus();
+
+    await user.click(closeButton);
+    expect(trigger).toHaveFocus();
   });
 });

@@ -60,7 +60,7 @@ button, input, select { font: inherit; }
 .site-footer { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: auto; padding: 2rem 0; color: var(--muted); font-size: .875rem; }
 
 @media (max-width: 720px) {
-  .site-navigation, .token-button { display: none; }
+  .site-navigation, .site-actions > .token-button { display: none; }
   .menu-trigger { display: block; }
 }
 

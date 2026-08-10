@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { useLocale } from "./locale-provider";
 
 const destinations = [
@@ -20,9 +26,51 @@ const footerLinks = [
   ["Privacy", "#"],
 ] as const;
 
+const focusableSelector = 'a[href], button:not([disabled])';
+
 export function SiteShell({ children }: { children: ReactNode }) {
   const { copy, locale, setLocale } = useLocale();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen || !mobileMenuRef.current) {
+      return;
+    }
+
+    const menu = mobileMenuRef.current;
+    const focusableElements = () =>
+      Array.from(menu.querySelectorAll<HTMLElement>(focusableSelector));
+    const [firstFocusable] = focusableElements();
+    firstFocusable?.focus();
+
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const elements = focusableElements();
+      const first = elements[0];
+      const last = elements.at(-1);
+
+      if (!first || !last) {
+        return;
+      }
+
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === first || !menu.contains(activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (activeElement === last || !menu.contains(activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", containFocus);
+    return () => document.removeEventListener("keydown", containFocus);
+  }, [isMobileMenuOpen]);
 
   const preventDisabledNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
@@ -30,6 +78,15 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
   const dispatchCheckout = () => {
     window.dispatchEvent(new Event("powerchampion:checkout"));
+  };
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+    menuTriggerRef.current?.focus();
+  };
+
+  const openMobileMenu = () => {
+    setIsMobileMenuOpen(true);
   };
 
   return (
@@ -54,7 +111,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
             aria-expanded={isMobileMenuOpen}
             aria-label={copy.nav.openMenu}
             className="menu-trigger"
-            onClick={() => setIsMobileMenuOpen(true)}
+            onClick={openMobileMenu}
+            ref={menuTriggerRef}
             type="button"
           >
             ☰
@@ -63,13 +121,23 @@ export function SiteShell({ children }: { children: ReactNode }) {
       </header>
 
       {isMobileMenuOpen && (
-        <div className="mobile-navigation" id="mobile-navigation">
-          <button aria-label={copy.nav.closeMenu} onClick={() => setIsMobileMenuOpen(false)} type="button">×</button>
+        <div
+          aria-label={copy.nav.openMenu}
+          aria-modal="true"
+          className="mobile-navigation"
+          id="mobile-navigation"
+          ref={mobileMenuRef}
+          role="dialog"
+        >
+          <button aria-label={copy.nav.closeMenu} onClick={closeMobileMenu} type="button">×</button>
           <nav aria-label="Mobile navigation">
             {destinations.map(([key, href]) => (
-              <a href={href} key={key} onClick={() => setIsMobileMenuOpen(false)}>{copy.nav[key]}</a>
+              <a href={href} key={key} onClick={closeMobileMenu}>{copy.nav[key]}</a>
             ))}
           </nav>
+          <button className="token-button" onClick={() => { dispatchCheckout(); closeMobileMenu(); }} type="button">
+            {copy.nav.getTokens}
+          </button>
         </div>
       )}
 
