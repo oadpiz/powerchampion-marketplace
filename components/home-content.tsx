@@ -5,15 +5,24 @@ import { MODEL_CATALOG } from "../lib/models";
 import { ConsoleView } from "./console-view";
 import { useLocale } from "./locale-provider";
 
-const proofPoints = [
-  ["28", "active model routes"],
-  ["128K+", "context available"],
-  ["99.98%", "illustrative availability"],
-] as const;
-
 export function HomeContent() {
   const { copy, locale } = useLocale();
   const featuredModels = MODEL_CATALOG.slice(0, 4);
+  const proofPoints = [
+    ["28", copy.home.activeRoutes],
+    ["128K+", copy.home.contextAvailable],
+    ["99.98%", copy.home.illustrativeAvailability],
+  ] as const;
+  const speedLabels = {
+    Fast: copy.models.fast,
+    Balanced: copy.models.balanced,
+    Deep: copy.models.deep,
+  } as const;
+  const packLabels = {
+    starter: copy.home.starterPack,
+    builder: copy.home.builderPack,
+    scale: copy.home.scalePack,
+  } as const;
   const requestCheckout = () => {
     window.dispatchEvent(new Event("powerchampion:checkout"));
   };
@@ -35,7 +44,7 @@ export function HomeContent() {
         </div>
       </section>
 
-      <section aria-label="Marketplace proof points" className="proof-strip">
+      <section aria-label={copy.home.proofLabel} className="proof-strip">
         {proofPoints.map(([value, label]) => (
           <div className="proof-item" key={label}>
             <strong>{value}</strong>
@@ -66,7 +75,7 @@ export function HomeContent() {
                 </div>
                 <div>
                   <dt>{copy.models.speed}</dt>
-                  <dd>{model.speed}</dd>
+                  <dd>{speedLabels[model.speed]}</dd>
                 </div>
               </dl>
               <a aria-label={`${copy.home.explore}: ${model.name}`} href="/models">↗</a>
@@ -86,11 +95,11 @@ export function HomeContent() {
         <div className="credit-grid">
           {CREDIT_PACKS.map((pack) => (
             <article className="credit-column" key={pack.id}>
-              <p className="credit-pack-name">{pack.id}</p>
+              <p className="credit-pack-name">{packLabels[pack.id]}</p>
               <p className="credit-price"><span>$</span>{pack.price}</p>
-              <p className="credit-value">${pack.credit} account credit</p>
+              <p className="credit-value">${pack.credit} {copy.home.accountCredit}</p>
               <p className="credit-bonus">
-                {pack.bonusPercent > 0 ? `Includes ${pack.bonusPercent}% bonus credit` : "Straightforward pay-as-you-go credit"}
+                {pack.bonusPercent > 0 ? `${copy.home.includesBonus} ${pack.bonusPercent}% ${copy.home.bonusCredit}` : copy.home.paygCredit}
               </p>
               <button className="credit-button" onClick={requestCheckout} type="button">{copy.nav.getTokens}</button>
             </article>

@@ -39,12 +39,12 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
         <div className="usage-block">
           <div className="usage-heading">
             <p>{copy.console.sevenDay}</p>
-            <strong>{empty ? "0" : "18.7M"} <span>tokens</span></strong>
+            <strong>{empty ? "0" : "18.7M"} <span>{copy.console.tokens}</span></strong>
           </div>
           {empty ? (
             <p className="empty-usage">{copy.console.noUsage}</p>
           ) : (
-            <div aria-label="Seven-day usage: 18.7 million tokens" className="usage-chart" role="img">
+            <div aria-label={copy.console.usageChartLabel} className="usage-chart" role="img">
               {weeklyUsage.map((height, index) => (
                 <span key={index} style={{ "--bar-height": `${height}%` } as CSSProperties} />
               ))}
@@ -54,7 +54,7 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
       </div>
 
       {!empty && (
-        <div aria-label="Model usage split: Qwen 48 percent, DeepSeek 31 percent, Llama 21 percent" className="model-usage" role="img">
+        <div aria-label={copy.console.modelSplitLabel} className="model-usage" role="img">
           {modelUsage.map((item) => (
             <div className="model-usage-row" key={item.model}>
               <span>{item.model}</span>
@@ -78,7 +78,7 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
                 {recentRequests.map(([model, tokens, latency]) => (
                   <div className="request-row" key={model}>
                     <code>{model}</code>
-                    <span>{tokens} tokens</span>
+                    <span>{tokens} {copy.console.tokens}</span>
                     <span>{latency}</span>
                   </div>
                 ))}
