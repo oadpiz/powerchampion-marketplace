@@ -1,5 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { ConsoleView } from "../components/console-view";
@@ -16,6 +18,26 @@ function renderInShell(content: ReactNode) {
 }
 
 describe("Power Champion homepage", () => {
+  it("keeps section headings at least 48px in every responsive rule", async () => {
+    const css = await readFile(
+      resolve(process.cwd(), "app/globals.css"),
+      "utf8",
+    );
+    const rules = css.matchAll(
+      /\.section-intro h2,\s*\.closing-cta h2\s*\{[^}]*font-size:\s*([^;]+);/g,
+    );
+    const floors = Array.from(rules, ([, value]) => {
+      const lengths = Array.from(
+        value.matchAll(/([\d.]+)(rem|px)/g),
+        ([, amount, unit]) => Number(amount) * (unit === "rem" ? 16 : 1),
+      );
+      return Math.min(...lengths);
+    });
+
+    expect(floors.length).toBeGreaterThan(0);
+    expect(floors.every((floor) => floor >= 48)).toBe(true);
+  });
+
   it("localizes its proof, model, credit, and compact console details", async () => {
     const user = userEvent.setup();
     renderInShell(<HomeContent />);

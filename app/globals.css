@@ -245,7 +245,6 @@ button { color: inherit; }
   .proof-item + .proof-item { padding-left: 0; border-top: 1px solid var(--line); border-left: 0; }
   .proof-item strong { font-size: 2.75rem; }
   .section-intro { margin-bottom: 2.7rem; }
-  .section-intro h2, .closing-cta h2 { font-size: 2.5rem; }
   .model-row { grid-template-columns: 36px 1fr 26px; gap: .8rem; min-height: 132px; }
   .model-facts { display: none; }
   .model-identity h3 { font-size: 1.5rem; }
