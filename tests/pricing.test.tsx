@@ -18,6 +18,10 @@ const EXPECTED_MODEL_RATES = [
   { name: "MiniMax", input: "0.24", output: "0.96" },
 ] as const;
 
+function normalizedText(element: Element) {
+  return element.textContent?.replace(/\s+/g, " ").trim();
+}
+
 describe("PricingCalculator", () => {
   it("calculates the selected model estimate", async () => {
     const user = userEvent.setup();
@@ -194,8 +198,8 @@ describe("PricingPage", () => {
 
       const cells = within(row!).getAllByRole("cell");
       expect(cells).toHaveLength(3);
-      expect(cells[1]).toHaveTextContent(`$${model.input} per 1M input`);
-      expect(cells[2]).toHaveTextContent(`$${model.output} per 1M output`);
+      expect(normalizedText(cells[1])).toBe(`$${model.input} per 1M input`);
+      expect(normalizedText(cells[2])).toBe(`$${model.output} per 1M output`);
     }
   });
 
