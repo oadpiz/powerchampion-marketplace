@@ -52,3 +52,18 @@ test("server-renders demo pricing with a clear disclaimer", async () => {
   assert.match(html, /Estimate usage/i);
   assert.match(html, /Model rates/i);
 });
+
+test("server-renders docs and the demo console", async () => {
+  const docs = await render("/docs");
+  const docsHtml = await docs.text();
+  assert.equal(docs.status, 200);
+  assert.match(docsHtml, /One endpoint\. Familiar tools\./i);
+  assert.match(docsHtml, /pc_demo_YOUR_KEY/i);
+
+  const consoleResponse = await render("/console");
+  const consoleHtml = await consoleResponse.text();
+  assert.equal(consoleResponse.status, 200);
+  assert.match(consoleHtml, /Demo console/i);
+  assert.match(consoleHtml, /\$184\.20/);
+  assert.doesNotMatch(consoleHtml, /sk-[A-Za-z0-9]{12}/);
+});

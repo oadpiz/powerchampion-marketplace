@@ -66,15 +66,15 @@ describe("Power Champion homepage", () => {
     ).toBeInTheDocument();
   });
 
-  it("localizes the full console request units", async () => {
+  it("localizes the full console demo request units", async () => {
     const user = userEvent.setup();
     renderInShell(<ConsoleView />);
 
     await user.click(screen.getByRole("button", { name: "繁中" }));
 
     const recent = screen.getByRole("region", { name: "近期請求" });
-    expect(within(recent).getByText("2.8K 詞元")).toBeInTheDocument();
-    expect(within(recent).getByText("6.1K 詞元")).toBeInTheDocument();
-    expect(within(recent).getByText("1.4K 詞元")).toBeInTheDocument();
+    expect(within(recent).getByText("Qwen · 18.4K 詞元")).toBeInTheDocument();
+    expect(within(recent).getByText("DeepSeek · 42.1K 詞元")).toBeInTheDocument();
+    expect(within(recent).getByText("Llama · 9.8K 詞元")).toBeInTheDocument();
   });
 });

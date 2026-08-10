@@ -1,0 +1,66 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { CodeSamples } from "../components/code-samples";
+import { ConsoleView } from "../components/console-view";
+import { LocaleProvider } from "../components/locale-provider";
+
+describe("CodeSamples", () => {
+  it("switches languages and confirms local copy", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    render(<LocaleProvider><CodeSamples /></LocaleProvider>);
+
+    await user.click(screen.getByRole("tab", { name: "Python" }));
+    expect(screen.getByText(/from openai import OpenAI/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    expect(screen.getByText("Copied")).toBeInTheDocument();
+  });
+
+  it("does not reveal another key when copying is unavailable", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+    render(<LocaleProvider><CodeSamples /></LocaleProvider>);
+
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+
+    expect(screen.getByText("Copy unavailable")).toBeInTheDocument();
+    expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
+  });
+
+  it("moves between code tabs with arrow keys", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider><CodeSamples /></LocaleProvider>);
+
+    const curl = screen.getByRole("tab", { name: "cURL" });
+    curl.focus();
+    await user.keyboard("{ArrowRight}");
+
+    expect(screen.getByRole("tab", { name: "Python" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/from openai import OpenAI/)).toBeInTheDocument();
+  });
+});
+
+describe("ConsoleView", () => {
+  it("labels the full view as a demo and masks the key", () => {
+    render(<LocaleProvider><ConsoleView /></LocaleProvider>);
+
+    expect(screen.getByText("Demo console")).toBeInTheDocument();
+    expect(screen.getByText("$184.20")).toBeInTheDocument();
+    expect(screen.getByText(/pc_demo_••••••••••••7X4Q/)).toBeInTheDocument();
+    expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
+  });
+
+  it("renders the explanatory empty state", () => {
+    render(<LocaleProvider><ConsoleView empty /></LocaleProvider>);
+
+    expect(screen.getByText(/No usage yet/i)).toBeInTheDocument();
+  });
+});
