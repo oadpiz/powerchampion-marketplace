@@ -1,0 +1,69 @@
+:root {
+  --ground: #07090d;
+  --surface: #0b0e14;
+  --ink: #f5f6f8;
+  --muted: #9296a2;
+  --line: #30333b;
+  --violet: #8c73ef;
+  --cyan: #61dce9;
+  --content: 1180px;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; overflow-x: hidden; background: var(--ground); color: var(--ink); }
+a { color: inherit; text-decoration: none; }
+button, input, select { font: inherit; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}
+
+.site-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.site-header,
+.site-footer {
+  width: min(100% - 2rem, var(--content));
+  margin: 0 auto;
+}
+
+.site-header {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.site-brand { font-weight: 700; letter-spacing: -0.03em; white-space: nowrap; }
+.site-navigation { display: flex; gap: 1.25rem; color: var(--muted); }
+.site-navigation a:hover, .site-footer a:hover { color: var(--ink); }
+.site-actions { display: flex; align-items: center; gap: .75rem; margin-left: auto; }
+.locale-toggle { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.locale-toggle button, .menu-trigger {
+  cursor: pointer;
+  border: 0;
+  padding: .4rem .65rem;
+  background: transparent;
+  color: var(--muted);
+}
+.locale-toggle button[aria-pressed="true"] { color: var(--ink); background: var(--line); }
+.token-button { border: 0; border-radius: 999px; padding: .6rem .9rem; cursor: pointer; background: var(--cyan); color: #061016; font-weight: 700; }
+.menu-trigger { display: none; color: var(--ink); font-size: 1.15rem; }
+.mobile-navigation { position: fixed; z-index: 10; inset: 0; padding: 1rem; background: var(--surface); }
+.mobile-navigation > button { float: right; border: 0; background: transparent; color: var(--ink); cursor: pointer; font-size: 2rem; }
+.mobile-navigation nav { display: grid; gap: 1.5rem; padding: 4rem 1rem; font-size: 1.5rem; }
+.site-footer { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: auto; padding: 2rem 0; color: var(--muted); font-size: .875rem; }
+
+@media (max-width: 720px) {
+  .site-navigation, .token-button { display: none; }
+  .menu-trigger { display: block; }
+}
+
+@media (min-width: 721px) {
+  .mobile-navigation { display: none; }
+}
