@@ -17,7 +17,7 @@ export default function PricingPage() {
     : { starter: "入門", builder: "建置", scale: "規模" };
 
   return (
-    <main className="pricing-page">
+    <main className="pricing-page" id="main-content">
       <section aria-labelledby="pricing-title" className="pricing-intro">
         <p className="eyebrow">{copy.pricing.kicker}</p>
         <h1 id="pricing-title">{copy.pricing.title}</h1>

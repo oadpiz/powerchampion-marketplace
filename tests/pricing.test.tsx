@@ -97,6 +97,24 @@ describe("DemoCheckout", () => {
     expect(screen.queryByLabelText(/card number/i)).not.toBeInTheDocument();
   });
 
+  it("moves focus to the complete-step Close button after advancing", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <DemoCheckout initialPack="builder" open />
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(screen.getByText("Demo checkout complete")).toBeInTheDocument();
+    const completeClose = within(screen.getByRole("dialog", { name: "Add Power credit" }))
+      .getAllByRole("button", { name: "Close" })
+      .at(-1);
+    expect(completeClose).toHaveFocus();
+  });
+
   it("opens the pack selected by the checkout event", () => {
     render(
       <LocaleProvider>

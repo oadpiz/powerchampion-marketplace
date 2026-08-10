@@ -25,6 +25,9 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
   const [step, setStep] = useState<CheckoutStep>("choose");
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const nextActionRef = useRef<HTMLButtonElement>(null);
+  const completeCloseRef = useRef<HTMLButtonElement>(null);
+  const previousStepRef = useRef<CheckoutStep>(step);
 
   const selectedPack = CREDIT_PACKS.find((pack) => pack.id === selectedPackId) ?? CREDIT_PACKS[0];
   const packLabels: Record<CreditPack["id"], string> = locale === "en"
@@ -94,6 +97,18 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
     return () => document.removeEventListener("keydown", handleKeydown);
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      previousStepRef.current = step;
+      return;
+    }
+
+    if (previousStepRef.current !== step) {
+      previousStepRef.current = step;
+      (step === "complete" ? completeCloseRef : nextActionRef).current?.focus();
+    }
+  }, [isOpen, step]);
+
   if (!isOpen) {
     return null;
   }
@@ -153,8 +168,8 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
         <p className="checkout-disclaimer" id="checkout-disclaimer">{copy.checkout.demoOnly}</p>
         <div className="checkout-actions">
           {step === "review" && <button className="checkout-back" onClick={() => setStep("choose")} type="button">{copy.checkout.back}</button>}
-          {step !== "complete" && <button className="token-button" onClick={continueCheckout} type="button">{copy.checkout.next}</button>}
-          {step === "complete" && <button className="token-button" onClick={close} type="button">{copy.checkout.close}</button>}
+          {step !== "complete" && <button className="token-button" onClick={continueCheckout} ref={nextActionRef} type="button">{copy.checkout.next}</button>}
+          {step === "complete" && <button className="token-button" onClick={close} ref={completeCloseRef} type="button">{copy.checkout.close}</button>}
         </div>
       </div>
     </div>

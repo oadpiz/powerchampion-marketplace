@@ -7,7 +7,7 @@ export default function ConsolePage() {
   const { copy, locale } = useLocale();
 
   return (
-    <main className="console-page">
+    <main className="console-page" id="main-content">
       <section aria-labelledby="console-title" className="console-intro">
         <p className="eyebrow">{copy.console.demo}</p>
         <h1 id="console-title">{copy.console.title}</h1>

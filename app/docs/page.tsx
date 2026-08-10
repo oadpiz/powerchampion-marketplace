@@ -10,7 +10,7 @@ export default function DocsPage() {
   const { copy, locale } = useLocale();
 
   return (
-    <main className="docs-page">
+    <main className="docs-page" id="main-content">
       <section aria-labelledby="docs-title" className="docs-intro">
         <p className="eyebrow">{copy.docs.kicker}</p>
         <h1 id="docs-title">{copy.docs.title}</h1>

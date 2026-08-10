@@ -28,7 +28,7 @@ export function HomeContent() {
   };
 
   return (
-    <main className="home-page">
+    <main className="home-page" id="main-content">
       <section aria-labelledby="home-title" className="hero">
         <div className="hero-copy">
           <p className="eyebrow">{copy.home.kicker}</p>

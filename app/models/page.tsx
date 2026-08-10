@@ -7,7 +7,7 @@ export default function ModelsPage() {
   const { copy } = useLocale();
 
   return (
-    <main className="models-page">
+    <main className="models-page" id="main-content">
       <section aria-labelledby="models-title" className="models-intro">
         <p className="eyebrow">{copy.models.kicker}</p>
         <h1 id="models-title">{copy.models.title}</h1>

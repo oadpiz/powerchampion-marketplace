@@ -57,7 +57,7 @@ describe("ModelMarketplace", () => {
 
   it("keeps localized rate units visible at narrow widths", async () => {
     const css = await readFile(resolve(process.cwd(), "app/globals.css"), "utf8");
-    const narrowRules = css.match(/@media \(max-width: 760px\) \{([\s\S]*?)\n\}/)?.[1];
+    const narrowRules = css.match(/@media \(max-width: 820px\) \{([\s\S]*?)\n\}/)?.[1];
 
     expect(narrowRules).toMatch(
       /\.marketplace-rate-unit\s*\{[^}]*display:\s*block;[^}]*font-size:\s*\.8125rem;/,
