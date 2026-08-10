@@ -8,7 +8,15 @@ import { DemoCheckout, openCheckout } from "../components/demo-checkout";
 import { LocaleProvider } from "../components/locale-provider";
 import { PricingCalculator } from "../components/pricing-calculator";
 import { SiteShell } from "../components/site-shell";
-import { MODEL_CATALOG } from "../lib/models";
+
+const EXPECTED_MODEL_RATES = [
+  { name: "Qwen", input: "0.18", output: "0.72" },
+  { name: "DeepSeek", input: "0.27", output: "1.10" },
+  { name: "Llama", input: "0.16", output: "0.64" },
+  { name: "Mistral", input: "0.20", output: "0.80" },
+  { name: "GLM", input: "0.22", output: "0.88" },
+  { name: "MiniMax", input: "0.24", output: "0.96" },
+] as const;
 
 describe("PricingCalculator", () => {
   it("calculates the selected model estimate", async () => {
@@ -148,20 +156,24 @@ describe("DemoCheckout", () => {
 
   it("keeps checkout step labels at least 13px in every stylesheet rule", async () => {
     const css = await readFile(resolve(process.cwd(), "app/globals.css"), "utf8");
-    const rules = Array.from(
-      css.matchAll(/\.checkout-steps\s*\{[^}]*font-size:\s*([^;]+);/g),
-      ([, value]) => value,
-    );
-    const floors = rules.map((value) => {
-      const lengths = Array.from(
-        value.matchAll(/([\d.]+)(rem|px)/g),
-        ([, amount, unit]) => Number(amount) * (unit === "rem" ? 16 : 1),
-      );
-      return Math.min(...lengths);
+    const mobileStart = css.indexOf("@media (max-width: 720px)");
+    expect(mobileStart).toBeGreaterThan(-1);
+    const baseRules = Array.from(css.slice(0, mobileStart).matchAll(/\.checkout-steps\s*\{([^}]*)}/g), ([, declarations]) => declarations);
+    const mobileRules = Array.from(css.slice(mobileStart).matchAll(/\.checkout-steps\s*\{([^}]*)}/g), ([, declarations]) => declarations);
+    expect(baseRules).toHaveLength(1);
+    expect(mobileRules).toHaveLength(1);
+
+    const lengths = [...baseRules, ...mobileRules].map((declarations) => {
+      const fontSize = declarations.match(/(?:^|;)\s*font-size\s*:\s*([^;]+);/);
+      expect(fontSize, "each checkout step rule declares font-size").not.toBeNull();
+
+      const value = fontSize![1].trim();
+      expect(value).toMatch(/^\d*\.?\d+(?:px|rem)$/);
+      const [, amount, unit] = value.match(/^(\d*\.?\d+)(px|rem)$/)!;
+      return Number(amount) * (unit === "rem" ? 16 : 1);
     });
 
-    expect(floors).toHaveLength(2);
-    expect(floors.every((floor) => floor >= 13)).toBe(true);
+    expect(lengths.every((length) => Number.isFinite(length) && length >= 13)).toBe(true);
   });
 });
 
@@ -173,13 +185,17 @@ describe("PricingPage", () => {
       </LocaleProvider>,
     );
 
-    for (const model of MODEL_CATALOG) {
-      const row = screen.getAllByRole("row").find((candidate) => within(candidate).queryByRole("cell", { name: model.name }));
+    const rows = screen.getAllByRole("row").filter((candidate) => within(candidate).queryAllByRole("cell").length > 0);
+    expect(rows).toHaveLength(EXPECTED_MODEL_RATES.length);
+
+    for (const model of EXPECTED_MODEL_RATES) {
+      const row = rows.find((candidate) => within(candidate).queryByRole("cell", { name: model.name }));
       expect(row).toBeDefined();
 
       const cells = within(row!).getAllByRole("cell");
-      expect(cells[1]).toHaveTextContent(`$${model.inputPerMillion.toFixed(2)} per 1M input`);
-      expect(cells[2]).toHaveTextContent(`$${model.outputPerMillion.toFixed(2)} per 1M output`);
+      expect(cells).toHaveLength(3);
+      expect(cells[1]).toHaveTextContent(`$${model.input} per 1M input`);
+      expect(cells[2]).toHaveTextContent(`$${model.output} per 1M output`);
     }
   });
 
