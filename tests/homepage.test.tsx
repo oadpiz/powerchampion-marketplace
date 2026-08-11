@@ -19,6 +19,15 @@ function renderInShell(content: ReactNode) {
 }
 
 describe("Power Champion homepage", () => {
+  it("offers parallel developer and enterprise paths", () => {
+    renderInShell(<HomeContent />);
+
+    const hero = screen.getByRole("region", { name: "Every model.One power core." });
+    expect(within(hero).getByRole("link", { name: "Explore model access" })).toHaveAttribute("href", "/models");
+    expect(within(hero).getByRole("link", { name: "Talk to infrastructure" })).toHaveAttribute("href", "/contact");
+    expect(screen.getByText("Token access launching soon")).toBeVisible();
+  });
+
   it("uses launch access for the console action in both locales", async () => {
     const user = userEvent.setup();
     renderInShell(<><ConsoleView /><DemoCheckout /></>);

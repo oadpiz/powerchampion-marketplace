@@ -119,6 +119,43 @@ button { color: inherit; }
 .text-link { color: var(--ink); font-size: .92rem; font-weight: 620; }
 .text-link:hover { color: var(--cyan); }
 
+.audience-paths {
+  width: min(calc(100% - var(--page-frame)), var(--content));
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 auto;
+  border-bottom: 1px solid var(--line);
+}
+.audience-path {
+  position: relative;
+  display: grid;
+  gap: .65rem;
+  min-height: 198px;
+  padding: 2.25rem 2.25rem 2.25rem 1.75rem;
+  color: var(--ink);
+}
+.audience-path + .audience-path { border-left: 1px solid var(--line); }
+.audience-path-developer::before {
+  position: absolute;
+  top: 2.25rem;
+  bottom: 2.25rem;
+  left: 0;
+  width: 3px;
+  background: var(--cyan);
+  content: "";
+}
+.audience-path span {
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: .75rem;
+  font-weight: 650;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.audience-path strong { font-size: clamp(1.55rem, 2.4vw, 2.1rem); font-weight: 540; letter-spacing: -.045em; }
+.audience-path p { max-width: 31rem; margin: 0; color: var(--muted); line-height: 1.55; }
+.audience-path:hover strong { color: var(--cyan); }
+
 .proof-strip {
   width: min(calc(100% - var(--page-frame)), var(--content));
   margin: 0 auto;
@@ -485,6 +522,10 @@ button { color: inherit; }
 }
 
 @media (max-width: 760px) {
+  .audience-paths { grid-template-columns: 1fr; }
+  .audience-path { min-height: 0; padding: 1.8rem 1.25rem; }
+  .audience-path + .audience-path { border-top: 1px solid var(--line); border-left: 0; }
+  .audience-path-developer::before { top: 1.8rem; bottom: 1.8rem; }
   .company-hero { margin-bottom: 2.7rem; }
   .company-hero h1, .company-record h2, .capacity-brief h2, .source-disclosures h2 { font-size: clamp(2.35rem, 12vw, 3.5rem); }
   .company-record, .capacity-brief, .source-disclosures { padding-top: 2rem; }

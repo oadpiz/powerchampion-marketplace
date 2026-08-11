@@ -5,6 +5,7 @@ import { MODEL_CATALOG } from "../lib/models";
 import { COMPANY_CONTENT } from "../lib/company";
 import { ConsoleView } from "./console-view";
 import { useLocale } from "./locale-provider";
+import { AudiencePaths } from "./audience-paths";
 
 export function HomeContent() {
   const { copy, locale } = useLocale();
@@ -41,11 +42,13 @@ export function HomeContent() {
           <p className="hero-lead">{copy.home.lead}</p>
           <p className="hero-launch-status" role="status">{copy.home.launchStatus}</p>
           <div className="hero-actions">
-            <a className="primary-link" href="/models">{copy.home.explore}</a>
-            <a className="text-link" href="/pricing">{copy.home.viewPricing} <span aria-hidden="true">↗</span></a>
+            <a className="primary-link" href="/models">{copy.home.developerPath}</a>
+            <a className="text-link" href="/contact">{copy.home.enterprisePath} <span aria-hidden="true">↗</span></a>
           </div>
         </div>
       </section>
+
+      <AudiencePaths />
 
       <section aria-describedby="proof-disclosure" aria-label={copy.home.proofLabel} className="proof-strip">
         {proofPoints.map(([value, label]) => (
