@@ -372,6 +372,41 @@ button { color: inherit; }
 .closing-cta .eyebrow { margin-bottom: 1.6rem; }
 .closing-cta p:not(.eyebrow) { max-width: 650px; margin: 1.6rem auto 2.2rem; color: var(--muted); font-size: 1.05rem; line-height: 1.6; }
 
+.company-page {
+  width: min(calc(100% - var(--page-frame)), var(--content));
+  flex: 1;
+  margin: 0 auto;
+  padding-block: var(--section-space);
+}
+.company-hero { max-width: 760px; margin-bottom: 4rem; }
+.company-hero h1, .company-record h2, .capacity-brief h2, .source-disclosures h2 {
+  margin: 0;
+  font-size: clamp(2.4rem, 5vw, 4.25rem);
+  font-weight: 540;
+  letter-spacing: -.065em;
+  line-height: .98;
+}
+.company-hero > p:not(.eyebrow) { max-width: 660px; margin: 1.5rem 0 0; color: var(--muted); font-size: 1.06rem; line-height: 1.65; }
+.company-record, .capacity-brief, .source-disclosures { border-top: 1px solid var(--line); padding-top: 2.5rem; }
+.capacity-brief, .source-disclosures { margin-top: 4rem; }
+.company-timeline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; margin: 2rem 0 0; padding: 0; list-style: none; }
+.company-timeline li { border: 1px solid var(--line); padding: 1.5rem; }
+.company-timeline h3 { margin: 0; font-size: 1.25rem; font-weight: 560; letter-spacing: -.025em; }
+.company-timeline time, .source-disclosures li span { display: block; margin-top: .8rem; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.5; }
+.company-timeline p, .source-disclosures > p { margin: 1rem 0 0; color: var(--muted); line-height: 1.65; }
+.capacity-sequence { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 2rem 0 0; border-block: 1px solid var(--line); }
+.capacity-sequence > div { min-width: 0; padding: 1.5rem; }
+.capacity-sequence > div + div { border-left: 1px solid var(--line); }
+.capacity-sequence dt { color: var(--muted); font-size: .9rem; line-height: 1.55; }
+.capacity-sequence dd { margin: .85rem 0 0; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: clamp(1.5rem, 3vw, 2.25rem); letter-spacing: -.05em; line-height: 1; }
+.capacity-sequence dd + dd { color: var(--ink); font-size: 1rem; letter-spacing: -.02em; }
+.capacity-deposit-context { margin: 1.25rem 0 0; color: var(--muted); line-height: 1.65; }
+.capacity-qualification { margin: 1.25rem 0 0; border-left: 3px solid var(--cyan); padding: .9rem 1rem; background: rgba(97, 220, 233, .08); line-height: 1.55; }
+.source-disclosures ul { display: grid; gap: 1rem; margin: 2rem 0 0; padding: 0; list-style: none; }
+.source-disclosures li { border-bottom: 1px solid var(--line); padding-bottom: 1rem; }
+.source-disclosures a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--cyan); text-underline-offset: .25rem; }
+.source-disclosures a:hover { color: var(--cyan); }
+
 @media (max-width: 900px) {
   :root { --section-space: 76px; }
   .hero { min-height: 620px; background-position: center, 58% center; }
@@ -464,6 +499,15 @@ button { color: inherit; }
   .docs-values > div { padding-inline: 0; }
   .code-samples { margin-top: 3rem; }
   .code-sample-panel pre { padding: 1rem; }
+  .company-hero { margin-bottom: 2.7rem; }
+  .company-hero h1, .company-record h2, .capacity-brief h2, .source-disclosures h2 { font-size: clamp(2.35rem, 12vw, 3.5rem); }
+  .company-record, .capacity-brief, .source-disclosures { padding-top: 2rem; }
+  .capacity-brief, .source-disclosures { margin-top: 3rem; }
+  .company-timeline, .capacity-sequence { grid-template-columns: 1fr; }
+  .company-timeline { gap: .75rem; }
+  .company-timeline li { padding: 1.25rem; }
+  .capacity-sequence > div { padding-inline: 0; }
+  .capacity-sequence > div + div { border-top: 1px solid var(--line); border-left: 0; }
   .pricing-intro { margin-bottom: 2.7rem; }
   .pricing-intro h1, .pricing-block-heading h2 { font-size: clamp(2.55rem, 13vw, 3.5rem); }
   .calculator-fields { grid-template-columns: 1fr; }

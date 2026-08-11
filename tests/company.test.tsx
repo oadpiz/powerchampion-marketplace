@@ -1,8 +1,28 @@
 import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { CompanyContent } from "../components/company-content";
+import { LocaleProvider } from "../components/locale-provider";
 import { COMPANY_CONTENT, COMPANY_SOURCES } from "../lib/company";
 import { COPY } from "../lib/content";
 
 describe("company data", () => {
+  it("renders qualified capacity information and verifiable sources", () => {
+    render(
+      <LocaleProvider>
+        <CompanyContent />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole("heading", { level: 1, name: /Infrastructure, made accountable/i }))
+      .toBeInTheDocument();
+    expect(screen.getByText("3.1 MW")).toBeVisible();
+    expect(screen.getByText("US$27.9M")).toBeVisible();
+    expect(screen.getByText("Potential; subject to conditions and not guaranteed."))
+      .toBeVisible();
+    expect(screen.getByRole("link", { name: /Azio AI Holdings, Exhibit 99.2/i }))
+      .toHaveAttribute("href", expect.stringContaining("sec.gov"));
+  });
+
   it("stores the bounded public record with sourceable qualifications", () => {
     expect(COMPANY_CONTENT.en.capacity.initialMw).toBe("3.1 MW");
     expect(COMPANY_CONTENT.en.capacity.initialReservation).toBe("US$27.9M");

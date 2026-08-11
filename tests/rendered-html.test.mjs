@@ -52,6 +52,15 @@ test("server-renders a complete English marketplace shell with social metadata",
   );
 });
 
+test("server-renders the cited company evidence brief", async () => {
+  const response = await render("/company");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<title>Company \| Power Champion<\/title>/);
+  assert.match(html, /3\.1 MW/);
+  assert.match(html, /https:\/\/www\.sec\.gov\/Archives\/edgar\/data\/1563568\/000143774926023245\/ex_986809\.htm/);
+});
+
 test("server-renders the finished marketplace homepage", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
