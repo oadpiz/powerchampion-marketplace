@@ -69,10 +69,18 @@ describe("CodeSamples", () => {
 });
 
 describe("ConsoleView", () => {
-  it("labels the full view as a demo and masks the key", () => {
+  it("labels the console as a local launch preview", () => {
     render(<LocaleProvider><ConsoleView /></LocaleProvider>);
 
-    expect(screen.getByText("Demo console")).toBeInTheDocument();
+    expect(screen.getByText("Launch preview — illustrative only")).toBeVisible();
+    expect(screen.queryByText(/your funded account|live API key/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Join launch access" })).toBeInTheDocument();
+  });
+
+  it("labels the full view as an illustrative preview and masks the key", () => {
+    render(<LocaleProvider><ConsoleView /></LocaleProvider>);
+
+    expect(screen.getByText("Launch preview — illustrative only")).toBeInTheDocument();
     expect(screen.getByText("$184.20")).toBeInTheDocument();
     expect(screen.getByText(/pc_demo_••••••••••••7X4Q/)).toBeInTheDocument();
     expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();

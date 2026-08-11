@@ -122,7 +122,7 @@ test("server-renders non-binding launch access without payment fields", async ()
   assert.match(html, /Model rates/i);
 });
 
-test("server-renders docs and the demo console", async () => {
+test("server-renders docs and the local illustrative console preview", async () => {
   const docs = await render("/docs");
   const docsHtml = await docs.text();
   assert.equal(docs.status, 200);
@@ -132,7 +132,9 @@ test("server-renders docs and the demo console", async () => {
   const consoleResponse = await render("/console");
   const consoleHtml = await consoleResponse.text();
   assert.equal(consoleResponse.status, 200);
-  assert.match(consoleHtml, /Demo console/i);
+  assert.match(consoleHtml, /Launch preview — illustrative only/i);
+  assert.match(consoleHtml, /Local display only\. No account, funded balance, usable API key, live API, or live usage\./i);
+  assert.match(consoleHtml, /Join launch access/i);
   assert.match(consoleHtml, /\$184\.20/);
   assert.doesNotMatch(consoleHtml, /sk-[A-Za-z0-9]{12}/);
 });

@@ -62,8 +62,8 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
   return (
     <div className={`console-view${compact ? " console-view-compact" : ""}`}>
       <div className="console-topline">
-        <p><span className="status-dot" />{copy.console.demo}</p>
-        <span>{copy.shared.illustrative}</span>
+        <p><span className="status-dot" />{copy.console.previewLabel}</p>
+        <span>{copy.console.previewDescription}</span>
       </div>
 
       <div className="console-summary">
