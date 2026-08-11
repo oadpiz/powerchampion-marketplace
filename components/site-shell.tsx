@@ -15,6 +15,7 @@ const destinations = [
   ["pricing", "/pricing"],
   ["docs", "/docs"],
   ["company", "/company"],
+  ["contact", "/contact"],
   ["console", "/console"],
 ] as const;
 

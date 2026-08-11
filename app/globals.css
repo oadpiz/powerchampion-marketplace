@@ -484,6 +484,24 @@ button { color: inherit; }
 .source-metadata dt { color: var(--muted); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
 .source-metadata dd { margin: .25rem 0 0; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.5; }
 
+.contact-page { width: min(calc(100% - var(--page-frame)), var(--content)); flex: 1; margin: 0 auto; padding-block: var(--section-space); }
+.enterprise-enquiry { max-width: 760px; }
+.enquiry-intro { margin-bottom: 3.25rem; }
+.enquiry-intro h1 { margin: 0; font-size: clamp(2.4rem, 5vw, 4.25rem); font-weight: 540; letter-spacing: -.065em; line-height: .98; }
+.enquiry-intro > p:not(.eyebrow) { max-width: 620px; margin: 1.5rem 0 0; color: var(--muted); font-size: 1.06rem; line-height: 1.65; }
+.enquiry-form { display: grid; gap: .7rem; border-top: 1px solid var(--line); padding-top: 2.5rem; }
+.enquiry-form label { color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; letter-spacing: .08em; text-transform: uppercase; }
+.enquiry-form select, .enquiry-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 0; padding: .8rem; background: var(--surface); color: var(--ink); font: inherit; }
+.enquiry-form select { min-height: 50px; }
+.enquiry-form textarea { min-height: 130px; resize: vertical; }
+.enquiry-form [role="alert"] { margin: 0; color: #ffb8c2; line-height: 1.5; }
+.enquiry-form textarea + p, .enquiry-notice { margin: 0; color: var(--muted); font-size: .875rem; line-height: 1.55; }
+.enquiry-form button { justify-self: start; min-height: 48px; margin-top: .7rem; border: 1px solid var(--cyan); padding: .65rem 1rem; background: var(--cyan); color: var(--ground); font-weight: 700; }
+.enquiry-form [role="status"] { margin: .3rem 0 0; color: var(--cyan); font-weight: 650; }
+.enquiry-notice { margin-top: 2rem; border-left: 3px solid var(--cyan); padding: .9rem 1rem; background: rgba(97, 220, 233, .08); }
+.enquiry-company-link { display: inline-block; margin-top: 1.25rem; color: var(--ink); text-decoration: underline; text-decoration-color: var(--cyan); text-underline-offset: .25rem; }
+.enquiry-company-link:hover { color: var(--cyan); }
+
 @media (max-width: 900px) {
   :root { --section-space: 76px; }
   .hero { min-height: 620px; background-position: center, 58% center; }
@@ -529,6 +547,8 @@ button { color: inherit; }
   .company-hero { margin-bottom: 2.7rem; }
   .company-hero h1, .company-record h2, .capacity-brief h2, .source-disclosures h2 { font-size: clamp(2.35rem, 12vw, 3.5rem); }
   .company-record, .capacity-brief, .source-disclosures { padding-top: 2rem; }
+  .enquiry-intro { margin-bottom: 2.7rem; }
+  .enquiry-intro h1 { font-size: clamp(2.35rem, 12vw, 3.5rem); }
   .capacity-brief, .source-disclosures { margin-top: 3rem; }
   .company-timeline, .capacity-sequence { grid-template-columns: 1fr; }
   .company-timeline { gap: .75rem; }
@@ -597,6 +617,7 @@ button { color: inherit; }
   .pricing-intro { margin-bottom: 2.7rem; }
   .pricing-intro h1, .pricing-block-heading h2 { font-size: clamp(2.55rem, 13vw, 3.5rem); }
   .calculator-fields { grid-template-columns: 1fr; }
+  .enquiry-form { padding-top: 2rem; }
   .rate-table-head, .rate-table-row { grid-template-columns: minmax(0, .75fr) minmax(0, 1fr) minmax(0, 1fr); gap: .65rem; }
   .rate-table-row { align-items: start; padding: 1rem 0; }
   .rate-table-row > span:not(:first-child), .rate-table-row strong { font-size: .8125rem; line-height: 1.45; }
