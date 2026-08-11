@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { ConsoleView } from "../components/console-view";
+import { DemoCheckout } from "../components/demo-checkout";
 import { HomeContent } from "../components/home-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
@@ -18,6 +19,43 @@ function renderInShell(content: ReactNode) {
 }
 
 describe("Power Champion homepage", () => {
+  it("uses launch access for the console action in both locales", async () => {
+    const user = userEvent.setup();
+    renderInShell(<><ConsoleView /><DemoCheckout /></>);
+
+    const englishConsole = screen.getByText("Available balance").closest(".console-view");
+    expect(englishConsole).toBeInstanceOf(HTMLElement);
+    await user.click(within(englishConsole!).getByRole("button", { name: "Join launch access" }));
+    expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
+    expect(screen.getByText("Payments are not enabled yet. This request does not create an order or charge your account.")).toBeVisible();
+
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+
+    const chineseConsole = screen.getByText("可用餘額").closest(".console-view");
+    expect(chineseConsole).toBeInstanceOf(HTMLElement);
+    expect(within(chineseConsole!).queryByRole("button", { name: /增加額度/i })).not.toBeInTheDocument();
+    await user.click(within(chineseConsole!).getByRole("button", { name: "加入啟動存取" }));
+    expect(screen.getByRole("dialog", { name: "申請啟動存取" })).toBeInTheDocument();
+  });
+
+  it("labels the package CTAs as launch access", () => {
+    renderInShell(<HomeContent />);
+
+    const packages = screen.getByRole("region", { name: "Explore indicative launch packages." });
+    expect(within(packages).getAllByRole("button", { name: "Join launch access" })).toHaveLength(3);
+    expect(within(packages).queryByRole("button", { name: /^(buy|pay|checkout)/i })).not.toBeInTheDocument();
+  });
+
+  it("states on Home that token access is launching soon in both locales", async () => {
+    const user = userEvent.setup();
+    renderInShell(<HomeContent />);
+
+    expect(screen.getByText("Token access launching soon")).toBeVisible();
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    expect(screen.getByText("Token 存取即將推出")).toBeVisible();
+  });
+
   it("keeps section headings at least 48px in every responsive rule", async () => {
     const css = await readFile(
       resolve(process.cwd(), "app/globals.css"),
@@ -47,6 +85,13 @@ describe("Power Champion homepage", () => {
     expect(
       screen.getByRole("region", { name: "市集成效數據" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "交易對手揭露的基礎設施脈絡" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("約 3.1 MW")).toBeVisible();
+    expect(screen.getByText("交易對手報告的預期合約託管容量；並非即時或已完成部署的容量。"))
+      .toBeVisible();
+    expect(screen.getByRole("link", { name: "查看公司脈絡" })).toHaveAttribute("href", "/company");
     expect(screen.getByText("啟用中的模型路由")).toBeInTheDocument();
     expect(screen.getByText("可用上下文")).toBeInTheDocument();
     expect(screen.getByText("展示可用率")).toBeInTheDocument();
@@ -55,9 +100,9 @@ describe("Power Champion homepage", () => {
     expect(screen.getByText("均衡")).toBeInTheDocument();
     expect(screen.getAllByText("展示起始輸入費率")).toHaveLength(4);
     expect(screen.getByText("$0.18 每百萬輸入 Token")).toBeVisible();
-    expect(screen.getByText("$10 帳戶額度")).toBeInTheDocument();
-    expect(screen.getByText("純額隨用隨付額度")).toBeInTheDocument();
-    expect(screen.getByText("包含 5% 加碼額度")).toBeInTheDocument();
+    expect(screen.getByText("$10 指示性帳戶額度")).toBeInTheDocument();
+    expect(screen.getByText("指示性啟動方案")).toBeInTheDocument();
+    expect(screen.getByText("包含 5% 指示性啟動加碼")).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: /七日展示用量：18\.7M 詞元；展示支出 US\$13\.46。每日趨勢/ }),
     ).toBeInTheDocument();
@@ -79,6 +124,23 @@ describe("Power Champion homepage", () => {
     expect(within(proofStrip).getByText("28")).toBeInTheDocument();
     expect(within(proofStrip).getByText("128K+")).toBeInTheDocument();
     expect(within(proofStrip).getByText("99.98%")).toBeInTheDocument();
+  });
+
+  it("links the factual home infrastructure brief to Company", () => {
+    renderInShell(<HomeContent />);
+
+    const brief = screen.getByRole("region", {
+      name: "Infrastructure context from counterparty disclosure",
+    });
+    const disclosureId = brief.getAttribute("aria-describedby");
+
+    expect(screen.getByText("Approximately 3.1 MW")).toBeVisible();
+    expect(within(brief).getByText(
+      "Counterparty-reported expected contracted hosting capacity; not live or completed deployment.",
+    )).toHaveAttribute("id", disclosureId);
+    expect(within(brief).getByRole("link", { name: "View company context" }))
+      .toHaveAttribute("href", "/company");
+    expect(disclosureId).toBeTruthy();
   });
 
   it("keeps illustrative starting input rates visible for all four featured models", () => {

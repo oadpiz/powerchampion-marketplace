@@ -50,8 +50,8 @@
 
 **Interfaces:**
 - Produces `type CompanyLocale = "en" | "zh"`, `type CompanyContent`, and `const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent>`.
-- Produces `const COMPANY_SOURCES` with `{ id, label, href, publishedOn, kind }` entries for the SEC exhibit and the BVI directory.
-- Extends `CopyDictionary` with exact `nav.company`, `home.infrastructureProof`, `home.companyLink`, `checkout.launchNotice`, and `checkout.requestComplete` string fields.
+- Produces `const COMPANY_SOURCES` with an `id`, `href`, semantic `dateTime`, and localized label, kind, date label, and display date for the SEC exhibit and BVI directory.
+- Extends `CopyDictionary` with exact `nav.company`, `home.launchStatus`, `checkout.launchNotice`, and `checkout.requestComplete` string fields; company-specific Home copy remains in `lib/company.ts`.
 - Consumes `Locale` from `lib/content.ts`; it must stay compatible with `CompanyLocale`.
 
 - [ ] **Step 1: Write the failing data-contract test**
@@ -60,13 +60,13 @@
 import { COMPANY_CONTENT, COMPANY_SOURCES } from "../lib/company";
 
 it("stores the bounded public record with sourceable qualifications", () => {
-  expect(COMPANY_CONTENT.en.capacity.initialMw).toBe("3.1 MW");
-  expect(COMPANY_CONTENT.en.capacity.initialReservation).toBe("US$27.9M");
+  expect(COMPANY_CONTENT.en.capacity.initialMw).toBe("Approximately 3.1 MW");
+  expect(COMPANY_CONTENT.en.capacity.initialReservation)
+    .toBe("Approximately US$27.9M over the initial contract term");
   expect(COMPANY_CONTENT.en.capacity.expansion).toContain("12 MW");
-  expect(COMPANY_CONTENT.en.capacity.qualification)
-    .toBe("Potential; subject to conditions and not guaranteed.");
+  expect(COMPANY_CONTENT.en.capacity.qualification).toContain("No assurance");
   expect(COMPANY_SOURCES.map((source) => source.href)).toContain(
-    "https://www.sec.gov/Archives/edgar/data/1563568/000143774926023245/ex_986809.htm",
+    "https://www.sec.gov/Archives/edgar/data/1563568/000143774926023245/ex_986209.htm",
   );
 });
 ```
@@ -85,17 +85,21 @@ export type CompanyLocale = "en" | "zh";
 export const COMPANY_SOURCES = [
   {
     id: "azio-sec-exhibit",
-    label: "Azio AI Holdings, Exhibit 99.2",
-    href: "https://www.sec.gov/Archives/edgar/data/1563568/000143774926023245/ex_986809.htm",
-    publishedOn: "2026-07-10",
-    kind: "Counterparty SEC-filed disclosure",
+    href: "https://www.sec.gov/Archives/edgar/data/1563568/000143774926023245/ex_986209.htm",
+    dateTime: "2026-07-09",
+    copy: {
+      en: { label: "Azio AI Holdings, Exhibit 99.1", kind: "Counterparty SEC-filed disclosure", dateLabel: "Publication date", date: "July 9, 2026" },
+      zh: { label: "Azio AI Holdings，附件 99.1", kind: "交易對手向 SEC 提交的揭露", dateLabel: "發布日期", date: "2026 年 7 月 9 日" },
+    },
   },
   {
     id: "bvi-directory",
-    label: "i-BVI public company-directory listing",
     href: "https://i-bvi.com/company/power-champion-investment-limited_391718",
-    publishedOn: "2018-07-03",
-    kind: "Third-party public directory",
+    dateTime: "2018-07-03",
+    copy: {
+      en: { label: "i-BVI public company-directory listing", kind: "Third-party public directory", dateLabel: "Registration date shown by directory", date: "July 3, 2018" },
+      zh: { label: "i-BVI 公開公司目錄列表", kind: "第三方公開公司目錄", dateLabel: "目錄所列登記日期", date: "2018 年 7 月 3 日" },
+    },
   },
 ] as const;
 ```
@@ -137,11 +141,12 @@ it("renders qualified capacity information and verifiable sources", () => {
 
   expect(screen.getByRole("heading", { level: 1, name: /Infrastructure, made accountable/i }))
     .toBeInTheDocument();
-  expect(screen.getByText("3.1 MW")).toBeVisible();
-  expect(screen.getByText("US$27.9M")).toBeVisible();
+  expect(screen.getByText("Approximately 3.1 MW")).toBeVisible();
+  expect(screen.getByText("Approximately US$27.9M over the initial contract term"))
+    .toBeVisible();
   expect(screen.getByText("Potential; subject to conditions and not guaranteed."))
     .toBeVisible();
-  expect(screen.getByRole("link", { name: /Azio AI Holdings, Exhibit 99.2/i }))
+  expect(screen.getByRole("link", { name: /Azio AI Holdings, Exhibit 99.1/i }))
     .toHaveAttribute("href", expect.stringContaining("sec.gov"));
 });
 ```
@@ -238,7 +243,7 @@ it("links the factual home infrastructure brief to Company", () => {
   renderInShell(<HomeContent />);
   expect(screen.getByRole("link", { name: /View company context/i }))
     .toHaveAttribute("href", "/company");
-  expect(screen.getByText("3.1 MW")).toBeVisible();
+  expect(screen.getByText("Approximately 3.1 MW")).toBeVisible();
 });
 ```
 
@@ -252,7 +257,7 @@ Expected: FAIL because Company links and the home brief are absent.
 
 Change `destinations` to include `["company", "/company"]` between Docs and Console. Change the footer About target from `/#about` to `/company` while retaining the localized `About` label. Use the same `destinations` collection in the mobile dialog so no navigation variant drifts.
 
-Insert one `home-infrastructure-brief` section after the existing proof strip. It contains a source-qualified heading, the `3.1 MW` initial deployment context, and a single link to `/company`; it does not repeat US$ values or make any claim of live capacity. Its source qualification must be visible and bound through `aria-describedby` to the fact.
+Insert one `home-infrastructure-brief` section after the existing proof strip. It contains a source-qualified heading, the counterparty-reported expected approximately `3.1 MW` contracted hosting-capacity context, and a single link to `/company`; it does not repeat US$ values or make any claim of live or completed capacity. Its source qualification must be visible and bound through `aria-describedby` to the fact.
 
 Add styles that separate this proof strip through borders and editorial labels rather than another floating-card surface. At narrow widths, use a single-column layout and keep all text visible.
 

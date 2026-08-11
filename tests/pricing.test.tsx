@@ -98,20 +98,20 @@ describe("PricingCalculator", () => {
 });
 
 describe("DemoCheckout", () => {
-  it("finishes only in a clearly labelled demo state", async () => {
+  it("makes launch access non-binding and payment-free", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <DemoCheckout initialPack="builder" open />
+        <DemoCheckout open />
       </LocaleProvider>,
     );
 
+    expect(screen.getByText("Payments are not enabled yet. This request does not create an order or charge your account.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByText("Demo checkout complete")).toBeInTheDocument();
-    expect(screen.getByText(/No payment or personal information/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/card number/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Launch access request saved locally.")).toBeVisible();
+    expect(screen.queryByLabelText(/card|payment|billing/i)).not.toBeInTheDocument();
   });
 
   it("moves focus to the complete-step Close button after advancing", async () => {
@@ -125,8 +125,8 @@ describe("DemoCheckout", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByText("Demo checkout complete")).toBeInTheDocument();
-    const completeClose = within(screen.getByRole("dialog", { name: "Add Power credit" }))
+    expect(screen.getByText("Launch access request saved locally.")).toBeInTheDocument();
+    const completeClose = within(screen.getByRole("dialog", { name: "Request launch access" }))
       .getAllByRole("button", { name: "Close" })
       .at(-1);
     expect(completeClose).toHaveFocus();
@@ -141,7 +141,7 @@ describe("DemoCheckout", () => {
 
     act(() => openCheckout("scale"));
 
-    expect(screen.getByRole("dialog", { name: "Add Power credit" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Scale/ })).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -154,11 +154,11 @@ describe("DemoCheckout", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(screen.getByText("Review demo order")).toBeInTheDocument();
+    expect(screen.getByText("Review your request")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close" }));
     act(() => openCheckout());
 
-    const steps = within(screen.getByRole("list", { name: "Add Power credit" })).getAllByRole("listitem");
+    const steps = within(screen.getByRole("list", { name: "Request launch access" })).getAllByRole("listitem");
     expect(steps[0]).toHaveAttribute("aria-current", "step");
     expect(steps[1]).not.toHaveAttribute("aria-current");
   });
@@ -171,7 +171,7 @@ describe("DemoCheckout", () => {
       </LocaleProvider>,
     );
 
-    const dialog = screen.getByRole("dialog", { name: "Add Power credit" });
+    const dialog = screen.getByRole("dialog", { name: "Request launch access" });
     const close = within(dialog).getByRole("button", { name: "Close" });
     const continueButton = within(dialog).getByRole("button", { name: "Continue" });
     expect(close).toHaveFocus();
@@ -189,7 +189,7 @@ describe("DemoCheckout", () => {
       </LocaleProvider>,
     );
 
-    const steps = within(screen.getByRole("dialog", { name: "Add Power credit" })).getByRole("list", { name: "Add Power credit" });
+    const steps = within(screen.getByRole("dialog", { name: "Request launch access" })).getByRole("list", { name: "Request launch access" });
     expect(steps).not.toHaveAttribute("style");
   });
 
@@ -217,6 +217,18 @@ describe("DemoCheckout", () => {
 });
 
 describe("PricingPage", () => {
+  it("offers only non-binding launch access from the package cards", () => {
+    render(
+      <LocaleProvider>
+        <PricingPage />
+      </LocaleProvider>,
+    );
+
+    const actions = screen.getAllByRole("button", { name: "Join launch access" });
+    expect(actions).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: /^(buy|pay|checkout)/i })).not.toBeInTheDocument();
+  });
+
   it("lists every showcase model input and output rate with units", () => {
     render(
       <LocaleProvider>
@@ -247,7 +259,7 @@ describe("PricingPage", () => {
       </LocaleProvider>,
     );
 
-    const trigger = screen.getAllByRole("button", { name: "Get tokens" })[0];
+    const trigger = screen.getAllByRole("button", { name: "Join launch access" })[0];
     await user.click(trigger);
     await user.keyboard("{Escape}");
 
@@ -266,10 +278,10 @@ describe("PricingPage", () => {
     );
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    expect(screen.getByRole("heading", { name: "支出可預期，無需訂閱。" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "指示性方案，無需承諾。" })).toBeInTheDocument();
     act(() => openCheckout("builder"));
 
-    expect(screen.getByRole("dialog", { name: "增加 Power 額度" })).toBeInTheDocument();
-    expect(screen.getByText("僅供展示，不會收集付款或個人資訊。")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "申請啟動存取" })).toBeInTheDocument();
+    expect(screen.getByText("付款功能尚未啟用。此請求不會建立訂單，也不會向您的帳戶收費。")).toBeInTheDocument();
   });
 });

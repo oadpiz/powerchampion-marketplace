@@ -6,7 +6,7 @@ import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
 describe("SiteShell", () => {
-  it("renders all five destinations and changes locale", async () => {
+  it("renders all six destinations and changes locale", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -29,6 +29,10 @@ describe("SiteShell", () => {
       "href",
       "/docs",
     );
+    expect(within(primaryNavigation).getByRole("link", { name: "Company" })).toHaveAttribute(
+      "href",
+      "/company",
+    );
     expect(within(primaryNavigation).getByRole("link", { name: "Console" })).toHaveAttribute(
       "href",
       "/console",
@@ -37,6 +41,30 @@ describe("SiteShell", () => {
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
     expect(within(screen.getByRole("navigation", { name: "主要導覽" })).getByRole("link", { name: "模型" })).toBeInTheDocument();
+  });
+
+  it("adds Company to primary navigation, mobile navigation, and footer", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(
+      within(screen.getByRole("navigation", { name: "Primary navigation" }))
+        .getByRole("link", { name: "Company" }),
+    ).toHaveAttribute("href", "/company");
+    expect(
+      within(screen.getByRole("contentinfo", { name: "Footer" }))
+        .getByRole("link", { name: "About" }),
+    ).toHaveAttribute("href", "/company");
+
+    await user.click(screen.getByRole("button", { name: "Open menu" }));
+    expect(
+      within(screen.getByRole("navigation", { name: "Mobile navigation" }))
+        .getByRole("link", { name: "Company" }),
+    ).toHaveAttribute("href", "/company");
   });
 
   it("synchronizes document language transiently", async () => {
@@ -66,7 +94,7 @@ describe("SiteShell", () => {
 
     expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
     const footer = screen.getByRole("contentinfo", { name: "Footer" });
-    expect(within(footer).getByRole("link", { name: "About" })).toHaveAttribute("href", "/#about");
+    expect(within(footer).getByRole("link", { name: "About" })).toHaveAttribute("href", "/company");
     expect(within(footer).getByRole("link", { name: "Status" })).toHaveAttribute("aria-disabled", "true");
     expect(within(footer).getByRole("link", { name: "Terms" })).toHaveAttribute("aria-disabled", "true");
     expect(within(footer).getByRole("link", { name: "Privacy" })).toHaveAttribute("aria-disabled", "true");
@@ -77,7 +105,7 @@ describe("SiteShell", () => {
     expect(screen.getByRole("navigation", { name: "主要導覽" })).toBeInTheDocument();
     expect(screen.getByRole("contentinfo", { name: "頁尾" })).toBeInTheDocument();
     expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "關於" }))
-      .toHaveAttribute("href", "/#about");
+      .toHaveAttribute("href", "/company");
     expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "服務狀態" }))
       .toHaveAttribute("aria-disabled", "true");
   });
@@ -136,7 +164,7 @@ describe("SiteShell", () => {
 
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     const menu = screen.getByRole("dialog", { name: "Open menu" });
-    await user.click(within(menu).getByRole("button", { name: "Get tokens" }));
+    await user.click(within(menu).getByRole("button", { name: "Join launch access" }));
     expect(checkoutEvents).toBe(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
@@ -145,7 +173,7 @@ describe("SiteShell", () => {
     expect(
       within(screen.getByRole("dialog", { name: "開啟選單" })).getByRole(
         "button",
-        { name: "購買額度" },
+        { name: "加入啟動存取" },
       ),
     ).toBeInTheDocument();
 
@@ -167,7 +195,7 @@ describe("SiteShell", () => {
 
     const menu = screen.getByRole("dialog", { name: "Open menu" });
     const closeButton = within(menu).getByRole("button", { name: "Close menu" });
-    const checkoutButton = within(menu).getByRole("button", { name: "Get tokens" });
+    const checkoutButton = within(menu).getByRole("button", { name: "Join launch access" });
     expect(closeButton).toHaveFocus();
 
     await user.tab({ shift: true });
@@ -211,7 +239,7 @@ describe("SiteShell", () => {
     document.body.style.removeProperty("overflow");
   });
 
-  it("returns checkout focus to the Get tokens trigger after Escape", async () => {
+  it("returns checkout focus to the launch-access trigger after Escape", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -222,15 +250,15 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
 
-    const trigger = screen.getByRole("button", { name: "Get tokens" });
+    const trigger = screen.getByRole("button", { name: "Join launch access" });
     await user.click(trigger);
 
-    const dialog = screen.getByRole("dialog", { name: "Add Power credit" });
+    const dialog = screen.getByRole("dialog", { name: "Request launch access" });
     expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
 
     await user.keyboard("{Escape}");
 
-    expect(screen.queryByRole("dialog", { name: "Add Power credit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Request launch access" })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
 
@@ -247,10 +275,10 @@ describe("SiteShell", () => {
     const shell = container.querySelector(".site-shell");
     expect(shell).not.toBeNull();
     shell!.setAttribute("aria-hidden", "false");
-    const trigger = within(screen.getByRole("banner")).getByRole("button", { name: "Get tokens" });
+    const trigger = within(screen.getByRole("banner")).getByRole("button", { name: "Join launch access" });
     await user.click(trigger);
 
-    const dialog = screen.getByRole("dialog", { name: "Add Power credit" });
+    const dialog = screen.getByRole("dialog", { name: "Request launch access" });
     expect(shell).toHaveAttribute("inert");
     expect(shell).toHaveAttribute("aria-hidden", "true");
     expect(document.body.style.overflow).toBe("hidden");
@@ -279,8 +307,8 @@ describe("SiteShell", () => {
 
     const menuTrigger = screen.getByRole("button", { name: "Open menu" });
     await user.click(menuTrigger);
-    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Get tokens" }));
-    expect(screen.getByRole("dialog", { name: "Add Power credit" })).toBeInTheDocument();
+    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Join launch access" }));
+    expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
 
@@ -299,10 +327,10 @@ describe("SiteShell", () => {
 
     const menuTrigger = screen.getByRole("button", { name: "Open menu" });
     await user.click(menuTrigger);
-    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Get tokens" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Join launch access" }));
 
     expect(screen.queryByRole("dialog", { name: "Open menu" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Add Power credit" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
     expect(document.body.style.overflow).toBe("hidden");
 
     await user.keyboard("{Escape}");

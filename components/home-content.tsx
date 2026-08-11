@@ -2,11 +2,13 @@
 
 import { CREDIT_PACKS } from "../lib/pricing";
 import { MODEL_CATALOG } from "../lib/models";
+import { COMPANY_CONTENT } from "../lib/company";
 import { ConsoleView } from "./console-view";
 import { useLocale } from "./locale-provider";
 
 export function HomeContent() {
   const { copy, locale } = useLocale();
+  const company = COMPANY_CONTENT[locale];
   const featuredModels = MODEL_CATALOG.slice(0, 4);
   const proofPoints = [
     ["28", copy.home.activeRoutes],
@@ -37,6 +39,7 @@ export function HomeContent() {
             <span>{copy.home.accent}</span>
           </h1>
           <p className="hero-lead">{copy.home.lead}</p>
+          <p className="hero-launch-status" role="status">{copy.home.launchStatus}</p>
           <div className="hero-actions">
             <a className="primary-link" href="/models">{copy.home.explore}</a>
             <a className="text-link" href="/pricing">{copy.home.viewPricing} <span aria-hidden="true">↗</span></a>
@@ -52,6 +55,23 @@ export function HomeContent() {
           </div>
         ))}
         <p className="proof-disclosure" id="proof-disclosure">{copy.shared.illustrative}</p>
+      </section>
+
+      <section
+        aria-describedby="home-infrastructure-disclosure"
+        aria-label={company.home.heading}
+        className="home-infrastructure-brief"
+      >
+        <p className="home-infrastructure-heading">{company.home.heading}</p>
+        <div className="home-infrastructure-fact">
+          <strong aria-describedby="home-infrastructure-disclosure">
+            {company.capacity.initialMw}
+          </strong>
+          <p id="home-infrastructure-disclosure">
+            {company.home.context}
+          </p>
+        </div>
+        <a href="/company">{company.home.linkLabel}</a>
       </section>
 
       <section aria-labelledby="featured-models-title" className="home-section model-marketplace">

@@ -35,11 +35,14 @@ test("server-renders a complete English marketplace shell with social metadata",
     assert.match(html, /href="\/console"/, `${pathname} links to console`);
     assert.match(html, /lang="en"/, `${pathname} defaults to English`);
     assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
-    assert.match(html, /Power Champion — Open Model Power Layer/);
+    assert.match(html, /Power Champion — Token access launching soon/);
     assert.match(
       html,
-      /One prepaid balance for leading open AI models through a clean, OpenAI-compatible API\./,
+      /Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available\./,
     );
+    assert.match(html, /property="og:title" content="Token access launching soon\."/);
+    assert.match(html, /name="twitter:title" content="Token access launching soon\."/);
+    assert.doesNotMatch(html, /Explore leading open AI models with one API and one prepaid balance\./);
     assert.match(html, /property="og:image" content="http:\/\/localhost\/og\.png"/);
     assert.match(html, /name="twitter:card" content="summary_large_image"/);
   }
@@ -52,6 +55,21 @@ test("server-renders a complete English marketplace shell with social metadata",
   );
 });
 
+test("server-renders the cited company evidence brief", async () => {
+  const response = await render("/company");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<title>Company \| Power Champion<\/title>/);
+  assert.match(html, /Approximately 3\.1 MW/);
+  assert.match(html, /Approximately US\$27\.9M over the initial contract term/);
+  assert.match(html, /Up to 12 MW if expansion rights are exercised/);
+  assert.match(html, /Approximately US\$100M potential total contract value/);
+  assert.match(html, /Publication date/);
+  assert.match(html, /Registration date shown by directory/);
+  assert.match(html, /July 9, 2026/);
+  assert.match(html, /https:\/\/www\.sec\.gov\/Archives\/edgar\/data\/1563568\/000143774926023245\/ex_986209\.htm/);
+});
+
 test("server-renders the finished marketplace homepage", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
@@ -60,6 +78,8 @@ test("server-renders the finished marketplace homepage", async () => {
   assert.match(html, /Every model\./i);
   assert.match(html, /One power core\./i);
   assert.match(html, /Model marketplace/i);
+  assert.match(html, /Token access launching soon/i);
+  assert.match(html, /Counterparty-reported expected contracted hosting capacity; not live or completed deployment\./i);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
@@ -72,12 +92,14 @@ test("server-renders the model marketplace", async () => {
   assert.match(html, /Qwen/i);
 });
 
-test("server-renders demo pricing with a clear disclaimer", async () => {
+test("server-renders non-binding launch access without payment fields", async () => {
   const response = await render("/pricing");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Predictable spend/i);
-  assert.match(html, /Showcase prices only/i);
+  assert.match(html, /Indicative packages. No commitment./i);
+  assert.match(html, /Join launch access/i);
+  assert.match(html, /do not create orders, charges, or reservations/i);
+  assert.doesNotMatch(html, /<input[^>]+(?:card|payment|billing)/i);
   assert.match(html, /Estimate usage/i);
   assert.match(html, /Model rates/i);
 });
