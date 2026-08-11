@@ -1,0 +1,31 @@
+services:
+  powerchampion-marketplace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: powerchampion-marketplace:latest
+    container_name: powerchampion-marketplace
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+    networks:
+      - dokploy-network
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dokploy-network
+      traefik.http.routers.powerchampion-marketplace-web.entrypoints: web
+      traefik.http.routers.powerchampion-marketplace-web.rule: Host(`powerchampion.ai`)
+      traefik.http.routers.powerchampion-marketplace-web.middlewares: redirect-to-https@file
+      traefik.http.routers.powerchampion-marketplace-web.service: powerchampion-marketplace-web
+      traefik.http.services.powerchampion-marketplace-web.loadbalancer.server.port: "3000"
+      traefik.http.routers.powerchampion-marketplace-websecure.entrypoints: websecure
+      traefik.http.routers.powerchampion-marketplace-websecure.rule: Host(`powerchampion.ai`)
+      traefik.http.routers.powerchampion-marketplace-websecure.tls.certresolver: letsencrypt
+      traefik.http.routers.powerchampion-marketplace-websecure.service: powerchampion-marketplace-websecure
+      traefik.http.services.powerchampion-marketplace-websecure.loadbalancer.server.port: "3000"
+
+networks:
+  dokploy-network:
+    external: true
