@@ -47,6 +47,15 @@ describe("Power Champion homepage", () => {
     expect(within(packages).queryByRole("button", { name: /^(buy|pay|checkout)/i })).not.toBeInTheDocument();
   });
 
+  it("states on Home that token access is launching soon in both locales", async () => {
+    const user = userEvent.setup();
+    renderInShell(<HomeContent />);
+
+    expect(screen.getByText("Token access launching soon")).toBeVisible();
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    expect(screen.getByText("Token 存取即將推出")).toBeVisible();
+  });
+
   it("keeps section headings at least 48px in every responsive rule", async () => {
     const css = await readFile(
       resolve(process.cwd(), "app/globals.css"),
@@ -79,7 +88,9 @@ describe("Power Champion homepage", () => {
     expect(
       screen.getByRole("region", { name: "交易對手揭露的基礎設施脈絡" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("3.1 MW")).toBeVisible();
+    expect(screen.getByText("約 3.1 MW")).toBeVisible();
+    expect(screen.getByText("交易對手報告的預期合約託管容量；並非即時或已完成部署的容量。"))
+      .toBeVisible();
     expect(screen.getByRole("link", { name: "查看公司脈絡" })).toHaveAttribute("href", "/company");
     expect(screen.getByText("啟用中的模型路由")).toBeInTheDocument();
     expect(screen.getByText("可用上下文")).toBeInTheDocument();
@@ -123,11 +134,13 @@ describe("Power Champion homepage", () => {
     });
     const disclosureId = brief.getAttribute("aria-describedby");
 
-    expect(screen.getByText("3.1 MW")).toBeVisible();
+    expect(screen.getByText("Approximately 3.1 MW")).toBeVisible();
+    expect(within(brief).getByText(
+      "Counterparty-reported expected contracted hosting capacity; not live or completed deployment.",
+    )).toHaveAttribute("id", disclosureId);
     expect(within(brief).getByRole("link", { name: "View company context" }))
       .toHaveAttribute("href", "/company");
     expect(disclosureId).toBeTruthy();
-    expect(within(brief).getByText(/Counterparty-reported/)).toHaveAttribute("id", disclosureId);
   });
 
   it("keeps illustrative starting input rates visible for all four featured models", () => {

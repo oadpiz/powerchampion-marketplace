@@ -3,27 +3,8 @@
 import {
   COMPANY_CONTENT,
   COMPANY_SOURCES,
-  type CompanyLocale,
 } from "../lib/company";
 import { useLocale } from "./locale-provider";
-
-type CompanySourceId = (typeof COMPANY_SOURCES)[number]["id"];
-
-const CAPACITY_FACT_LABELS = {
-  en: { deposit: "Counterparty-reported initial deposit context" },
-  zh: { deposit: "交易對手報告的初始訂金脈絡" },
-} satisfies Record<CompanyLocale, { deposit: string }>;
-
-const SOURCE_KIND_COPY = {
-  en: {
-    "azio-sec-exhibit": "Counterparty SEC-filed disclosure",
-    "bvi-directory": "Third-party public directory",
-  },
-  zh: {
-    "azio-sec-exhibit": "交易對手向 SEC 提交的揭露",
-    "bvi-directory": "第三方公開公司目錄",
-  },
-} satisfies Record<CompanyLocale, Record<CompanySourceId, string>>;
 
 export function CompanyContent() {
   const { locale } = useLocale();
@@ -49,7 +30,7 @@ export function CompanyContent() {
           <li>
             <article>
               <h3>{content.announcement.heading}</h3>
-              <time dateTime="2026-07-10">{content.announcement.date}</time>
+              <time dateTime={content.announcement.dateTime}>{content.announcement.date}</time>
               <p>{content.announcement.summary}</p>
             </article>
           </li>
@@ -70,7 +51,7 @@ export function CompanyContent() {
             <dd>{content.capacity.potentialValue}</dd>
           </div>
           <div>
-            <dt>{CAPACITY_FACT_LABELS[locale].deposit}</dt>
+            <dt>{content.capacity.depositLabel}</dt>
             <dd className="capacity-context-value">{content.capacity.depositContext}</dd>
           </div>
         </dl>
@@ -78,14 +59,27 @@ export function CompanyContent() {
       </section>
 
       <section aria-labelledby="sources-title" className="source-disclosures">
-        <h2 id="sources-title">{content.sourcesTitle}</h2>
+        <h2 id="sources-title">{content.sources.title}</h2>
         <ul>
-          {COMPANY_SOURCES.map((source) => (
-            <li key={source.id}>
-              <a href={source.href} rel="noreferrer" target="_blank">{source.label}</a>
-              <span>{SOURCE_KIND_COPY[locale][source.id]}</span>
-            </li>
-          ))}
+          {COMPANY_SOURCES.map((source) => {
+            const sourceCopy = source.copy[locale];
+
+            return (
+              <li aria-label={sourceCopy.label} key={source.id}>
+                <a href={source.href} rel="noreferrer" target="_blank">{sourceCopy.label}</a>
+                <dl className="source-metadata">
+                  <div>
+                    <dt>{content.sources.typeLabel}</dt>
+                    <dd>{sourceCopy.kind}</dd>
+                  </div>
+                  <div>
+                    <dt>{sourceCopy.dateLabel}</dt>
+                    <dd><time dateTime={source.dateTime}>{sourceCopy.date}</time></dd>
+                  </div>
+                </dl>
+              </li>
+            );
+          })}
         </ul>
         <p>{content.disclosure}</p>
       </section>

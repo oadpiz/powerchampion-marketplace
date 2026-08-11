@@ -33,16 +33,18 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase: metadataOrigin(host),
-    title: "Power Champion — Open Model Power Layer",
+    title: "Power Champion — Token access launching soon",
     description:
-      "One prepaid balance for leading open AI models through a clean, OpenAI-compatible API.",
+      "Explore indicative token-access plans for leading open AI models. Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available.",
     openGraph: {
-      title: "Every model. One power core.",
-      description: "Explore leading open AI models with one API and one prepaid balance.",
+      title: "Token access launching soon.",
+      description: "Explore indicative open-model access and illustrative UI data. No funded balance or live API is currently available.",
       images: [{ url: "/og.png", width: 1200, height: 630 }],
     },
     twitter: {
       card: "summary_large_image",
+      title: "Token access launching soon.",
+      description: "Explore indicative open-model access and illustrative UI data. No funded balance or live API is currently available.",
       images: ["/og.png"],
     },
     icons: {

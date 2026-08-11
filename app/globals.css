@@ -114,6 +114,7 @@ button { color: inherit; }
 }
 .hero h1 span { display: block; color: var(--cyan); }
 .hero-lead { max-width: 560px; margin: 2rem 0 0; color: #b8bbc5; font-size: 1.08rem; line-height: 1.65; }
+.hero-launch-status { display: inline-flex; margin: 1.25rem 0 0; border: 1px solid var(--cyan); padding: .45rem .7rem; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8rem; letter-spacing: .06em; }
 .hero-actions { display: flex; align-items: center; gap: 1.75rem; margin-top: 2.25rem; }
 .text-link { color: var(--ink); font-size: .92rem; font-weight: 620; }
 .text-link:hover { color: var(--cyan); }
@@ -428,7 +429,7 @@ button { color: inherit; }
 .company-timeline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; margin: 2rem 0 0; padding: 0; list-style: none; }
 .company-timeline li { border: 1px solid var(--line); padding: 1.5rem; }
 .company-timeline h3 { margin: 0; font-size: 1.25rem; font-weight: 560; letter-spacing: -.025em; }
-.company-timeline time, .source-disclosures li span { display: block; margin-top: .8rem; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.5; }
+.company-timeline time { display: block; margin-top: .8rem; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.5; }
 .company-timeline p, .source-disclosures > p { margin: 1rem 0 0; color: var(--muted); line-height: 1.65; }
 .capacity-sequence { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 2rem 0 0; border-block: 1px solid var(--line); }
 .capacity-sequence > div { min-width: 0; padding: 1.5rem; }
@@ -442,6 +443,9 @@ button { color: inherit; }
 .source-disclosures li { border-bottom: 1px solid var(--line); padding-bottom: 1rem; }
 .source-disclosures a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--cyan); text-underline-offset: .25rem; }
 .source-disclosures a:hover { color: var(--cyan); }
+.source-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1.5rem; margin: .8rem 0 0; }
+.source-metadata dt { color: var(--muted); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
+.source-metadata dd { margin: .25rem 0 0; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.5; }
 
 @media (max-width: 900px) {
   :root { --section-space: 76px; }

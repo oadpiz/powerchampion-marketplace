@@ -8,6 +8,7 @@ import { useLocale } from "./locale-provider";
 
 export function HomeContent() {
   const { copy, locale } = useLocale();
+  const company = COMPANY_CONTENT[locale];
   const featuredModels = MODEL_CATALOG.slice(0, 4);
   const proofPoints = [
     ["28", copy.home.activeRoutes],
@@ -38,6 +39,7 @@ export function HomeContent() {
             <span>{copy.home.accent}</span>
           </h1>
           <p className="hero-lead">{copy.home.lead}</p>
+          <p className="hero-launch-status" role="status">{copy.home.launchStatus}</p>
           <div className="hero-actions">
             <a className="primary-link" href="/models">{copy.home.explore}</a>
             <a className="text-link" href="/pricing">{copy.home.viewPricing} <span aria-hidden="true">↗</span></a>
@@ -57,19 +59,19 @@ export function HomeContent() {
 
       <section
         aria-describedby="home-infrastructure-disclosure"
-        aria-label={copy.home.infrastructureProof}
+        aria-label={company.home.heading}
         className="home-infrastructure-brief"
       >
-        <p className="home-infrastructure-heading">{copy.home.infrastructureProof}</p>
+        <p className="home-infrastructure-heading">{company.home.heading}</p>
         <div className="home-infrastructure-fact">
           <strong aria-describedby="home-infrastructure-disclosure">
-            {COMPANY_CONTENT[locale].capacity.initialMw}
+            {company.capacity.initialMw}
           </strong>
           <p id="home-infrastructure-disclosure">
-            {COMPANY_CONTENT[locale].capacity.initialLabel}
+            {company.home.context}
           </p>
         </div>
-        <a href="/company">{copy.home.companyLink}</a>
+        <a href="/company">{company.home.linkLabel}</a>
       </section>
 
       <section aria-labelledby="featured-models-title" className="home-section model-marketplace">

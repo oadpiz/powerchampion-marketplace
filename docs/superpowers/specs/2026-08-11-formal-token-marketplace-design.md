@@ -62,14 +62,17 @@ The Company page contains four bounded sections:
    not call the directory an official registry or use the listing as a proxy for
    regulatory approval, ownership, office address, leadership, or good standing.
 2. **Infrastructure announcement** — a timeline card for the July 2026 AI
-   infrastructure agreement cited in Azio AI Holdings' SEC-filed Exhibit 99.2.
+   infrastructure agreement announced July 9, 2026 in Azio AI Holdings'
+   SEC-filed Exhibit 99.1.
    It identifies the announcement as a counterparty disclosure.
-3. **Capacity context** — the announced initial capacity reservation of roughly
-   US$27.9 million, the approximately 3.1 MW initial deployment, and the stated
-   expansion right up to 12 MW / potential value up to US$100 million. Every
-   expandable amount is visually and textually marked `Potential; subject to
-   conditions and not guaranteed`.
-4. **Sources and disclosures** — direct source links, source date, and a short
+3. **Capacity context** — the counterparty's expected approximately US$27.9
+   million in capacity reservation charges over the initial contract term, its
+   expected approximately 3.1 MW of contracted hosting capacity, and expansion
+   rights up to 12 MW / an approximately US$100 million potential total contract
+   value if exercised in full. The presentation retains the counterparty's
+   approximation, initial-term, potential, and no-assurance qualifications.
+4. **Sources and disclosures** — direct source links, semantically labelled
+   publication or directory-reported registration dates, and a short
    disclosure explaining that the information is public third-party reporting,
    not an offer of securities, financial advice, performance guidance, or a
    promise of capacity or service.
