@@ -6,7 +6,7 @@ import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
 describe("SiteShell", () => {
-  it("renders all six destinations and changes locale", async () => {
+  it("renders all seven destinations and changes locale", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -32,6 +32,10 @@ describe("SiteShell", () => {
     expect(within(primaryNavigation).getByRole("link", { name: "Company" })).toHaveAttribute(
       "href",
       "/company",
+    );
+    expect(within(primaryNavigation).getByRole("link", { name: "Contact" })).toHaveAttribute(
+      "href",
+      "/contact",
     );
     expect(within(primaryNavigation).getByRole("link", { name: "Console" })).toHaveAttribute(
       "href",
@@ -65,6 +69,26 @@ describe("SiteShell", () => {
       within(screen.getByRole("navigation", { name: "Mobile navigation" }))
         .getByRole("link", { name: "Company" }),
     ).toHaveAttribute("href", "/company");
+  });
+
+  it("uses the same Contact destination in primary and mobile navigation", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(
+      within(screen.getByRole("navigation", { name: "Primary navigation" }))
+        .getByRole("link", { name: "Contact" }),
+    ).toHaveAttribute("href", "/contact");
+
+    await user.click(screen.getByRole("button", { name: "Open menu" }));
+    expect(
+      within(screen.getByRole("navigation", { name: "Mobile navigation" }))
+        .getByRole("link", { name: "Contact" }),
+    ).toHaveAttribute("href", "/contact");
   });
 
   it("synchronizes document language transiently", async () => {

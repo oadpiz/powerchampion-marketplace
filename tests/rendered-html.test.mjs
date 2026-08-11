@@ -23,7 +23,7 @@ async function render(pathname, host = "localhost") {
 }
 
 test("server-renders a complete English marketplace shell with social metadata", async () => {
-  for (const pathname of ["/", "/models", "/pricing", "/docs", "/console"]) {
+  for (const pathname of ["/", "/models", "/pricing", "/docs", "/console", "/contact"]) {
     const response = await render(pathname);
     assert.equal(response.status, 200, `${pathname} returns 200`);
 
@@ -32,14 +32,20 @@ test("server-renders a complete English marketplace shell with social metadata",
     assert.match(html, /href="\/models"/, `${pathname} links to models`);
     assert.match(html, /href="\/pricing"/, `${pathname} links to pricing`);
     assert.match(html, /href="\/docs"/, `${pathname} links to docs`);
+    assert.match(html, /href="\/contact"/, `${pathname} links to contact`);
     assert.match(html, /href="\/console"/, `${pathname} links to console`);
     assert.match(html, /lang="en"/, `${pathname} defaults to English`);
     assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
-    assert.match(html, /Power Champion — Token access launching soon/);
-    assert.match(
-      html,
-      /Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available\./,
-    );
+    if (pathname === "/contact") {
+      assert.match(html, /<title>Contact \| Power Champion<\/title>/);
+      assert.match(html, /Explore launch-only infrastructure and partnership enquiries that stay local to your browser\./);
+    } else {
+      assert.match(html, /Power Champion — Token access launching soon/);
+      assert.match(
+        html,
+        /Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available\./,
+      );
+    }
     assert.match(html, /property="og:title" content="Token access launching soon\."/);
     assert.match(html, /name="twitter:title" content="Token access launching soon\."/);
     assert.doesNotMatch(html, /Explore leading open AI models with one API and one prepaid balance\./);
@@ -53,6 +59,18 @@ test("server-renders a complete English marketplace shell with social metadata",
     publicHtml,
     /property="og:image" content="https:\/\/marketplace\.example\/og\.png"/,
   );
+});
+
+test("server-renders local-only contact without payment or personal-data fields", async () => {
+  const response = await render("/contact");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+
+  assert.match(html, /<title>Contact \| Power Champion<\/title>/);
+  assert.match(html, /Enterprise enquiry/i);
+  assert.match(html, /This enquiry is local only\. No information is transmitted, persisted, or used to reserve capacity\./i);
+  assert.match(html, /href="\/company"/);
+  assert.doesNotMatch(html, /<(?:input|textarea)[^>]+(?:card|bank|email|password|payment|billing)/i);
 });
 
 test("server-renders the cited company evidence brief", async () => {
@@ -104,7 +122,7 @@ test("server-renders non-binding launch access without payment fields", async ()
   assert.match(html, /Model rates/i);
 });
 
-test("server-renders docs and the demo console", async () => {
+test("server-renders docs and the local illustrative console preview", async () => {
   const docs = await render("/docs");
   const docsHtml = await docs.text();
   assert.equal(docs.status, 200);
@@ -114,7 +132,9 @@ test("server-renders docs and the demo console", async () => {
   const consoleResponse = await render("/console");
   const consoleHtml = await consoleResponse.text();
   assert.equal(consoleResponse.status, 200);
-  assert.match(consoleHtml, /Demo console/i);
+  assert.match(consoleHtml, /Launch preview — illustrative only/i);
+  assert.match(consoleHtml, /Local display only\. No account, funded balance, usable API key, live API, or live usage\./i);
+  assert.match(consoleHtml, /Join launch access/i);
   assert.match(consoleHtml, /\$184\.20/);
   assert.doesNotMatch(consoleHtml, /sk-[A-Za-z0-9]{12}/);
 });
