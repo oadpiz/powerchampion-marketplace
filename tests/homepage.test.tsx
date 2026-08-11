@@ -18,6 +18,14 @@ function renderInShell(content: ReactNode) {
 }
 
 describe("Power Champion homepage", () => {
+  it("labels the package CTAs as launch access", () => {
+    renderInShell(<HomeContent />);
+
+    const packages = screen.getByRole("region", { name: "Explore indicative launch packages." });
+    expect(within(packages).getAllByRole("button", { name: "Join launch access" })).toHaveLength(3);
+    expect(within(packages).queryByRole("button", { name: /^(buy|pay|checkout)/i })).not.toBeInTheDocument();
+  });
+
   it("keeps section headings at least 48px in every responsive rule", async () => {
     const css = await readFile(
       resolve(process.cwd(), "app/globals.css"),
@@ -60,9 +68,9 @@ describe("Power Champion homepage", () => {
     expect(screen.getByText("均衡")).toBeInTheDocument();
     expect(screen.getAllByText("展示起始輸入費率")).toHaveLength(4);
     expect(screen.getByText("$0.18 每百萬輸入 Token")).toBeVisible();
-    expect(screen.getByText("$10 帳戶額度")).toBeInTheDocument();
-    expect(screen.getByText("純額隨用隨付額度")).toBeInTheDocument();
-    expect(screen.getByText("包含 5% 加碼額度")).toBeInTheDocument();
+    expect(screen.getByText("$10 指示性帳戶額度")).toBeInTheDocument();
+    expect(screen.getByText("指示性啟動方案")).toBeInTheDocument();
+    expect(screen.getByText("包含 5% 指示性啟動加碼")).toBeInTheDocument();
     expect(
       screen.getByRole("img", { name: /七日展示用量：18\.7M 詞元；展示支出 US\$13\.46。每日趨勢/ }),
     ).toBeInTheDocument();

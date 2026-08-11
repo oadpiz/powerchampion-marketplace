@@ -31,8 +31,8 @@ export default function PricingPage() {
             <article className="credit-column" key={pack.id}>
               <p className="credit-pack-name">{packLabels[pack.id]}</p>
               <p className="credit-price"><span>$</span>{pack.price}</p>
-              <p className="credit-value">${pack.credit.toFixed(2)} {locale === "en" ? "account credit" : "帳戶額度"}</p>
-              <p className="credit-bonus">{pack.bonusPercent > 0 ? `${pack.bonusPercent}% ${locale === "en" ? "showcase bonus" : "展示加碼"}` : locale === "en" ? "Straightforward account credit" : "直接帳戶額度"}</p>
+              <p className="credit-value">${pack.credit.toFixed(2)} {locale === "en" ? "indicative account credit" : "指示性帳戶額度"}</p>
+              <p className="credit-bonus">{pack.bonusPercent > 0 ? `${pack.bonusPercent}% ${locale === "en" ? "indicative launch bonus" : "指示性啟動加碼"}` : locale === "en" ? "Indicative account credit" : "指示性帳戶額度"}</p>
               <button className="credit-button" onClick={() => openCheckout(pack.id)} type="button">{copy.nav.getTokens}</button>
             </article>
           ))}
@@ -62,7 +62,7 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <p className="pricing-credit-note">{locale === "en" ? "Account credit is currency-denominated. The token volume it covers varies by the selected model’s input and output rates." : "帳戶額度以貨幣計價；可涵蓋的 Token 數量會依選擇模型的輸入與輸出費率而不同。"}</p>
+      <p className="pricing-credit-note">{locale === "en" ? "Package values are illustrative only. A launch-access request is local to this demonstration and does not create credit, capacity, or a reservation." : "方案數值僅供展示。啟動存取請求只會儲存在此展示中，不會建立額度、容量或保留名額。"}</p>
     </main>
   );
 }

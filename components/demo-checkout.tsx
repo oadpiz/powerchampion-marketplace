@@ -147,7 +147,7 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
               >
                 <span>{packLabels[pack.id]}</span>
                 <strong>${pack.price}</strong>
-                <small>${pack.credit} {locale === "en" ? "account credit" : "帳戶額度"}</small>
+                <small>${pack.credit} {locale === "en" ? "indicative account credit" : "指示性帳戶額度"}</small>
               </button>
             ))}
           </div>
@@ -156,19 +156,19 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
           <div className="checkout-review">
             <p>{packLabels[selectedPack.id]}</p>
             <dl>
-              <div><dt>{locale === "en" ? "Showcase price" : "展示價格"}</dt><dd>${selectedPack.price.toFixed(2)}</dd></div>
-              <div><dt>{locale === "en" ? "Account credit" : "帳戶額度"}</dt><dd>${selectedPack.credit.toFixed(2)}</dd></div>
-              <div><dt>{locale === "en" ? "Showcase bonus" : "展示加碼"}</dt><dd>{selectedPack.bonusPercent}%</dd></div>
+              <div><dt>{locale === "en" ? "Indicative package" : "指示性方案"}</dt><dd>${selectedPack.price.toFixed(2)}</dd></div>
+              <div><dt>{locale === "en" ? "Indicative account credit" : "指示性帳戶額度"}</dt><dd>${selectedPack.credit.toFixed(2)}</dd></div>
+              <div><dt>{locale === "en" ? "Indicative launch bonus" : "指示性啟動加碼"}</dt><dd>{selectedPack.bonusPercent}%</dd></div>
             </dl>
           </div>
         )}
         {step === "complete" && (
           <div className="checkout-complete" role="status">
             <h3>{copy.checkout.complete}</h3>
-            <p>{locale === "en" ? "Your selected showcase credit is ready to review again whenever you reopen this demo." : "您選擇的展示額度已準備就緒；重新開啟此展示即可再次查看。"}</p>
+            <p>{copy.checkout.requestComplete}</p>
           </div>
         )}
-        <p className="checkout-disclaimer" id="checkout-disclaimer">{copy.checkout.demoOnly}</p>
+        <p className="checkout-disclaimer" id="checkout-disclaimer">{copy.checkout.launchNotice}</p>
         <div className="checkout-actions">
           {step === "review" && <button className="checkout-back" onClick={() => setStep("choose")} type="button">{copy.checkout.back}</button>}
           {step !== "complete" && <button className="token-button" onClick={continueCheckout} ref={nextActionRef} type="button">{copy.checkout.next}</button>}

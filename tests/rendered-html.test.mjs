@@ -81,12 +81,14 @@ test("server-renders the model marketplace", async () => {
   assert.match(html, /Qwen/i);
 });
 
-test("server-renders demo pricing with a clear disclaimer", async () => {
+test("server-renders non-binding launch access without payment fields", async () => {
   const response = await render("/pricing");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Predictable spend/i);
-  assert.match(html, /Showcase prices only/i);
+  assert.match(html, /Indicative packages. No commitment./i);
+  assert.match(html, /Join launch access/i);
+  assert.match(html, /do not create orders, charges, or reservations/i);
+  assert.doesNotMatch(html, /<input[^>]+(?:card|payment|billing)/i);
   assert.match(html, /Estimate usage/i);
   assert.match(html, /Model rates/i);
 });
