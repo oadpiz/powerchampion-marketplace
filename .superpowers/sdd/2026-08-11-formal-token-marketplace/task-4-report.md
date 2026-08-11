@@ -41,3 +41,29 @@ Complete.
 ## Concerns
 
 `npm run build` emits Node's `DEP0040` `punycode` deprecation warning from the build toolchain, but the build and all tests pass.
+
+## Fix Round 1
+
+### File changes
+
+- `components/console-view.tsx`: changed the non-compact console action from the separate credit label to `copy.nav.getTokens`; its existing `openCheckout()` call is unchanged.
+- `lib/content.ts`: removed the duplicate `console.addCredit` field and its English and Traditional Chinese values, making the shared navigation CTA the single source of launch-access wording.
+- `tests/homepage.test.tsx`: added English and Traditional Chinese coverage that the console action uses launch-access wording, opens the existing non-binding dialog, and exposes the payment-free notice.
+- `.superpowers/sdd/2026-08-11-formal-token-marketplace/task-4-report.md`: recorded this fix round.
+
+### Tests and output
+
+- Red: `npm run test:unit -- tests/homepage.test.tsx` failed as expected because the console action still said `Add credit`.
+- Green: `npm run test:unit -- tests/homepage.test.tsx` passed — 1 file, 10 tests.
+- `npm run lint` passed.
+- `git diff --check` passed with no whitespace errors.
+
+### Commit
+
+- `a335261 fix: align console launch access CTA`
+
+### Self-review
+
+- The console action now reuses the exact localized primary CTA instead of maintaining a separate credit-oriented label.
+- It still opens the established launch-access dialog; no event, selection, focus, isolation, or payment behavior changed.
+- The dialog notice remains explicit that the request creates neither an order nor a charge.
