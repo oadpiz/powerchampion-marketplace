@@ -1,7 +1,11 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
 import { CompanyContent } from "../components/company-content";
 import { LocaleProvider } from "../components/locale-provider";
+import { SiteShell } from "../components/site-shell";
 import { COMPANY_CONTENT, COMPANY_SOURCES } from "../lib/company";
 import { COPY } from "../lib/content";
 
@@ -21,6 +25,47 @@ describe("company data", () => {
       .toBeVisible();
     expect(screen.getByRole("link", { name: /Azio AI Holdings, Exhibit 99.2/i }))
       .toHaveAttribute("href", expect.stringContaining("sec.gov"));
+  });
+
+  it("renders a third counterparty-reported deposit fact in the capacity sequence", () => {
+    render(
+      <LocaleProvider>
+        <CompanyContent />
+      </LocaleProvider>,
+    );
+
+    const capacity = screen.getByRole("region", { name: "Capacity context" });
+    expect(within(capacity).getAllByRole("term")).toHaveLength(3);
+    expect(within(capacity).getByText("Counterparty-reported initial deposit context"))
+      .toBeVisible();
+    expect(within(capacity).getByText(/this is not a statement that Power Champion received revenue/i))
+      .toBeVisible();
+  });
+
+  it("localizes explanatory source kinds after switching to Traditional Chinese", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell>
+          <CompanyContent />
+        </SiteShell>
+      </LocaleProvider>,
+    );
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+
+    expect(screen.getByRole("link", { name: "Azio AI Holdings, Exhibit 99.2" }))
+      .toBeVisible();
+    expect(screen.getByText("交易對手向 SEC 提交的揭露")).toBeVisible();
+    expect(screen.getByText("第三方公開公司目錄")).toBeVisible();
+    expect(screen.queryByText("Counterparty SEC-filed disclosure")).not.toBeInTheDocument();
+  });
+
+  it("keeps the capacity reading sequence responsive at the required 760px breakpoint", async () => {
+    const css = await readFile(resolve(process.cwd(), "app/globals.css"), "utf8");
+
+    expect(css).toMatch(/\.capacity-sequence\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+    expect(css).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.company-timeline, \.capacity-sequence \{ grid-template-columns: 1fr; \}/);
   });
 
   it("stores the bounded public record with sourceable qualifications", () => {

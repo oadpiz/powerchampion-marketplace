@@ -1,7 +1,29 @@
 "use client";
 
-import { COMPANY_CONTENT, COMPANY_SOURCES } from "../lib/company";
+import {
+  COMPANY_CONTENT,
+  COMPANY_SOURCES,
+  type CompanyLocale,
+} from "../lib/company";
 import { useLocale } from "./locale-provider";
+
+type CompanySourceId = (typeof COMPANY_SOURCES)[number]["id"];
+
+const CAPACITY_FACT_LABELS = {
+  en: { deposit: "Counterparty-reported initial deposit context" },
+  zh: { deposit: "交易對手報告的初始訂金脈絡" },
+} satisfies Record<CompanyLocale, { deposit: string }>;
+
+const SOURCE_KIND_COPY = {
+  en: {
+    "azio-sec-exhibit": "Counterparty SEC-filed disclosure",
+    "bvi-directory": "Third-party public directory",
+  },
+  zh: {
+    "azio-sec-exhibit": "交易對手向 SEC 提交的揭露",
+    "bvi-directory": "第三方公開公司目錄",
+  },
+} satisfies Record<CompanyLocale, Record<CompanySourceId, string>>;
 
 export function CompanyContent() {
   const { locale } = useLocale();
@@ -47,8 +69,11 @@ export function CompanyContent() {
             <dd>{content.capacity.expansion}</dd>
             <dd>{content.capacity.potentialValue}</dd>
           </div>
+          <div>
+            <dt>{CAPACITY_FACT_LABELS[locale].deposit}</dt>
+            <dd className="capacity-context-value">{content.capacity.depositContext}</dd>
+          </div>
         </dl>
-        <p className="capacity-deposit-context">{content.capacity.depositContext}</p>
         <p className="capacity-qualification">{content.capacity.qualification}</p>
       </section>
 
@@ -58,7 +83,7 @@ export function CompanyContent() {
           {COMPANY_SOURCES.map((source) => (
             <li key={source.id}>
               <a href={source.href} rel="noreferrer" target="_blank">{source.label}</a>
-              <span>{source.kind}</span>
+              <span>{SOURCE_KIND_COPY[locale][source.id]}</span>
             </li>
           ))}
         </ul>

@@ -400,7 +400,7 @@ button { color: inherit; }
 .capacity-sequence dt { color: var(--muted); font-size: .9rem; line-height: 1.55; }
 .capacity-sequence dd { margin: .85rem 0 0; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: clamp(1.5rem, 3vw, 2.25rem); letter-spacing: -.05em; line-height: 1; }
 .capacity-sequence dd + dd { color: var(--ink); font-size: 1rem; letter-spacing: -.02em; }
-.capacity-deposit-context { margin: 1.25rem 0 0; color: var(--muted); line-height: 1.65; }
+.capacity-sequence .capacity-context-value { color: var(--ink); font-family: var(--font-geist-sans), Arial, sans-serif; font-size: .95rem; letter-spacing: normal; line-height: 1.65; }
 .capacity-qualification { margin: 1.25rem 0 0; border-left: 3px solid var(--cyan); padding: .9rem 1rem; background: rgba(97, 220, 233, .08); line-height: 1.55; }
 .source-disclosures ul { display: grid; gap: 1rem; margin: 2rem 0 0; padding: 0; list-style: none; }
 .source-disclosures li { border-bottom: 1px solid var(--line); padding-bottom: 1rem; }
@@ -442,6 +442,18 @@ button { color: inherit; }
   .marketplace-details { grid-column: 2 / -1; margin: .2rem 0 0; padding-top: 1rem; }
   .marketplace-mobile-tagline { display: block; margin: 0 0 1rem; color: var(--muted); font-size: .875rem; line-height: 1.5; }
   .marketplace-details > dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem .75rem; }
+}
+
+@media (max-width: 760px) {
+  .company-hero { margin-bottom: 2.7rem; }
+  .company-hero h1, .company-record h2, .capacity-brief h2, .source-disclosures h2 { font-size: clamp(2.35rem, 12vw, 3.5rem); }
+  .company-record, .capacity-brief, .source-disclosures { padding-top: 2rem; }
+  .capacity-brief, .source-disclosures { margin-top: 3rem; }
+  .company-timeline, .capacity-sequence { grid-template-columns: 1fr; }
+  .company-timeline { gap: .75rem; }
+  .company-timeline li { padding: 1.25rem; }
+  .capacity-sequence > div { padding-inline: 0; }
+  .capacity-sequence > div + div { border-top: 1px solid var(--line); border-left: 0; }
 }
 
 @media (max-width: 720px) {
@@ -499,15 +511,6 @@ button { color: inherit; }
   .docs-values > div { padding-inline: 0; }
   .code-samples { margin-top: 3rem; }
   .code-sample-panel pre { padding: 1rem; }
-  .company-hero { margin-bottom: 2.7rem; }
-  .company-hero h1, .company-record h2, .capacity-brief h2, .source-disclosures h2 { font-size: clamp(2.35rem, 12vw, 3.5rem); }
-  .company-record, .capacity-brief, .source-disclosures { padding-top: 2rem; }
-  .capacity-brief, .source-disclosures { margin-top: 3rem; }
-  .company-timeline, .capacity-sequence { grid-template-columns: 1fr; }
-  .company-timeline { gap: .75rem; }
-  .company-timeline li { padding: 1.25rem; }
-  .capacity-sequence > div { padding-inline: 0; }
-  .capacity-sequence > div + div { border-top: 1px solid var(--line); border-left: 0; }
   .pricing-intro { margin-bottom: 2.7rem; }
   .pricing-intro h1, .pricing-block-heading h2 { font-size: clamp(2.55rem, 13vw, 3.5rem); }
   .calculator-fields { grid-template-columns: 1fr; }
