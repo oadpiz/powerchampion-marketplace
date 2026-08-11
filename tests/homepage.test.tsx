@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { ConsoleView } from "../components/console-view";
+import { DemoCheckout } from "../components/demo-checkout";
 import { HomeContent } from "../components/home-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
@@ -18,6 +19,26 @@ function renderInShell(content: ReactNode) {
 }
 
 describe("Power Champion homepage", () => {
+  it("uses launch access for the console action in both locales", async () => {
+    const user = userEvent.setup();
+    renderInShell(<><ConsoleView /><DemoCheckout /></>);
+
+    const englishConsole = screen.getByText("Available balance").closest(".console-view");
+    expect(englishConsole).toBeInstanceOf(HTMLElement);
+    await user.click(within(englishConsole!).getByRole("button", { name: "Join launch access" }));
+    expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
+    expect(screen.getByText("Payments are not enabled yet. This request does not create an order or charge your account.")).toBeVisible();
+
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+
+    const chineseConsole = screen.getByText("可用餘額").closest(".console-view");
+    expect(chineseConsole).toBeInstanceOf(HTMLElement);
+    expect(within(chineseConsole!).queryByRole("button", { name: /增加額度/i })).not.toBeInTheDocument();
+    await user.click(within(chineseConsole!).getByRole("button", { name: "加入啟動存取" }));
+    expect(screen.getByRole("dialog", { name: "申請啟動存取" })).toBeInTheDocument();
+  });
+
   it("labels the package CTAs as launch access", () => {
     renderInShell(<HomeContent />);
 

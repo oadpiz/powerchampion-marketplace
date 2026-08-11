@@ -70,7 +70,7 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
         <div className="balance-block">
           <Heading>{copy.console.balance}</Heading>
           <strong>$184.20</strong>
-          {!compact && <button className="console-add-credit" onClick={() => openCheckout()} type="button">{copy.console.addCredit}</button>}
+          {!compact && <button className="console-add-credit" onClick={() => openCheckout()} type="button">{copy.nav.getTokens}</button>}
         </div>
         <div className="usage-block">
           <div className="usage-heading">
