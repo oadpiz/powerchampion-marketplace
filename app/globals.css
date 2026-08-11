@@ -131,6 +131,42 @@ button { color: inherit; }
 .proof-item span { display: block; margin-top: .45rem; color: var(--muted); font-size: .82rem; letter-spacing: .04em; }
 .proof-disclosure { grid-column: 1 / -1; margin: 0; border-top: 1px solid var(--line); padding: 1rem 0; color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; letter-spacing: .1em; text-transform: uppercase; }
 
+.home-infrastructure-brief {
+  width: min(calc(100% - var(--page-frame)), var(--content));
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(11rem, .8fr) minmax(0, 1.2fr) auto;
+  align-items: end;
+  gap: 2rem;
+  border-bottom: 1px solid var(--line);
+  padding: 1.25rem 0 1.5rem;
+}
+.home-infrastructure-heading,
+.home-infrastructure-fact p {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: .75rem;
+  letter-spacing: .08em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+.home-infrastructure-fact strong {
+  display: block;
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+  font-weight: 520;
+  letter-spacing: -.05em;
+  line-height: 1;
+}
+.home-infrastructure-fact p { margin-top: .6rem; }
+.home-infrastructure-brief a {
+  color: var(--ink);
+  font-size: .85rem;
+  font-weight: 620;
+  white-space: nowrap;
+}
+.home-infrastructure-brief a:hover { color: var(--cyan); }
+
 .home-section, .closing-cta { width: min(calc(100% - var(--page-frame)), var(--content)); margin: 0 auto; padding-block: var(--section-space); }
 .section-intro { max-width: 760px; margin-bottom: 4rem; }
 .section-intro h2, .closing-cta h2 {
@@ -480,6 +516,8 @@ button { color: inherit; }
   .proof-item + .proof-item { padding-left: 0; border-top: 1px solid var(--line); border-left: 0; }
   .proof-item strong { font-size: 2.75rem; }
   .proof-disclosure { padding-block: 1rem; }
+  .home-infrastructure-brief { grid-template-columns: 1fr; align-items: start; gap: 1rem; padding-block: 1.25rem; }
+  .home-infrastructure-brief a { white-space: normal; }
   .section-intro { margin-bottom: 2.7rem; }
   .model-row { grid-template-areas: "index identity identity link" ". facts facts ."; grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1fr) 26px; gap: .7rem .6rem; min-height: 160px; padding-block: 1rem; }
   .model-index { grid-area: index; align-self: start; }

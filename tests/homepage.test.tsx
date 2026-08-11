@@ -47,6 +47,11 @@ describe("Power Champion homepage", () => {
     expect(
       screen.getByRole("region", { name: "市集成效數據" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "交易對手揭露的基礎設施脈絡" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("3.1 MW")).toBeVisible();
+    expect(screen.getByRole("link", { name: "查看公司脈絡" })).toHaveAttribute("href", "/company");
     expect(screen.getByText("啟用中的模型路由")).toBeInTheDocument();
     expect(screen.getByText("可用上下文")).toBeInTheDocument();
     expect(screen.getByText("展示可用率")).toBeInTheDocument();
@@ -79,6 +84,21 @@ describe("Power Champion homepage", () => {
     expect(within(proofStrip).getByText("28")).toBeInTheDocument();
     expect(within(proofStrip).getByText("128K+")).toBeInTheDocument();
     expect(within(proofStrip).getByText("99.98%")).toBeInTheDocument();
+  });
+
+  it("links the factual home infrastructure brief to Company", () => {
+    renderInShell(<HomeContent />);
+
+    const brief = screen.getByRole("region", {
+      name: "Infrastructure context from counterparty disclosure",
+    });
+    const disclosureId = brief.getAttribute("aria-describedby");
+
+    expect(screen.getByText("3.1 MW")).toBeVisible();
+    expect(within(brief).getByRole("link", { name: "View company context" }))
+      .toHaveAttribute("href", "/company");
+    expect(disclosureId).toBeTruthy();
+    expect(within(brief).getByText(/Counterparty-reported/)).toHaveAttribute("id", disclosureId);
   });
 
   it("keeps illustrative starting input rates visible for all four featured models", () => {

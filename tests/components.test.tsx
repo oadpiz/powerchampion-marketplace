@@ -6,7 +6,7 @@ import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
 describe("SiteShell", () => {
-  it("renders all five destinations and changes locale", async () => {
+  it("renders all six destinations and changes locale", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -29,6 +29,10 @@ describe("SiteShell", () => {
       "href",
       "/docs",
     );
+    expect(within(primaryNavigation).getByRole("link", { name: "Company" })).toHaveAttribute(
+      "href",
+      "/company",
+    );
     expect(within(primaryNavigation).getByRole("link", { name: "Console" })).toHaveAttribute(
       "href",
       "/console",
@@ -37,6 +41,30 @@ describe("SiteShell", () => {
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
     expect(within(screen.getByRole("navigation", { name: "主要導覽" })).getByRole("link", { name: "模型" })).toBeInTheDocument();
+  });
+
+  it("adds Company to primary navigation, mobile navigation, and footer", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(
+      within(screen.getByRole("navigation", { name: "Primary navigation" }))
+        .getByRole("link", { name: "Company" }),
+    ).toHaveAttribute("href", "/company");
+    expect(
+      within(screen.getByRole("contentinfo", { name: "Footer" }))
+        .getByRole("link", { name: "About" }),
+    ).toHaveAttribute("href", "/company");
+
+    await user.click(screen.getByRole("button", { name: "Open menu" }));
+    expect(
+      within(screen.getByRole("navigation", { name: "Mobile navigation" }))
+        .getByRole("link", { name: "Company" }),
+    ).toHaveAttribute("href", "/company");
   });
 
   it("synchronizes document language transiently", async () => {
@@ -66,7 +94,7 @@ describe("SiteShell", () => {
 
     expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
     const footer = screen.getByRole("contentinfo", { name: "Footer" });
-    expect(within(footer).getByRole("link", { name: "About" })).toHaveAttribute("href", "/#about");
+    expect(within(footer).getByRole("link", { name: "About" })).toHaveAttribute("href", "/company");
     expect(within(footer).getByRole("link", { name: "Status" })).toHaveAttribute("aria-disabled", "true");
     expect(within(footer).getByRole("link", { name: "Terms" })).toHaveAttribute("aria-disabled", "true");
     expect(within(footer).getByRole("link", { name: "Privacy" })).toHaveAttribute("aria-disabled", "true");
@@ -77,7 +105,7 @@ describe("SiteShell", () => {
     expect(screen.getByRole("navigation", { name: "主要導覽" })).toBeInTheDocument();
     expect(screen.getByRole("contentinfo", { name: "頁尾" })).toBeInTheDocument();
     expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "關於" }))
-      .toHaveAttribute("href", "/#about");
+      .toHaveAttribute("href", "/company");
     expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "服務狀態" }))
       .toHaveAttribute("aria-disabled", "true");
   });

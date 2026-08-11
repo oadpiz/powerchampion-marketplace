@@ -14,6 +14,7 @@ const destinations = [
   ["models", "/models"],
   ["pricing", "/pricing"],
   ["docs", "/docs"],
+  ["company", "/company"],
   ["console", "/console"],
 ] as const;
 
@@ -163,7 +164,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
       <footer aria-label={copy.footer.label} className="site-footer">
         <nav aria-label={copy.footer.navigation}>
         {([
-          [copy.footer.about, "/#about"],
+          [copy.footer.about, "/company"],
           [copy.nav.models, "/models"],
           [copy.nav.pricing, "/pricing"],
           [copy.nav.docs, "/docs"],

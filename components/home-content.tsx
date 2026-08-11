@@ -2,6 +2,7 @@
 
 import { CREDIT_PACKS } from "../lib/pricing";
 import { MODEL_CATALOG } from "../lib/models";
+import { COMPANY_CONTENT } from "../lib/company";
 import { ConsoleView } from "./console-view";
 import { useLocale } from "./locale-provider";
 
@@ -52,6 +53,23 @@ export function HomeContent() {
           </div>
         ))}
         <p className="proof-disclosure" id="proof-disclosure">{copy.shared.illustrative}</p>
+      </section>
+
+      <section
+        aria-describedby="home-infrastructure-disclosure"
+        aria-label={copy.home.infrastructureProof}
+        className="home-infrastructure-brief"
+      >
+        <p className="home-infrastructure-heading">{copy.home.infrastructureProof}</p>
+        <div className="home-infrastructure-fact">
+          <strong aria-describedby="home-infrastructure-disclosure">
+            {COMPANY_CONTENT[locale].capacity.initialMw}
+          </strong>
+          <p id="home-infrastructure-disclosure">
+            {COMPANY_CONTENT[locale].capacity.initialLabel}
+          </p>
+        </div>
+        <a href="/company">{copy.home.companyLink}</a>
       </section>
 
       <section aria-labelledby="featured-models-title" className="home-section model-marketplace">
