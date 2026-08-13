@@ -236,7 +236,8 @@ describe("LaunchAccessDialog", () => {
 });
 
 describe("PricingPage", () => {
-  it("uses the page CTA instead of duplicating the header CTA on the pricing route", () => {
+  it("keeps the page CTA as the only launch action when pricing mobile navigation opens", async () => {
+    const user = userEvent.setup();
     window.history.replaceState({}, "", "/pricing");
     const { unmount } = render(
       <LocaleProvider>
@@ -245,7 +246,15 @@ describe("PricingPage", () => {
       </LocaleProvider>,
     );
 
-    expect(screen.getAllByRole("button", { name: "Join launch access" })).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Open menu" }));
+    const menu = screen.getByRole("dialog", { name: "Open menu" });
+    expect(within(menu).getByRole("link", { name: "Deployment review" })).toHaveAttribute("href", "/contact");
+    expect(within(menu).getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/pricing");
+    expect(within(menu).queryByRole("button", { name: "Join launch access" })).not.toBeInTheDocument();
+    const launchActions = Array.from(document.querySelectorAll("button"))
+      .filter((button) => button.textContent === "Join launch access");
+    expect(launchActions).toHaveLength(1);
+    expect(within(screen.getByRole("main", { hidden: true })).getByRole("button", { name: "Join launch access", hidden: true })).toBeVisible();
     unmount();
     window.history.replaceState({}, "", "/");
   });

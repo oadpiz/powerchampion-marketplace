@@ -191,9 +191,11 @@ export function SiteShell({ children }: { children: ReactNode }) {
               <a href={href} key={key} onClick={closeMobileMenu}>{copy.nav[key]}</a>
             ))}
           </nav>
-          <button className="token-button" onClick={openLaunchAccessFromMobileMenu} type="button">
-            {copy.nav.getTokens}
-          </button>
+          {showHeaderLaunchAccess && (
+            <button className="token-button" onClick={openLaunchAccessFromMobileMenu} type="button">
+              {copy.nav.getTokens}
+            </button>
+          )}
         </div>
       )}
 
