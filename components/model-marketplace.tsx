@@ -129,7 +129,7 @@ export function ModelMarketplace() {
                     </div>
                     <div>
                       <dt>{copy.models.tools}</dt>
-                      <dd>{model.tools ? copy.models.enabled : copy.models.unavailable}</dd>
+                      <dd>{model.features.tools ? copy.models.enabled : copy.models.unavailable}</dd>
                     </div>
                     <div>
                       <dt>{copy.models.availability}</dt>
