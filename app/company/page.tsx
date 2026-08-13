@@ -1,9 +1,7 @@
 import { CompanyContent } from "../../components/company-content";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Company | Power Champion",
-  description: "Public company context and cited AI infrastructure information for Power Champion.",
-};
+export const metadata = metadataForRoute("/company");
 
 export default function CompanyPage() {
   return <CompanyContent />;

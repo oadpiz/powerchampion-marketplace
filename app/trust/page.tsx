@@ -1,9 +1,7 @@
 import { TrustContent } from "../../components/trust-content";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Trust review | Power Champion",
-  description: "Current public trust boundaries and review links for the Power Champion launch site.",
-};
+export const metadata = metadataForRoute("/trust");
 
 export default function TrustPage() {
   return <TrustContent />;

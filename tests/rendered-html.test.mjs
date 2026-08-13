@@ -95,6 +95,17 @@ const shellDestinations = [
   "/company", "/contact", "/console", "/faq", "/terms", "/privacy",
 ];
 
+function escaped(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertRouteUrls(html, pathname, origin) {
+  const resolved = new URL(pathname, origin);
+  const expected = pathname === "/" ? resolved.origin : resolved.href;
+  assert.match(html, new RegExp(`<link rel="canonical" href="${escaped(expected)}"`));
+  assert.match(html, new RegExp(`<meta property="og:url" content="${escaped(expected)}"`));
+}
+
 test("server-renders a complete English marketplace shell with social metadata", async () => {
   for (const pathname of routes) {
     const response = await render(pathname);
@@ -126,6 +137,7 @@ test("server-renders a complete English marketplace shell with social metadata",
     assert.doesNotMatch(html, /Explore leading open AI models with one API and one prepaid balance\./);
     assert.match(html, /property="og:image" content="http:\/\/localhost\/og\.png"/);
     assert.match(html, /name="twitter:card" content="summary_large_image"/);
+    assertRouteUrls(html, pathname, "http://localhost");
   }
 
   const publicResponse = await render("/", "marketplace.example");
@@ -145,23 +157,25 @@ test("redirects the browser compatibility favicon to the published PNG", async (
 
 test("normalizes valid metadata hosts and fails closed on malformed values", async () => {
   const cases = [
-    { host: "marketplace.example:8443", expected: "https://marketplace.example:8443/og.png" },
-    { host: "marketplace.example.", expected: "https://marketplace.example./og.png" },
-    { host: "203.0.113.10:9443", expected: "https://203.0.113.10:9443/og.png" },
-    { host: "[2001:db8::1]:8443", expected: "https://[2001:db8::1]:8443/og.png" },
-    { host: "localhost:4173", expected: "http://localhost:4173/og.png" },
-    { host: "localhost.:4173", expected: "http://localhost.:4173/og.png" },
-    { host: "127.0.0.1:4173", expected: "http://127.0.0.1:4173/og.png" },
-    { host: "[::1]:4173", expected: "http://[::1]:4173/og.png" },
+    { host: "marketplace.example:8443", origin: "https://marketplace.example:8443" },
+    { host: "marketplace.example.", origin: "https://marketplace.example." },
+    { host: "203.0.113.10:9443", origin: "https://203.0.113.10:9443" },
+    { host: "[2001:db8::1]:8443", origin: "https://[2001:db8::1]:8443" },
+    { host: "localhost:4173", origin: "http://localhost:4173" },
+    { host: "localhost.:4173", origin: "http://localhost.:4173" },
+    { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
+    { host: "[::1]:4173", origin: "http://[::1]:4173" },
   ];
 
-  for (const { host, expected } of cases) {
-    const html = await (await render("/", host)).text();
-    assert.match(html, new RegExp(`property="og:image" content="${expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+  for (const { host, origin } of cases) {
+    const html = await (await render("/models", host)).text();
+    assert.match(html, new RegExp(`property="og:image" content="${escaped(`${origin}/og.png`)}"`));
+    assertRouteUrls(html, "/models", origin);
   }
 
-  const forwardedHtml = await (await render("/", "internal.example", "edge.example:7443, internal.example")).text();
+  const forwardedHtml = await (await render("/models", "internal.example", "edge.example:7443, internal.example")).text();
   assert.match(forwardedHtml, /property="og:image" content="https:\/\/edge\.example:7443\/og\.png"/);
+  assertRouteUrls(forwardedHtml, "/models", "https://edge.example:7443");
 
   for (const malformed of [
     "market place.example",
@@ -175,8 +189,9 @@ test("normalizes valid metadata hosts and fails closed on malformed values", asy
     "-marketplace.example",
     "marketplace..example",
   ]) {
-    const html = await (await render("/", malformed)).text();
+    const html = await (await render("/models", malformed)).text();
     assert.match(html, /property="og:image" content="http:\/\/localhost\/og\.png"/, malformed);
+    assertRouteUrls(html, "/models", "http://localhost");
   }
 });
 

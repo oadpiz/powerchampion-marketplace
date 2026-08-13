@@ -175,7 +175,8 @@ describe("LaunchAccessDialog", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByText("Local launch-access interest saved.")).toBeVisible();
+    expect(screen.getByText("Launch-access review completed locally.")).toBeVisible();
+    expect(screen.getByRole("dialog")).not.toHaveTextContent(/saved/i);
     expect(screen.queryByLabelText(/card|billing/i)).not.toBeInTheDocument();
   });
 
@@ -190,7 +191,7 @@ describe("LaunchAccessDialog", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByText("Local launch-access interest saved.")).toBeInTheDocument();
+    expect(screen.getByText("Launch-access review completed locally.")).toBeInTheDocument();
     const completeClose = within(screen.getByRole("dialog", { name: "Request launch access" }))
       .getAllByRole("button", { name: "Close" })
       .at(-1);

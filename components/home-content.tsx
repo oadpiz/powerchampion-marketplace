@@ -2,7 +2,7 @@
 
 import { COMPANY_CONTENT } from "../lib/company";
 import { MODEL_CATALOG } from "../lib/models";
-import { SERVICE_READINESS, TRUST_CONTENT } from "../lib/trust";
+import { TRUST_CONTENT } from "../lib/trust";
 import { AudiencePaths } from "./audience-paths";
 import { ConsoleView } from "./console-view";
 import { useLocale } from "./locale-provider";
@@ -17,7 +17,6 @@ export function HomeContent() {
     0,
   );
   const startingRate = Math.min(...MODEL_CATALOG.map((model) => model.inputPerMillion));
-  const releaseState = trust.status.states[SERVICE_READINESS.enterpriseReview];
   const text = locale === "en" ? {
     compareRates: "Compare token rates",
     deploymentReview: "Deployment review",
@@ -103,13 +102,13 @@ export function HomeContent() {
             <article aria-label={model.name} className={`model-row model-row-${model.id}`} key={model.id}>
               <span aria-hidden="true" className="model-rail" />
               <div className="model-index">{String(index + 1).padStart(2, "0")}</div>
-              <div className="model-identity"><h3>{model.name}</h3><p>{model.tagline[locale]}</p></div>
+              <div className="model-identity"><h3>{model.name}</h3><p>{model.servingRole[locale]}</p></div>
               <dl className="model-facts">
                 <div><dt>{copy.models.context}</dt><dd>{model.context}</dd></div>
                 <div><dt>{copy.models.maxOutput}</dt><dd>{model.maxOutput}</dd></div>
                 <div><dt>{text.price}</dt><dd>${model.inputPerMillion.toFixed(2)} {copy.shared.perMillionInput}</dd><dd>${model.outputPerMillion.toFixed(2)} {copy.shared.perMillionOutput}</dd></div>
                 <div><dt>{text.provenance}</dt><dd>{model.provenance.label[locale]}</dd></div>
-                <div><dt>{text.release}</dt><dd>{releaseState}</dd></div>
+                <div><dt>{text.release}</dt><dd>{model.available ? copy.models.available : copy.models.unavailable}</dd></div>
               </dl>
             </article>
           ))}

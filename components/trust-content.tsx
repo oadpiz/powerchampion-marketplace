@@ -29,7 +29,16 @@ export function TrustContent() {
             {section.id === "controls" && (
               <ul className="trust-readiness-list">
                 {readiness.map(({ id, state }) => (
-                  <li data-ready={isReady(state)} data-service={id} key={id}>{content.status.states[state]}</li>
+                  <li
+                    aria-label={`${content.status.labels[id]}${locale === "en" ? ": " : "："}${content.status.states[state]}`}
+                    data-ready={isReady(state)}
+                    data-service={id}
+                    key={id}
+                  >
+                    <span>{content.status.labels[id]}</span>
+                    <span aria-hidden="true"> — </span>
+                    <strong>{content.status.states[state]}</strong>
+                  </li>
                 ))}
               </ul>
             )}

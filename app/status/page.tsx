@@ -1,9 +1,7 @@
 import { StatusContent } from "../../components/status-content";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Service status | Power Champion",
-  description: "Current launch-readiness states for public Power Champion services.",
-};
+export const metadata = metadataForRoute("/status");
 
 export default function StatusPage() {
   return <StatusContent />;

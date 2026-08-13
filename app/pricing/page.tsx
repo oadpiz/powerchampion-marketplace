@@ -1,9 +1,7 @@
 import { PricingPageContent } from "../../components/pricing-page-content";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Illustrative pricing | Power Champion",
-  description: "Illustrative token rates and local launch-access planning; no payment or funded balance is available.",
-};
+export const metadata = metadataForRoute("/pricing");
 
 export default function PricingPage() {
   return <PricingPageContent />;

@@ -19,7 +19,7 @@ describe("SiteShell", () => {
     window.history.replaceState({}, "", "/");
   });
 
-  it("renders the enterprise primary destinations and changes locale", async () => {
+  it("renders the approved primary and mobile destinations exactly in both locales", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -29,78 +29,52 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
 
-    const primaryNavigation = screen.getByRole("navigation", { name: "Primary navigation" });
-    expect(within(primaryNavigation).getByRole("link", { name: "Models" })).toHaveAttribute(
-      "href",
-      "/models",
-    );
-    expect(within(primaryNavigation).getByRole("link", { name: "Pricing" })).toHaveAttribute(
-      "href",
-      "/pricing",
-    );
-    expect(within(primaryNavigation).getByRole("link", { name: "Infrastructure" })).toHaveAttribute(
-      "href",
-      "/infrastructure",
-    );
-    expect(within(primaryNavigation).getByRole("link", { name: "Trust" })).toHaveAttribute(
-      "href",
-      "/trust",
-    );
-    expect(within(primaryNavigation).getByRole("link", { name: "Status" })).toHaveAttribute(
-      "href",
-      "/status",
-    );
-    expect(within(primaryNavigation).getByRole("link", { name: "Contact" })).toHaveAttribute(
-      "href",
-      "/contact",
-    );
-    expect(within(primaryNavigation).queryByRole("link", { name: "Console" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("contentinfo", { name: "Footer" })).getByRole("link", { name: "Console" }))
-      .toHaveAttribute("href", "/console");
+    const englishPrimary = within(screen.getByRole("navigation", { name: "Primary navigation" }))
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]);
+    expect(englishPrimary).toEqual([
+      ["Models", "/models"],
+      ["Pricing", "/pricing"],
+      ["Infrastructure", "/infrastructure"],
+      ["Docs", "/docs"],
+      ["Trust", "/trust"],
+      ["Company", "/company"],
+      ["Status", "/status"],
+    ]);
+
+    await user.click(screen.getByRole("button", { name: "Open menu" }));
+    const englishMobile = within(screen.getByRole("navigation", { name: "Mobile navigation" }))
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]);
+    expect(englishMobile).toEqual([
+      ...englishPrimary,
+      ["Deployment review", "/contact"],
+    ]);
+    await user.click(screen.getByRole("button", { name: "Close menu" }));
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
-    expect(within(screen.getByRole("navigation", { name: "主要導覽" })).getByRole("link", { name: "模型" })).toBeInTheDocument();
-  });
+    const chinesePrimary = within(screen.getByRole("navigation", { name: "主要導覽" }))
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]);
+    expect(chinesePrimary).toEqual([
+      ["模型", "/models"],
+      ["價格", "/pricing"],
+      ["基礎設施", "/infrastructure"],
+      ["文件", "/docs"],
+      ["信任", "/trust"],
+      ["公司", "/company"],
+      ["狀態", "/status"],
+    ]);
 
-  it("keeps Company available in mobile navigation and the footer", async () => {
-    const user = userEvent.setup();
-    render(
-      <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
-      </LocaleProvider>,
-    );
-
-    expect(
-      within(screen.getByRole("contentinfo", { name: "Footer" }))
-        .getByRole("link", { name: "About" }),
-    ).toHaveAttribute("href", "/company");
-
-    await user.click(screen.getByRole("button", { name: "Open menu" }));
-    expect(
-      within(screen.getByRole("navigation", { name: "Mobile navigation" }))
-        .getByRole("link", { name: "Company" }),
-    ).toHaveAttribute("href", "/company");
-  });
-
-  it("uses the same Contact destination in primary and mobile navigation", async () => {
-    const user = userEvent.setup();
-    render(
-      <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
-      </LocaleProvider>,
-    );
-
-    expect(
-      within(screen.getByRole("navigation", { name: "Primary navigation" }))
-        .getByRole("link", { name: "Contact" }),
-    ).toHaveAttribute("href", "/contact");
-
-    await user.click(screen.getByRole("button", { name: "Open menu" }));
-    expect(
-      within(screen.getByRole("navigation", { name: "Mobile navigation" }))
-        .getByRole("link", { name: "Contact" }),
-    ).toHaveAttribute("href", "/contact");
+    await user.click(screen.getByRole("button", { name: "開啟選單" }));
+    expect(within(screen.getByRole("navigation", { name: "行動版導覽" }))
+      .getAllByRole("link")
+      .map((link) => [link.textContent, link.getAttribute("href")]))
+      .toEqual([
+        ...chinesePrimary,
+        ["部署審查", "/contact"],
+      ]);
   });
 
   it("synchronizes document language transiently", async () => {
@@ -374,5 +348,37 @@ describe("SiteShell", () => {
     await user.keyboard("{Escape}");
     expect(document.body.style.overflow).toBe("");
     expect(menuTrigger).toHaveFocus();
+  });
+
+  it("describes launch-access completion as local in both locales without claiming persistence", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+        <LaunchAccessDialog />
+      </LocaleProvider>,
+    );
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Join launch access" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Launch-access review completed locally.");
+    expect(screen.getByRole("dialog")).not.toHaveTextContent(/saved/i);
+    expect(screen.getByRole("dialog")).toHaveTextContent("It is not transmitted or persisted.");
+    unmount();
+
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+        <LaunchAccessDialog />
+      </LocaleProvider>,
+    );
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "加入啟動存取" }));
+    await user.click(screen.getByRole("button", { name: "繼續" }));
+    await user.click(screen.getByRole("button", { name: "繼續" }));
+    expect(screen.getByRole("status")).toHaveTextContent("啟動存取審查已在本機完成。");
+    expect(screen.getByRole("dialog")).not.toHaveTextContent("已儲存");
+    expect(screen.getByRole("dialog")).toHaveTextContent("不會傳送或保存");
   });
 });

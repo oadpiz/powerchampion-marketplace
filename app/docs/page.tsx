@@ -1,9 +1,7 @@
 import { DocsPageContent } from "../../components/docs-page-content";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Documentation preview | Power Champion",
-  description: "Non-operational integration examples and release-gated future access for Power Champion.",
-};
+export const metadata = metadataForRoute("/docs");
 
 export default function DocsPage() {
   return <DocsPageContent />;

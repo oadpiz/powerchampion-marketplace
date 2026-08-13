@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { LocaleProvider } from "../components/locale-provider";
 import { LaunchAccessDialog } from "../components/demo-checkout";
 import { SiteShell } from "../components/site-shell";
+import { metadataForRoute } from "../lib/metadata";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -51,15 +52,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
 
   return {
+    ...metadataForRoute("/"),
     metadataBase: metadataOrigin(host),
-    title: "Power Champion — Token access launching soon",
-    description:
-      "Explore indicative token-access plans for leading open AI models. Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available.",
-    openGraph: {
-      title: "Token access launching soon.",
-      description: "Explore indicative open-model access and illustrative UI data. No funded balance or live API is currently available.",
-      images: [{ url: "/og.png", width: 1200, height: 630 }],
-    },
     twitter: {
       card: "summary_large_image",
       title: "Token access launching soon.",

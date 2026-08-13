@@ -1,9 +1,7 @@
 import { EditorialPage } from "../../components/editorial-page";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Terms | Power Champion",
-  description: "The current informational and non-transactional terms for the Power Champion launch site.",
-};
+export const metadata = metadataForRoute("/terms");
 
 export default function TermsPage() {
   return <EditorialPage policy="terms" />;

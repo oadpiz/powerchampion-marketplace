@@ -1,9 +1,7 @@
 import { FaqContent } from "../../components/faq-content";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "FAQ | Power Champion",
-  description: "Plain-language answers about the current Power Champion launch site and its public boundaries.",
-};
+export const metadata = metadataForRoute("/faq");
 
 export default function FaqPage() {
   return <FaqContent />;

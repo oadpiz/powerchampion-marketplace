@@ -1,9 +1,7 @@
 import { EnterpriseEnquiry } from "../../components/enterprise-enquiry";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Deployment review | Power Champion",
-  description: "Review non-binding deployment interests locally in your browser.",
-};
+export const metadata = metadataForRoute("/contact");
 
 export default function ContactPage() {
   return (

@@ -1,9 +1,7 @@
 import { InfrastructureContent } from "../../components/infrastructure-content";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Infrastructure review | Power Champion",
-  description: "Source-qualified infrastructure context and release gates for the Power Champion launch site; not a live deployment status.",
-};
+export const metadata = metadataForRoute("/infrastructure");
 
 export default function InfrastructurePage() {
   return <InfrastructureContent />;

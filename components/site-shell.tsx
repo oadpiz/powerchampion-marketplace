@@ -18,17 +18,14 @@ const primaryDestinations: readonly [NavigationKey, string][] = [
   ["models", "/models"],
   ["pricing", "/pricing"],
   ["infrastructure", "/infrastructure"],
+  ["docs", "/docs"],
   ["trust", "/trust"],
+  ["company", "/company"],
   ["status", "/status"],
-  ["contact", "/contact"],
 ];
 
 const mobileDestinations: readonly [NavigationKey, string][] = [
   ...primaryDestinations,
-  ["docs", "/docs"],
-  ["company", "/company"],
-  ["console", "/console"],
-  ["faq", "/faq"],
   ["deploymentReview", "/contact"],
 ];
 

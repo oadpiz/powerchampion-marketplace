@@ -1,9 +1,7 @@
 import { ModelsPageContent } from "../../components/models-page-content";
+import { metadataForRoute } from "../../lib/metadata";
 
-export const metadata = {
-  title: "Open Model Catalog | Power Champion",
-  description: "Compare illustrative open-model token rates, limits, features, and release-review states.",
-};
+export const metadata = metadataForRoute("/models");
 
 export default function ModelsPage() {
   return <ModelsPageContent />;

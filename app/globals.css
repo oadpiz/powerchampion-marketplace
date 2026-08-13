@@ -1040,6 +1040,6 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   .status-ledger strong { text-align: left; }
 }
 
-@media (min-width: 721px) {
+@media (min-width: 821px) {
   .mobile-navigation { display: none; }
 }

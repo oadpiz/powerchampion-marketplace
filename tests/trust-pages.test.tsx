@@ -73,13 +73,31 @@ describe("public trust pages", () => {
     expect(document.body).not.toHaveTextContent(/SOC 2|ISO|GDPR|uptime|availability/i);
   });
 
-  it("renders repeated readiness states without duplicate React keys", () => {
+  it("renders distinguishable localized service-name and state pairs without duplicate React keys", async () => {
+    const user = userEvent.setup();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
-      localized(<TrustPage />);
+      render(<LocaleProvider><SiteShell><TrustPage /></SiteShell></LocaleProvider>);
 
-      expect(screen.getAllByText("Not ready")).toHaveLength(3);
+      for (const [name, state] of [
+        ["Provider manifest", "Not ready"],
+        ["Inference API", "Not ready"],
+        ["Payments", "Not ready"],
+      ]) {
+        const row = screen.getByRole("listitem", { name: `${name}: ${state}` });
+        expect(row).toHaveTextContent(`${name} — ${state}`);
+      }
+
+      await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+      for (const [name, state] of [
+        ["供應商 Manifest", "尚未就緒"],
+        ["推論 API", "尚未就緒"],
+        ["付款", "尚未就緒"],
+      ]) {
+        const row = screen.getByRole("listitem", { name: `${name}：${state}` });
+        expect(row).toHaveTextContent(`${name} — ${state}`);
+      }
       expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/same key/i);
     } finally {
       consoleError.mockRestore();

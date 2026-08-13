@@ -60,10 +60,13 @@ describe("responsive marketplace contracts", () => {
   });
 
   it("switches the crowded primary header to its menu at the tablet boundary", async () => {
-    const tablet = mediaBlock(await stylesheet(), 820);
+    const css = await stylesheet();
+    const tablet = mediaBlock(css, 820);
 
     expect(tablet).toMatch(/\.site-navigation\s*,\s*\.site-actions\s*>\s*\.token-button\s*\{[^}]*display:\s*none/);
     expect(tablet).toMatch(/\.menu-trigger\s*\{[^}]*display:\s*block/);
+    expect(css).not.toMatch(/@media\s*\(min-width:\s*721px\)[\s\S]*?\.mobile-navigation\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/@media\s*\(min-width:\s*821px\)[\s\S]*?\.mobile-navigation\s*\{[^}]*display:\s*none/);
   });
 
   it("keeps homepage context and speed facts visible on mobile", async () => {
