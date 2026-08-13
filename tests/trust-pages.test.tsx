@@ -40,7 +40,7 @@ describe("public trust pages", () => {
     },
   );
 
-  it("renders the published infrastructure destination as a localized preparation shell", async () => {
+  it("renders the published infrastructure destination with release-gated stages", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -48,24 +48,28 @@ describe("public trust pages", () => {
       </LocaleProvider>,
     );
 
-    expect(screen.getByRole("heading", { level: 1, name: "Infrastructure preparation" })).toBeVisible();
-    expect(screen.getByText(/counterparty-reported expected hosting capacity; not live or completed deployment/i)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Company context" })).toHaveAttribute("href", "/company");
+    expect(screen.getByRole("heading", { level: 1, name: /future delivery/i })).toBeVisible();
+    expect(screen.getAllByText(/counterparty-reported expected hosting capacity; not live or completed deployment/i)).not.toHaveLength(0);
+    expect(screen.getByText(/model serving remains release-gated/i)).toBeVisible();
+    expect(screen.getByText(/public integration preview/i)).toBeVisible();
     expect(screen.getByRole("link", { name: "Deployment review" })).toHaveAttribute("href", "/contact");
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    expect(screen.getByRole("heading", { level: 1, name: "基礎設施準備中" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: /未來交付/i })).toBeVisible();
   });
 
-  it("renders the published trust destination with only current review links", () => {
+  it("renders the trust evidence sections with policy and source links", () => {
     localized(<TrustPage />);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Trust review preparation" })).toBeVisible();
-    expect(screen.getByText(/detailed trust review is in preparation/i)).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: "Evidence before promises." })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 2, name: "Current data behavior" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 2, name: "Model provenance" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 2, name: "Release controls" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 2, name: "Policies and sources" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
     expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
     expect(screen.getByRole("link", { name: "Status" })).toHaveAttribute("href", "/status");
     expect(screen.getByRole("link", { name: "Company" })).toHaveAttribute("href", "/company");
-    expect(screen.getByRole("link", { name: "Deployment review" })).toHaveAttribute("href", "/contact");
+    expect(document.body).not.toHaveTextContent(/SOC 2|ISO|GDPR|uptime|availability/i);
   });
 });
