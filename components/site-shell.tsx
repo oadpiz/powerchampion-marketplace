@@ -4,22 +4,60 @@ import {
   useEffect,
   useRef,
   useState,
-  type MouseEvent,
   type ReactNode,
 } from "react";
 import { useLocale } from "./locale-provider";
 import { useModalIsolation } from "./use-modal-isolation";
+import type { CopyDictionary } from "../lib/content";
 
-const destinations = [
+type NavigationKey = keyof CopyDictionary["nav"];
+type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy";
+
+const primaryDestinations: readonly [NavigationKey, string][] = [
   ["models", "/models"],
   ["pricing", "/pricing"],
+  ["infrastructure", "/infrastructure"],
+  ["trust", "/trust"],
+  ["status", "/status"],
+  ["contact", "/contact"],
+];
+
+const mobileDestinations: readonly [NavigationKey, string][] = [
+  ...primaryDestinations,
   ["docs", "/docs"],
   ["company", "/company"],
-  ["contact", "/contact"],
   ["console", "/console"],
-] as const;
+  ["faq", "/faq"],
+  ["deploymentReview", "/contact"],
+];
+
+const footerDestinationGroups: readonly {
+  label: keyof CopyDictionary["footer"];
+  destinations: readonly [FooterDestinationKey, string][];
+}[] = [
+  {
+    label: "product",
+    destinations: [["models", "/models"], ["pricing", "/pricing"], ["docs", "/docs"], ["console", "/console"]],
+  },
+  {
+    label: "companyGroup",
+    destinations: [["about", "/company"], ["infrastructure", "/infrastructure"], ["trust", "/trust"], ["status", "/status"], ["contact", "/contact"]],
+  },
+  {
+    label: "policies",
+    destinations: [["faq", "/faq"], ["terms", "/terms"], ["privacy", "/privacy"]],
+  },
+];
 
 const focusableSelector = 'a[href], button:not([disabled])';
+
+function footerDestinationLabel(copy: CopyDictionary, key: FooterDestinationKey) {
+  if (key === "about" || key === "terms" || key === "privacy" || key === "status") {
+    return copy.footer[key];
+  }
+
+  return copy.nav[key];
+}
 
 function dispatchCheckout(restoreFocusTarget?: HTMLElement | null) {
   window.dispatchEvent(new CustomEvent("powerchampion:checkout", {
@@ -89,10 +127,6 @@ export function SiteShell({ children }: { children: ReactNode }) {
     queueMicrotask(() => dispatchCheckout(menuTriggerRef.current));
   }, [isMobileMenuOpen]);
 
-  const preventDisabledNavigation = (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-  };
-
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
     queueMicrotask(() => menuTriggerRef.current?.focus());
@@ -115,7 +149,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a className="site-brand" href="/">Power Champion</a>
         <nav aria-label={copy.nav.primaryLabel} className="site-navigation">
-          {destinations.map(([key, href]) => (
+          {primaryDestinations.map(([key, href]) => (
             <a href={href} key={key}>{copy.nav[key]}</a>
           ))}
         </nav>
@@ -150,7 +184,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
         >
           <button aria-label={copy.nav.closeMenu} onClick={closeMobileMenu} type="button">×</button>
           <nav aria-label={copy.nav.mobileLabel}>
-            {destinations.map(([key, href]) => (
+            {mobileDestinations.map(([key, href]) => (
               <a href={href} key={key} onClick={closeMobileMenu}>{copy.nav[key]}</a>
             ))}
           </nav>
@@ -163,25 +197,16 @@ export function SiteShell({ children }: { children: ReactNode }) {
       {children}
 
       <footer aria-label={copy.footer.label} className="site-footer">
-        <nav aria-label={copy.footer.navigation}>
-        {([
-          [copy.footer.about, "/company"],
-          [copy.nav.models, "/models"],
-          [copy.nav.pricing, "/pricing"],
-          [copy.nav.docs, "/docs"],
-          [copy.nav.console, "/console"],
-          [copy.footer.status, "#"],
-          [copy.footer.terms, "#"],
-          [copy.footer.privacy, "#"],
-        ] as const).map(([label, href]) => {
-          const disabled = href === "#";
-          return (
-            <a aria-disabled={disabled || undefined} href={href} key={label} onClick={disabled ? preventDisabledNavigation : undefined}>
-              {label}
-            </a>
-          );
-        })}
-        </nav>
+        <div aria-label={copy.footer.navigation} className="footer-navigation">
+          {footerDestinationGroups.map((group) => (
+            <nav aria-label={copy.footer[group.label]} key={group.label}>
+              <h2>{copy.footer[group.label]}</h2>
+              {group.destinations.map(([key, href]) => (
+                <a href={href} key={key}>{footerDestinationLabel(copy, key)}</a>
+              ))}
+            </nav>
+          ))}
+        </div>
         <div aria-label={copy.shared.language} className="footer-locale-toggle" role="group">
           <button aria-pressed={locale === "en"} onClick={() => setLocale("en")} type="button">English</button>
           <button aria-pressed={locale === "zh"} onClick={() => setLocale("zh")} type="button">繁中</button>

@@ -147,7 +147,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
     terms: {
       kicker: "Terms",
       title: "Current site terms",
-      lead: "This launch site is informational and does not form a commercial service relationship.",
+      lead: "This launch site is informational and does not create a purchase or form a commercial service relationship.",
       sections: [
         { id: "informational-site", title: "Informational site", body: ["This site provides public context and illustrative planning information only."] },
         { id: "non-transactional-access", title: "Non-transactional access", body: ["No purchase, reservation, account, API access, SLA, or service commitment is formed through this launch site or its local interactions."] },
@@ -178,7 +178,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
     terms: {
       kicker: "條款",
       title: "目前網站條款",
-      lead: "此啟動網站僅供資訊參考，不會形成商業服務關係。",
+      lead: "此啟動網站僅供資訊參考，不會建立購買行為或形成商業服務關係。",
       sections: [
         { id: "informational-site", title: "資訊網站", body: ["本網站僅提供公開脈絡與示意性的規劃資訊。"] },
         { id: "non-transactional-access", title: "非交易性存取", body: ["透過此啟動網站或其本機互動，不會形成購買、預留、帳戶、API 存取、SLA 或服務承諾。"] },

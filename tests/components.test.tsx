@@ -6,7 +6,7 @@ import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
 describe("SiteShell", () => {
-  it("renders all seven destinations and changes locale", async () => {
+  it("renders the enterprise primary destinations and changes locale", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -25,29 +25,32 @@ describe("SiteShell", () => {
       "href",
       "/pricing",
     );
-    expect(within(primaryNavigation).getByRole("link", { name: "Docs" })).toHaveAttribute(
+    expect(within(primaryNavigation).getByRole("link", { name: "Infrastructure" })).toHaveAttribute(
       "href",
-      "/docs",
+      "/infrastructure",
     );
-    expect(within(primaryNavigation).getByRole("link", { name: "Company" })).toHaveAttribute(
+    expect(within(primaryNavigation).getByRole("link", { name: "Trust" })).toHaveAttribute(
       "href",
-      "/company",
+      "/trust",
+    );
+    expect(within(primaryNavigation).getByRole("link", { name: "Status" })).toHaveAttribute(
+      "href",
+      "/status",
     );
     expect(within(primaryNavigation).getByRole("link", { name: "Contact" })).toHaveAttribute(
       "href",
       "/contact",
     );
-    expect(within(primaryNavigation).getByRole("link", { name: "Console" })).toHaveAttribute(
-      "href",
-      "/console",
-    );
+    expect(within(primaryNavigation).queryByRole("link", { name: "Console" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("contentinfo", { name: "Footer" })).getByRole("link", { name: "Console" }))
+      .toHaveAttribute("href", "/console");
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
     expect(within(screen.getByRole("navigation", { name: "主要導覽" })).getByRole("link", { name: "模型" })).toBeInTheDocument();
   });
 
-  it("adds Company to primary navigation, mobile navigation, and footer", async () => {
+  it("keeps Company available in mobile navigation and the footer", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -55,10 +58,6 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
 
-    expect(
-      within(screen.getByRole("navigation", { name: "Primary navigation" }))
-        .getByRole("link", { name: "Company" }),
-    ).toHaveAttribute("href", "/company");
     expect(
       within(screen.getByRole("contentinfo", { name: "Footer" }))
         .getByRole("link", { name: "About" }),
@@ -119,9 +118,11 @@ describe("SiteShell", () => {
     expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
     const footer = screen.getByRole("contentinfo", { name: "Footer" });
     expect(within(footer).getByRole("link", { name: "About" })).toHaveAttribute("href", "/company");
-    expect(within(footer).getByRole("link", { name: "Status" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(footer).getByRole("link", { name: "Terms" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(footer).getByRole("link", { name: "Privacy" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(footer).getByRole("link", { name: "Status" })).toHaveAttribute("href", "/status");
+    expect(within(footer).getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
+    expect(within(footer).getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
+    expect(within(footer).getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "/faq");
+    expect(within(footer).getByRole("link", { name: "Status" })).not.toHaveAttribute("aria-disabled");
     expect(within(footer).getByRole("button", { name: "繁中" })).toBeInTheDocument();
 
     await user.click(within(footer).getByRole("button", { name: "繁中" }));
@@ -131,7 +132,7 @@ describe("SiteShell", () => {
     expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "關於" }))
       .toHaveAttribute("href", "/company");
     expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "服務狀態" }))
-      .toHaveAttribute("aria-disabled", "true");
+      .toHaveAttribute("href", "/status");
   });
 
   it("localizes the mobile navigation landmark", async () => {
