@@ -4,9 +4,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import PricingPage, { metadata } from "../app/pricing/page";
-import { DemoCheckout, openCheckout } from "../components/demo-checkout";
+import { LaunchAccessDialog, openLaunchAccess } from "../components/demo-checkout";
 import { LocaleProvider } from "../components/locale-provider";
 import { PricingCalculator } from "../components/pricing-calculator";
+import { PricingPageContent } from "../components/pricing-page-content";
 import { SiteShell } from "../components/site-shell";
 
 const EXPECTED_MODEL_RATES = [
@@ -97,66 +98,84 @@ describe("PricingCalculator", () => {
   });
 });
 
-describe("DemoCheckout", () => {
+describe("LaunchAccessDialog", () => {
+  it("keeps every launch-access step free of commercial package claims", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <LaunchAccessDialog open />
+      </LocaleProvider>,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Request launch access" });
+    expect(dialog).not.toHaveTextContent(/\$\d|credit|bonus|buy|payment|account|reservation/i);
+
+    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+    expect(dialog).not.toHaveTextContent(/\$\d|credit|bonus|buy|payment|account|reservation/i);
+
+    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+    expect(dialog).not.toHaveTextContent(/\$\d|credit|bonus|buy|payment|account|reservation/i);
+  });
+
   it("makes launch access non-binding and payment-free", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <DemoCheckout open />
+        <LaunchAccessDialog open />
       </LocaleProvider>,
     );
 
-    expect(screen.getByText("Payments are not enabled yet. This request does not create an order or charge your account.")).toBeVisible();
+    expect(screen.getByText("This local interest creates no order or charge. It is not transmitted or persisted.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByText("Launch access request saved locally.")).toBeVisible();
-    expect(screen.queryByLabelText(/card|payment|billing/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Local launch-access interest saved.")).toBeVisible();
+    expect(screen.queryByLabelText(/card|billing/i)).not.toBeInTheDocument();
   });
 
   it("moves focus to the complete-step Close button after advancing", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <DemoCheckout initialPack="builder" open />
+        <LaunchAccessDialog initialInterest="product" open />
       </LocaleProvider>,
     );
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByText("Launch access request saved locally.")).toBeInTheDocument();
+    expect(screen.getByText("Local launch-access interest saved.")).toBeInTheDocument();
     const completeClose = within(screen.getByRole("dialog", { name: "Request launch access" }))
       .getAllByRole("button", { name: "Close" })
       .at(-1);
     expect(completeClose).toHaveFocus();
   });
 
-  it("opens the pack selected by the checkout event", () => {
+  it("opens the selected access interest", () => {
     render(
       <LocaleProvider>
-        <DemoCheckout />
+        <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
-    act(() => openCheckout("scale"));
+    act(() => openLaunchAccess("enterprise"));
 
     expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Scale/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Enterprise planning/ })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("resets to pack selection after close", async () => {
+  it("resets to access-interest selection after close", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <DemoCheckout open />
+        <LaunchAccessDialog open />
       </LocaleProvider>,
     );
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(screen.getByText("Review your request")).toBeInTheDocument();
+    expect(screen.getByText("Review local interest")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Close" }));
-    act(() => openCheckout());
+    act(() => openLaunchAccess());
 
     const steps = within(screen.getByRole("list", { name: "Request launch access" })).getAllByRole("listitem");
     expect(steps[0]).toHaveAttribute("aria-current", "step");
@@ -167,7 +186,7 @@ describe("DemoCheckout", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <DemoCheckout open />
+        <LaunchAccessDialog open />
       </LocaleProvider>,
     );
 
@@ -185,7 +204,7 @@ describe("DemoCheckout", () => {
   it("takes checkout step typography from the stylesheet rather than an inline override", () => {
     render(
       <LocaleProvider>
-        <DemoCheckout open />
+        <LaunchAccessDialog open />
       </LocaleProvider>,
     );
 
@@ -217,6 +236,20 @@ describe("DemoCheckout", () => {
 });
 
 describe("PricingPage", () => {
+  it("uses the page CTA instead of duplicating the header CTA on the pricing route", () => {
+    window.history.replaceState({}, "", "/pricing");
+    const { unmount } = render(
+      <LocaleProvider>
+        <SiteShell><PricingPageContent /></SiteShell>
+        <LaunchAccessDialog />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getAllByRole("button", { name: "Join launch access" })).toHaveLength(1);
+    unmount();
+    window.history.replaceState({}, "", "/");
+  });
+
   it("explains separate token billing and offers one non-binding launch action", () => {
     render(
       <LocaleProvider>
@@ -263,7 +296,7 @@ describe("PricingPage", () => {
     render(
       <LocaleProvider>
         <PricingPage />
-        <DemoCheckout />
+        <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
@@ -281,15 +314,15 @@ describe("PricingPage", () => {
         <SiteShell>
           <PricingPage />
         </SiteShell>
-        <DemoCheckout />
+        <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
     expect(screen.getByRole("heading", { name: "指示性方案，無需承諾。" })).toBeInTheDocument();
-    act(() => openCheckout("builder"));
+    act(() => openLaunchAccess("product"));
 
     expect(screen.getByRole("dialog", { name: "申請啟動存取" })).toBeInTheDocument();
-    expect(screen.getByText("付款功能尚未啟用。此請求不會建立訂單，也不會向您的帳戶收費。")).toBeInTheDocument();
+    expect(screen.getByText("此本機意向不會建立訂單或收費，也不會傳送或保存。")).toBeInTheDocument();
   });
 });

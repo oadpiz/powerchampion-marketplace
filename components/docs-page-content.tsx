@@ -8,19 +8,26 @@ import { useLocale } from "./locale-provider";
 const BASE_URL = "https://api.powerchampion.example/v1";
 const DEMO_KEY = "pc_demo_YOUR_KEY";
 
+type ModelFeatureGate = "streaming" | "tools" | "structuredOutput";
+
+export function modelFeatureGateState(
+  inference: ReadinessState,
+  models: ReadonlyArray<Pick<(typeof MODEL_CATALOG)[number], "available" | "features">>,
+  feature: ModelFeatureGate,
+): ReadinessState {
+  return isReady(inference) && models.length > 0 && models.every((model) => model.available && model.features[feature])
+    ? "ready"
+    : "not-ready";
+}
+
 export function DocsPageContent() {
   const { copy, locale } = useLocale();
   const readiness = TRUST_CONTENT[locale].status.states;
-  const featureGate = (feature: "streaming" | "tools" | "structuredOutput"): ReadinessState => (
-    isReady(SERVICE_READINESS.inference) && MODEL_CATALOG.every((model) => model.features[feature])
-      ? "ready"
-      : "not-ready"
-  );
   const releaseGates = [
-    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: featureGate("streaming") },
-    { id: "usage", label: locale === "en" ? "Usage accounting" : "用量計算", state: "not-ready" as const },
-    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: featureGate("tools") },
-    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: featureGate("structuredOutput") },
+    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: modelFeatureGateState(SERVICE_READINESS.inference, MODEL_CATALOG, "streaming") },
+    { id: "usage", label: locale === "en" ? "Usage accounting" : "用量計算", state: SERVICE_READINESS.usageAccounting },
+    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: modelFeatureGateState(SERVICE_READINESS.inference, MODEL_CATALOG, "tools") },
+    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: modelFeatureGateState(SERVICE_READINESS.inference, MODEL_CATALOG, "structuredOutput") },
     { id: "manifest", label: locale === "en" ? "Provider manifest" : "供應商 Manifest", state: SERVICE_READINESS.manifest },
     { id: "status", label: locale === "en" ? "Operational status" : "營運狀態", state: SERVICE_READINESS.inference },
   ] as const;

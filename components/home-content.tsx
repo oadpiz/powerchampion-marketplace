@@ -2,7 +2,6 @@
 
 import { COMPANY_CONTENT } from "../lib/company";
 import { MODEL_CATALOG } from "../lib/models";
-import { CREDIT_PACKS } from "../lib/pricing";
 import { SERVICE_READINESS, TRUST_CONTENT } from "../lib/trust";
 import { AudiencePaths } from "./audience-paths";
 import { ConsoleView } from "./console-view";
@@ -18,7 +17,6 @@ export function HomeContent() {
     0,
   );
   const startingRate = Math.min(...MODEL_CATALOG.map((model) => model.inputPerMillion));
-  const packageRange = `${Math.min(...CREDIT_PACKS.map((pack) => pack.price))}–${Math.max(...CREDIT_PACKS.map((pack) => pack.price))}`;
   const releaseState = trust.status.states[SERVICE_READINESS.enterpriseReview];
   const text = locale === "en" ? {
     compareRates: "Compare token rates",
@@ -36,7 +34,7 @@ export function HomeContent() {
     request: "Request",
     accessLead: "Compare decision fields, estimate illustrative usage, then request launch access locally.",
     rateAccess: "Indicative access",
-    rateLead: `Review illustrative package examples from $${packageRange} before requesting launch access.`,
+    rateLead: "Review illustrative token rates before requesting launch access.",
     enterprise: "Enterprise planning",
     enterpriseLead: "Start with qualified public capacity context and the release inputs needed for a future deployment conversation.",
     infrastructure: "Review infrastructure context",
@@ -60,7 +58,7 @@ export function HomeContent() {
     request: "申請",
     accessLead: "先比較決策欄位，再估算展示用量，最後在本機申請啟動存取。",
     rateAccess: "展示存取",
-    rateLead: `先查看 $${packageRange} 的展示方案範例，再申請啟動存取。`,
+    rateLead: "先查看展示 Token 費率，再申請啟動存取。",
     enterprise: "企業規劃",
     enterpriseLead: "先檢視限定的公開容量脈絡，以及未來部署對話所需的發布輸入。",
     infrastructure: "檢視基礎設施脈絡",
@@ -69,7 +67,7 @@ export function HomeContent() {
     trustBoundary: "信任邊界",
     serviceStatus: "服務狀態",
   };
-  const requestCheckout = () => window.dispatchEvent(new Event("powerchampion:checkout"));
+  const requestLaunchAccess = () => window.dispatchEvent(new Event("powerchampion:launch-access"));
 
   return (
     <main className="home-page" id="main-content">
@@ -129,7 +127,7 @@ export function HomeContent() {
           <p className="eyebrow">{copy.pricing.kicker}</p>
           <p>{text.rateLead}</p>
           <p className="home-rate-value">${startingRate.toFixed(2)} {copy.shared.perMillionInput}</p>
-          <button className="credit-button" onClick={requestCheckout} type="button">{copy.nav.getTokens}</button>
+          <button className="credit-button" onClick={requestLaunchAccess} type="button">{copy.nav.getTokens}</button>
           <p className="showcase-note">{copy.pricing.demoNotice}</p>
         </div>
         <div className="home-console-preview"><ConsoleView compact /></div>

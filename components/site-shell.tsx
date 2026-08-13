@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
 import { useLocale } from "./locale-provider";
 import { useModalIsolation } from "./use-modal-isolation";
 import type { CopyDictionary } from "../lib/content";
@@ -59,14 +60,16 @@ function footerDestinationLabel(copy: CopyDictionary, key: FooterDestinationKey)
   return copy.nav[key];
 }
 
-function dispatchCheckout(restoreFocusTarget?: HTMLElement | null) {
-  window.dispatchEvent(new CustomEvent("powerchampion:checkout", {
+function dispatchLaunchAccess(restoreFocusTarget?: HTMLElement | null) {
+  window.dispatchEvent(new CustomEvent("powerchampion:launch-access", {
     detail: restoreFocusTarget ? { restoreFocusTarget } : undefined,
   }));
 }
 
 export function SiteShell({ children }: { children: ReactNode }) {
   const { copy, locale, setLocale } = useLocale();
+  const pathname = usePathname();
+  const showHeaderLaunchAccess = pathname !== "/pricing";
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -124,7 +127,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
     }
 
     pendingMobileCheckoutRef.current = false;
-    queueMicrotask(() => dispatchCheckout(menuTriggerRef.current));
+    queueMicrotask(() => dispatchLaunchAccess(menuTriggerRef.current));
   }, [isMobileMenuOpen]);
 
   const closeMobileMenu = () => {
@@ -136,7 +139,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
     setIsMobileMenuOpen(true);
   };
 
-  const openCheckoutFromMobileMenu = () => {
+  const openLaunchAccessFromMobileMenu = () => {
     pendingMobileCheckoutRef.current = true;
     setIsMobileMenuOpen(false);
   };
@@ -158,7 +161,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
             <button aria-pressed={locale === "en"} onClick={() => setLocale("en")} type="button">English</button>
             <button aria-pressed={locale === "zh"} onClick={() => setLocale("zh")} type="button">繁中</button>
           </div>
-          <button className="token-button" onClick={() => dispatchCheckout()} type="button">{copy.nav.getTokens}</button>
+          {showHeaderLaunchAccess && <button className="token-button" onClick={() => dispatchLaunchAccess()} type="button">{copy.nav.getTokens}</button>}
           <button
             aria-controls="mobile-navigation"
             aria-expanded={isMobileMenuOpen}
@@ -188,7 +191,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
               <a href={href} key={key} onClick={closeMobileMenu}>{copy.nav[key]}</a>
             ))}
           </nav>
-          <button className="token-button" onClick={openCheckoutFromMobileMenu} type="button">
+          <button className="token-button" onClick={openLaunchAccessFromMobileMenu} type="button">
             {copy.nav.getTokens}
           </button>
         </div>

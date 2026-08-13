@@ -2,7 +2,7 @@
 
 import { MODEL_CATALOG } from "../lib/models";
 import { CREDIT_PACKS, type CreditPack } from "../lib/pricing";
-import { openCheckout } from "./demo-checkout";
+import { openLaunchAccess } from "./demo-checkout";
 import { useLocale } from "./locale-provider";
 import { PricingCalculator } from "./pricing-calculator";
 
@@ -54,7 +54,7 @@ export function PricingPageContent() {
             </article>
           ))}
         </div>
-        <button className="credit-button pricing-launch-action" onClick={() => openCheckout()} type="button">
+        <button className="credit-button pricing-launch-action" onClick={() => openLaunchAccess()} type="button">
           {copy.nav.getTokens}
         </button>
       </section>

@@ -1,41 +1,50 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CREDIT_PACKS, type CreditPack } from "../lib/pricing";
 import { useLocale } from "./locale-provider";
 import { useModalIsolation } from "./use-modal-isolation";
 
-type CheckoutStep = "choose" | "review" | "complete";
-type CheckoutEventDetail = {
-  packId?: CreditPack["id"];
+export type AccessInterestId = "developer" | "product" | "enterprise";
+
+type AccessStep = "choose" | "review" | "complete";
+type LaunchAccessEventDetail = {
+  interestId?: AccessInterestId;
   restoreFocusTarget?: HTMLElement | null;
 };
 
 const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
 
-export function openCheckout(packId?: CreditPack["id"]) {
-  window.dispatchEvent(new CustomEvent<CheckoutEventDetail>("powerchampion:checkout", {
-    detail: packId ? { packId } : undefined,
+export function openLaunchAccess(interestId?: AccessInterestId) {
+  window.dispatchEvent(new CustomEvent<LaunchAccessEventDetail>("powerchampion:launch-access", {
+    detail: interestId ? { interestId } : undefined,
   }));
 }
 
-export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["id"]; open?: boolean }) {
+export function LaunchAccessDialog({ initialInterest, open }: { initialInterest?: AccessInterestId; open?: boolean }) {
   const { copy, locale } = useLocale();
   const [isOpen, setIsOpen] = useState(open ?? false);
-  const [selectedPackId, setSelectedPackId] = useState<CreditPack["id"]>(initialPack ?? CREDIT_PACKS[0].id);
-  const [step, setStep] = useState<CheckoutStep>("choose");
+  const [selectedInterestId, setSelectedInterestId] = useState<AccessInterestId>(initialInterest ?? "developer");
+  const [step, setStep] = useState<AccessStep>("choose");
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const nextActionRef = useRef<HTMLButtonElement>(null);
   const completeCloseRef = useRef<HTMLButtonElement>(null);
-  const previousStepRef = useRef<CheckoutStep>(step);
+  const previousStepRef = useRef<AccessStep>(step);
 
   useModalIsolation(isOpen, dialogRef);
 
-  const selectedPack = CREDIT_PACKS.find((pack) => pack.id === selectedPackId) ?? CREDIT_PACKS[0];
-  const packLabels: Record<CreditPack["id"], string> = locale === "en"
-    ? { starter: "Starter", builder: "Builder", scale: "Scale" }
-    : { starter: "入門", builder: "建置", scale: "規模" };
+  const interests: { id: AccessInterestId; label: string; detail: string }[] = locale === "en"
+    ? [
+      { id: "developer", label: "Developer exploration", detail: "Review the public catalog and integration preview." },
+      { id: "product", label: "Product evaluation", detail: "Compare illustrative model and usage decisions." },
+      { id: "enterprise", label: "Enterprise planning", detail: "Discuss future deployment review inputs." },
+    ]
+    : [
+      { id: "developer", label: "開發者探索", detail: "檢視公開目錄與整合預覽。" },
+      { id: "product", label: "產品評估", detail: "比較展示模型與用量決策。" },
+      { id: "enterprise", label: "企業規劃", detail: "討論未來部署審查輸入。" },
+    ];
+  const selectedInterest = interests.find((interest) => interest.id === selectedInterestId) ?? interests[0];
 
   const close = () => {
     setIsOpen(false);
@@ -50,15 +59,15 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
 
   useEffect(() => {
     const handleCheckout = (event: Event) => {
-      const { packId, restoreFocusTarget } = (event as CustomEvent<CheckoutEventDetail>).detail ?? {};
+      const { interestId, restoreFocusTarget } = (event as CustomEvent<LaunchAccessEventDetail>).detail ?? {};
       triggerRef.current = restoreFocusTarget ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-      setSelectedPackId(packId ?? CREDIT_PACKS[0].id);
+      setSelectedInterestId(interestId ?? "developer");
       setStep("choose");
       setIsOpen(true);
     };
 
-    window.addEventListener("powerchampion:checkout", handleCheckout);
-    return () => window.removeEventListener("powerchampion:checkout", handleCheckout);
+    window.addEventListener("powerchampion:launch-access", handleCheckout);
+    return () => window.removeEventListener("powerchampion:launch-access", handleCheckout);
   }, []);
 
   useEffect(() => {
@@ -137,28 +146,26 @@ export function DemoCheckout({ initialPack, open }: { initialPack?: CreditPack["
         </ol>
         {step === "choose" && (
           <div className="checkout-pack-list">
-            {CREDIT_PACKS.map((pack) => (
+            {interests.map((interest) => (
               <button
-                aria-pressed={selectedPackId === pack.id}
+                aria-pressed={selectedInterestId === interest.id}
                 className="checkout-pack"
-                key={pack.id}
-                onClick={() => setSelectedPackId(pack.id)}
+                key={interest.id}
+                onClick={() => setSelectedInterestId(interest.id)}
                 type="button"
               >
-                <span>{packLabels[pack.id]}</span>
-                <strong>${pack.price}</strong>
-                <small>${pack.credit} {locale === "en" ? "indicative account credit" : "指示性帳戶額度"}</small>
+                <span>{interest.label}</span>
+                <small>{interest.detail}</small>
               </button>
             ))}
           </div>
         )}
         {step === "review" && (
           <div className="checkout-review">
-            <p>{packLabels[selectedPack.id]}</p>
+            <p>{selectedInterest.label}</p>
             <dl>
-              <div><dt>{locale === "en" ? "Indicative package" : "指示性方案"}</dt><dd>${selectedPack.price.toFixed(2)}</dd></div>
-              <div><dt>{locale === "en" ? "Indicative account credit" : "指示性帳戶額度"}</dt><dd>${selectedPack.credit.toFixed(2)}</dd></div>
-              <div><dt>{locale === "en" ? "Indicative launch bonus" : "指示性啟動加碼"}</dt><dd>{selectedPack.bonusPercent}%</dd></div>
+              <div><dt>{locale === "en" ? "Interest" : "意向"}</dt><dd>{selectedInterest.label}</dd></div>
+              <div><dt>{locale === "en" ? "Local handling" : "本機處理"}</dt><dd>{locale === "en" ? "Browser only" : "僅限瀏覽器"}</dd></div>
             </dl>
           </div>
         )}

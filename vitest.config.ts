@@ -1,8 +1,14 @@
 import react from "@vitejs/plugin-react";
 import { configDefaults, defineConfig } from "vitest/config";
+import { resolve } from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "next/navigation": resolve(process.cwd(), "node_modules/vinext/dist/shims/navigation.js"),
+    },
+  },
   test: {
     environment: "jsdom",
     globals: true,

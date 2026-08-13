@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CodeSamples } from "../components/code-samples";
+import { modelFeatureGateState } from "../components/docs-page-content";
 import { ConsoleView } from "../components/console-view";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
@@ -24,6 +25,17 @@ describe("CodeSamples", () => {
     for (const gate of ["Streaming", "Usage accounting", "Tool use", "Structured output", "Provider manifest", "Operational status"]) {
       expect(screen.getByText(new RegExp(`${gate}: Not ready`, "i"))).toBeVisible();
     }
+  });
+
+  it("fails closed when inference, model availability, or a feature prerequisite is missing", () => {
+    const enabledModel = { available: true, features: { streaming: true, tools: true, structuredOutput: true, reasoning: true } };
+    const unavailableModel = { ...enabledModel, available: false };
+    const missingStreaming = { ...enabledModel, features: { ...enabledModel.features, streaming: false } };
+
+    expect(modelFeatureGateState("not-ready", [enabledModel], "streaming")).toBe("not-ready");
+    expect(modelFeatureGateState("ready", [unavailableModel], "tools")).toBe("not-ready");
+    expect(modelFeatureGateState("ready", [missingStreaming], "streaming")).toBe("not-ready");
+    expect(modelFeatureGateState("ready", [enabledModel], "structuredOutput")).toBe("ready");
   });
 
   it("has truthful docs metadata", () => {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import { LocaleProvider } from "../components/locale-provider";
-import { DemoCheckout } from "../components/demo-checkout";
+import { LaunchAccessDialog } from "../components/demo-checkout";
 import { SiteShell } from "../components/site-shell";
 import "./globals.css";
 
@@ -66,7 +66,7 @@ export default function RootLayout({
       >
         <LocaleProvider>
           <SiteShell>{children}</SiteShell>
-          <DemoCheckout />
+          <LaunchAccessDialog />
         </LocaleProvider>
       </body>
     </html>

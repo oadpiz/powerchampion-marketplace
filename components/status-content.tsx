@@ -10,6 +10,7 @@ export function StatusContent() {
     [content.labels.website, SERVICE_READINESS.website],
     [content.labels.manifest, SERVICE_READINESS.manifest],
     [content.labels.inference, SERVICE_READINESS.inference],
+    [content.labels.usageAccounting, SERVICE_READINESS.usageAccounting],
     [content.labels.payments, SERVICE_READINESS.payments],
     [content.labels.enterpriseReview, SERVICE_READINESS.enterpriseReview],
   ] as const;

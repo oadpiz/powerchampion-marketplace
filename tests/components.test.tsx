@@ -1,11 +1,24 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { DemoCheckout } from "../components/demo-checkout";
+import { LaunchAccessDialog } from "../components/demo-checkout";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
 describe("SiteShell", () => {
+  it("keeps the header launch-access action on non-pricing routes", () => {
+    window.history.replaceState({}, "", "/docs");
+    const { unmount } = render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Join launch access" })).toBeVisible();
+    unmount();
+    window.history.replaceState({}, "", "/");
+  });
+
   it("renders the enterprise primary destinations and changes locale", async () => {
     const user = userEvent.setup();
     render(
@@ -173,11 +186,11 @@ describe("SiteShell", () => {
 
   it("offers localized checkout in the mobile menu and dispatches its event", async () => {
     const user = userEvent.setup();
-    let checkoutEvents = 0;
-    const onCheckout = () => {
-      checkoutEvents += 1;
+    let launchAccessEvents = 0;
+    const onLaunchAccess = () => {
+      launchAccessEvents += 1;
     };
-    window.addEventListener("powerchampion:checkout", onCheckout);
+    window.addEventListener("powerchampion:launch-access", onLaunchAccess);
 
     render(
       <LocaleProvider>
@@ -190,7 +203,7 @@ describe("SiteShell", () => {
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     const menu = screen.getByRole("dialog", { name: "Open menu" });
     await user.click(within(menu).getByRole("button", { name: "Join launch access" }));
-    expect(checkoutEvents).toBe(1);
+    expect(launchAccessEvents).toBe(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
@@ -202,7 +215,7 @@ describe("SiteShell", () => {
       ),
     ).toBeInTheDocument();
 
-    window.removeEventListener("powerchampion:checkout", onCheckout);
+    window.removeEventListener("powerchampion:launch-access", onLaunchAccess);
   });
 
   it("contains focus in the mobile menu and returns it to the trigger", async () => {
@@ -271,7 +284,7 @@ describe("SiteShell", () => {
         <SiteShell>
           <main>Content</main>
         </SiteShell>
-        <DemoCheckout />
+        <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
@@ -293,7 +306,7 @@ describe("SiteShell", () => {
     const { container } = render(
       <LocaleProvider>
         <SiteShell><main>Content</main></SiteShell>
-        <DemoCheckout />
+        <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
@@ -326,7 +339,7 @@ describe("SiteShell", () => {
         <SiteShell>
           <main>Content</main>
         </SiteShell>
-        <DemoCheckout />
+        <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
@@ -346,7 +359,7 @@ describe("SiteShell", () => {
     render(
       <LocaleProvider>
         <SiteShell><main>Content</main></SiteShell>
-        <DemoCheckout />
+        <LaunchAccessDialog />
       </LocaleProvider>,
     );
 

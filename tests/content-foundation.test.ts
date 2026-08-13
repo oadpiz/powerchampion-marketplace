@@ -16,6 +16,7 @@ describe("public truth foundation", () => {
     expect(SERVICE_READINESS.manifest).toBe("not-ready");
     expect(SERVICE_READINESS.inference).toBe("not-ready");
     expect(SERVICE_READINESS.payments).toBe("not-ready");
+    expect(SERVICE_READINESS.usageAccounting).toBe("not-ready");
     expect(isReady(undefined)).toBe(false);
     expect(isReady("not-ready")).toBe(false);
     expect(isReady("ready")).toBe(true);

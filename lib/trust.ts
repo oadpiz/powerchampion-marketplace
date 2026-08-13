@@ -7,6 +7,7 @@ export type ServiceReadiness = {
   website: ReadinessState;
   manifest: ReadinessState;
   inference: ReadinessState;
+  usageAccounting: ReadinessState;
   payments: ReadinessState;
   enterpriseReview: ReadinessState;
 };
@@ -15,6 +16,7 @@ export const SERVICE_READINESS: ServiceReadiness = {
   website: "preview",
   manifest: "not-ready",
   inference: "not-ready",
+  usageAccounting: "not-ready",
   payments: "not-ready",
   enterpriseReview: "preparation",
 };
@@ -95,7 +97,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
       kicker: "Public status",
       title: "Launch preparation",
       lead: "Website preview and future service readiness are reported separately.",
-      labels: { website: "Website", manifest: "Provider manifest", inference: "Inference API", payments: "Payments", enterpriseReview: "Enterprise review" },
+      labels: { website: "Website", manifest: "Provider manifest", inference: "Inference API", usageAccounting: "Usage accounting", payments: "Payments", enterpriseReview: "Enterprise review" },
       states: { ready: "Ready", preview: "Preview", preparation: "In preparation", "not-ready": "Not ready" },
     },
     deploymentReview: "Deployment review",
@@ -125,7 +127,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
       kicker: "公開狀態",
       title: "啟動準備中",
       lead: "網站預覽與未來服務就緒狀態會分開呈現。",
-      labels: { website: "網站", manifest: "供應商 Manifest", inference: "推論 API", payments: "付款", enterpriseReview: "企業審查" },
+      labels: { website: "網站", manifest: "供應商 Manifest", inference: "推論 API", usageAccounting: "用量計算", payments: "付款", enterpriseReview: "企業審查" },
       states: { ready: "已就緒", preview: "預覽", preparation: "準備中", "not-ready": "尚未就緒" },
     },
     deploymentReview: "部署審查",

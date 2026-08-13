@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import { MODEL_USAGE, RECENT_REQUESTS, SEVEN_DAY_USAGE } from "../lib/console-data";
-import { openCheckout } from "./demo-checkout";
+import { openLaunchAccess } from "./demo-checkout";
 import { useLocale } from "./locale-provider";
 
 type ConsoleViewProps = {
@@ -72,7 +72,7 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
         <div className="balance-block">
           <Heading>{illustrativeBalance}</Heading>
           <strong>$184.20</strong>
-          {!compact && <button className="console-add-credit" onClick={() => openCheckout()} type="button">{copy.nav.getTokens}</button>}
+          {!compact && <button className="console-add-credit" onClick={() => openLaunchAccess()} type="button">{copy.nav.getTokens}</button>}
         </div>
         <div className="usage-block">
           <div className="usage-heading">
