@@ -14,22 +14,22 @@ function renderHome() {
 }
 
 describe("Home audience paths", () => {
-  it("shows localized developer and enterprise path context", async () => {
+  it("keeps the split closing choices aligned with the two approved journeys", async () => {
     const user = userEvent.setup();
     renderHome();
 
     const englishPaths = screen.getByRole("region", { name: "Choose your path" });
-    expect(within(englishPaths).getByText("Developer access")).toBeVisible();
-    expect(within(englishPaths).getByText("Compare models, review indicative rates, and join launch access.")).toBeVisible();
-    expect(within(englishPaths).getByText("Enterprise collaboration")).toBeVisible();
-    expect(within(englishPaths).getByText("Review public context and explore a future conversation.")).toBeVisible();
+    expect(within(englishPaths).getByRole("link", { name: "Compare token rates" }))
+      .toHaveAttribute("href", "/pricing");
+    expect(within(englishPaths).getByRole("link", { name: "Deployment review" }))
+      .toHaveAttribute("href", "/contact");
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
     const chinesePaths = screen.getByRole("region", { name: "選擇你的路徑" });
-    expect(within(chinesePaths).getByRole("link", { name: "探索模型存取" })).toHaveAttribute("href", "/models");
-    expect(within(chinesePaths).getByRole("link", { name: "洽談基礎設施" })).toHaveAttribute("href", "/contact");
-    expect(within(chinesePaths).getByText("比較模型、查看指示性費率，並加入啟動存取。")).toBeVisible();
-    expect(within(chinesePaths).getByText("查看公開脈絡，探索未來合作對話。")).toBeVisible();
+    expect(within(chinesePaths).getByRole("link", { name: "比較 Token 費率" }))
+      .toHaveAttribute("href", "/pricing");
+    expect(within(chinesePaths).getByRole("link", { name: "部署審查" }))
+      .toHaveAttribute("href", "/contact");
   });
 });

@@ -1,11 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
-import { ConsoleView } from "../components/console-view";
-import { DemoCheckout } from "../components/demo-checkout";
 import { HomeContent } from "../components/home-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
@@ -19,181 +15,96 @@ function renderInShell(content: ReactNode) {
 }
 
 describe("Power Champion homepage", () => {
-  it("offers parallel developer and enterprise paths", () => {
+  it("routes the hero through token-rate comparison and deployment review", () => {
     renderInShell(<HomeContent />);
 
     const hero = screen.getByRole("region", { name: "Every model.One power core." });
-    expect(within(hero).getByRole("link", { name: "Explore model access" })).toHaveAttribute("href", "/models");
-    expect(within(hero).getByRole("link", { name: "Talk to infrastructure" })).toHaveAttribute("href", "/contact");
+    expect(within(hero).getByRole("link", { name: "Compare token rates" }))
+      .toHaveAttribute("href", "/pricing");
+    expect(within(hero).getByRole("link", { name: "Deployment review" }))
+      .toHaveAttribute("href", "/contact");
     expect(screen.getByText("Token access launching soon")).toBeVisible();
   });
 
-  it("uses launch access for the console action in both locales", async () => {
-    const user = userEvent.setup();
-    renderInShell(<><ConsoleView /><DemoCheckout /></>);
-
-    const englishConsole = screen.getByText("Available balance").closest(".console-view");
-    expect(englishConsole).toBeInstanceOf(HTMLElement);
-    await user.click(within(englishConsole!).getByRole("button", { name: "Join launch access" }));
-    expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
-    expect(screen.getByText("Payments are not enabled yet. This request does not create an order or charge your account.")).toBeVisible();
-
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-
-    const chineseConsole = screen.getByText("可用餘額").closest(".console-view");
-    expect(chineseConsole).toBeInstanceOf(HTMLElement);
-    expect(within(chineseConsole!).queryByRole("button", { name: /增加額度/i })).not.toBeInTheDocument();
-    await user.click(within(chineseConsole!).getByRole("button", { name: "加入啟動存取" }));
-    expect(screen.getByRole("dialog", { name: "申請啟動存取" })).toBeInTheDocument();
-  });
-
-  it("labels the package CTAs as launch access", () => {
+  it("shows derived catalog facts instead of an availability claim", () => {
     renderInShell(<HomeContent />);
 
-    const packages = screen.getByRole("region", { name: "Explore indicative launch packages." });
-    expect(within(packages).getAllByRole("button", { name: "Join launch access" })).toHaveLength(3);
-    expect(within(packages).queryByRole("button", { name: /^(buy|pay|checkout)/i })).not.toBeInTheDocument();
+    const proof = screen.getByRole("region", { name: "Marketplace facts" });
+    expect(within(proof).queryByText("99.98%")).not.toBeInTheDocument();
+    expect(within(proof).getByText("6")).toBeVisible();
+    expect(within(proof).getByText("128K")).toBeVisible();
+    expect(within(proof).getByText("$0.16")).toBeVisible();
   });
 
-  it("states on Home that token access is launching soon in both locales", async () => {
-    const user = userEvent.setup();
+  it("keeps every featured model decision field visible without an expansion control", () => {
     renderInShell(<HomeContent />);
 
-    expect(screen.getByText("Token access launching soon")).toBeVisible();
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    expect(screen.getByText("Token 存取即將推出")).toBeVisible();
-  });
-
-  it("keeps section headings at least 48px in every responsive rule", async () => {
-    const css = await readFile(
-      resolve(process.cwd(), "app/globals.css"),
-      "utf8",
-    );
-    const rules = css.matchAll(
-      /\.section-intro h2,\s*\.closing-cta h2\s*\{[^}]*font-size:\s*([^;]+);/g,
-    );
-    const floors = Array.from(rules, ([, value]) => {
-      const lengths = Array.from(
-        value.matchAll(/([\d.]+)(rem|px)/g),
-        ([, amount, unit]) => Number(amount) * (unit === "rem" ? 16 : 1),
-      );
-      return Math.min(...lengths);
-    });
-
-    expect(floors.length).toBeGreaterThan(0);
-    expect(floors.every((floor) => floor >= 48)).toBe(true);
-  });
-
-  it("localizes its proof, model, credit, and compact console details", async () => {
-    const user = userEvent.setup();
-    renderInShell(<HomeContent />);
-
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-
-    expect(
-      screen.getByRole("region", { name: "市集成效數據" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("region", { name: "交易對手揭露的基礎設施脈絡" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("約 3.1 MW")).toBeVisible();
-    expect(screen.getByText("交易對手報告的預期合約託管容量；並非即時或已完成部署的容量。"))
-      .toBeVisible();
-    expect(screen.getByRole("link", { name: "查看公司脈絡" })).toHaveAttribute("href", "/company");
-    expect(screen.getByText("啟用中的模型路由")).toBeInTheDocument();
-    expect(screen.getByText("可用上下文")).toBeInTheDocument();
-    expect(screen.getByText("展示可用率")).toBeInTheDocument();
-    expect(screen.getAllByText("快速")).toHaveLength(2);
-    expect(screen.getByText("深度")).toBeInTheDocument();
-    expect(screen.getByText("均衡")).toBeInTheDocument();
-    expect(screen.getAllByText("展示起始輸入費率")).toHaveLength(4);
-    expect(screen.getByText("$0.18 每百萬輸入 Token")).toBeVisible();
-    expect(screen.getByText("$10 指示性帳戶額度")).toBeInTheDocument();
-    expect(screen.getByText("指示性啟動方案")).toBeInTheDocument();
-    expect(screen.getByText("包含 5% 指示性啟動加碼")).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: /七日展示用量：18\.7M 詞元；展示支出 US\$13\.46。每日趨勢/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", {
-        name: "模型用量分布：Qwen 48%、DeepSeek 32%、Llama 20%",
-      }),
-    ).toBeInTheDocument();
-  });
-
-  it("associates one visible illustrative-data disclosure with every proof metric", () => {
-    renderInShell(<HomeContent />);
-
-    const proofStrip = screen.getByRole("region", { name: "Marketplace proof points" });
-    const disclosureId = proofStrip.getAttribute("aria-describedby");
-
-    expect(disclosureId).toBeTruthy();
-    expect(within(proofStrip).getByText("Illustrative data")).toHaveAttribute("id", disclosureId);
-    expect(within(proofStrip).getByText("28")).toBeInTheDocument();
-    expect(within(proofStrip).getByText("128K+")).toBeInTheDocument();
-    expect(within(proofStrip).getByText("99.98%")).toBeInTheDocument();
-  });
-
-  it("links the factual home infrastructure brief to Company", () => {
-    renderInShell(<HomeContent />);
-
-    const brief = screen.getByRole("region", {
-      name: "Infrastructure context from counterparty disclosure",
-    });
-    const disclosureId = brief.getAttribute("aria-describedby");
-
-    expect(screen.getByText("Approximately 3.1 MW")).toBeVisible();
-    expect(within(brief).getByText(
-      "Counterparty-reported expected contracted hosting capacity; not live or completed deployment.",
-    )).toHaveAttribute("id", disclosureId);
-    expect(within(brief).getByRole("link", { name: "View company context" }))
-      .toHaveAttribute("href", "/company");
-    expect(disclosureId).toBeTruthy();
-  });
-
-  it("keeps illustrative starting input rates visible for all four featured models", () => {
-    renderInShell(<HomeContent />);
-
-    const expectedRates = [
-      ["Qwen", "$0.18 per 1M input"],
-      ["DeepSeek", "$0.27 per 1M input"],
-      ["Llama", "$0.16 per 1M input"],
-      ["Mistral", "$0.20 per 1M input"],
+    const expectedModels = [
+      ["Qwen", "$0.18 per 1M input", "$0.72 per 1M output"],
+      ["DeepSeek", "$0.27 per 1M input", "$1.10 per 1M output"],
+      ["Llama", "$0.16 per 1M input", "$0.64 per 1M output"],
+      ["Mistral", "$0.20 per 1M input", "$0.80 per 1M output"],
+      ["GLM", "$0.22 per 1M input", "$0.88 per 1M output"],
+      ["MiniMax", "$0.24 per 1M input", "$0.96 per 1M output"],
     ] as const;
 
-    for (const [model, rate] of expectedRates) {
-      const row = screen.getByRole("article", { name: model });
-      expect(within(row).getByText("Illustrative starting input rate")).toBeVisible();
-      expect(within(row).getByText(rate)).toBeVisible();
+    for (const [name, inputRate, outputRate] of expectedModels) {
+      const row = screen.getByRole("article", { name });
+      expect(within(row).getByText("128K")).toBeVisible();
+      expect(within(row).getByText("32K")).toBeVisible();
+      expect(within(row).getByText(inputRate)).toBeVisible();
+      expect(within(row).getByText(outputRate)).toBeVisible();
+      expect(within(row).getByText("Review required")).toBeVisible();
+      expect(within(row).getByText("In preparation")).toBeVisible();
+      expect(within(row).queryByRole("button")).not.toBeInTheDocument();
     }
   });
 
-  it("uses the design-specified closing action without changing the Docs heading", () => {
+  it("shows the three access steps in their approved order", () => {
     renderInShell(<HomeContent />);
 
-    expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute("href", "/docs");
-    expect(screen.queryByRole("link", { name: "Quick start" })).not.toBeInTheDocument();
-    expect(document.getElementById("about")).toBeInstanceOf(HTMLElement);
+    const access = screen.getByRole("region", { name: "How access works" });
+    expect(within(access).getByRole("list").querySelectorAll("h3")).toHaveLength(3);
+    expect(Array.from(within(access).getByRole("list").querySelectorAll("h3"), (heading) => heading.textContent))
+      .toEqual(["Compare", "Estimate", "Request"]);
   });
 
-  it("uses route-appropriate h3 headings in the compact console", () => {
+  it("bridges enterprise and trust journeys to their public routes", () => {
     renderInShell(<HomeContent />);
 
-    expect(screen.getByRole("heading", { level: 3, name: "Available balance" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "Seven-day usage" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 3, name: "Model split" })).toBeInTheDocument();
+    const enterprise = screen.getByRole("region", { name: "Enterprise planning" });
+    expect(within(enterprise).getByRole("link", { name: "Review infrastructure context" }))
+      .toHaveAttribute("href", "/infrastructure");
+    expect(within(enterprise).getByRole("link", { name: "Deployment review" }))
+      .toHaveAttribute("href", "/contact");
+
+    const trust = screen.getByRole("region", { name: "Trust and readiness" });
+    expect(within(trust).getByRole("link", { name: "Trust boundary" }))
+      .toHaveAttribute("href", "/trust");
+    expect(within(trust).getByRole("link", { name: "Service status" }))
+      .toHaveAttribute("href", "/status");
   });
 
-  it("localizes the full console demo request units", async () => {
+  it("uses one non-binding launch-access action for the editorial rate section", () => {
+    renderInShell(<HomeContent />);
+
+    const access = screen.getByRole("region", { name: "Indicative access" });
+    expect(within(access).getAllByRole("button", { name: "Join launch access" })).toHaveLength(1);
+    expect(within(access).getByText(
+      "Illustrative package values only — requests are local to this demonstration and do not create orders, charges, or reservations.",
+    )).toBeVisible();
+  });
+
+  it("repeats the primary catalog facts after switching to Traditional Chinese", async () => {
     const user = userEvent.setup();
-    renderInShell(<ConsoleView />);
+    renderInShell(<HomeContent />);
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
-    const recent = screen.getByRole("region", { name: "近期請求" });
-    expect(within(recent).getByText("Qwen · 18.4K 詞元")).toBeInTheDocument();
-    expect(within(recent).getByText("DeepSeek · 42.1K 詞元")).toBeInTheDocument();
-    expect(within(recent).getByText("Llama · 9.8K 詞元")).toBeInTheDocument();
+    const proof = screen.getByRole("region", { name: "市集事實" });
+    expect(within(proof).getByText("6")).toBeVisible();
+    expect(within(proof).getByText("128K")).toBeVisible();
+    expect(within(proof).getByText("$0.16")).toBeVisible();
+    expect(screen.getByText("Token 存取即將推出")).toBeVisible();
   });
 });
