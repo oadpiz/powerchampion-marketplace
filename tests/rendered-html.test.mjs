@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function render(pathname, host = "localhost", forwardedHost) {
+async function request(pathname, host = "localhost", forwardedHost) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
@@ -24,6 +24,10 @@ async function render(pathname, host = "localhost", forwardedHost) {
       passThroughOnException() {},
     },
   );
+}
+
+async function render(pathname, host = "localhost", forwardedHost) {
+  return request(pathname, host, forwardedHost);
 }
 
 const routeMetadata = {
@@ -130,6 +134,13 @@ test("server-renders a complete English marketplace shell with social metadata",
     publicHtml,
     /property="og:image" content="https:\/\/marketplace\.example\/og\.png"/,
   );
+});
+
+test("redirects the browser compatibility favicon to the published PNG", async () => {
+  const response = await request("/favicon.ico");
+
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "http://localhost/favicon.png");
 });
 
 test("normalizes valid metadata hosts and fails closed on malformed values", async () => {
