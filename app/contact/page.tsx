@@ -1,8 +1,8 @@
 import { EnterpriseEnquiry } from "../../components/enterprise-enquiry";
 
 export const metadata = {
-  title: "Contact | Power Champion",
-  description: "Explore launch-only infrastructure and partnership enquiries that stay local to your browser.",
+  title: "Deployment review | Power Champion",
+  description: "Review non-binding deployment interests locally in your browser.",
 };
 
 export default function ContactPage() {

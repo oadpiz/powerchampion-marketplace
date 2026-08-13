@@ -37,8 +37,8 @@ test("server-renders a complete English marketplace shell with social metadata",
     assert.match(html, /lang="en"/, `${pathname} defaults to English`);
     assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
     if (pathname === "/contact") {
-      assert.match(html, /<title>Contact \| Power Champion<\/title>/);
-      assert.match(html, /Explore launch-only infrastructure and partnership enquiries that stay local to your browser\./);
+      assert.match(html, /<title>Deployment review \| Power Champion<\/title>/);
+      assert.match(html, /Review non-binding deployment interests locally in your browser\./);
     } else if (pathname === "/models") {
       assert.match(html, /<title>Open Model Catalog \| Power Champion<\/title>/);
       assert.match(
@@ -90,9 +90,11 @@ test("server-renders local-only contact without payment or personal-data fields"
   assert.equal(response.status, 200);
   const html = await response.text();
 
-  assert.match(html, /<title>Contact \| Power Champion<\/title>/);
-  assert.match(html, /Enterprise enquiry/i);
-  assert.match(html, /This enquiry is local only\. No information is transmitted, persisted, or used to reserve capacity\./i);
+  assert.match(html, /<title>Deployment review \| Power Champion<\/title>/);
+  assert.match(html, /Deployment review/i);
+  assert.match(html, /No information is transmitted or persisted/i);
+  assert.match(html, /<option value="launch-access">Launch access<\/option>/);
+  assert.doesNotMatch(html, /<form[^>]+action=/i);
   assert.match(html, /href="\/company"/);
   assert.doesNotMatch(html, /<(?:input|textarea)[^>]+(?:card|bank|email|password|payment|billing)/i);
 });

@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useLocale } from "./locale-provider";
 
-type Interest = "" | "infrastructure" | "partnership";
+type Interest = "" | "launch-access" | "infrastructure" | "partnership";
 
 type EnquiryState = {
   interest: Interest;
@@ -35,10 +35,10 @@ export function EnterpriseEnquiry() {
   };
 
   return (
-    <section aria-labelledby="enterprise-enquiry-title" className="enterprise-enquiry">
+    <section aria-labelledby="deployment-review-title" className="enterprise-enquiry">
       <div className="enquiry-intro">
         <p className="eyebrow">{copy.enquiry.kicker}</p>
-        <h1 id="enterprise-enquiry-title">{copy.enquiry.title}</h1>
+        <h1 id="deployment-review-title">{copy.enquiry.title}</h1>
         <p>{copy.enquiry.lead}</p>
       </div>
 
@@ -57,6 +57,7 @@ export function EnterpriseEnquiry() {
           value={enquiry.interest}
         >
           <option value="">{copy.enquiry.interestPlaceholder}</option>
+          <option value="launch-access">{copy.enquiry.launchAccess}</option>
           <option value="infrastructure">{copy.enquiry.infrastructure}</option>
           <option value="partnership">{copy.enquiry.partnership}</option>
         </select>
@@ -73,11 +74,16 @@ export function EnterpriseEnquiry() {
         />
         <p id="message-hint">{copy.enquiry.messageHint}</p>
 
+        <p className="enquiry-notice">{copy.enquiry.localNotice}</p>
         <button type="submit">{copy.enquiry.submit}</button>
-        {enquiry.submitted && <p role="status">{copy.enquiry.confirmation}</p>}
+        {enquiry.submitted && (
+          <>
+            <p role="status">{copy.enquiry.confirmation}</p>
+            <p className="enquiry-notice">{copy.enquiry.localNotice}</p>
+          </>
+        )}
       </form>
 
-      <p className="enquiry-notice">{copy.enquiry.localNotice}</p>
       <a className="enquiry-company-link" href="/company">{copy.enquiry.companyLink}</a>
     </section>
   );

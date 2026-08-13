@@ -83,6 +83,11 @@ export function CompanyContent() {
         </ul>
         <p>{content.disclosure}</p>
       </section>
+
+      <nav aria-label={content.related.title} className="company-related-links">
+        <a href="/infrastructure">{content.related.infrastructureLink}</a>
+        <a href="/contact">{content.related.deploymentReviewLink}</a>
+      </nav>
     </main>
   );
 }

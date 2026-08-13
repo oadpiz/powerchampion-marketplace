@@ -36,6 +36,10 @@ describe("company data", () => {
         "href",
         "https://www.sec.gov/Archives/edgar/data/1563568/000143774926023245/ex_986209.htm",
       );
+    expect(screen.getByRole("link", { name: "Review infrastructure" }))
+      .toHaveAttribute("href", "/infrastructure");
+    expect(screen.getByRole("link", { name: "Start deployment review" }))
+      .toHaveAttribute("href", "/contact");
   });
 
   it("renders a third counterparty-reported deposit fact in the capacity sequence", () => {
@@ -73,6 +77,8 @@ describe("company data", () => {
     expect(screen.getByText("發布日期", { selector: "dt" })).toBeVisible();
     expect(screen.getByText("目錄所列登記日期", { selector: "dt" })).toBeVisible();
     expect(screen.getByRole("link", { name: "i-BVI 公開公司目錄列表" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "檢視基礎設施" })).toHaveAttribute("href", "/infrastructure");
+    expect(screen.getByRole("link", { name: "開始部署審查" })).toHaveAttribute("href", "/contact");
     expect(screen.queryByText("Counterparty SEC-filed disclosure")).not.toBeInTheDocument();
   });
 

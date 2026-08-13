@@ -501,8 +501,9 @@ button { color: inherit; }
 .company-hero > p:not(.eyebrow) { max-width: 660px; margin: 1.5rem 0 0; color: var(--muted); font-size: 1.06rem; line-height: 1.65; }
 .company-record, .capacity-brief, .source-disclosures { border-top: 1px solid var(--line); padding-top: 2.5rem; }
 .capacity-brief, .source-disclosures { margin-top: 4rem; }
-.company-timeline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; margin: 2rem 0 0; padding: 0; list-style: none; }
-.company-timeline li { border: 1px solid var(--line); padding: 1.5rem; }
+.company-timeline { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 2rem 0 0; padding: 0; border-block: 1px solid var(--line); list-style: none; }
+.company-timeline li { padding: 1.5rem; }
+.company-timeline li + li { border-left: 1px solid var(--line); }
 .company-timeline h3 { margin: 0; font-size: 1.25rem; font-weight: 560; letter-spacing: -.025em; }
 .company-timeline time { display: block; margin-top: .8rem; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.5; }
 .company-timeline p, .source-disclosures > p { margin: 1rem 0 0; color: var(--muted); line-height: 1.65; }
@@ -518,6 +519,9 @@ button { color: inherit; }
 .source-disclosures li { border-bottom: 1px solid var(--line); padding-bottom: 1rem; }
 .source-disclosures a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--cyan); text-underline-offset: .25rem; }
 .source-disclosures a:hover { color: var(--cyan); }
+.company-related-links { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-top: 2rem; }
+.company-related-links a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--cyan); text-underline-offset: .25rem; }
+.company-related-links a:hover { color: var(--cyan); }
 .source-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1.5rem; margin: .8rem 0 0; }
 .source-metadata dt { color: var(--muted); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
 .source-metadata dd { margin: .25rem 0 0; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.5; }
@@ -566,7 +570,7 @@ button { color: inherit; }
 .enquiry-form textarea + p, .enquiry-notice { margin: 0; color: var(--muted); font-size: .875rem; line-height: 1.55; }
 .enquiry-form button { justify-self: start; min-height: 48px; margin-top: .7rem; border: 1px solid var(--cyan); padding: .65rem 1rem; background: var(--cyan); color: var(--ground); font-weight: 700; }
 .enquiry-form [role="status"] { margin: .3rem 0 0; color: var(--cyan); font-weight: 650; }
-.enquiry-notice { margin-top: 2rem; border-left: 3px solid var(--cyan); padding: .9rem 1rem; background: rgba(97, 220, 233, .08); }
+.enquiry-form .enquiry-notice { margin-top: .8rem; border-left: 3px solid var(--cyan); padding: .9rem 1rem; background: rgba(97, 220, 233, .08); }
 .enquiry-company-link { display: inline-block; margin-top: 1.25rem; color: var(--ink); text-decoration: underline; text-decoration-color: var(--cyan); text-underline-offset: .25rem; }
 .enquiry-company-link:hover { color: var(--cyan); }
 
@@ -628,8 +632,8 @@ button { color: inherit; }
   .trust-evidence-sections > section:nth-child(odd), .trust-evidence-sections > section:nth-child(even) { padding-inline: 0; border-right: 0; }
   .trust-evidence-sections > section + section { padding-top: 2rem; }
   .company-timeline, .capacity-sequence { grid-template-columns: 1fr; }
-  .company-timeline { gap: .75rem; }
-  .company-timeline li { padding: 1.25rem; }
+  .company-timeline li { padding-inline: 0; }
+  .company-timeline li + li { border-top: 1px solid var(--line); border-left: 0; }
   .capacity-sequence > div { padding-inline: 0; }
   .capacity-sequence > div + div { border-top: 1px solid var(--line); border-left: 0; }
 }

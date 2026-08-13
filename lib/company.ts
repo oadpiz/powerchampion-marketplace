@@ -40,6 +40,11 @@ export type CompanyContent = {
     title: string;
     typeLabel: string;
   };
+  related: {
+    title: string;
+    infrastructureLink: string;
+    deploymentReviewLink: string;
+  };
   disclosure: string;
 };
 
@@ -121,6 +126,11 @@ export const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent> & Record<Loc
       title: "Sources and disclosures",
       typeLabel: "Source type",
     },
+    related: {
+      title: "Related enterprise paths",
+      infrastructureLink: "Review infrastructure",
+      deploymentReviewLink: "Start deployment review",
+    },
     disclosure: "This information is based on public third-party reporting. It is not an offer of securities, investment advice, performance guidance, or a promise of capacity or service.",
   },
   zh: {
@@ -158,6 +168,11 @@ export const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent> & Record<Loc
     sources: {
       title: "資料來源與揭露",
       typeLabel: "來源類型",
+    },
+    related: {
+      title: "相關企業路徑",
+      infrastructureLink: "檢視基礎設施",
+      deploymentReviewLink: "開始部署審查",
     },
     disclosure: "本資訊依據公開的第三方報告；並非證券要約、投資建議、績效指引，亦非容量或服務的承諾。",
   },

@@ -7,18 +7,26 @@ import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
 describe("EnterpriseEnquiry", () => {
-  it("keeps enterprise enquiries local and payment-free", async () => {
+  it("keeps deployment review local, action-free, and free of personal or payment fields", async () => {
     const user = userEvent.setup();
     render(<LocaleProvider><EnterpriseEnquiry /></LocaleProvider>);
 
-    await user.click(screen.getByRole("button", { name: "Send enquiry" }));
+    expect(screen.getByRole("option", { name: "Launch access" })).toHaveValue("launch-access");
+    expect(screen.getByRole("option", { name: "Infrastructure planning" })).toHaveValue("infrastructure");
+    expect(screen.getByRole("option", { name: "Model partnership" })).toHaveValue("partnership");
+    expect(screen.getByText(/No information is transmitted or persisted/i)).toBeVisible();
+    expect(document.querySelector("form")).not.toHaveAttribute("action");
+    expect(screen.queryByLabelText(/email|phone|address|card|password|API key|company.registration/i))
+      .not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Submit deployment review" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Choose an interest area.");
 
-    await user.selectOptions(screen.getByLabelText("I am interested in"), "infrastructure");
-    await user.click(screen.getByRole("button", { name: "Send enquiry" }));
+    await user.selectOptions(screen.getByLabelText("I am interested in"), "launch-access");
+    await user.click(screen.getByRole("button", { name: "Submit deployment review" }));
 
     expect(screen.getByRole("status")).toHaveTextContent("Nothing was sent or reserved.");
-    expect(screen.queryByLabelText(/card|bank|email|password/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/No information is transmitted or persisted/i)).toHaveLength(2);
   });
 
   it("localizes validation and the local-only completion in Traditional Chinese", async () => {
@@ -30,11 +38,11 @@ describe("EnterpriseEnquiry", () => {
     );
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    await user.click(screen.getByRole("button", { name: "送出洽詢" }));
+    await user.click(screen.getByRole("button", { name: "送出部署審查" }));
     expect(screen.getByRole("alert")).toHaveTextContent("請選擇洽詢類型。");
 
     await user.selectOptions(screen.getByLabelText("我想洽詢"), "partnership");
-    await user.click(screen.getByRole("button", { name: "送出洽詢" }));
+    await user.click(screen.getByRole("button", { name: "送出部署審查" }));
     expect(screen.getByRole("status")).toHaveTextContent("未傳送或保留任何資訊。");
   });
 
@@ -48,15 +56,15 @@ describe("EnterpriseEnquiry", () => {
 });
 
 describe("ContactPage", () => {
-  it("has launch-only metadata and a stable main landmark", () => {
+  it("has deployment-review metadata and a stable main landmark", () => {
     render(<LocaleProvider><ContactPage /></LocaleProvider>);
 
     expect(metadata).toMatchObject({
-      title: "Contact | Power Champion",
-      description: expect.stringMatching(/launch/i),
+      title: "Deployment review | Power Champion",
+      description: expect.stringMatching(/deployment/i),
     });
     expect(metadata.description).not.toMatch(/\$|\d+(?:\.\d+)?\s*(?:M|MW|USD|US\$)/i);
     expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 }))
-      .toHaveTextContent("Enterprise enquiry");
+      .toHaveTextContent("Deployment review");
   });
 });
