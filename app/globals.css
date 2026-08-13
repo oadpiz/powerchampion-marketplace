@@ -530,7 +530,7 @@ button { color: inherit; }
   .marketplace-name-line { gap: .35rem; }
   .marketplace-name-line h2 { font-size: 1.25rem; }
   .marketplace-name-line span { font-size: .8125rem; }
-  .marketplace-tagline { display: none; }
+  .marketplace-tagline { display: block; margin-top: .35rem; font-size: .8125rem; line-height: 1.5; }
   .marketplace-summary-fact dt { font-size: .8125rem; letter-spacing: .06em; }
   .marketplace-summary-fact dd { margin-top: .25rem; font-size: .8125rem; }
   .marketplace-rate-unit { display: block; font-size: .8125rem; }

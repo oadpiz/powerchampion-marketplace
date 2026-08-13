@@ -22,6 +22,13 @@ describe("responsive marketplace contracts", () => {
     expect(tablet).toContain("grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 30px");
   });
 
+  it("keeps model qualifiers visible in compact marketplace rows", async () => {
+    const css = await stylesheet();
+    const tablet = mediaBlock(css, 820);
+
+    expect(tablet).toMatch(/\.marketplace-tagline\s*\{[^}]*display:\s*block;/);
+  });
+
   it("keeps homepage context and speed facts visible on mobile", async () => {
     const css = await stylesheet();
     const mobile = mediaBlock(css, 720);

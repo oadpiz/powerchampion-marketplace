@@ -25,6 +25,18 @@ describe("ModelMarketplace", () => {
     expect(screen.getByText("Temporarily unavailable")).toBeInTheDocument();
   });
 
+  it("keeps review-required model details unavailable", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    await user.click(screen.getByRole("button", { name: "Qwen" }));
+
+    const details = screen.getByRole("region", { name: "Qwen details" });
+    expect(within(details).getByText("Not ready")).toBeInTheDocument();
+    expect(within(details).getByText("Temporarily unavailable")).toBeInTheDocument();
+    expect(within(details).queryByText("Available")).not.toBeInTheDocument();
+    expect(within(details).queryByText("Enabled")).not.toBeInTheDocument();
+  });
+
   it("shows a useful empty result", async () => {
     const user = userEvent.setup();
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
@@ -62,6 +74,16 @@ describe("ModelMarketplace", () => {
     expect(narrowRules).toMatch(
       /\.marketplace-rate-unit\s*\{[^}]*display:\s*block;[^}]*font-size:\s*\.8125rem;/,
     );
+  });
+
+  it("keeps the model summary visible in compact rows", async () => {
+    const css = await readFile(resolve(process.cwd(), "app/globals.css"), "utf8");
+    const narrowRules = css.match(/@media \(max-width: 820px\) \{([\s\S]*?)\n\}/)?.[1];
+
+    expect(narrowRules).toMatch(/\.marketplace-tagline\s*\{[^}]*display:\s*block;/);
+
+    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    expect(screen.getByText("Illustrative catalog entry for coding and multilingual evaluation.")).toBeVisible();
   });
 
   it("localizes the expanded details region", async () => {

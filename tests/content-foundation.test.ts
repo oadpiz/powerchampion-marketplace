@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { COMPANY_CONTENT } from "../lib/company";
 import { MODEL_CATALOG } from "../lib/models";
 import {
   POLICY_CONTENT,
@@ -33,6 +34,18 @@ describe("public truth foundation", () => {
     }
   });
 
+  it("keeps review-required catalog capabilities and availability fail closed", () => {
+    for (const model of MODEL_CATALOG) {
+      expect(model.available).toBe(false);
+      expect(model.features).toEqual({
+        tools: false,
+        structuredOutput: false,
+        reasoning: false,
+        streaming: false,
+      });
+    }
+  });
+
   it("keeps trust and policy content complete in both locales", () => {
     for (const locale of ["en", "zh"] as const) {
       expect(TRUST_CONTENT[locale].title).toBeTruthy();
@@ -41,5 +54,13 @@ describe("public truth foundation", () => {
       expect(POLICY_CONTENT[locale].terms.sections.length).toBeGreaterThan(1);
       expect(POLICY_CONTENT[locale].faq.length).toBeGreaterThan(4);
     }
+  });
+
+  it("derives capacity FAQ questions from canonical company content", () => {
+    const englishCapacityFaq = POLICY_CONTENT.en.faq.find((entry) => entry.id === "capacity-deployed");
+    const chineseCapacityFaq = POLICY_CONTENT.zh.faq.find((entry) => entry.id === "capacity-deployed");
+
+    expect(englishCapacityFaq?.question).toContain(COMPANY_CONTENT.en.capacity.initialMw);
+    expect(chineseCapacityFaq?.question).toContain(COMPANY_CONTENT.zh.capacity.initialMw);
   });
 });

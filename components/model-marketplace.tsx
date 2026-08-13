@@ -92,7 +92,7 @@ export function ModelMarketplace() {
                     <h2>{model.name}</h2>
                     <span>{categoryLabels[model.categories[0]]}</span>
                   </div>
-                  <p className="marketplace-tagline">{model.tagline[locale]}</p>
+                  <p className="marketplace-tagline">{model.servingRole[locale]}</p>
                 </div>
                 <dl className="marketplace-summary-fact">
                   <dt>{copy.models.context}</dt>
@@ -127,16 +127,18 @@ export function ModelMarketplace() {
                       <dt>{copy.models.speed}</dt>
                       <dd>{speedLabels[model.speed]}</dd>
                     </div>
-                    <div>
-                      <dt>{copy.models.tools}</dt>
-                      <dd>{model.features.tools ? copy.models.enabled : copy.models.unavailable}</dd>
-                    </div>
-                    <div>
-                      <dt>{copy.models.availability}</dt>
-                      <dd className={model.available ? "marketplace-available" : "marketplace-unavailable"}>
-                        {model.available ? copy.models.available : copy.models.unavailable}
-                      </dd>
-                    </div>
+                    {isExpanded && <>
+                      <div>
+                        <dt>{copy.models.tools}</dt>
+                        <dd>{model.features.tools ? copy.models.enabled : copy.shared.notReady}</dd>
+                      </div>
+                      <div>
+                        <dt>{copy.models.availability}</dt>
+                        <dd className={model.available ? "marketplace-available" : "marketplace-unavailable"}>
+                          {model.available ? copy.models.available : copy.models.unavailable}
+                        </dd>
+                      </div>
+                    </>}
                   </dl>
                 </div>
               </article>
