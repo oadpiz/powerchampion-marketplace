@@ -1,19 +1,10 @@
-"use client";
+import { ConsolePageContent } from "../../components/console-page-content";
 
-import { ConsoleView } from "../../components/console-view";
-import { useLocale } from "../../components/locale-provider";
+export const metadata = {
+  title: "Console preview | Power Champion",
+  description: "A local illustrative console preview with no account, funded balance, usable key, or live usage.",
+};
 
 export default function ConsolePage() {
-  const { copy, locale } = useLocale();
-
-  return (
-    <main className="console-page" id="main-content">
-      <section aria-labelledby="console-title" className="console-intro">
-        <p className="eyebrow">{copy.console.demo}</p>
-        <h1 id="console-title">{copy.console.title}</h1>
-        <p>{locale === "en" ? "Illustrative local usage only. Refreshing resets this display state." : "僅顯示本機展示用量；重新整理會重設此顯示狀態。"}</p>
-      </section>
-      <ConsoleView />
-    </main>
-  );
+  return <ConsolePageContent />;
 }

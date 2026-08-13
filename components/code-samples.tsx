@@ -41,7 +41,7 @@ const sampleLanguages: { id: SampleLanguage; label: string }[] = [
 ];
 
 export function CodeSamples() {
-  const { copy } = useLocale();
+  const { copy, locale } = useLocale();
   const [language, setLanguage] = useState<SampleLanguage>("curl");
   const [feedback, setFeedback] = useState<"copied" | "unavailable" | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -68,6 +68,9 @@ export function CodeSamples() {
 
   return (
     <section aria-label={copy.docs.quickStart} className="code-samples">
+      <p className="code-sample-notice">
+        {copy.docs.quickStart} — {copy.shared.illustrative}; {locale === "en" ? "non-operational examples only." : "僅限不可運作的範例。"}
+      </p>
       <div aria-label={copy.docs.quickStart} className="code-tabs" role="tablist">
         {sampleLanguages.map((sample, index) => {
           const selected = language === sample.id;

@@ -17,7 +17,7 @@ const recentRequests = [
   ["pc/llama-general", "1.4K", "318 ms"],
 ] as const;
 
-const DEMO_KEY = "pc_demo_••••••••••••7X4Q";
+const DEMO_KEY = "pc_demo_YOUR_KEY";
 
 export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps) {
   const { copy, locale } = useLocale();
@@ -46,6 +46,8 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
   const usageChartLabel = locale === "en"
     ? `Seven-day illustrative usage: ${totalTokens.toFixed(1)} million tokens; illustrative spend ${formattedSpend}. Daily trend: ${dailyTrend}`
     : `七日展示用量：${totalTokens.toFixed(1)}M 詞元；展示支出 ${formattedSpend}。每日趨勢：${dailyTrend}`;
+  const illustrativeBalance = locale === "en" ? "Illustrative balance" : "展示餘額";
+  const inertKeyLabel = locale === "en" ? "Inert example key" : "無作用範例 Key";
 
   async function copyDemoKey() {
     try {
@@ -68,7 +70,7 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
 
       <div className="console-summary">
         <div className="balance-block">
-          <Heading>{copy.console.balance}</Heading>
+          <Heading>{illustrativeBalance}</Heading>
           <strong>$184.20</strong>
           {!compact && <button className="console-add-credit" onClick={() => openCheckout()} type="button">{copy.nav.getTokens}</button>}
         </div>
@@ -132,7 +134,7 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
             )}
           </section>
           <section aria-labelledby="demo-key-title" className="demo-key">
-            <h2 id="demo-key-title">{copy.console.apiKey}</h2>
+            <h2 id="demo-key-title">{inertKeyLabel}</h2>
             <code>{DEMO_KEY}</code>
             <div className="demo-key-actions">
               <button onClick={copyDemoKey} type="button">{copy.console.copy}</button>

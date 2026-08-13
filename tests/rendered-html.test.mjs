@@ -45,6 +45,24 @@ test("server-renders a complete English marketplace shell with social metadata",
         html,
         /<meta name="description" content="Compare illustrative open-model token rates, limits, features, and release-review states\.">/,
       );
+    } else if (pathname === "/pricing") {
+      assert.match(html, /<title>Illustrative pricing \| Power Champion<\/title>/);
+      assert.match(
+        html,
+        /<meta name="description" content="Illustrative token rates and local launch-access planning; no payment or funded balance is available\.">/,
+      );
+    } else if (pathname === "/docs") {
+      assert.match(html, /<title>Documentation preview \| Power Champion<\/title>/);
+      assert.match(
+        html,
+        /<meta name="description" content="Non-operational integration examples and release-gated future access for Power Champion\.">/,
+      );
+    } else if (pathname === "/console") {
+      assert.match(html, /<title>Console preview \| Power Champion<\/title>/);
+      assert.match(
+        html,
+        /<meta name="description" content="A local illustrative console preview with no account, funded balance, usable key, or live usage\.">/,
+      );
     } else {
       assert.match(html, /Power Champion — Token access launching soon/);
       assert.match(
@@ -125,6 +143,7 @@ test("server-renders non-binding launch access without payment fields", async ()
   assert.match(html, /do not create orders, charges, or reservations/i);
   assert.doesNotMatch(html, /<input[^>]+(?:card|payment|billing)/i);
   assert.match(html, /Estimate usage/i);
+  assert.match(html, /How token billing works/i);
   assert.match(html, /Model rates/i);
 });
 
@@ -133,6 +152,8 @@ test("server-renders docs and the local illustrative console preview", async () 
   const docsHtml = await docs.text();
   assert.equal(docs.status, 200);
   assert.match(docsHtml, /One endpoint\. Familiar tools\./i);
+  assert.match(docsHtml, /Public preview/i);
+  assert.match(docsHtml, /Protected access/i);
   assert.match(docsHtml, /pc_demo_YOUR_KEY/i);
 
   const consoleResponse = await render("/console");

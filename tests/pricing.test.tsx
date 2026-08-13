@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import PricingPage from "../app/pricing/page";
+import PricingPage, { metadata } from "../app/pricing/page";
 import { DemoCheckout, openCheckout } from "../components/demo-checkout";
 import { LocaleProvider } from "../components/locale-provider";
 import { PricingCalculator } from "../components/pricing-calculator";
@@ -217,16 +217,24 @@ describe("DemoCheckout", () => {
 });
 
 describe("PricingPage", () => {
-  it("offers only non-binding launch access from the package cards", () => {
+  it("explains separate token billing and offers one non-binding launch action", () => {
     render(
       <LocaleProvider>
         <PricingPage />
       </LocaleProvider>,
     );
 
-    const actions = screen.getAllByRole("button", { name: "Join launch access" });
-    expect(actions).toHaveLength(3);
-    expect(screen.queryByRole("button", { name: /^(buy|pay|checkout)/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "How token billing works" })).toBeVisible();
+    expect(screen.getByText(/input and output tokens are priced separately/i)).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Join launch access" })).toHaveLength(1);
+    expect(document.body).not.toHaveTextContent(/buy now|checkout|funded balance/i);
+  });
+
+  it("has truthful pricing metadata", () => {
+    expect(metadata).toMatchObject({
+      title: "Illustrative pricing | Power Champion",
+      description: "Illustrative token rates and local launch-access planning; no payment or funded balance is available.",
+    });
   });
 
   it("lists every showcase model input and output rate with units", () => {

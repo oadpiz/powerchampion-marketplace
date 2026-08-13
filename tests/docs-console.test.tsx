@@ -5,8 +5,34 @@ import { CodeSamples } from "../components/code-samples";
 import { ConsoleView } from "../components/console-view";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
+import DocsPage, { metadata as docsMetadata } from "../app/docs/page";
+import ConsolePage, { metadata as consoleMetadata } from "../app/console/page";
 
 describe("CodeSamples", () => {
+  it("separates public preview from protected access and labels samples non-operational", () => {
+    render(<LocaleProvider><DocsPage /></LocaleProvider>);
+
+    expect(screen.getByRole("region", { name: "Public preview" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Protected access" })).toBeVisible();
+    expect(screen.getAllByText(/non-operational/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("pc_demo_YOUR_KEY")).toBeVisible();
+  });
+
+  it("shows all release gates as not ready", () => {
+    render(<LocaleProvider><DocsPage /></LocaleProvider>);
+
+    for (const gate of ["Streaming", "Usage accounting", "Tool use", "Structured output", "Provider manifest", "Operational status"]) {
+      expect(screen.getByText(new RegExp(`${gate}: Not ready`, "i"))).toBeVisible();
+    }
+  });
+
+  it("has truthful docs metadata", () => {
+    expect(docsMetadata).toMatchObject({
+      title: "Documentation preview | Power Champion",
+      description: "Non-operational integration examples and release-gated future access for Power Champion.",
+    });
+  });
+
   it("switches languages and confirms local copy", async () => {
     const user = userEvent.setup();
     Object.defineProperty(navigator, "clipboard", {
@@ -69,6 +95,22 @@ describe("CodeSamples", () => {
 });
 
 describe("ConsoleView", () => {
+  it("puts the local preview boundary before illustrative console data", () => {
+    const { container } = render(<LocaleProvider><ConsolePage /></LocaleProvider>);
+    const main = container.querySelector("main");
+
+    expect(main?.firstElementChild).toHaveTextContent("Launch preview — illustrative only");
+    expect(main?.firstElementChild).toHaveTextContent(/no account, funded balance, usable api key, live api, or live usage/i);
+    expect(screen.queryByText(/pc_demo_••••|sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
+  });
+
+  it("has truthful console metadata", () => {
+    expect(consoleMetadata).toMatchObject({
+      title: "Console preview | Power Champion",
+      description: "A local illustrative console preview with no account, funded balance, usable key, or live usage.",
+    });
+  });
+
   it("labels the console as a local launch preview", () => {
     render(<LocaleProvider><ConsoleView /></LocaleProvider>);
 
@@ -77,12 +119,12 @@ describe("ConsoleView", () => {
     expect(screen.getByRole("button", { name: "Join launch access" })).toBeInTheDocument();
   });
 
-  it("labels the full view as an illustrative preview and masks the key", () => {
+  it("labels the full view as an illustrative preview and uses an inert key placeholder", () => {
     render(<LocaleProvider><ConsoleView /></LocaleProvider>);
 
     expect(screen.getByText("Launch preview — illustrative only")).toBeInTheDocument();
     expect(screen.getByText("$184.20")).toBeInTheDocument();
-    expect(screen.getByText(/pc_demo_••••••••••••7X4Q/)).toBeInTheDocument();
+    expect(screen.getByText("pc_demo_YOUR_KEY")).toBeInTheDocument();
     expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
   });
 
@@ -173,7 +215,7 @@ describe("ConsoleView", () => {
   it("uses h2 for every full console subsection after the page h1", () => {
     render(<LocaleProvider><ConsoleView /></LocaleProvider>);
 
-    for (const heading of ["Available balance", "Seven-day usage", "Model split", "Recent requests", "Demo API key"]) {
+    for (const heading of ["Illustrative balance", "Seven-day usage", "Model split", "Recent requests", "Inert example key"]) {
       expect(screen.getByRole("heading", { level: 2, name: heading })).toBeInTheDocument();
     }
     expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
