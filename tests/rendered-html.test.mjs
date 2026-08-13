@@ -39,6 +39,12 @@ test("server-renders a complete English marketplace shell with social metadata",
     if (pathname === "/contact") {
       assert.match(html, /<title>Contact \| Power Champion<\/title>/);
       assert.match(html, /Explore launch-only infrastructure and partnership enquiries that stay local to your browser\./);
+    } else if (pathname === "/models") {
+      assert.match(html, /<title>Open Model Catalog \| Power Champion<\/title>/);
+      assert.match(
+        html,
+        /<meta name="description" content="Compare illustrative open-model token rates, limits, features, and release-review states\.">/,
+      );
     } else {
       assert.match(html, /Power Champion — Token access launching soon/);
       assert.match(
