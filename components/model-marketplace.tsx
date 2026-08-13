@@ -39,6 +39,14 @@ export function ModelMarketplace() {
     Balanced: copy.models.balanced,
     Deep: copy.models.deep,
   };
+  const decisionLabels = {
+    maxOutput: locale === "en" ? "Max output" : copy.models.maxOutput,
+    region: locale === "en" ? "Region" : copy.models.region,
+  };
+  const unavailablePublication = locale === "en" ? "not published" : "尚未發布";
+  const provenanceStatus = (model: ModelDefinition) => (
+    locale === "en" ? model.provenance.label.en.toLowerCase() : model.provenance.label[locale]
+  );
 
   const clearFilters = () => {
     setQuery("");
@@ -84,12 +92,12 @@ export function ModelMarketplace() {
             const detailsId = `model-details-${model.id}`;
 
             return (
-              <article className={`marketplace-row marketplace-row-${model.id}`} key={model.id}>
+              <article aria-labelledby={`model-name-${model.id}`} className={`marketplace-row marketplace-row-${model.id}`} key={model.id}>
                 <span aria-hidden="true" className="marketplace-rail" />
                 <div className="marketplace-index">{String(index + 1).padStart(2, "0")}</div>
                 <div className="marketplace-identity">
                   <div className="marketplace-name-line">
-                    <h2>{model.name}</h2>
+                    <h2 id={`model-name-${model.id}`}>{model.name}</h2>
                     <span>{categoryLabels[model.categories[0]]}</span>
                   </div>
                   <p className="marketplace-tagline">{model.servingRole[locale]}</p>
@@ -129,8 +137,40 @@ export function ModelMarketplace() {
                     </div>
                     {isExpanded && <>
                       <div>
+                        <dt>{decisionLabels.maxOutput}</dt>
+                        <dd>{model.maxOutput}</dd>
+                      </div>
+                      <div>
                         <dt>{copy.models.tools}</dt>
-                        <dd>{model.features.tools ? copy.models.enabled : copy.shared.notReady}</dd>
+                        <dd>{model.features.tools ? copy.models.enabled : unavailablePublication}</dd>
+                      </div>
+                      <div>
+                        <dt>{copy.models.structuredOutput}</dt>
+                        <dd>{model.features.structuredOutput ? copy.models.enabled : unavailablePublication}</dd>
+                      </div>
+                      <div>
+                        <dt>{copy.models.reasoningCapability}</dt>
+                        <dd>{model.features.reasoning ? copy.models.enabled : unavailablePublication}</dd>
+                      </div>
+                      <div>
+                        <dt>{copy.models.streaming}</dt>
+                        <dd>{model.features.streaming ? copy.models.enabled : unavailablePublication}</dd>
+                      </div>
+                      <div>
+                        <dt>{copy.models.provenance} </dt>
+                        <dd>
+                          {model.provenance.licenseHref ? (
+                            <a href={model.provenance.licenseHref}>{provenanceStatus(model)}</a>
+                          ) : provenanceStatus(model)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{copy.models.servingRole}</dt>
+                        <dd>{model.servingRole[locale]}</dd>
+                      </div>
+                      <div>
+                        <dt>{decisionLabels.region} </dt>
+                        <dd>{model.region ?? unavailablePublication}</dd>
                       </div>
                       <div>
                         <dt>{copy.models.availability}</dt>

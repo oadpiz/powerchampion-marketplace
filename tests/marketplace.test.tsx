@@ -6,6 +6,11 @@ import { describe, expect, it } from "vitest";
 import { LocaleProvider } from "../components/locale-provider";
 import { ModelMarketplace } from "../components/model-marketplace";
 import { SiteShell } from "../components/site-shell";
+import { MODEL_CATALOG } from "../lib/models";
+
+function normalizedText(element: Element) {
+  return element.textContent?.replace(/\s+/g, " ").trim();
+}
 
 describe("ModelMarketplace", () => {
   it("filters by category and search query", async () => {
@@ -25,16 +30,47 @@ describe("ModelMarketplace", () => {
     expect(screen.getByText("Temporarily unavailable")).toBeInTheDocument();
   });
 
-  it("keeps review-required model details unavailable", async () => {
+  it("shows all decision facts for an expanded model", async () => {
     const user = userEvent.setup();
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
     await user.click(screen.getByRole("button", { name: "Qwen" }));
 
     const details = screen.getByRole("region", { name: "Qwen details" });
-    expect(within(details).getByText("Not ready")).toBeInTheDocument();
-    expect(within(details).getByText("Temporarily unavailable")).toBeInTheDocument();
-    expect(within(details).queryByText("Available")).not.toBeInTheDocument();
-    expect(within(details).queryByText("Enabled")).not.toBeInTheDocument();
+    expect(details).toHaveTextContent("pc/qwen-coder");
+    expect(details).toHaveTextContent("Max output");
+    expect(details).toHaveTextContent("32K");
+    expect(details).toHaveTextContent("Tool use");
+    expect(details).toHaveTextContent("Structured output");
+    expect(details).toHaveTextContent("Reasoning");
+    expect(details).toHaveTextContent("Streaming");
+    expect(details).toHaveTextContent("Provenance review required");
+    expect(details).toHaveTextContent("Serving role");
+    expect(details).toHaveTextContent("Region not published");
+    expect(details).toHaveTextContent("Temporarily unavailable");
+    expect(within(details).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("keeps summary facts visible before expansion", () => {
+    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    const qwen = screen.getByRole("article", { name: "Qwen" });
+
+    expect(within(qwen).getByText("128K")).toBeVisible();
+    expect(within(qwen).getByText((_, element) => normalizedText(element!) === "$0.18 per 1M input")).toBeVisible();
+    expect(within(qwen).getByText((_, element) => normalizedText(element!) === "$0.72 per 1M output")).toBeVisible();
+  });
+
+  it("renders exact input and output units for every catalog model", () => {
+    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+
+    for (const model of MODEL_CATALOG) {
+      const row = screen.getByRole("article", { name: model.name });
+      const inputRate = `$${model.inputPerMillion.toFixed(2)} per 1M input`;
+      const outputRate = `$${model.outputPerMillion.toFixed(2)} per 1M output`;
+
+      expect(within(row).getByText(model.context)).toBeVisible();
+      expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
+      expect(within(row).getByText((_, element) => normalizedText(element!) === outputRate)).toBeVisible();
+    }
   });
 
   it("shows a useful empty result", async () => {
