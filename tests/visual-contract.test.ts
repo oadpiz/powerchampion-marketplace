@@ -142,9 +142,41 @@ describe("hybrid design contracts", () => {
     const navigationActive = balancedBlock(source, ".site-navigation a:active");
     const controlActive = balancedBlock(source, ".locale-toggle button:active");
 
+    const activeFamilies = [
+      ".token-button:active",
+      ".primary-link:active",
+      ".credit-button:active",
+      ".console-add-credit:active",
+      ".marketplace-categories button:active",
+      ".marketplace-empty button:active",
+      ".marketplace-expand:active",
+      ".checkout-close:active",
+      ".checkout-back:active",
+      ".checkout-pack:active",
+      ".enquiry-form button:active",
+      ".demo-key-actions button:active",
+      ".code-sample-actions button:active",
+      ".code-tabs button:active",
+      ".faq-entry h2 button:active",
+      ".editorial-section-navigation a:active",
+      ".menu-trigger:active",
+      ".mobile-navigation button:active",
+    ];
+
     expect(universalActive).toMatch(/transform:\s*translateY\(/);
     expect(universalActive).not.toMatch(/opacity:/);
     expect(navigationActive).toMatch(/color:\s*var\(--(?:ink|focus)\)/);
     expect(controlActive).toMatch(/background:\s*var\(--line\)/);
+
+    for (const selector of activeFamilies) {
+      const declarations = balancedBlock(source, selector);
+      expect(declarations, selector).toMatch(/background(?:-color)?:\s*[^;}]+/);
+      expect(declarations, selector).toMatch(/color:\s*[^;}]+/);
+      expect(declarations, selector).toMatch(/(?:border-color|box-shadow):\s*[^;}]+/);
+    }
+
+    for (const match of source.matchAll(/([^{}]*:active[^{}]*)\{([^{}]*)\}/g)) {
+      expect(match[2], match[1].trim()).not.toMatch(/opacity\s*:/);
+    }
   });
 });

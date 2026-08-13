@@ -17,14 +17,33 @@ const geistMono = Geist_Mono({
 });
 
 function metadataOrigin(host: string | null): URL {
-  const requestedHost = host?.split(",")[0]?.trim().toLowerCase();
-  const isLocalHost = requestedHost === "localhost"
-    || requestedHost?.startsWith("localhost:")
-    || requestedHost === "127.0.0.1"
-    || requestedHost?.startsWith("127.0.0.1:")
-    || requestedHost === "[::1]"
-    || requestedHost?.startsWith("[::1]:");
-  return new URL(isLocalHost ? "http://localhost" : `https://${requestedHost || "localhost"}`);
+  const requestedHost = host?.split(",", 1)[0]?.trim().toLowerCase();
+  if (!requestedHost || /[\s/@\\?#%]/.test(requestedHost)) return new URL("http://localhost");
+
+  const bracketed = requestedHost.match(/^\[([0-9a-f:.]+)](?::(\d+))?$/);
+  const named = requestedHost.match(/^([^:]+)(?::(\d+))?$/);
+  if (!bracketed && !named) return new URL("http://localhost");
+
+  const hostname = bracketed?.[1] ?? named?.[1] ?? "";
+  const port = bracketed?.[2] ?? named?.[2];
+  if (port && (Number(port) < 1 || Number(port) > 65535)) return new URL("http://localhost");
+
+  const dnsHostname = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
+  const isIpv4 = /^\d+(?:\.\d+){3}$/.test(hostname)
+    && hostname.split(".").every((part) => Number(part) <= 255);
+  const isIpv6 = Boolean(bracketed) && hostname.includes(":");
+  const isDns = dnsHostname.length > 0 && dnsHostname.length <= 253
+    && dnsHostname.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+  if (!isIpv4 && !isIpv6 && !isDns) return new URL("http://localhost");
+
+  try {
+    const scheme = dnsHostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+      ? "http"
+      : "https";
+    return new URL(`${scheme}://${requestedHost}`);
+  } catch {
+    return new URL("http://localhost");
+  }
 }
 
 export async function generateMetadata(): Promise<Metadata> {

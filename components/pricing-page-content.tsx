@@ -96,20 +96,24 @@ export function PricingPageContent() {
           role="region"
           tabIndex={0}
         >
-          <div aria-label={copy.pricing.ratesRegionLabel} className="rate-table" role="table">
-            <div className="rate-table-head" role="row">
-              <span role="columnheader">{locale === "en" ? "Model" : "模型"}</span>
-              <span role="columnheader">{copy.models.input}</span>
-              <span role="columnheader">{copy.models.output}</span>
-            </div>
-            {MODEL_CATALOG.map((model) => (
-              <div className="rate-table-row" key={model.id} role="row">
-                <span role="cell">{model.name}</span>
-                <span role="cell"><strong>{formatRate(model.inputPerMillion)}</strong> {copy.shared.perMillionInput}</span>
-                <span role="cell"><strong>{formatRate(model.outputPerMillion)}</strong> {copy.shared.perMillionOutput}</span>
-              </div>
-            ))}
-          </div>
+          <table aria-label={copy.pricing.ratesRegionLabel} className="rate-table">
+            <thead>
+              <tr className="rate-table-head">
+                <th scope="col">{locale === "en" ? "Model" : "模型"}</th>
+                <th scope="col">{copy.models.input}</th>
+                <th scope="col">{copy.models.output}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MODEL_CATALOG.map((model) => (
+                <tr className="rate-table-row" key={model.id}>
+                  <td>{model.name}</td>
+                  <td><strong>{formatRate(model.inputPerMillion)}</strong> {copy.shared.perMillionInput}</td>
+                  <td><strong>{formatRate(model.outputPerMillion)}</strong> {copy.shared.perMillionOutput}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
         {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
       </section>

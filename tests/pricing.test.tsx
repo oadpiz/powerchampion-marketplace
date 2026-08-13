@@ -111,6 +111,37 @@ describe("PricingCalculator", () => {
     expect(screen.getByLabelText("Output tokens")).toHaveAttribute("name", "output-tokens");
     expect(screen.getByLabelText("Output tokens")).toHaveAttribute("autocomplete", "off");
   });
+
+  it("uses non-negative whole-number controls for token quantities", () => {
+    render(
+      <LocaleProvider>
+        <PricingCalculator />
+      </LocaleProvider>,
+    );
+
+    for (const name of ["Input tokens", "Output tokens"]) {
+      const input = screen.getByLabelText(name);
+      expect(input).toHaveAttribute("type", "number");
+      expect(input).toHaveAttribute("min", "0");
+      expect(input).toHaveAttribute("step", "1");
+      expect(input).toHaveAttribute("inputmode", "numeric");
+    }
+  });
+
+  it("rejects fractional token quantities", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <PricingCalculator />
+      </LocaleProvider>,
+    );
+
+    const input = screen.getByLabelText("Input tokens");
+    await user.clear(input);
+    await user.type(input, "1.5");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter non-negative token amounts.");
+  });
 });
 
 describe("LaunchAccessDialog", () => {
@@ -328,7 +359,14 @@ describe("PricingPage", () => {
     expect(cue).toHaveAttribute("id", "rate-table-scroll-cue");
     expect(region).toHaveAttribute("tabindex", "0");
     expect(region).toHaveAttribute("aria-describedby", "rate-table-scroll-cue");
-    expect(within(region).getByRole("table", { name: "Model rate comparison" })).toBeVisible();
+    const table = within(region).getByRole("table", { name: "Model rate comparison" });
+    expect(table).toBeVisible();
+    expect(table.tagName).toBe("TABLE");
+    expect(table.querySelector("thead")).not.toBeNull();
+    expect(table.querySelector("tbody")).not.toBeNull();
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(EXPECTED_MODEL_RATES.length);
+    expect(table.querySelectorAll("tbody td")).toHaveLength(EXPECTED_MODEL_RATES.length * 3);
   });
 
   it("scrolls the focused rate comparison with horizontal arrow keys", async () => {

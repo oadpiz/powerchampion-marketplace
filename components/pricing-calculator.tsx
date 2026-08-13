@@ -17,7 +17,7 @@ function parseTokenAmount(value: string) {
     return null;
   }
   const amount = Number(value);
-  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+  return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
 }
 
 export function PricingCalculator() {
@@ -56,10 +56,12 @@ export function PricingCalculator() {
           <input
             autoComplete="off"
             inputMode="numeric"
+            min={0}
             name="input-tokens"
             onChange={(event) => setInputTokens(event.target.value)}
             spellCheck={false}
-            type="text"
+            step={1}
+            type="number"
             value={inputTokens}
           />
         </label>
@@ -68,10 +70,12 @@ export function PricingCalculator() {
           <input
             autoComplete="off"
             inputMode="numeric"
+            min={0}
             name="output-tokens"
             onChange={(event) => setOutputTokens(event.target.value)}
             spellCheck={false}
-            type="text"
+            step={1}
+            type="number"
             value={outputTokens}
           />
         </label>

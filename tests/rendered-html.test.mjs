@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function render(pathname, host = "localhost") {
+async function render(pathname, host = "localhost", forwardedHost) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request(new URL(pathname, `http://${host}`), {
-      headers: { accept: "text/html", host },
+    new Request(new URL(pathname, "http://localhost"), {
+      headers: {
+        accept: "text/html",
+        host,
+        ...(forwardedHost === undefined ? {} : { "x-forwarded-host": forwardedHost }),
+      },
     }),
     {
       ASSETS: {
@@ -126,6 +130,43 @@ test("server-renders a complete English marketplace shell with social metadata",
     publicHtml,
     /property="og:image" content="https:\/\/marketplace\.example\/og\.png"/,
   );
+});
+
+test("normalizes valid metadata hosts and fails closed on malformed values", async () => {
+  const cases = [
+    { host: "marketplace.example:8443", expected: "https://marketplace.example:8443/og.png" },
+    { host: "marketplace.example.", expected: "https://marketplace.example./og.png" },
+    { host: "203.0.113.10:9443", expected: "https://203.0.113.10:9443/og.png" },
+    { host: "[2001:db8::1]:8443", expected: "https://[2001:db8::1]:8443/og.png" },
+    { host: "localhost:4173", expected: "http://localhost:4173/og.png" },
+    { host: "localhost.:4173", expected: "http://localhost.:4173/og.png" },
+    { host: "127.0.0.1:4173", expected: "http://127.0.0.1:4173/og.png" },
+    { host: "[::1]:4173", expected: "http://[::1]:4173/og.png" },
+  ];
+
+  for (const { host, expected } of cases) {
+    const html = await (await render("/", host)).text();
+    assert.match(html, new RegExp(`property="og:image" content="${expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+  }
+
+  const forwardedHtml = await (await render("/", "internal.example", "edge.example:7443, internal.example")).text();
+  assert.match(forwardedHtml, /property="og:image" content="https:\/\/edge\.example:7443\/og\.png"/);
+
+  for (const malformed of [
+    "market place.example",
+    "https://marketplace.example",
+    "user@marketplace.example",
+    "marketplace.example/path",
+    "marketplace.example:0",
+    "marketplace.example:65536",
+    "marketplace.example:not-a-port",
+    "marketplace.example%0d%0ax-injected:yes",
+    "-marketplace.example",
+    "marketplace..example",
+  ]) {
+    const html = await (await render("/", malformed)).text();
+    assert.match(html, /property="og:image" content="http:\/\/localhost\/og\.png"/, malformed);
+  }
 });
 
 test("server-renders route-specific launch boundaries and protected facts", async () => {
