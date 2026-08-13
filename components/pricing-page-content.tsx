@@ -78,19 +78,23 @@ export function PricingPageContent() {
           <p className="eyebrow">{copy.shared.illustrative}</p>
           <h2 id="rates-title">{copy.pricing.ratesTitle}</h2>
         </div>
-        <div className="rate-table" role="table">
-          <div className="rate-table-head" role="row">
-            <span role="columnheader">{locale === "en" ? "Model" : "模型"}</span>
-            <span role="columnheader">{copy.models.input}</span>
-            <span role="columnheader">{copy.models.output}</span>
-          </div>
-          {MODEL_CATALOG.map((model) => (
-            <div className="rate-table-row" key={model.id} role="row">
-              <span role="cell">{model.name}</span>
-              <span role="cell"><strong>{formatRate(model.inputPerMillion)}</strong> {copy.shared.perMillionInput}</span>
-              <span role="cell"><strong>{formatRate(model.outputPerMillion)}</strong> {copy.shared.perMillionOutput}</span>
+        <p className="rate-table-cue" id="rate-table-scroll-cue">{copy.pricing.ratesScrollCue}</p>
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- The overflow region must receive focus for native keyboard scrolling. */}
+        <div aria-describedby="rate-table-scroll-cue" aria-label={copy.pricing.ratesRegionLabel} className="rate-table-scroll" role="region" tabIndex={0}>
+          <div aria-label={copy.pricing.ratesRegionLabel} className="rate-table" role="table">
+            <div className="rate-table-head" role="row">
+              <span role="columnheader">{locale === "en" ? "Model" : "模型"}</span>
+              <span role="columnheader">{copy.models.input}</span>
+              <span role="columnheader">{copy.models.output}</span>
             </div>
-          ))}
+            {MODEL_CATALOG.map((model) => (
+              <div className="rate-table-row" key={model.id} role="row">
+                <span role="cell">{model.name}</span>
+                <span role="cell"><strong>{formatRate(model.inputPerMillion)}</strong> {copy.shared.perMillionInput}</span>
+                <span role="cell"><strong>{formatRate(model.outputPerMillion)}</strong> {copy.shared.perMillionOutput}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

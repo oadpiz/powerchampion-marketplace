@@ -300,6 +300,22 @@ describe("PricingPage", () => {
     }
   });
 
+  it("labels the keyboard-scrollable rate comparison with a visible cue", () => {
+    render(
+      <LocaleProvider>
+        <PricingPage />
+      </LocaleProvider>,
+    );
+
+    const cue = screen.getByText("Scroll horizontally to compare every rate column.");
+    const region = screen.getByRole("region", { name: "Model rate comparison" });
+
+    expect(cue).toHaveAttribute("id", "rate-table-scroll-cue");
+    expect(region).toHaveAttribute("tabindex", "0");
+    expect(region).toHaveAttribute("aria-describedby", "rate-table-scroll-cue");
+    expect(within(region).getByRole("table", { name: "Model rate comparison" })).toBeVisible();
+  });
+
   it("returns focus to the pricing pack CTA after checkout closes", async () => {
     const user = userEvent.setup();
     render(
@@ -329,6 +345,8 @@ describe("PricingPage", () => {
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
     expect(screen.getByRole("heading", { name: "指示性方案，無需承諾。" })).toBeInTheDocument();
+    expect(screen.getByText("水平捲動以比較所有費率欄位。")).toBeVisible();
+    expect(screen.getByRole("region", { name: "模型費率比較" })).toHaveAttribute("tabindex", "0");
     act(() => openLaunchAccess("product"));
 
     expect(screen.getByRole("dialog", { name: "申請啟動存取" })).toBeInTheDocument();

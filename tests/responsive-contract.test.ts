@@ -100,13 +100,15 @@ describe("responsive marketplace contracts", () => {
     const narrow = mediaBlock(css, 480);
     const modelRows = selectorBlock(mobile, ".model-row");
     const narrowModelRows = selectorBlock(narrow, ".model-row");
-    const rateTable = selectorBlock(mobile, ".rate-table");
+    const rateTable = selectorBlock(mobile, ".rate-table-scroll");
+    const rateCue = selectorBlock(mobile, ".rate-table-cue");
     const rateRows = selectorBlock(mobile, ".rate-table-head, .rate-table-row");
 
     expect(modelRows).toContain('grid-template-areas: "index identity identity link" ". facts facts ."');
     expect(narrowModelRows).toContain('grid-template-areas: "index identity link" "facts facts facts"');
     expect(rateTable).toMatch(/overflow-x:\s*auto/);
     expect(rateTable).toMatch(/overscroll-behavior-inline:\s*contain/);
+    expect(rateCue).toMatch(/display:\s*flex/);
     expect(rateRows).toMatch(/min-width:\s*640px/);
   });
 

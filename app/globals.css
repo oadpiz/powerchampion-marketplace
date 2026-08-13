@@ -47,7 +47,6 @@ button, a, input, select, textarea {
   -webkit-tap-highlight-color: rgb(85 231 255 / 20%);
 }
 button, a { transition: transform 160ms ease, opacity 160ms ease; }
-button:hover, a:hover { opacity: .82; }
 button:active, a:active { transform: translateY(1px); opacity: .86; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .theme-product,
@@ -138,6 +137,11 @@ p, li, dd, a, button, label { overflow-wrap: break-word; }
 .site-footer button:hover, .site-footer button:focus-visible { color: var(--ink); }
 .site-actions { display: flex; align-items: center; gap: .75rem; margin-left: auto; }
 .locale-toggle { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.locale-toggle:focus-within,
+.footer-locale-toggle:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
 .locale-toggle button, .menu-trigger {
   cursor: pointer;
   border: 0;
@@ -146,6 +150,10 @@ p, li, dd, a, button, label { overflow-wrap: break-word; }
   color: var(--muted);
 }
 .locale-toggle button[aria-pressed="true"] { color: var(--ink); background: var(--line); }
+.locale-toggle button:hover,
+.footer-locale-toggle button:hover,
+.menu-trigger:hover,
+.mobile-navigation a:hover { background: var(--line); color: var(--ink); }
 .token-button, .primary-link {
   display: inline-flex;
   align-items: center;
@@ -407,6 +415,10 @@ p, li, dd, a, button, label { overflow-wrap: break-word; }
 .calculator-note { margin: .7rem 0 0; font-size: .875rem; line-height: 1.55; }
 .pricing-billing-copy { max-width: 720px; margin: 0; color: var(--muted); font-size: 1.05rem; line-height: 1.65; }
 .model-rates { margin-top: var(--section-space); }
+.rate-table-cue { display: none; margin: 0 0 .85rem; color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.5; }
+.rate-table-cue::after { margin-left: auto; color: var(--cyan); content: "→"; }
+.rate-table-scroll { max-width: 100%; }
+.rate-table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .rate-table { border-top: 1px solid var(--line); }
 .rate-table-head, .rate-table-row { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 1.5rem; align-items: center; border-bottom: 1px solid var(--line); padding: 1.35rem 0; }
 .rate-table-head { color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; letter-spacing: .1em; text-transform: uppercase; }
@@ -754,6 +766,7 @@ p, li, dd, a, button, label { overflow-wrap: break-word; }
 .editorial-section-navigation { border-block: 1px solid var(--line); }
 .editorial-section-navigation ul { display: flex; flex-wrap: wrap; gap: .75rem 1.75rem; margin: 0; padding: 1.15rem 0; list-style: none; }
 .editorial-section-navigation a { color: var(--muted); font-size: .875rem; text-decoration: underline; text-decoration-color: var(--focus); text-underline-offset: .25rem; }
+.editorial-page > section[id] { scroll-margin-top: 6rem; }
 .editorial-page > section { display: grid; grid-template-columns: minmax(190px, .5fr) minmax(0, 1.5fr); gap: 2rem; border-bottom: 1px solid var(--line); padding-block: 3rem; }
 .editorial-page > section h2 { margin: 0; font-size: clamp(1.5rem, 3vw, 2.35rem); font-weight: 540; letter-spacing: -.04em; }
 .editorial-page > section p { grid-column: 2; max-width: 760px; margin: 0; color: var(--muted); line-height: 1.75; }
@@ -909,7 +922,8 @@ p, li, dd, a, button, label { overflow-wrap: break-word; }
   .pricing-intro h1, .pricing-block-heading h2 { font-size: clamp(2.55rem, 13vw, 3.5rem); }
   .calculator-fields { grid-template-columns: 1fr; }
   .enquiry-form { padding-top: 2rem; }
-  .rate-table { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-color: var(--cyan) var(--surface-raised); scrollbar-width: thin; }
+  .rate-table-cue { display: flex; align-items: center; gap: 1rem; }
+  .rate-table-scroll { overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-color: var(--cyan) var(--surface-raised); scrollbar-width: thin; }
   .rate-table-head, .rate-table-row { min-width: 640px; }
   .rate-table-head, .rate-table-row { grid-template-columns: minmax(0, .75fr) minmax(0, 1fr) minmax(0, 1fr); gap: .65rem; }
   .rate-table-row { align-items: start; padding: 1rem 0; }
