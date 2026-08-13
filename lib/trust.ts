@@ -76,7 +76,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
     kicker: "Enterprise review",
     title: "Evidence before promises.",
     lead: "Review the public boundaries, sources, and release gates behind future Power Champion access.",
-    releaseBoundary: "This launch site does not represent a live inference, payment, account, or reserved-capacity service.",
+    releaseBoundary: "This launch site does not represent an operational inference, payment, account, or reserved-capacity service.",
     sections: [
       { id: "data", title: "Current data behavior", body: ["The current enquiry, estimator, console, and launch-access interactions stay in this browser and are not transmitted or persisted."] },
       { id: "provenance", title: "Model provenance", body: ["Every catalog entry requires model-license, serving-authorization, and deployment review before release."] },
@@ -142,7 +142,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
       lead: "This launch site does not transmit or persist the current enquiry and preview interactions.",
       sections: [
         { id: "current-interactions", title: "Current interactions", body: ["The current enquiry, estimator, console, and launch-access interactions stay in your browser and are not transmitted or persisted."] },
-        { id: "features-not-enabled", title: "Features not enabled", body: ["Accounts, payment processing, live inference, API credentials, usage accounting, and capacity reservation are not enabled on this launch site."] },
+        { id: "features-not-enabled", title: "Features not enabled", body: ["Accounts, payment processing, production inference, API credentials, usage accounting, and capacity reservation are not enabled on this launch site."] },
         { id: "future-changes", title: "Future changes", body: ["If a future release changes data handling, the public privacy notice and the relevant service controls will be updated before that release."] },
       ],
     },
@@ -159,7 +159,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
     faq: [
       { id: "buy-tokens", question: "Can I buy tokens now?", answer: "No. Payments are not enabled, and no payment can be made through this launch site." },
       { id: "rates-final", question: "Are the displayed rates final?", answer: "No. Displayed rates are illustrative and are not a final offer or chargeable rate." },
-      { id: "api-live", question: "Is the API live?", answer: "No. There is no live inference endpoint or usable API access at this time." },
+      { id: "api-live", question: "Is the API live?", answer: "No. There is no operational inference endpoint or usable API access at this time." },
       { id: "entered-information", question: "What happens to information entered here?", answer: "Current interactions are not transmitted or persisted; they remain in this browser." },
       { id: "capacity-deployed", question: `Is ${COMPANY_CAPACITY_MW} already deployed?`, answer: "No. The figure is counterparty-reported expected capacity, not completed deployment.", href: "/company", linkLabel: "Read company context" },
       { id: "deployment-review", question: "What is a deployment review?", answer: "It is a local, non-binding planning flow for discussing future deployment inputs; it does not reserve capacity or create a service commitment." },

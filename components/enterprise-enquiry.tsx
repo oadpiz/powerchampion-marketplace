@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useLocale } from "./locale-provider";
 
 type Interest = "" | "launch-access" | "infrastructure" | "partnership";
@@ -21,12 +21,14 @@ export function EnterpriseEnquiry() {
   const { copy } = useLocale();
   const [enquiry, setEnquiry] = useState<EnquiryState>(initialEnquiry);
   const [validationError, setValidationError] = useState(false);
+  const interestRef = useRef<HTMLSelectElement>(null);
 
   const submitEnquiry = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!enquiry.interest) {
       setValidationError(true);
+      interestRef.current?.focus();
       return;
     }
 
@@ -45,7 +47,11 @@ export function EnterpriseEnquiry() {
       <form className="enquiry-form" noValidate onSubmit={submitEnquiry}>
         <label htmlFor="interest">{copy.enquiry.interestLabel}</label>
         <select
+          aria-describedby={validationError ? "interest-error" : undefined}
+          aria-invalid={validationError}
+          autoComplete="off"
           id="interest"
+          name="deployment-interest"
           onChange={(event) => {
             setValidationError(false);
             setEnquiry((current) => ({
@@ -54,6 +60,7 @@ export function EnterpriseEnquiry() {
               submitted: false,
             }));
           }}
+          ref={interestRef}
           value={enquiry.interest}
         >
           <option value="">{copy.enquiry.interestPlaceholder}</option>
@@ -61,12 +68,14 @@ export function EnterpriseEnquiry() {
           <option value="infrastructure">{copy.enquiry.infrastructure}</option>
           <option value="partnership">{copy.enquiry.partnership}</option>
         </select>
-        {validationError && <p role="alert">{copy.enquiry.interestRequired}</p>}
+        {validationError && <p id="interest-error" role="alert">{copy.enquiry.interestRequired}</p>}
 
         <label htmlFor="message">{copy.enquiry.messageLabel}</label>
         <textarea
           aria-describedby="message-hint"
+          autoComplete="off"
           id="message"
+          name="deployment-context"
           onChange={(event) => {
             setEnquiry((current) => ({ ...current, message: event.target.value, submitted: false }));
           }}

@@ -22,56 +22,99 @@ async function render(pathname, host = "localhost") {
   );
 }
 
+const routeMetadata = {
+  "/": {
+    title: "Power Champion — Token access launching soon",
+    description: "Explore indicative token-access plans for leading open AI models. Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available.",
+  },
+  "/models": {
+    title: "Open Model Catalog | Power Champion",
+    description: "Compare illustrative open-model token rates, limits, features, and release-review states.",
+  },
+  "/pricing": {
+    title: "Illustrative pricing | Power Champion",
+    description: "Illustrative token rates and local launch-access planning; no payment or funded balance is available.",
+  },
+  "/infrastructure": {
+    title: "Infrastructure review | Power Champion",
+    description: "Source-qualified infrastructure context and release gates for the Power Champion launch site; not a live deployment status.",
+  },
+  "/docs": {
+    title: "Documentation preview | Power Champion",
+    description: "Non-operational integration examples and release-gated future access for Power Champion.",
+  },
+  "/trust": {
+    title: "Trust review | Power Champion",
+    description: "Current public trust boundaries and review links for the Power Champion launch site.",
+  },
+  "/status": {
+    title: "Service status | Power Champion",
+    description: "Current launch-readiness states for public Power Champion services.",
+  },
+  "/company": {
+    title: "Company | Power Champion",
+    description: "Public company context and cited AI infrastructure information for Power Champion.",
+  },
+  "/contact": {
+    title: "Deployment review | Power Champion",
+    description: "Review non-binding deployment interests locally in your browser.",
+  },
+  "/console": {
+    title: "Console preview | Power Champion",
+    description: "A local illustrative console preview with no account, funded balance, usable key, or live usage.",
+  },
+  "/faq": {
+    title: "FAQ | Power Champion",
+    description: "Plain-language answers about the current Power Champion launch site and its public boundaries.",
+  },
+  "/terms": {
+    title: "Terms | Power Champion",
+    description: "The current informational and non-transactional terms for the Power Champion launch site.",
+  },
+  "/privacy": {
+    title: "Privacy | Power Champion",
+    description: "The current privacy boundary for local Power Champion launch-site interactions.",
+  },
+};
+
+const routes = [
+  "/", "/models", "/pricing", "/infrastructure", "/docs", "/trust",
+  "/status", "/company", "/contact", "/console", "/faq", "/terms", "/privacy",
+];
+
+const shellDestinations = [
+  "/models", "/pricing", "/infrastructure", "/docs", "/trust", "/status",
+  "/company", "/contact", "/console", "/faq", "/terms", "/privacy",
+];
+
 test("server-renders a complete English marketplace shell with social metadata", async () => {
-  for (const pathname of ["/", "/models", "/pricing", "/docs", "/console", "/contact"]) {
+  for (const pathname of routes) {
     const response = await render(pathname);
     assert.equal(response.status, 200, `${pathname} returns 200`);
 
     const html = await response.text();
     assert.match(html, /Power Champion/i, `${pathname} includes the shared brand`);
-    assert.match(html, /href="\/models"/, `${pathname} links to models`);
-    assert.match(html, /href="\/pricing"/, `${pathname} links to pricing`);
-    assert.match(html, /href="\/docs"/, `${pathname} links to docs`);
-    assert.match(html, /href="\/contact"/, `${pathname} links to contact`);
-    assert.match(html, /href="\/console"/, `${pathname} links to console`);
-    assert.match(html, /lang="en"/, `${pathname} defaults to English`);
-    assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
-    if (pathname === "/contact") {
-      assert.match(html, /<title>Deployment review \| Power Champion<\/title>/);
-      assert.match(html, /Review non-binding deployment interests locally in your browser\./);
-    } else if (pathname === "/models") {
-      assert.match(html, /<title>Open Model Catalog \| Power Champion<\/title>/);
-      assert.match(
-        html,
-        /<meta name="description" content="Compare illustrative open-model token rates, limits, features, and release-review states\.">/,
-      );
-    } else if (pathname === "/pricing") {
-      assert.match(html, /<title>Illustrative pricing \| Power Champion<\/title>/);
-      assert.match(
-        html,
-        /<meta name="description" content="Illustrative token rates and local launch-access planning; no payment or funded balance is available\.">/,
-      );
-    } else if (pathname === "/docs") {
-      assert.match(html, /<title>Documentation preview \| Power Champion<\/title>/);
-      assert.match(
-        html,
-        /<meta name="description" content="Non-operational integration examples and release-gated future access for Power Champion\.">/,
-      );
-    } else if (pathname === "/console") {
-      assert.match(html, /<title>Console preview \| Power Champion<\/title>/);
-      assert.match(
-        html,
-        /<meta name="description" content="A local illustrative console preview with no account, funded balance, usable key, or live usage\.">/,
-      );
-    } else {
-      assert.match(html, /Power Champion — Token access launching soon/);
-      assert.match(
-        html,
-        /Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available\./,
-      );
+    for (const destination of shellDestinations) {
+      assert.match(html, new RegExp(`href="${destination}"`), `${pathname} links to ${destination}`);
     }
+    assert.match(html, /lang="en"/, `${pathname} defaults to English`);
+    assert.match(html, new RegExp(`<title>${routeMetadata[pathname].title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/title>`));
+    assert.match(
+      html,
+      new RegExp(`<meta name="description" content="${routeMetadata[pathname].description.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`),
+      `${pathname} includes its route-specific description`,
+    );
+    assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
+    assert.doesNotMatch(
+      html,
+      /all systems operational|buy now|funded account|live inference|SOC 2 certified|ISO 27001 certified|we own (?:a|the) data cent(?:re|er)|deployed 3\.1 MW/i,
+    );
     assert.match(html, /property="og:title" content="Token access launching soon\."/);
+    assert.match(html, /property="og:image:width" content="1200"/);
+    assert.match(html, /property="og:image:height" content="630"/);
     assert.match(html, /name="twitter:title" content="Token access launching soon\."/);
+    assert.match(html, /rel="shortcut icon" href="\/favicon\.png"/);
+    assert.match(html, /rel="icon" href="\/favicon\.png"/);
     assert.doesNotMatch(html, /Explore leading open AI models with one API and one prepaid balance\./);
     assert.match(html, /property="og:image" content="http:\/\/localhost\/og\.png"/);
     assert.match(html, /name="twitter:card" content="summary_large_image"/);
@@ -83,6 +126,30 @@ test("server-renders a complete English marketplace shell with social metadata",
     publicHtml,
     /property="og:image" content="https:\/\/marketplace\.example\/og\.png"/,
   );
+});
+
+test("server-renders route-specific launch boundaries and protected facts", async () => {
+  const homeHtml = await (await render("/")).text();
+  assert.match(homeHtml, /href="\/pricing"[^>]*>Compare token rates<\/a>/i);
+  assert.match(homeHtml, /href="\/contact"[^>]*>Deployment review/i);
+
+  const statusHtml = await (await render("/status")).text();
+  assert.match(statusHtml, /Inference API[\s\S]*Not ready/i);
+  assert.match(statusHtml, /Payments[\s\S]*Not ready/i);
+
+  const docsHtml = await (await render("/docs")).text();
+  assert.match(docsHtml, /non-operational examples only/i);
+  assert.match(docsHtml, /pc_demo_YOUR_KEY/i);
+
+  const contactHtml = await (await render("/contact")).text();
+  assert.doesNotMatch(contactHtml, /<(?:input|textarea|select)[^>]+(?:card|bank|email|password|payment|billing)/i);
+  assert.doesNotMatch(contactHtml, /<form[^>]+action=/i);
+
+  for (const pathname of ["/terms", "/privacy"]) {
+    const policyHtml = await (await render(pathname)).text();
+    assert.match(policyHtml, /launch site/i, `${pathname} names the current launch-site boundary`);
+    assert.match(policyHtml, /(?:does not|not enabled|no purchase|not transmitted|not persist)/i, `${pathname} states a non-operational boundary`);
+  }
 });
 
 test("server-renders local-only contact without payment or personal-data fields", async () => {

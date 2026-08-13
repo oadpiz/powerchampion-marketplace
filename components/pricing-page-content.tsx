@@ -79,8 +79,23 @@ export function PricingPageContent() {
           <h2 id="rates-title">{copy.pricing.ratesTitle}</h2>
         </div>
         <p className="rate-table-cue" id="rate-table-scroll-cue">{copy.pricing.ratesScrollCue}</p>
-        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- The overflow region must receive focus for native keyboard scrolling. */}
-        <div aria-describedby="rate-table-scroll-cue" aria-label={copy.pricing.ratesRegionLabel} className="rate-table-scroll" role="region" tabIndex={0}>
+        {/* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex -- The labelled overflow region must receive focus and arrow-key events for keyboard scrolling. */}
+        <div
+          aria-describedby="rate-table-scroll-cue"
+          aria-label={copy.pricing.ratesRegionLabel}
+          className="rate-table-scroll"
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+            event.preventDefault();
+            const distance = Math.max(64, Math.round(event.currentTarget.clientWidth * 0.8));
+            const maximum = Math.max(0, event.currentTarget.scrollWidth - event.currentTarget.clientWidth);
+            const next = event.currentTarget.scrollLeft + (event.key === "ArrowRight" ? distance : -distance);
+            event.currentTarget.scrollLeft = Math.max(0, Math.min(maximum, next));
+          }}
+          role="region"
+          tabIndex={0}
+        >
           <div aria-label={copy.pricing.ratesRegionLabel} className="rate-table" role="table">
             <div className="rate-table-head" role="row">
               <span role="columnheader">{locale === "en" ? "Model" : "模型"}</span>
@@ -96,6 +111,7 @@ export function PricingPageContent() {
             ))}
           </div>
         </div>
+        {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
       </section>
 
       <p className="pricing-credit-note">

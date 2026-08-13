@@ -45,7 +45,7 @@ export function PricingCalculator() {
       <div className="calculator-fields">
         <label>
           <span>{copy.pricing.selectModel}</span>
-          <select aria-label={copy.pricing.selectModel} onChange={(event) => setModelId(event.target.value)} value={modelId}>
+          <select autoComplete="off" name="estimator-model" onChange={(event) => setModelId(event.target.value)} value={modelId}>
             {MODEL_CATALOG.map((option) => (
               <option key={option.id} value={option.id}>{option.name}</option>
             ))}
@@ -54,9 +54,11 @@ export function PricingCalculator() {
         <label>
           <span>{copy.pricing.inputTokens}</span>
           <input
-            aria-label={copy.pricing.inputTokens}
+            autoComplete="off"
             inputMode="numeric"
+            name="input-tokens"
             onChange={(event) => setInputTokens(event.target.value)}
+            spellCheck={false}
             type="text"
             value={inputTokens}
           />
@@ -64,9 +66,11 @@ export function PricingCalculator() {
         <label>
           <span>{copy.pricing.outputTokens}</span>
           <input
-            aria-label={copy.pricing.outputTokens}
+            autoComplete="off"
             inputMode="numeric"
+            name="output-tokens"
             onChange={(event) => setOutputTokens(event.target.value)}
+            spellCheck={false}
             type="text"
             value={outputTokens}
           />

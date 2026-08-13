@@ -60,8 +60,11 @@ export function ModelMarketplace() {
           <span>{copy.models.search}</span>
           <input
             aria-label={copy.models.search}
+            autoComplete="off"
+            name="model-query"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={copy.models.search}
+            placeholder={`${copy.models.search}…`}
+            spellCheck={false}
             type="search"
             value={query}
           />
@@ -129,7 +132,7 @@ export function ModelMarketplace() {
                   <dl>
                     <div>
                       <dt>{copy.models.modelId}</dt>
-                      <dd><code>{model.modelId}</code></dd>
+                      <dd><code translate="no">{model.modelId}</code></dd>
                     </div>
                     <div>
                       <dt>{copy.models.speed}</dt>

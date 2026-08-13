@@ -16,11 +16,16 @@ describe("EnterpriseEnquiry", () => {
     expect(screen.getByRole("option", { name: "Model partnership" })).toHaveValue("partnership");
     expect(screen.getByText(/No information is transmitted or persisted/i)).toBeVisible();
     expect(document.querySelector("form")).not.toHaveAttribute("action");
+    expect(screen.getByLabelText("I am interested in")).toHaveAttribute("name", "deployment-interest");
+    expect(screen.getByLabelText("I am interested in")).toHaveAttribute("autocomplete", "off");
+    expect(screen.getByLabelText("Optional context")).toHaveAttribute("name", "deployment-context");
+    expect(screen.getByLabelText("Optional context")).toHaveAttribute("autocomplete", "off");
     expect(screen.queryByLabelText(/email|phone|address|card|password|API key|company.registration/i))
       .not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Submit deployment review" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Choose an interest area.");
+    expect(screen.getByLabelText("I am interested in")).toHaveFocus();
 
     await user.selectOptions(screen.getByLabelText("I am interested in"), "launch-access");
     await user.click(screen.getByRole("button", { name: "Submit deployment review" }));

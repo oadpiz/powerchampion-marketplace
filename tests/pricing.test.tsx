@@ -96,6 +96,21 @@ describe("PricingCalculator", () => {
 
     expect(screen.getByText("Estimated cost").parentElement).toHaveAttribute("aria-live", "polite");
   });
+
+  it("names browser-only estimator fields and disables autofill", () => {
+    render(
+      <LocaleProvider>
+        <PricingCalculator />
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByLabelText("Select a model")).toHaveAttribute("name", "estimator-model");
+    expect(screen.getByLabelText("Select a model")).toHaveAttribute("autocomplete", "off");
+    expect(screen.getByLabelText("Input tokens")).toHaveAttribute("name", "input-tokens");
+    expect(screen.getByLabelText("Input tokens")).toHaveAttribute("autocomplete", "off");
+    expect(screen.getByLabelText("Output tokens")).toHaveAttribute("name", "output-tokens");
+    expect(screen.getByLabelText("Output tokens")).toHaveAttribute("autocomplete", "off");
+  });
 });
 
 describe("LaunchAccessDialog", () => {
@@ -314,6 +329,27 @@ describe("PricingPage", () => {
     expect(region).toHaveAttribute("tabindex", "0");
     expect(region).toHaveAttribute("aria-describedby", "rate-table-scroll-cue");
     expect(within(region).getByRole("table", { name: "Model rate comparison" })).toBeVisible();
+  });
+
+  it("scrolls the focused rate comparison with horizontal arrow keys", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <PricingPage />
+      </LocaleProvider>,
+    );
+
+    const region = screen.getByRole("region", { name: "Model rate comparison" });
+    Object.defineProperty(region, "clientWidth", { configurable: true, value: 320 });
+    Object.defineProperty(region, "scrollWidth", { configurable: true, value: 640 });
+    region.scrollLeft = 0;
+    region.focus();
+
+    await user.keyboard("{ArrowRight}");
+    expect(region.scrollLeft).toBe(256);
+
+    await user.keyboard("{ArrowLeft}");
+    expect(region.scrollLeft).toBe(0);
   });
 
   it("returns focus to the pricing pack CTA after checkout closes", async () => {

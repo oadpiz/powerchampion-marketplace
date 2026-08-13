@@ -47,7 +47,17 @@ describe("ModelMarketplace", () => {
     expect(details).toHaveTextContent("Serving role");
     expect(details).toHaveTextContent("Region not published");
     expect(details).toHaveTextContent("Temporarily unavailable");
+    expect(within(details).getByText("pc/qwen-coder").closest("code")).toHaveAttribute("translate", "no");
     expect(within(details).queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("names the search field, disables autofill, and uses an example cue", () => {
+    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+
+    const search = screen.getByRole("searchbox", { name: "Search models" });
+    expect(search).toHaveAttribute("name", "model-query");
+    expect(search).toHaveAttribute("autocomplete", "off");
+    expect(search).toHaveAttribute("placeholder", "Search models…");
   });
 
   it("keeps summary facts visible before expansion", () => {

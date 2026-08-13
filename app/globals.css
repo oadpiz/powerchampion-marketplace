@@ -46,8 +46,8 @@ button, a, input, select, textarea {
   touch-action: manipulation;
   -webkit-tap-highlight-color: rgb(85 231 255 / 20%);
 }
-button, a { transition: transform 160ms ease, opacity 160ms ease; }
-button:active, a:active { transform: translateY(1px); opacity: .86; }
+button, a { transition: transform 160ms ease, color 160ms ease, background-color 160ms ease, filter 160ms ease; }
+button:active, a:active { transform: translateY(1px); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .theme-product,
 .home-page,
@@ -135,6 +135,9 @@ p, li, dd, a, button, label { overflow-wrap: break-word; }
 .site-navigation a:hover, .site-navigation a:focus-visible,
 .site-footer a:hover, .site-footer a:focus-visible,
 .site-footer button:hover, .site-footer button:focus-visible { color: var(--ink); }
+.site-navigation a:active,
+.site-footer a:active,
+.text-link:active { color: var(--focus); }
 .site-actions { display: flex; align-items: center; gap: .75rem; margin-left: auto; }
 .locale-toggle { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .locale-toggle:focus-within,
@@ -154,6 +157,11 @@ p, li, dd, a, button, label { overflow-wrap: break-word; }
 .footer-locale-toggle button:hover,
 .menu-trigger:hover,
 .mobile-navigation a:hover { background: var(--line); color: var(--ink); }
+.locale-toggle button:active,
+.footer-locale-toggle button:active,
+.menu-trigger:active,
+.mobile-navigation button:active,
+.mobile-navigation a:active { background: var(--line); color: var(--ink); }
 .token-button, .primary-link {
   display: inline-flex;
   align-items: center;
@@ -804,6 +812,8 @@ p, li, dd, a, button, label { overflow-wrap: break-word; }
 }
 
 @media (max-width: 820px) {
+  .site-navigation, .site-actions > .token-button { display: none; }
+  .menu-trigger { display: block; }
   .marketplace-controls { align-items: stretch; flex-direction: column; gap: 1.25rem; }
   .marketplace-search { min-width: 0; }
   .marketplace-categories { justify-content: flex-start; }

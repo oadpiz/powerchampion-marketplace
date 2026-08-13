@@ -135,4 +135,16 @@ describe("hybrid design contracts", () => {
     expect(source).toMatch(/\.token-button:hover[^}]*filter:\s*brightness/);
     expect(source).toMatch(/\.text-link:hover\s*\{[^}]*color:/);
   });
+
+  it("keeps active feedback at full contrast", async () => {
+    const source = await css();
+    const universalActive = balancedBlock(source, "button:active, a:active");
+    const navigationActive = balancedBlock(source, ".site-navigation a:active");
+    const controlActive = balancedBlock(source, ".locale-toggle button:active");
+
+    expect(universalActive).toMatch(/transform:\s*translateY\(/);
+    expect(universalActive).not.toMatch(/opacity:/);
+    expect(navigationActive).toMatch(/color:\s*var\(--(?:ink|focus)\)/);
+    expect(controlActive).toMatch(/background:\s*var\(--line\)/);
+  });
 });

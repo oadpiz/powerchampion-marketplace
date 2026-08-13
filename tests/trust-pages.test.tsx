@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import FaqPage from "../app/faq/page";
 import InfrastructurePage from "../app/infrastructure/page";
 import PrivacyPage from "../app/privacy/page";
@@ -71,5 +71,18 @@ describe("public trust pages", () => {
     expect(screen.getByRole("link", { name: "Status" })).toHaveAttribute("href", "/status");
     expect(screen.getByRole("link", { name: "Company" })).toHaveAttribute("href", "/company");
     expect(document.body).not.toHaveTextContent(/SOC 2|ISO|GDPR|uptime|availability/i);
+  });
+
+  it("renders repeated readiness states without duplicate React keys", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      localized(<TrustPage />);
+
+      expect(screen.getAllByText("Not ready")).toHaveLength(3);
+      expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/same key/i);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

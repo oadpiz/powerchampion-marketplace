@@ -6,7 +6,11 @@ import { useLocale } from "./locale-provider";
 export function TrustContent() {
   const { locale, copy } = useLocale();
   const content = TRUST_CONTENT[locale];
-  const readiness = [SERVICE_READINESS.manifest, SERVICE_READINESS.inference, SERVICE_READINESS.payments] as const;
+  const readiness = [
+    { id: "manifest", state: SERVICE_READINESS.manifest },
+    { id: "inference", state: SERVICE_READINESS.inference },
+    { id: "payments", state: SERVICE_READINESS.payments },
+  ] as const;
 
   return (
     <main className="enterprise-review-page" id="main-content">
@@ -24,7 +28,9 @@ export function TrustContent() {
             {section.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
             {section.id === "controls" && (
               <ul className="trust-readiness-list">
-                {readiness.map((state) => <li data-ready={isReady(state)} key={state}>{content.status.states[state]}</li>)}
+                {readiness.map(({ id, state }) => (
+                  <li data-ready={isReady(state)} data-service={id} key={id}>{content.status.states[state]}</li>
+                ))}
               </ul>
             )}
             {section.id === "policies" && (
