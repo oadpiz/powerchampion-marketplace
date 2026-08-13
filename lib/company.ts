@@ -1,5 +1,7 @@
 import type { Locale } from "./content";
 
+export const COMPANY_CAPACITY_MW = "3.1 MW";
+
 export type CompanyLocale = "en" | "zh";
 
 export type CompanyContent = {
@@ -101,7 +103,7 @@ export const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent> & Record<Loc
     capacity: {
       title: "Capacity context",
       initialLabel: "Counterparty-reported expected initial capacity and reservation context",
-      initialMw: "Approximately 3.1 MW",
+      initialMw: `Approximately ${COMPANY_CAPACITY_MW}`,
       initialReservation: "Approximately US$27.9M over the initial contract term",
       depositLabel: "Counterparty-reported initial deposit context",
       depositContext: "The counterparty reported receiving an initial deposit; this is not a statement that Power Champion received revenue.",
@@ -139,7 +141,7 @@ export const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent> & Record<Loc
     capacity: {
       title: "容量脈絡",
       initialLabel: "交易對手報告的預期初始容量及預留脈絡",
-      initialMw: "約 3.1 MW",
+      initialMw: `約 ${COMPANY_CAPACITY_MW}`,
       initialReservation: "初始合約期間約 US$27.9M",
       depositLabel: "交易對手報告的初始訂金脈絡",
       depositContext: "交易對手表示已收到初始訂金；這並非表示 Power Champion 已取得營收。",

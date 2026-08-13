@@ -1,5 +1,5 @@
 import type { Locale } from "./content";
-import { COMPANY_CONTENT } from "./company";
+import { COMPANY_CAPACITY_MW } from "./company";
 
 export type ReadinessState = "ready" | "preview" | "preparation" | "not-ready";
 
@@ -159,7 +159,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
       { id: "rates-final", question: "Are the displayed rates final?", answer: "No. Displayed rates are illustrative and are not a final offer or chargeable rate." },
       { id: "api-live", question: "Is the API live?", answer: "No. There is no live inference endpoint or usable API access at this time." },
       { id: "entered-information", question: "What happens to information entered here?", answer: "Current interactions are not transmitted or persisted; they remain in this browser." },
-      { id: "capacity-deployed", question: `Is ${COMPANY_CONTENT.en.capacity.initialMw} already deployed?`, answer: "No. The figure is counterparty-reported expected capacity, not completed deployment.", href: "/company", linkLabel: "Read company context" },
+      { id: "capacity-deployed", question: `Is ${COMPANY_CAPACITY_MW} already deployed?`, answer: "No. The figure is counterparty-reported expected capacity, not completed deployment.", href: "/company", linkLabel: "Read company context" },
       { id: "deployment-review", question: "What is a deployment review?", answer: "It is a local, non-binding planning flow for discussing future deployment inputs; it does not reserve capacity or create a service commitment." },
       { id: "launch-access", question: "How do I request launch access?", answer: "A local request creates no reservation or account. It is only a planning interaction in this browser." },
     ],
@@ -190,7 +190,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
       { id: "rates-final", question: "顯示的費率是最終價格嗎？", answer: "不是。顯示的費率僅供示意，不是最終報價或可收費費率。" },
       { id: "api-live", question: "API 已經上線了嗎？", answer: "沒有。目前沒有即時推論端點或可用的 API 存取。" },
       { id: "entered-information", question: "我在這裡輸入的資訊會怎麼處理？", answer: "目前互動不會傳送或持久保存，僅保留在此瀏覽器中。" },
-      { id: "capacity-deployed", question: `${COMPANY_CONTENT.zh.capacity.initialMw} 已經部署了嗎？`, answer: "沒有。該數字是交易對手報告的預期容量，並非已完成部署。", href: "/company", linkLabel: "閱讀公司脈絡" },
+      { id: "capacity-deployed", question: `${COMPANY_CAPACITY_MW} 已經部署了嗎？`, answer: "沒有。該數字是交易對手報告的預期容量，並非已完成部署。", href: "/company", linkLabel: "閱讀公司脈絡" },
       { id: "deployment-review", question: "什麼是部署審查？", answer: "這是本機、非約束性的規劃流程，用於討論未來部署輸入；不會預留容量或形成服務承諾。" },
       { id: "launch-access", question: "如何申請啟動存取？", answer: "本機請求不會建立預留或帳戶，只是此瀏覽器中的規劃互動。" },
     ],

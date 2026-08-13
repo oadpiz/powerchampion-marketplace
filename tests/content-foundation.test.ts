@@ -1,5 +1,7 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { COMPANY_CONTENT } from "../lib/company";
+import { COMPANY_CAPACITY_MW, COMPANY_CONTENT } from "../lib/company";
 import { MODEL_CATALOG } from "../lib/models";
 import {
   POLICY_CONTENT,
@@ -56,11 +58,24 @@ describe("public truth foundation", () => {
     }
   });
 
-  it("derives capacity FAQ questions from canonical company content", () => {
+  it("keeps capacity display and exact FAQ wording derived from one canonical token", () => {
     const englishCapacityFaq = POLICY_CONTENT.en.faq.find((entry) => entry.id === "capacity-deployed");
     const chineseCapacityFaq = POLICY_CONTENT.zh.faq.find((entry) => entry.id === "capacity-deployed");
 
-    expect(englishCapacityFaq?.question).toContain(COMPANY_CONTENT.en.capacity.initialMw);
-    expect(chineseCapacityFaq?.question).toContain(COMPANY_CONTENT.zh.capacity.initialMw);
+    expect(COMPANY_CAPACITY_MW).toBe("3.1 MW");
+    expect(COMPANY_CONTENT.en.capacity.initialMw).toBe(`Approximately ${COMPANY_CAPACITY_MW}`);
+    expect(COMPANY_CONTENT.zh.capacity.initialMw).toBe(`約 ${COMPANY_CAPACITY_MW}`);
+    expect(englishCapacityFaq?.question).toBe(`Is ${COMPANY_CAPACITY_MW} already deployed?`);
+    expect(chineseCapacityFaq?.question).toBe(`${COMPANY_CAPACITY_MW} 已經部署了嗎？`);
+  });
+
+  it("defines the capacity token only in the canonical company source", async () => {
+    const [companySource, trustSource] = await Promise.all([
+      readFile(resolve(process.cwd(), "lib/company.ts"), "utf8"),
+      readFile(resolve(process.cwd(), "lib/trust.ts"), "utf8"),
+    ]);
+
+    expect(companySource.match(/export const COMPANY_CAPACITY_MW = "3\.1 MW";/g)).toHaveLength(1);
+    expect(trustSource).not.toContain('"3.1 MW"');
   });
 });

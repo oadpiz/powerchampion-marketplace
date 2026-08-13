@@ -6,10 +6,16 @@ import { describe, expect, it } from "vitest";
 import { CompanyContent } from "../components/company-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
-import { COMPANY_CONTENT, COMPANY_SOURCES } from "../lib/company";
+import { COMPANY_CAPACITY_MW, COMPANY_CONTENT, COMPANY_SOURCES } from "../lib/company";
 import { COPY } from "../lib/content";
 
 describe("company data", () => {
+  it("derives localized capacity display values from the canonical capacity token", () => {
+    expect(COMPANY_CAPACITY_MW).toBe("3.1 MW");
+    expect(COMPANY_CONTENT.en.capacity.initialMw).toBe(`Approximately ${COMPANY_CAPACITY_MW}`);
+    expect(COMPANY_CONTENT.zh.capacity.initialMw).toBe(`約 ${COMPANY_CAPACITY_MW}`);
+  });
+
   it("renders qualified capacity information and verifiable sources", () => {
     render(
       <LocaleProvider>
