@@ -23,7 +23,7 @@ describe("Power Champion homepage", () => {
       .toHaveAttribute("href", "/pricing");
     expect(within(hero).getByRole("link", { name: "Deployment review" }))
       .toHaveAttribute("href", "/contact");
-    expect(screen.getByText("Token access launching soon")).toBeVisible();
+    expect(screen.getByText("API is live — one key, pay per use")).toBeVisible();
   });
 
   it("shows derived catalog facts instead of an availability claim", () => {
@@ -119,6 +119,6 @@ describe("Power Champion homepage", () => {
     expect(within(proof).getByText("6")).toBeVisible();
     expect(within(proof).getByText("128K")).toBeVisible();
     expect(within(proof).getByText("$0.16")).toBeVisible();
-    expect(screen.getByText("Token 存取即將推出")).toBeVisible();
+    expect(screen.getByText("API 已上線 — 一把金鑰，按量計費")).toBeVisible();
   });
 });

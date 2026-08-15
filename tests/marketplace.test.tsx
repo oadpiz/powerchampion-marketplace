@@ -36,7 +36,7 @@ describe("ModelMarketplace", () => {
     await user.click(screen.getByRole("button", { name: "Qwen" }));
 
     const details = screen.getByRole("region", { name: "Qwen details" });
-    expect(details).toHaveTextContent("pc/qwen-coder");
+    expect(details).toHaveTextContent("glm-5.2-fp8");
     expect(details).toHaveTextContent("Max output");
     expect(details).toHaveTextContent("32K");
     expect(details).toHaveTextContent("Tool use");
@@ -47,7 +47,7 @@ describe("ModelMarketplace", () => {
     expect(details).toHaveTextContent("Serving role");
     expect(details).toHaveTextContent("Region not published");
     expect(details).toHaveTextContent("Temporarily unavailable");
-    expect(within(details).getByText("pc/qwen-coder").closest("code")).toHaveAttribute("translate", "no");
+    expect(within(details).getByText("glm-5.2-fp8").closest("code")).toHaveAttribute("translate", "no");
     expect(within(details).queryByRole("link")).not.toBeInTheDocument();
   });
 
@@ -100,7 +100,7 @@ describe("ModelMarketplace", () => {
     expect(qwen).toHaveAttribute("aria-expanded", "true");
     const details = document.getElementById(qwen.getAttribute("aria-controls") ?? "");
     expect(details).not.toHaveAttribute("hidden");
-    expect(details).toHaveTextContent("pc/qwen-coder");
+    expect(details).toHaveTextContent("glm-5.2-fp8");
   });
 
   it("keeps a collapsed expansion control connected to its details region", () => {
@@ -110,7 +110,7 @@ describe("ModelMarketplace", () => {
 
     expect(details).toHaveAttribute("hidden");
     expect(details).toHaveAttribute("role", "region");
-    expect(details).toHaveTextContent("pc/qwen-coder");
+    expect(details).toHaveTextContent("glm-5.2-fp8");
   });
 
   it("keeps localized rate units visible at narrow widths", async () => {

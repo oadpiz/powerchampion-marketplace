@@ -12,12 +12,12 @@ type ConsoleViewProps = {
 };
 
 const recentRequests = [
-  ["glm-5.2-fp8", "2.8K", "242 ms"],
+  ["pc/qwen-coder", "2.8K", "242 ms"],
   ["pc/deepseek-reasoning", "6.1K", "1.2 s"],
   ["pc/llama-general", "1.4K", "318 ms"],
 ] as const;
 
-const DEMO_KEY = "sk-b300-YOUR-KEY";
+const DEMO_KEY = "pc_demo_YOUR_KEY";
 
 export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps) {
   const { copy, locale } = useLocale();
@@ -54,7 +54,7 @@ export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps
       if (!navigator.clipboard?.writeText) {
         throw new Error("Clipboard unavailable");
       }
-      await navigator.clipboard.writeText("sk-b300-YOUR-KEY");
+      await navigator.clipboard.writeText("pc_demo_YOUR_KEY");
       setCopyFeedback("copied");
     } catch {
       setCopyFeedback("unavailable");

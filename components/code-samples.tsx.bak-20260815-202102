@@ -4,30 +4,30 @@ import { useId, useRef, useState } from "react";
 import { useLocale } from "./locale-provider";
 
 const samples = {
-  curl: `curl https://b300.powerchampion.ai/v1/chat/completions \\
-  -H "Authorization: Bearer sk-b300-YOUR-KEY" \\
+  curl: `curl https://api.powerchampion.example/v1/chat/completions \\
+  -H "Authorization: Bearer pc_demo_YOUR_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"glm-5.2-fp8","messages":[{"role":"user","content":"Hello"}]}'`,
+  -d '{"model":"pc/qwen-coder","messages":[{"role":"user","content":"Hello"}]}'`,
   python: `from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://b300.powerchampion.ai/v1",
-    api_key="sk-b300-YOUR-KEY",
+    base_url="https://api.powerchampion.example/v1",
+    api_key="pc_demo_YOUR_KEY",
 )
 
 response = client.chat.completions.create(
-    model="glm-5.2-fp8",
+    model="pc/qwen-coder",
     messages=[{"role": "user", "content": "Hello"}],
 )`,
   javascript: `import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://b300.powerchampion.ai/v1",
-  apiKey: "sk-b300-YOUR-KEY",
+  baseURL: "https://api.powerchampion.example/v1",
+  apiKey: "pc_demo_YOUR_KEY",
 });
 
 const response = await client.chat.completions.create({
-  model: "glm-5.2-fp8",
+  model: "pc/qwen-coder",
   messages: [{ role: "user", content: "Hello" }],
 });`,
 } as const;

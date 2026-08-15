@@ -13,11 +13,11 @@ export type ServiceReadiness = {
 };
 
 export const SERVICE_READINESS: ServiceReadiness = {
-  website: "ready",
-  manifest: "ready",
-  inference: "ready",
-  usageAccounting: "ready",
-  payments: "ready",
+  website: "preview",
+  manifest: "not-ready",
+  inference: "not-ready",
+  usageAccounting: "not-ready",
+  payments: "not-ready",
   enterpriseReview: "preparation",
 };
 

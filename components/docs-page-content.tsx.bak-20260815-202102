@@ -5,8 +5,8 @@ import { SERVICE_READINESS, TRUST_CONTENT, isReady, type ReadinessState } from "
 import { CodeSamples } from "./code-samples";
 import { useLocale } from "./locale-provider";
 
-const BASE_URL = "https://b300.powerchampion.ai/v1";
-const DEMO_KEY = "sk-b300-YOUR-KEY";
+const BASE_URL = "https://api.powerchampion.example/v1";
+const DEMO_KEY = "pc_demo_YOUR_KEY";
 
 type ModelFeatureGate = "streaming" | "tools" | "structuredOutput";
 
@@ -38,19 +38,19 @@ export function DocsPageContent() {
         <p className="eyebrow">{copy.docs.kicker}</p>
         <h1 id="docs-title">{copy.docs.title}</h1>
         <p>{copy.docs.lead}</p>
-        <p className="docs-notice">{locale === "en" ? "Live — the endpoint below is operational" : "已上線 — 下方端點皆可運作"}</p>
+        <p className="docs-notice">{locale === "en" ? "Public preview — non-operational" : "公開預覽 — 不可運作"}</p>
       </section>
 
       <section aria-labelledby="public-preview-title" className="docs-quick-start">
-        <h2 id="public-preview-title">{locale === "en" ? "Quick start" : "快速開始"}</h2>
+        <h2 id="public-preview-title">{locale === "en" ? "Public preview" : "公開預覽"}</h2>
         <p className="docs-guidance">
           {locale === "en"
-            ? "The request shape, model names, and rates below are live. Point any OpenAI-compatible client at the base URL with your API key."
-            : "下方請求格式、模型名稱與費率皆為即時資訊。將任何 OpenAI 相容客戶端指向此 base URL 並附上你的 API 金鑰即可。"}
+            ? "The request shape, model names, and illustrative rates are public reference material. They are non-operational and do not provide an endpoint or service access."
+            : "請求格式、模型名稱與展示費率屬於公開參考資料。它們不可運作，且不提供端點或服務存取。"}
         </p>
         <dl className="docs-values">
           <div><dt>{copy.docs.baseUrl}</dt><dd><code>{BASE_URL}</code></dd></div>
-          <div><dt>{copy.docs.chooseModel}</dt><dd><code>glm-5.2-fp8</code></dd></div>
+          <div><dt>{copy.docs.chooseModel}</dt><dd><code>pc/qwen-coder</code></dd></div>
           <div><dt>{locale === "en" ? "Example status" : "範例狀態"}</dt><dd>{locale === "en" ? "Non-operational" : "不可運作"}</dd></div>
         </dl>
       </section>
@@ -59,8 +59,8 @@ export function DocsPageContent() {
         <h2 id="protected-access-title">{locale === "en" ? "Protected access" : "受保護存取"}</h2>
         <p className="docs-guidance">
           {locale === "en"
-            ? "API keys are issued per customer with prepaid balance (nano-USD precision). Check your balance anytime with GET /dashboard/billing/subscription using your key; top up with redeem codes."
-            : "API 金鑰以預付餘額形式逐客戶發行（nano-USD 精度）。使用金鑰可隨時呼叫 GET /dashboard/billing/subscription 查詢餘額，並可使用儲值碼加值。"}
+            ? "Authentication, accounts, service entitlement, usage accounting, and inference remain unavailable pending release review. The placeholder below is inert and non-operational."
+            : "驗證、帳戶、服務授權、用量計算與推論仍在發布審查中，尚未提供。下方預留字串為無作用、不可運作的範例。"}
         </p>
         <dl className="docs-values docs-values-single">
           <div><dt>{copy.docs.apiKey}</dt><dd><code>{DEMO_KEY}</code></dd></div>

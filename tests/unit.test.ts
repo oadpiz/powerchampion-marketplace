@@ -4,8 +4,8 @@ import { CREDIT_PACKS, calculateUsageCost } from "../lib/pricing";
 
 describe("model catalog", () => {
   it("filters by category and query together", () => {
-    const result = filterModels(MODEL_CATALOG, "qwen", "coding");
-    expect(result.map((model) => model.id)).toEqual(["qwen"]);
+    const result = filterModels(MODEL_CATALOG, "glm", "coding");
+    expect(result.map((model) => model.id)).toEqual(["glm-5.2-fp8"]);
   });
 
   it("returns no rows when no model matches", () => {

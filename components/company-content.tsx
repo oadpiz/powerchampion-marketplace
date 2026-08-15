@@ -84,6 +84,28 @@ export function CompanyContent() {
         <p>{content.disclosure}</p>
       </section>
 
+      <section aria-labelledby="company-contact-title" className="company-record">
+        <h2 id="company-contact-title">{locale === "en" ? "Contact" : "聯絡資訊"}</h2>
+        <p>7F, No. 38-1, Section 1, Ren&rsquo;ai Rd, Zhongzheng District, Taipei City 100, Taiwan</p>
+        <p>Tel +886 2 2396 0605 · info@powerchampion.org</p>
+        <p><a href="https://b300.powerchampion.ai">{locale === "en" ? "API Platform →" : "API 平台 →"}</a></p>
+      </section>
+
+      <section aria-labelledby="company-identity-title" className="company-record">
+        <h2 id="company-identity-title">{locale === "en" ? "Company identity" : "公司資訊"}</h2>
+        <p>{locale === "en" ? "Founded 2018 · Taipei City, Taiwan" : "成立於 2018 · 台灣台北市"}</p>
+        <p>{locale === "en" ? "Website by 一點子創意工作室 (CatchATW)" : "網站由一點子創意工作室（CatchATW）製作"}</p>
+      </section>
+
+      <section aria-labelledby="company-partners-title" className="company-record">
+        <h2 id="company-partners-title">{locale === "en" ? "Technology partners" : "技術合作夥伴"}</h2>
+        <p>
+          <a href="https://www.albatron.com.tw" rel="noreferrer" target="_blank">Albatron Technology Co. Ltd.</a>
+          {" — "}
+          {locale === "en" ? "Supermicro servers, NVIDIA GPU systems, and Micron storage solutions. +886-2-8227-3277 · sales@albatron.com.tw" : "Supermicro 伺服器、NVIDIA GPU 系統與 Micron 儲存方案。+886-2-8227-3277 · sales@albatron.com.tw"}
+        </p>
+      </section>
+
       <nav aria-label={content.related.title} className="company-related-links">
         <a href="/infrastructure">{content.related.infrastructureLink}</a>
         <a href="/contact">{content.related.deploymentReviewLink}</a>

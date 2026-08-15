@@ -12,6 +12,7 @@ services:
       HOSTNAME: 0.0.0.0
     networks:
       - dokploy-network
+      - default
     labels:
       traefik.enable: "true"
       traefik.docker.network: dokploy-network
@@ -25,7 +26,6 @@ services:
       traefik.http.routers.powerchampion-marketplace-websecure.tls.certresolver: letsencrypt
       traefik.http.routers.powerchampion-marketplace-websecure.service: powerchampion-marketplace-websecure
       traefik.http.services.powerchampion-marketplace-websecure.loadbalancer.server.port: "3000"
-
 networks:
   dokploy-network:
     external: true

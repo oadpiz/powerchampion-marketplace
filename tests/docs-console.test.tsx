@@ -16,7 +16,7 @@ describe("CodeSamples", () => {
     expect(screen.getByRole("region", { name: "Public preview" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Protected access" })).toBeVisible();
     expect(screen.getAllByText(/non-operational/i).length).toBeGreaterThan(0);
-    expect(screen.getByText("pc_demo_YOUR_KEY")).toBeVisible();
+    expect(screen.getByText("sk-b300-YOUR-KEY")).toBeVisible();
   });
 
   it("shows all release gates as not ready", () => {
@@ -136,7 +136,7 @@ describe("ConsoleView", () => {
 
     expect(screen.getByText("Launch preview — illustrative only")).toBeInTheDocument();
     expect(screen.getByText("$184.20")).toBeInTheDocument();
-    expect(screen.getByText("pc_demo_YOUR_KEY")).toBeInTheDocument();
+    expect(screen.getByText("sk-b300-YOUR-KEY")).toBeInTheDocument();
     expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
   });
 
@@ -160,7 +160,7 @@ describe("ConsoleView", () => {
 
     await user.click(screen.getByRole("button", { name: "Copy" }));
 
-    expect(writeText).toHaveBeenCalledWith("pc_demo_YOUR_KEY");
+    expect(writeText).toHaveBeenCalledWith("sk-b300-YOUR-KEY");
     expect(screen.getByRole("status")).toHaveTextContent("Copied");
   });
 
@@ -180,7 +180,7 @@ describe("ConsoleView", () => {
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
     await user.click(screen.getByRole("button", { name: "複製" }));
 
-    expect(writeText).toHaveBeenCalledWith("pc_demo_YOUR_KEY");
+    expect(writeText).toHaveBeenCalledWith("sk-b300-YOUR-KEY");
     expect(screen.getByRole("status")).toHaveTextContent("無法複製");
     expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
   });

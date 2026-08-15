@@ -32,7 +32,7 @@ async function render(pathname, host = "localhost", forwardedHost) {
 
 const routeMetadata = {
   "/": {
-    title: "Power Champion — Token access launching soon",
+    title: "Power Champion — OpenAI-compatible API · Live",
     description: "Explore indicative token-access plans for leading open AI models. Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available.",
   },
   "/models": {
@@ -128,10 +128,10 @@ test("server-renders a complete English marketplace shell with social metadata",
       html,
       /all systems operational|buy now|funded account|live inference|SOC 2 certified|ISO 27001 certified|we own (?:a|the) data cent(?:re|er)|deployed 3\.1 MW/i,
     );
-    assert.match(html, /property="og:title" content="Token access launching soon\."/);
+    assert.match(html, /property="og:title" content="OpenAI-compatible API · Live\."/);
     assert.match(html, /property="og:image:width" content="1200"/);
     assert.match(html, /property="og:image:height" content="630"/);
-    assert.match(html, /name="twitter:title" content="Token access launching soon\."/);
+    assert.match(html, /name="twitter:title" content="OpenAI-compatible API · Live\."/);
     assert.match(html, /rel="shortcut icon" href="\/favicon\.png"/);
     assert.match(html, /rel="icon" href="\/favicon\.png"/);
     assert.doesNotMatch(html, /Explore leading open AI models with one API and one prepaid balance\./);
@@ -206,7 +206,7 @@ test("server-renders route-specific launch boundaries and protected facts", asyn
 
   const docsHtml = await (await render("/docs")).text();
   assert.match(docsHtml, /non-operational examples only/i);
-  assert.match(docsHtml, /pc_demo_YOUR_KEY/i);
+  assert.match(docsHtml, /sk-b300-YOUR-KEY/i);
 
   const contactHtml = await (await render("/contact")).text();
   assert.doesNotMatch(contactHtml, /<(?:input|textarea|select)[^>]+(?:card|bank|email|password|payment|billing)/i);
@@ -256,7 +256,7 @@ test("server-renders the finished marketplace homepage", async () => {
   assert.match(html, /Every model\./i);
   assert.match(html, /One power core\./i);
   assert.match(html, /Model marketplace/i);
-  assert.match(html, /Token access launching soon/i);
+  assert.match(html, /OpenAI-compatible API · Live/i);
   assert.match(html, /Counterparty-reported expected contracted hosting capacity; not live or completed deployment\./i);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
@@ -290,7 +290,7 @@ test("server-renders docs and the local illustrative console preview", async () 
   assert.match(docsHtml, /One endpoint\. Familiar tools\./i);
   assert.match(docsHtml, /Public preview/i);
   assert.match(docsHtml, /Protected access/i);
-  assert.match(docsHtml, /pc_demo_YOUR_KEY/i);
+  assert.match(docsHtml, /sk-b300-YOUR-KEY/i);
 
   const consoleResponse = await render("/console");
   const consoleHtml = await consoleResponse.text();

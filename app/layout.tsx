@@ -56,7 +56,7 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: metadataOrigin(host),
     twitter: {
       card: "summary_large_image",
-      title: "Token access launching soon.",
+      title: "OpenAI-compatible API · Live",
       description: "Explore indicative open-model access and illustrative UI data. No funded balance or live API is currently available.",
       images: ["/og.png"],
     },

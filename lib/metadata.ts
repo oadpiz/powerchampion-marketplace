@@ -17,7 +17,7 @@ export type RoutePath =
 
 const ROUTE_METADATA = {
   "/": {
-    title: "Power Champion — Token access launching soon",
+    title: "Power Champion — OpenAI-compatible API · Live",
     description: "Explore indicative token-access plans for leading open AI models. Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available.",
   },
   "/models": {
@@ -71,7 +71,7 @@ const ROUTE_METADATA = {
 } satisfies Record<RoutePath, { title: string; description: string }>;
 
 const SOCIAL_METADATA = {
-  title: "Token access launching soon.",
+  title: "OpenAI-compatible API · Live.",
   description: "Explore indicative open-model access and illustrative UI data. No funded balance or live API is currently available.",
 };
 

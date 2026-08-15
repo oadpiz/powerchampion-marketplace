@@ -66,8 +66,8 @@ export function PricingPageContent() {
         </div>
         <p className="pricing-billing-copy">
           {locale === "en"
-            ? "Input and output tokens are priced separately at the live per-million rates in the table below. The estimator applies those same rates locally in your browser."
-            : "輸入與輸出 Token 會依下方表格中的即時每百萬費率分別計價。估算器會在你的瀏覽器中以相同費率計算。"}
+            ? "Input and output tokens are priced separately at the illustrative per-million rates in the table below. The estimator applies those same rates locally in your browser."
+            : "輸入與輸出 Token 會依下方表格中的展示每百萬費率分別計價。估算器會在你的瀏覽器中以相同費率計算。"}
         </p>
       </section>
 
@@ -120,8 +120,8 @@ export function PricingPageContent() {
 
       <p className="pricing-credit-note">
         {locale === "en"
-          ? "Rates are live and billed exactly as listed. Prepaid keys bill on measured usage; failed requests are not billed."
-          : "費率為即時生效價格，按實際用量計費；預付金鑰用多少扣多少，失敗的請求不計費。"}
+          ? "All rates and planning references are illustrative. A launch-access request stays local to this demonstration and does not create access, credits, capacity, or a reservation."
+          : "所有費率與規劃參考皆為展示資料。啟動存取請求只會保留在此展示中，不會建立存取、額度、容量或保留名額。"}
       </p>
     </main>
   );

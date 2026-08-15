@@ -209,6 +209,14 @@ export function SiteShell({ children }: { children: ReactNode }) {
             </nav>
           ))}
         </div>
+        <div className="footer-company">
+          <p><strong>PowerChampion</strong> — 7F, No. 38-1, Section 1, Ren&rsquo;ai Rd, Zhongzheng District, Taipei City 100, Taiwan</p>
+          <p>
+            Tel <a href="tel:+886223960605">+886 2 2396 0605</a>
+            {" · "}Email <a href="mailto:info@powerchampion.org">info@powerchampion.org</a>
+            {" · "}API <a href="https://b300.powerchampion.ai">b300.powerchampion.ai</a>
+          </p>
+        </div>
         <div aria-label={copy.shared.language} className="footer-locale-toggle" role="group">
           <button aria-pressed={locale === "en"} onClick={() => setLocale("en")} type="button">English</button>
           <button aria-pressed={locale === "zh"} onClick={() => setLocale("zh")} type="button">繁中</button>

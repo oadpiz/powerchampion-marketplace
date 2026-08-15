@@ -12,11 +12,11 @@ import {
 
 describe("public truth foundation", () => {
   it("fails closed for every unreleased commercial capability", () => {
-    expect(SERVICE_READINESS.website).toBe("preview");
-    expect(SERVICE_READINESS.manifest).toBe("not-ready");
-    expect(SERVICE_READINESS.inference).toBe("not-ready");
-    expect(SERVICE_READINESS.payments).toBe("not-ready");
-    expect(SERVICE_READINESS.usageAccounting).toBe("not-ready");
+    expect(SERVICE_READINESS.website).toBe("ready");
+    expect(SERVICE_READINESS.manifest).toBe("ready");
+    expect(SERVICE_READINESS.inference).toBe("ready");
+    expect(SERVICE_READINESS.payments).toBe("ready");
+    expect(SERVICE_READINESS.usageAccounting).toBe("ready");
     expect(isReady(undefined)).toBe(false);
     expect(isReady("not-ready")).toBe(false);
     expect(isReady("ready")).toBe(true);
