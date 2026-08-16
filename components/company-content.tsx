@@ -12,12 +12,70 @@ export function CompanyContent() {
 
   return (
     <main className="company-page" id="main-content">
+      {/* Hero */}
       <section aria-labelledby="company-title" className="company-hero">
         <p className="eyebrow">{content.kicker}</p>
         <h1 id="company-title">{content.title}</h1>
         <p>{content.lead}</p>
       </section>
 
+      {/* Services — from .org integration */}
+      <section aria-labelledby="services-title" className="company-services">
+        <h2 id="services-title">{content.services.title}</h2>
+        <p className="section-lead">{content.services.lead}</p>
+        <div className="services-grid">
+          {content.services.items.map((item, i) => (
+            <article key={i} className="service-card">
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* GPU Platforms */}
+      <section aria-labelledby="gpu-title" className="company-gpu">
+        <h2 id="gpu-title">{content.gpuPlatforms.title}</h2>
+        <p className="section-lead">{content.gpuPlatforms.lead}</p>
+        <div className="gpu-table-wrapper">
+          <table className="gpu-table">
+            <thead>
+              <tr>
+                <th>{content.gpuPlatforms.headers.category}</th>
+                <th>{content.gpuPlatforms.headers.platform}</th>
+                <th>{content.gpuPlatforms.headers.useCase}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {content.gpuPlatforms.rows.map((row, i) => (
+                <tr key={i}>
+                  <td data-label={content.gpuPlatforms.headers.category}>{row.category}</td>
+                  <td data-label={content.gpuPlatforms.headers.platform} className="mono">{row.platform}</td>
+                  <td data-label={content.gpuPlatforms.headers.useCase}>{row.useCase}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="gpu-note">{content.gpuPlatforms.note}</p>
+      </section>
+
+      {/* Deployment Models */}
+      <section aria-labelledby="deploy-title" className="company-deployment">
+        <h2 id="deploy-title">{content.deploymentModels.title}</h2>
+        <p className="section-lead">{content.deploymentModels.lead}</p>
+        <div className="deployment-grid">
+          {content.deploymentModels.items.map((item, i) => (
+            <article key={i} className="deployment-card">
+              <span className="deployment-number">{String(i + 1).padStart(2, "0")}</span>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* Company record */}
       <section aria-labelledby="company-record-title" className="company-record">
         <h2 id="company-record-title">{content.record.heading}</h2>
         <ol className="company-timeline">
@@ -37,6 +95,7 @@ export function CompanyContent() {
         </ol>
       </section>
 
+      {/* Capacity context */}
       <section aria-labelledby="capacity-title" className="capacity-brief">
         <h2 id="capacity-title">{content.capacity.title}</h2>
         <dl className="capacity-sequence">
@@ -58,6 +117,7 @@ export function CompanyContent() {
         <p className="capacity-qualification">{content.capacity.qualification}</p>
       </section>
 
+      {/* Sources */}
       <section aria-labelledby="sources-title" className="source-disclosures">
         <h2 id="sources-title">{content.sources.title}</h2>
         <ul>
@@ -84,26 +144,58 @@ export function CompanyContent() {
         <p>{content.disclosure}</p>
       </section>
 
-      <section aria-labelledby="company-contact-title" className="company-record">
-        <h2 id="company-contact-title">{locale === "en" ? "Contact" : "聯絡資訊"}</h2>
-        <p>7F, No. 38-1, Section 1, Ren&rsquo;ai Rd, Zhongzheng District, Taipei City 100, Taiwan</p>
-        <p>Tel +886 2 2396 0605 · info@powerchampion.org</p>
-        <p><a href="https://b300.powerchampion.ai">{locale === "en" ? "API Platform →" : "API 平台 →"}</a></p>
-      </section>
+      {/* Structured contact + identity + partners */}
+      <section aria-labelledby="company-contact-title" className="company-contact-grid">
+        <div className="contact-block">
+          <h2 id="company-contact-title">{content.contact.title}</h2>
+          <dl className="contact-details">
+            <div>
+              <dt>{content.contact.addressLabel}</dt>
+              <dd>{content.contact.address}</dd>
+            </div>
+            <div>
+              <dt>{content.contact.phoneLabel}</dt>
+              <dd><a href={`tel:${content.contact.phone.replace(/\s/g, "")}`}>{content.contact.phone}</a></dd>
+            </div>
+            <div>
+              <dt>{content.contact.emailLabel}</dt>
+              <dd><a href={`mailto:${content.contact.email}`}>{content.contact.email}</a></dd>
+            </div>
+            <div>
+              <dt>{content.contact.apiLabel}</dt>
+              <dd><a href="https://b300.powerchampion.ai">{content.contact.apiLink}</a></dd>
+            </div>
+          </dl>
+        </div>
 
-      <section aria-labelledby="company-identity-title" className="company-record">
-        <h2 id="company-identity-title">{locale === "en" ? "Company identity" : "公司資訊"}</h2>
-        <p>{locale === "en" ? "Founded 2018 · Taipei City, Taiwan" : "成立於 2018 · 台灣台北市"}</p>
-        <p>{locale === "en" ? "Website by 一點子創意工作室 (CatchATW)" : "網站由一點子創意工作室（CatchATW）製作"}</p>
-      </section>
+        <div className="contact-block">
+          <h2>{content.identity.title}</h2>
+          <dl className="contact-details">
+            <div>
+              <dt>{locale === "en" ? "Founded" : "成立時間"}</dt>
+              <dd>{content.identity.founded}</dd>
+            </div>
+            <div>
+              <dt>{locale === "en" ? "Built by" : "製作"}</dt>
+              <dd>{content.identity.websiteBy}</dd>
+            </div>
+          </dl>
+        </div>
 
-      <section aria-labelledby="company-partners-title" className="company-record">
-        <h2 id="company-partners-title">{locale === "en" ? "Technology partners" : "技術合作夥伴"}</h2>
-        <p>
-          <a href="https://www.albatron.com.tw" rel="noreferrer" target="_blank">Albatron Technology Co. Ltd.</a>
-          {" — "}
-          {locale === "en" ? "Supermicro servers, NVIDIA GPU systems, and Micron storage solutions. +886-2-8227-3277 · sales@albatron.com.tw" : "Supermicro 伺服器、NVIDIA GPU 系統與 Micron 儲存方案。+886-2-8227-3277 · sales@albatron.com.tw"}
-        </p>
+        <div className="contact-block">
+          <h2>{content.partners.title}</h2>
+          {content.partners.items.map((partner, i) => (
+            <div key={i} className="partner-card">
+              <a href={partner.href} rel="noreferrer" target="_blank">{partner.name}</a>
+              <p>{partner.description}</p>
+              <p className="partner-contact">
+                <a href={`tel:${partner.phone.replace(/[-\s]/g, "")}`}>{partner.phone}</a>
+                {" · "}
+                <a href={`mailto:${partner.email}`}>{partner.email}</a>
+              </p>
+            </div>
+          ))}
+        </div>
       </section>
 
       <nav aria-label={content.related.title} className="company-related-links">

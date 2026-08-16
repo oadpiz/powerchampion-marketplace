@@ -31,6 +31,43 @@ export type CompanyContent = {
     potentialValue: string;
     qualification: string;
   };
+  services: {
+    title: string;
+    lead: string;
+    items: { title: string; description: string }[];
+  };
+  gpuPlatforms: {
+    title: string;
+    lead: string;
+    headers: { category: string; platform: string; useCase: string };
+    rows: { category: string; platform: string; useCase: string }[];
+    note: string;
+  };
+  deploymentModels: {
+    title: string;
+    lead: string;
+    items: { title: string; description: string }[];
+  };
+  contact: {
+    title: string;
+    addressLabel: string;
+    address: string;
+    phoneLabel: string;
+    phone: string;
+    emailLabel: string;
+    email: string;
+    apiLabel: string;
+    apiLink: string;
+  };
+  identity: {
+    title: string;
+    founded: string;
+    websiteBy: string;
+  };
+  partners: {
+    title: string;
+    items: { name: string; description: string; phone: string; email: string; href: string }[];
+  };
   home: {
     heading: string;
     context: string;
@@ -117,6 +154,59 @@ export const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent> & Record<Loc
       potentialValue: "Approximately US$100M potential total contract value",
       qualification: "Counterparty-reported expectations and estimates; expansion is subject to future customer requirements, site availability, infrastructure readiness, and the agreement terms. No assurance can be given that expansion rights will be exercised or additional capacity deployed.",
     },
+    services: {
+      title: "What we do",
+      lead: "From serverless GPU compute to dedicated bare-metal clusters — infrastructure built for AI workloads at every scale.",
+      items: [
+        { title: "Serverless GPU Compute", description: "Scale GPU workers from 0 to 1000+ in seconds. Pay per use, no lock-in. Built for inference, training, and batch processing." },
+        { title: "Always-On GPUs", description: "Dedicated GPU instances for uninterrupted execution. Ideal for production APIs, long-running training, and real-time inference." },
+        { title: "S3-Compatible Storage", description: "Run full AI pipelines — data ingestion to deployment — without egress fees. High-throughput object storage integrated with compute." },
+        { title: "Model Training", description: "Distributed training for trillion-parameter models with optimal GPU-to-GPU communication via InfiniBand fabric." },
+        { title: "Enterprise Clusters", description: "Dedicated NVIDIA HGX clusters with flexible deployment options for large-scale AI training, inference, and HPC workloads." },
+      ],
+    },
+    gpuPlatforms: {
+      title: "GPU platforms",
+      lead: "A comprehensive portfolio of NVIDIA data center GPUs to meet different performance, memory, and cost requirements.",
+      headers: { category: "Category", platform: "Platform", useCase: "Best for" },
+      rows: [
+        { category: "Enterprise AI Training", platform: "NVIDIA H100 / H200", useCase: "Large-scale LLM training, multi-node inference" },
+        { category: "Memory-Intensive AI & HPC", platform: "NVIDIA HGX H200", useCase: "Large context windows, memory-bound workloads" },
+        { category: "Cost-Efficient AI Workloads", platform: "NVIDIA L40S / A100", useCase: "Inference, fine-tuning, cost-optimized pipelines" },
+      ],
+      note: "All GPU clusters are built on NVIDIA HGX reference architecture with 400G/800G InfiniBand networking, ensuring optimal GPU-to-GPU communication, system stability, and scalability.",
+    },
+    deploymentModels: {
+      title: "Deployment models",
+      lead: "Flexible deployment and commercial models tailored to enterprise requirements.",
+      items: [
+        { title: "Bare-Metal Deployment", description: "Single-tenant dedicated infrastructure with physical isolation for predictable performance." },
+        { title: "Isolated Enterprise Clusters", description: "Dedicated clusters for enterprise projects with full performance isolation and security." },
+        { title: "Custom IDC Deployment", description: "Deploy in customer-specified data centers or co-location facilities with full control." },
+      ],
+    },
+    contact: {
+      title: "Contact",
+      addressLabel: "Address",
+      address: "7F, No. 38-1, Section 1, Ren'ai Rd, Zhongzheng District, Taipei City 100, Taiwan",
+      phoneLabel: "Tel",
+      phone: "+886 2 2396 0605",
+      emailLabel: "Email",
+      email: "info@powerchampion.org",
+      apiLabel: "API",
+      apiLink: "b300.powerchampion.ai",
+    },
+    identity: {
+      title: "Company identity",
+      founded: "Founded 2018 · Taipei City, Taiwan",
+      websiteBy: "Website by 一點子創意工作室 (CatchATW)",
+    },
+    partners: {
+      title: "Technology partners",
+      items: [
+        { name: "Albatron Technology Co. Ltd.", description: "Supermicro servers, NVIDIA GPU systems, and Micron storage solutions.", phone: "+886-2-8227-3277", email: "sales@albatron.com.tw", href: "https://www.albatron.com.tw" },
+      ],
+    },
     home: {
       heading: "Infrastructure context from counterparty disclosure",
       context: "Counterparty-reported expected contracted hosting capacity; not live or completed deployment.",
@@ -159,6 +249,59 @@ export const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent> & Record<Loc
       expansion: "若行使擴充權，最高可達 12 MW",
       potentialValue: "潛在合約總值約 US$100M",
       qualification: "以上為交易對手報告的預期與估算；擴充須視未來客戶需求、場地可用性、基礎設施就緒程度及協議條款而定；不保證擴充權會被行使或增加容量。",
+    },
+    services: {
+      title: "業務概覽",
+      lead: "從 Serverless GPU 運算到專屬裸機叢集——為各種規模的 AI 工作負載打造的基礎設施。",
+      items: [
+        { title: "Serverless GPU 運算", description: "數秒內將 GPU 工作節點從 0 擴展到 1000+。按量計費，無綁定。適用於推論、訓練與批次處理。" },
+        { title: "常駐 GPU", description: "專屬 GPU 實例，確保不間斷執行。適用於正式 API、長時間訓練與即時推論。" },
+        { title: "S3 相容儲存", description: "從資料擷取到部署，完整 AI 管線無出口流量費。與運算整合的高吞吐物件儲存。" },
+        { title: "模型訓練", description: "透過 InfiniBand 架構實現最佳 GPU 間通訊，支援兆級參數模型的分散式訓練。" },
+        { title: "企業叢集", description: "專屬 NVIDIA HGX 叢集，提供大規模 AI 訓練、推論與 HPC 工作負載的彈性部署方案。" },
+      ],
+    },
+    gpuPlatforms: {
+      title: "GPU 平台",
+      lead: "涵蓋各種效能、記憶體與成本需求的 NVIDIA 資料中心 GPU 產品組合。",
+      headers: { category: "類別", platform: "平台", useCase: "適用場景" },
+      rows: [
+        { category: "企業 AI 訓練", platform: "NVIDIA H100 / H200", useCase: "大規模 LLM 訓練、多節點推論" },
+        { category: "記憶體密集 AI 與 HPC", platform: "NVIDIA HGX H200", useCase: "大型上下文視窗、記憶體受限工作負載" },
+        { category: "成本效率 AI 工作負載", platform: "NVIDIA L40S / A100", useCase: "推論、微調、成本最佳化管線" },
+      ],
+      note: "所有 GPU 叢集基於 NVIDIA HGX 參考架構，配備 400G/800G InfiniBand 網路，確保最佳 GPU 間通訊、系統穩定性與擴充性。",
+    },
+    deploymentModels: {
+      title: "部署模式",
+      lead: "依企業需求量身打造的彈性部署與商業模式。",
+      items: [
+        { title: "裸機部署", description: "單租戶專屬基礎設施，實體隔離，效能可預測。" },
+        { title: "企業隔離叢集", description: "為企業專案提供專屬叢集，完整效能隔離與安全性。" },
+        { title: "客製 IDC 部署", description: "在客戶指定的資料中心或共置設施部署，完全掌控。" },
+      ],
+    },
+    contact: {
+      title: "聯絡資訊",
+      addressLabel: "地址",
+      address: "100 台北市中正區仁愛路一段 38-1 號 7 樓",
+      phoneLabel: "電話",
+      phone: "+886 2 2396 0605",
+      emailLabel: "Email",
+      email: "info@powerchampion.org",
+      apiLabel: "API",
+      apiLink: "b300.powerchampion.ai",
+    },
+    identity: {
+      title: "公司資訊",
+      founded: "成立於 2018 · 台灣台北市",
+      websiteBy: "網站由一點子創意工作室（CatchATW）製作",
+    },
+    partners: {
+      title: "技術合作夥伴",
+      items: [
+        { name: "Albatron Technology Co. Ltd.", description: "Supermicro 伺服器、NVIDIA GPU 系統與 Micron 儲存方案。", phone: "+886-2-8227-3277", email: "sales@albatron.com.tw", href: "https://www.albatron.com.tw" },
+      ],
     },
     home: {
       heading: "交易對手揭露的基礎設施脈絡",
