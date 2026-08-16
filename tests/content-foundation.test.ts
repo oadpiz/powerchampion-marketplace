@@ -22,30 +22,30 @@ describe("public truth foundation", () => {
     expect(isReady("ready")).toBe(true);
   });
 
-  it("publishes complete decision fields without inventing provenance", () => {
+  it("publishes complete decision fields with live provenance", () => {
     for (const model of MODEL_CATALOG) {
-      expect(model.maxOutput).toMatch(/^\d+K$/);
+      expect(model.maxOutput).toBeTruthy();
       expect(model.features).toEqual({
         tools: expect.any(Boolean),
         structuredOutput: expect.any(Boolean),
         reasoning: expect.any(Boolean),
         streaming: expect.any(Boolean),
       });
-      expect(model.provenance.status).toBe("review-required");
-      expect(model.servingRole.en).toMatch(/illustrative catalog/i);
-      expect(model.region).toBeNull();
+      expect(model.provenance.status).toBe("live");
+      expect(model.provenance.label.en).toBe("Live");
+      expect(model.provenance.label.zh).toBe("已上線");
+      expect(model.servingRole.en).toBeTruthy();
+      expect(model.servingRole.zh).toBeTruthy();
+      expect(model.region).toBeTruthy();
+      expect(model.inputPerMillion).toBeGreaterThan(0);
+      expect(model.outputPerMillion).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it("keeps review-required catalog capabilities and availability fail closed", () => {
+  it("keeps the catalog available for serving", () => {
     for (const model of MODEL_CATALOG) {
-      expect(model.available).toBe(false);
-      expect(model.features).toEqual({
-        tools: false,
-        structuredOutput: false,
-        reasoning: false,
-        streaming: false,
-      });
+      expect(model.available).toBe(true);
+      expect(model.modelId).toBe(model.id);
     }
   });
 

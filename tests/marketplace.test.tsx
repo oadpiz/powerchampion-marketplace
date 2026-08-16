@@ -17,38 +17,38 @@ describe("ModelMarketplace", () => {
     const user = userEvent.setup();
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
     await user.click(screen.getByRole("button", { name: "Coding" }));
-    await user.type(screen.getByRole("searchbox", { name: "Search models" }), "Qwen");
-    expect(screen.getByText("Qwen")).toBeInTheDocument();
-    expect(screen.queryByText("Llama")).not.toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox", { name: "Search models" }), "GLM");
+    expect(screen.getByText("GLM 5.2 FP8")).toBeInTheDocument();
+    expect(screen.queryByText("Qwen3-VL 30B")).not.toBeInTheDocument();
   });
 
   it("expands details and exposes availability", async () => {
     const user = userEvent.setup();
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
-    await user.click(screen.getByRole("button", { name: /MiniMax/i }));
-    expect(screen.getByText("pc/minimax-agents")).toBeInTheDocument();
-    expect(screen.getByText("Temporarily unavailable")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Whisper Large v3" }));
+    expect(screen.getByText("whisper-large-v3")).toBeInTheDocument();
+    expect(screen.getByText("Available")).toBeInTheDocument();
   });
 
   it("shows all decision facts for an expanded model", async () => {
     const user = userEvent.setup();
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
-    await user.click(screen.getByRole("button", { name: "Qwen" }));
+    await user.click(screen.getByRole("button", { name: "Qwen3-VL 30B" }));
 
-    const details = screen.getByRole("region", { name: "Qwen details" });
-    expect(details).toHaveTextContent("glm-5.2-fp8");
+    const details = screen.getByRole("region", { name: "Qwen3-VL 30B details" });
+    expect(details).toHaveTextContent("qwen3-vl-30b");
     expect(details).toHaveTextContent("Max output");
-    expect(details).toHaveTextContent("32K");
+    expect(details).toHaveTextContent("4K");
     expect(details).toHaveTextContent("Tool use");
+    expect(details).toHaveTextContent("not published");
     expect(details).toHaveTextContent("Structured output");
-    expect(details).toHaveTextContent("Reasoning");
+    expect(details).toHaveTextContent("Enabled");
     expect(details).toHaveTextContent("Streaming");
-    expect(details).toHaveTextContent("Provenance review required");
+    expect(details).toHaveTextContent("Provenance live");
     expect(details).toHaveTextContent("Serving role");
-    expect(details).toHaveTextContent("Region not published");
-    expect(details).toHaveTextContent("Temporarily unavailable");
-    expect(within(details).getByText("glm-5.2-fp8").closest("code")).toHaveAttribute("translate", "no");
-    expect(within(details).queryByRole("link")).not.toBeInTheDocument();
+    expect(details).toHaveTextContent("Region TH");
+    expect(details).toHaveTextContent("Available");
+    expect(within(details).getByText("qwen3-vl-30b").closest("code")).toHaveAttribute("translate", "no");
   });
 
   it("names the search field, disables autofill, and uses an example cue", () => {
@@ -62,11 +62,11 @@ describe("ModelMarketplace", () => {
 
   it("keeps summary facts visible before expansion", () => {
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
-    const qwen = screen.getByRole("article", { name: "Qwen" });
+    const qwen = screen.getByRole("article", { name: "Qwen3-VL 30B" });
 
-    expect(within(qwen).getByText("128K")).toBeVisible();
-    expect(within(qwen).getByText((_, element) => normalizedText(element!) === "$0.18 per 1M input")).toBeVisible();
-    expect(within(qwen).getByText((_, element) => normalizedText(element!) === "$0.72 per 1M output")).toBeVisible();
+    expect(within(qwen).getByText("32K")).toBeVisible();
+    expect(within(qwen).getByText((_, element) => normalizedText(element!) === "$0.30 per 1M input")).toBeVisible();
+    expect(within(qwen).getByText((_, element) => normalizedText(element!) === "$1.20 per 1M output")).toBeVisible();
   });
 
   it("renders exact input and output units for every catalog model", () => {
@@ -93,24 +93,24 @@ describe("ModelMarketplace", () => {
   it("lets keyboard users expand a model details region", async () => {
     const user = userEvent.setup();
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
-    const qwen = screen.getByRole("button", { name: "Qwen" });
+    const qwen = screen.getByRole("button", { name: "Qwen3-VL 30B" });
     qwen.focus();
     await user.keyboard("{Enter}");
 
     expect(qwen).toHaveAttribute("aria-expanded", "true");
     const details = document.getElementById(qwen.getAttribute("aria-controls") ?? "");
     expect(details).not.toHaveAttribute("hidden");
-    expect(details).toHaveTextContent("glm-5.2-fp8");
+    expect(details).toHaveTextContent("qwen3-vl-30b");
   });
 
   it("keeps a collapsed expansion control connected to its details region", () => {
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
-    const qwen = screen.getByRole("button", { name: "Qwen" });
+    const qwen = screen.getByRole("button", { name: "Qwen3-VL 30B" });
     const details = document.getElementById(qwen.getAttribute("aria-controls") ?? "");
 
     expect(details).toHaveAttribute("hidden");
     expect(details).toHaveAttribute("role", "region");
-    expect(details).toHaveTextContent("glm-5.2-fp8");
+    expect(details).toHaveTextContent("qwen3-vl-30b");
   });
 
   it("keeps localized rate units visible at narrow widths", async () => {
@@ -129,7 +129,7 @@ describe("ModelMarketplace", () => {
     expect(narrowRules).toMatch(/\.marketplace-tagline\s*\{[^}]*display:\s*block;/);
 
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
-    expect(screen.getByText("Illustrative catalog entry for coding and multilingual evaluation.")).toBeVisible();
+    expect(screen.getByText("Vision and OCR inference for document and image understanding.")).toBeVisible();
   });
 
   it("localizes the expanded details region", async () => {
@@ -139,10 +139,10 @@ describe("ModelMarketplace", () => {
         <SiteShell><ModelMarketplace /></SiteShell>
       </LocaleProvider>,
     );
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    await user.click(screen.getByRole("button", { name: "Qwen" }));
+    await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
+    await user.click(screen.getByRole("button", { name: "Qwen3-VL 30B" }));
 
-    expect(screen.getByRole("region", { name: "Qwen 詳細資料" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Qwen3-VL 30B 詳細資料" })).toBeInTheDocument();
   });
 
   it("clears an empty search result", async () => {
@@ -153,6 +153,6 @@ describe("ModelMarketplace", () => {
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
 
     expect(search).toHaveValue("");
-    expect(screen.getByText("Qwen")).toBeInTheDocument();
+    expect(screen.getByText("Qwen3-VL 30B")).toBeInTheDocument();
   });
 });

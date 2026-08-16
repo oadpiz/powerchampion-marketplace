@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CodeSamples } from "../components/code-samples";
@@ -10,20 +10,25 @@ import DocsPage, { metadata as docsMetadata } from "../app/docs/page";
 import ConsolePage, { metadata as consoleMetadata } from "../app/console/page";
 
 describe("CodeSamples", () => {
-  it("separates public preview from protected access and labels samples non-operational", () => {
+  it("separates quick start from protected access and shows the live boundary notice", () => {
     render(<LocaleProvider><DocsPage /></LocaleProvider>);
 
-    expect(screen.getByRole("region", { name: "Public preview" })).toBeVisible();
+    expect(screen.getAllByRole("region", { name: "Quick start" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("region", { name: "Protected access" })).toBeVisible();
-    expect(screen.getAllByText(/non-operational/i).length).toBeGreaterThan(0);
-    expect(screen.getByText("sk-b300-YOUR-KEY")).toBeVisible();
+    expect(screen.getByText(/Live — the endpoint below is operational/i)).toBeVisible();
+    expect(screen.getByText("Demo API key")).toBeVisible();
   });
 
-  it("shows all release gates as not ready", () => {
+  it("shows all release gates with their readiness state", () => {
     render(<LocaleProvider><DocsPage /></LocaleProvider>);
 
-    for (const gate of ["Streaming", "Usage accounting", "Tool use", "Structured output", "Provider manifest", "Operational status"]) {
-      expect(screen.getByText(new RegExp(`${gate}: Not ready`, "i"))).toBeVisible();
+    const gatesList = document.querySelector(".docs-release-gates ul");
+    expect(gatesList).not.toBeNull();
+    const items = Array.from(gatesList!.querySelectorAll("li"));
+    expect(items).toHaveLength(6);
+    for (const item of items) {
+      const label = item.textContent?.replace(/\s+/g, " ").trim();
+      expect(label).toMatch(/^(Streaming|Usage accounting|Tool use|Structured output|Provider manifest|Operational status): (Ready|Not ready)$/);
     }
   });
 
@@ -40,8 +45,8 @@ describe("CodeSamples", () => {
 
   it("has truthful docs metadata", () => {
     expect(docsMetadata).toMatchObject({
-      title: "Documentation preview | Power Champion",
-      description: "Non-operational integration examples and release-gated future access for Power Champion.",
+      title: "Documentation | Power Champion",
+      description: "Quick start for the OpenAI-compatible API at b300.powerchampion.ai — cURL, Python, and JavaScript examples.",
     });
   });
 
@@ -107,70 +112,73 @@ describe("CodeSamples", () => {
 });
 
 describe("ConsoleView", () => {
-  it("puts the local preview boundary before illustrative console data", () => {
+  it("puts the live boundary notice first on the console page", () => {
     const { container } = render(<LocaleProvider><ConsolePage /></LocaleProvider>);
     const main = container.querySelector("main");
 
-    expect(main?.firstElementChild).toHaveTextContent("Launch preview — illustrative only");
-    expect(main?.firstElementChild).toHaveTextContent(/no account, funded balance, usable api key, live api, or live usage/i);
-    expect(screen.queryByText(/pc_demo_••••|sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
+    expect(main?.firstElementChild).toHaveTextContent(/live balance check/i);
+    expect(main?.firstElementChild).toHaveTextContent(/sent only to the gateway/i);
   });
 
   it("has truthful console metadata", () => {
     expect(consoleMetadata).toMatchObject({
-      title: "Console preview | Power Champion",
-      description: "A local illustrative console preview with no account, funded balance, usable key, or live usage.",
+      title: "Console | Power Champion",
+      description: "Check your prepaid API balance with your key. Queries the gateway live; the key is never stored.",
     });
   });
 
-  it("labels the console as a local launch preview", () => {
+  it("renders the live balance form with key never echoed in plain text", () => {
     render(<LocaleProvider><ConsoleView /></LocaleProvider>);
 
-    expect(screen.getByText("Launch preview — illustrative only")).toBeVisible();
-    expect(screen.queryByText(/your funded account|live API key/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Join launch access" })).toBeInTheDocument();
+    expect(screen.getByText(/queries the gateway directly/i)).toBeVisible();
+    const input = screen.getByPlaceholderText("sk-…");
+    expect(input).toHaveAttribute("type", "password");
+    expect(screen.getByRole("button", { name: "Check balance" })).toBeDisabled();
+    expect(screen.queryByText("$184.20")).not.toBeInTheDocument();
   });
 
-  it("labels the full view as an illustrative preview and uses an inert key placeholder", () => {
-    render(<LocaleProvider><ConsoleView /></LocaleProvider>);
-
-    expect(screen.getByText("Launch preview — illustrative only")).toBeInTheDocument();
-    expect(screen.getByText("$184.20")).toBeInTheDocument();
-    expect(screen.getByText("sk-b300-YOUR-KEY")).toBeInTheDocument();
-    expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
-  });
-
-  it("renders the explanatory empty state", () => {
-    render(<LocaleProvider><ConsoleView empty /></LocaleProvider>);
-
-    expect(screen.getByText(/No usage yet/i)).toBeInTheDocument();
-    expect(
-      within(screen.getByRole("region", { name: "Recent requests" })).getByText(/No recent requests yet/i),
-    ).toBeInTheDocument();
-  });
-
-  it("copies only the demo placeholder and confirms success", async () => {
+  it("submits the key to the balance proxy and renders the result", async () => {
     const user = userEvent.setup();
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
-    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ plan: { title: "prepaid", remaining_usd: 12.3456 } }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
     render(<LocaleProvider><ConsoleView /></LocaleProvider>);
 
-    await user.click(screen.getByRole("button", { name: "Copy" }));
+    await user.type(screen.getByPlaceholderText("sk-…"), "sk-test-key-123");
+    await user.click(screen.getByRole("button", { name: "Check balance" }));
 
-    expect(writeText).toHaveBeenCalledWith("sk-b300-YOUR-KEY");
-    expect(screen.getByRole("status")).toHaveTextContent("Copied");
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("prepaid");
+      expect(screen.getByText("$12.3456")).toBeInTheDocument();
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/balance", expect.objectContaining({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "sk-test-key-123" }),
+    }));
+    vi.unstubAllGlobals();
   });
 
-  it("reports Traditional Chinese copy failure without revealing another value", async () => {
+  it("shows a localized error for an invalid key", async () => {
     const user = userEvent.setup();
-    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText },
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Invalid API key." }), { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LocaleProvider><ConsoleView /></LocaleProvider>);
+
+    await user.type(screen.getByPlaceholderText("sk-…"), "sk-bad");
+    await user.click(screen.getByRole("button", { name: "Check balance" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Invalid API key.");
     });
+    vi.unstubAllGlobals();
+  });
+
+  it("switches the balance UI to Traditional Chinese", async () => {
+    const user = userEvent.setup();
     render(
       <LocaleProvider>
         <SiteShell><ConsoleView /></SiteShell>
@@ -178,58 +186,22 @@ describe("ConsoleView", () => {
     );
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    await user.click(screen.getByRole("button", { name: "複製" }));
 
-    expect(writeText).toHaveBeenCalledWith("sk-b300-YOUR-KEY");
-    expect(screen.getByRole("status")).toHaveTextContent("無法複製");
-    expect(screen.queryByText(/sk-[A-Za-z0-9]{12}/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查詢餘額" })).toBeInTheDocument();
+    expect(screen.getByText(/貼上你的 API Key/i)).toBeInTheDocument();
   });
 
-  it("uses one exact model split in compact and full views", () => {
-    const { rerender } = render(<LocaleProvider><ConsoleView compact /></LocaleProvider>);
-
-    expect(screen.getByRole("img", {
-      name: "Model usage split: Qwen 48 percent, DeepSeek 32 percent, Llama 20 percent",
-    })).toBeInTheDocument();
-    expect(screen.getByText("48%")).toBeInTheDocument();
-    expect(screen.getByText("32%")).toBeInTheDocument();
-    expect(screen.getByText("20%")).toBeInTheDocument();
-    expect(screen.queryByText("31%")).not.toBeInTheDocument();
-    expect(screen.queryByText("21%")).not.toBeInTheDocument();
-
-    rerender(<LocaleProvider><ConsoleView /></LocaleProvider>);
-    expect(screen.getByRole("img", {
-      name: "Model usage split: Qwen 48 percent, DeepSeek 32 percent, Llama 20 percent",
-    })).toBeInTheDocument();
-  });
-
-  it("shows exact localized seven-day token and illustrative spend data", async () => {
-    const user = userEvent.setup();
-    render(
-      <LocaleProvider>
-        <SiteShell><ConsoleView compact /></SiteShell>
-      </LocaleProvider>,
-    );
-
-    expect(screen.getByText("Illustrative spend: $13.46")).toBeVisible();
-    expect(screen.getByRole("img", {
-      name: "Seven-day illustrative usage: 18.7 million tokens; illustrative spend $13.46. Daily trend: Mon 2.1M tokens / $1.36, Tue 2.4M tokens / $1.58, Wed 2.3M tokens / $1.49, Thu 2.8M tokens / $2.01, Fri 2.5M tokens / $1.74, Sat 3.1M tokens / $2.43, Sun 3.5M tokens / $2.85",
-    })).toBeInTheDocument();
-
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-
-    expect(screen.getByText("展示支出：US$13.46")).toBeVisible();
-    expect(screen.getByRole("img", {
-      name: "七日展示用量：18.7M 詞元；展示支出 US$13.46。每日趨勢：週一 2.1M 詞元 / US$1.36、週二 2.4M 詞元 / US$1.58、週三 2.3M 詞元 / US$1.49、週四 2.8M 詞元 / US$2.01、週五 2.5M 詞元 / US$1.74、週六 3.1M 詞元 / US$2.43、週日 3.5M 詞元 / US$2.85",
-    })).toBeInTheDocument();
-  });
-
-  it("uses h2 for every full console subsection after the page h1", () => {
+  it("offers the access path next to the redeem hint", () => {
     render(<LocaleProvider><ConsoleView /></LocaleProvider>);
 
-    for (const heading of ["Illustrative balance", "Seven-day usage", "Model split", "Recent requests", "Inert example key"]) {
-      expect(screen.getByRole("heading", { level: 2, name: heading })).toBeInTheDocument();
-    }
+    expect(screen.getByText(/POST \/v1\/redeem/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Need a key?" })).toBeInTheDocument();
+  });
+
+  it("uses h2 for the balance section after the page h1", () => {
+    render(<LocaleProvider><ConsoleView /></LocaleProvider>);
+
+    expect(screen.getByRole("heading", { level: 2, name: "Check your balance" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
   });
 });

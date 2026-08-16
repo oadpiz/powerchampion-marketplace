@@ -5,9 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import FaqPage from "../app/faq/page";
 import InfrastructurePage from "../app/infrastructure/page";
 import PrivacyPage from "../app/privacy/page";
-import StatusPage from "../app/status/page";
 import TermsPage from "../app/terms/page";
 import TrustPage from "../app/trust/page";
+import { LiveStatusContent } from "../components/live-status-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
@@ -17,10 +17,13 @@ function localized(ui: ReactNode) {
 
 describe("public trust pages", () => {
   it("renders launch-safe policy and status routes", () => {
-    localized(<StatusPage />);
-    expect(screen.getByRole("heading", { level: 1, name: "Launch preparation" })).toBeVisible();
-    expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Not ready");
+    // Simulate the server component's offline fallback: gateway unreachable,
+    // static readiness rows still render.
+    localized(<LiveStatusContent gateway={null} fetchedAt={0} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Service status" })).toBeVisible();
+    expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Ready");
     expect(screen.queryByText(/all systems operational/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/unreachable/i)).toBeVisible();
   });
 
   it("offers accessible bilingual FAQ disclosures", async () => {
@@ -81,19 +84,19 @@ describe("public trust pages", () => {
       render(<LocaleProvider><SiteShell><TrustPage /></SiteShell></LocaleProvider>);
 
       for (const [name, state] of [
-        ["Provider manifest", "Not ready"],
-        ["Inference API", "Not ready"],
-        ["Payments", "Not ready"],
+        ["Provider manifest", "Ready"],
+        ["Inference API", "Ready"],
+        ["Payments", "Ready"],
       ]) {
         const row = screen.getByRole("listitem", { name: `${name}: ${state}` });
         expect(row).toHaveTextContent(`${name} — ${state}`);
       }
 
-      await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+      await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
       for (const [name, state] of [
-        ["供應商 Manifest", "尚未就緒"],
-        ["推論 API", "尚未就緒"],
-        ["付款", "尚未就緒"],
+        ["供應商 Manifest", "已就緒"],
+        ["推論 API", "已就緒"],
+        ["付款", "已就緒"],
       ]) {
         const row = screen.getByRole("listitem", { name: `${name}：${state}` });
         expect(row).toHaveTextContent(`${name} — ${state}`);

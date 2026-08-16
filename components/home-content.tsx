@@ -12,10 +12,10 @@ export function HomeContent() {
   const company = COMPANY_CONTENT[locale];
   const trust = TRUST_CONTENT[locale];
   const catalogCount = MODEL_CATALOG.length;
-  const maxContext = MODEL_CATALOG.reduce(
-    (max, model) => Math.max(max, Number.parseInt(model.context, 10)),
-    0,
-  );
+  const maxContext = MODEL_CATALOG.reduce((max, model) => {
+    const parsed = Number.parseInt(model.context, 10);
+    return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
+  }, 0);
   const startingRate = Math.min(...MODEL_CATALOG.map((model) => model.inputPerMillion));
   const text = locale === "en" ? {
     compareRates: "Compare token rates",

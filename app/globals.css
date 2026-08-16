@@ -471,6 +471,20 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .checkout-disclaimer { margin: 0 1.8rem; border-top: 1px solid var(--line); padding: 1.1rem 0 0; color: var(--muted); font-size: .875rem; line-height: 1.55; }
 .checkout-actions { display: flex; justify-content: flex-end; gap: .75rem; padding: 1.5rem 1.8rem 1.8rem; }
 .checkout-back { padding: .65rem 1rem; }
+
+/* Real access dialog */
+.access-dialog .access-lead { margin: 0; padding: 1.4rem 1.8rem 0; color: var(--muted); line-height: 1.6; max-width: 52ch; }
+.access-steps { padding: 1.4rem 1.8rem 0; }
+.access-steps h3 { margin: 0 0 1rem; color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; letter-spacing: .08em; text-transform: uppercase; }
+.access-steps ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 0; border-top: 1px solid var(--line); }
+.access-steps li { display: flex; gap: 1rem; padding: .95rem 0; border-bottom: 1px solid var(--line); }
+.access-step-number { color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; padding-top: .2rem; }
+.access-steps strong { display: block; font-size: .95rem; font-weight: 560; letter-spacing: -.01em; }
+.access-steps p { margin: .25rem 0 0; color: var(--muted); font-size: .875rem; line-height: 1.5; }
+.access-actions { justify-content: space-between; align-items: center; }
+.access-mailto { display: inline-flex; align-items: center; border: 1px solid var(--cyan); padding: .7rem 1.1rem; background: var(--cyan); color: var(--ground); font-weight: 650; cursor: pointer; }
+.access-docs-link { color: var(--muted); font-size: .9rem; text-decoration: underline; text-decoration-color: var(--cyan); text-underline-offset: .25rem; }
+.access-docs-link:hover { color: var(--cyan); }
 .checkout-close:active,
 .checkout-back:active,
 .checkout-pack:active,
@@ -560,6 +574,23 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .balance-block strong { display: block; margin-top: 1.4rem; font-size: clamp(3rem, 6vw, 5.4rem); font-weight: 500; letter-spacing: -.075em; line-height: 1; }
 .console-add-credit { margin-top: 1.5rem; border: 1px solid var(--line); border-radius: 999px; padding: .65rem .95rem; background: transparent; color: var(--ink); cursor: pointer; font-size: .875rem; }
 .console-add-credit:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* Live balance checker */
+.status-dot-live { background: var(--lime); }
+.console-summary:has(.balance-form) { grid-template-columns: 1fr; }
+.balance-lead { margin: 1rem 0 0; max-width: 46ch; color: var(--muted); font-size: .925rem; line-height: 1.6; }
+.balance-form { display: flex; gap: .75rem; margin-top: 1.5rem; }
+.balance-form input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: .75rem .9rem; background: var(--surface); color: var(--ink); font-family: var(--font-geist-mono), monospace; font-size: .875rem; }
+.balance-form input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.balance-form button { border: 1px solid var(--cyan); border-radius: 8px; padding: .75rem 1.2rem; background: var(--cyan); color: var(--ground); font-weight: 650; cursor: pointer; white-space: nowrap; }
+.balance-form button:disabled { opacity: .5; cursor: wait; }
+.balance-result { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; margin: 1.75rem 0 0; padding: 1.25rem 1.4rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.balance-result dt { color: var(--muted); font-size: .8125rem; letter-spacing: .07em; text-transform: uppercase; }
+.balance-result dd { margin: .4rem 0 0; font-size: .95rem; }
+.balance-result dd strong { display: inline; margin: 0; font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 540; letter-spacing: -.04em; color: var(--cyan); }
+.balance-error { margin: 1.25rem 0 0; color: #ffb8c2; font-size: .9rem; }
+.balance-hint { margin: 1.5rem 0 0; color: var(--muted); font-size: .8125rem; }
+.balance-request-link { border: 0; padding: 0; background: none; color: var(--cyan); cursor: pointer; font-size: .8125rem; text-decoration: underline; text-underline-offset: .25rem; }
 .usage-heading { display: flex; justify-content: space-between; align-items: baseline; }
 .usage-heading strong { font-size: 1.5rem; font-weight: 540; }
 .usage-heading strong span { color: var(--muted); font-size: .8125rem; font-weight: 450; }

@@ -1,8 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import { useState } from "react";
-import { MODEL_USAGE, RECENT_REQUESTS, SEVEN_DAY_USAGE } from "../lib/console-data";
 import { openLaunchAccess } from "./demo-checkout";
 import { useLocale } from "./locale-provider";
 
@@ -11,140 +9,136 @@ type ConsoleViewProps = {
   empty?: boolean;
 };
 
-const recentRequests = [
-  ["glm-5.2-fp8", "2.8K", "242 ms"],
-  ["pc/deepseek-reasoning", "6.1K", "1.2 s"],
-  ["pc/llama-general", "1.4K", "318 ms"],
-] as const;
+type BalanceState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ok"; plan: string; remaining: number | null }
+  | { status: "error"; message: string };
 
-const DEMO_KEY = "sk-b300-YOUR-KEY";
+export function ConsoleView({ compact = false }: ConsoleViewProps) {
+  const { locale } = useLocale();
+  const [apiKey, setApiKey] = useState("");
+  const [balance, setBalance] = useState<BalanceState>({ status: "idle" });
 
-export function ConsoleView({ compact = false, empty = false }: ConsoleViewProps) {
-  const { copy, locale } = useLocale();
-  const [copyFeedback, setCopyFeedback] = useState<"copied" | "unavailable" | null>(null);
-  const Heading = compact ? "h3" : "h2";
-  const totalTokens = SEVEN_DAY_USAGE.reduce((total, day) => total + day.tokensMillions, 0);
-  const totalSpend = SEVEN_DAY_USAGE.reduce((total, day) => total + day.spend, 0);
-  const maxTokens = Math.max(...SEVEN_DAY_USAGE.map((day) => day.tokensMillions));
-  const spendFormatter = new Intl.NumberFormat(locale === "en" ? "en-US" : "zh-Hant", {
+  const text = locale === "en" ? {
+    liveLabel: "Live — queries the gateway directly",
+    title: "Check your balance",
+    lead: "Paste your API key to look up remaining prepaid credit. The request goes to the b300 gateway and nowhere else.",
+    placeholder: "sk-…",
+    check: "Check balance",
+    checking: "Checking…",
+    plan: "Plan",
+    remaining: "Remaining balance",
+    postpaid: "Unlimited (postpaid)",
+    invalidKey: "Invalid API key.",
+    networkError: "Could not reach the gateway. Try again.",
+    requestKey: "Need a key?",
+    redeemHint: "Top up with redeem codes: POST /v1/redeem",
+  } : {
+    liveLabel: "即時 — 直接查詢閘道",
+    title: "查詢你的餘額",
+    lead: "貼上你的 API Key 查詢預付餘額。請求只會送往 b300 閘道，不會傳到其他地方。",
+    placeholder: "sk-…",
+    check: "查詢餘額",
+    checking: "查詢中…",
+    plan: "方案",
+    remaining: "剩餘餘額",
+    postpaid: "無限（後付）",
+    invalidKey: "無效的 API Key。",
+    networkError: "無法連上閘道，請再試一次。",
+    requestKey: "需要 Key？",
+    redeemHint: "使用 redeem code 儲值：POST /v1/redeem",
+  };
+
+  async function checkBalance(event: React.FormEvent) {
+    event.preventDefault();
+    const key = apiKey.trim();
+    if (!key) return;
+    setBalance({ status: "loading" });
+    try {
+      const response = await fetch("/api/balance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      if (response.status === 401 || response.status === 403) {
+        setBalance({ status: "error", message: text.invalidKey });
+        return;
+      }
+      if (!response.ok) {
+        setBalance({ status: "error", message: text.networkError });
+        return;
+      }
+      const data = await response.json();
+      setBalance({
+        status: "ok",
+        plan: data.plan?.title ?? "prepaid",
+        remaining: typeof data.plan?.remaining_usd === "number" ? data.plan.remaining_usd : null,
+      });
+    } catch {
+      setBalance({ status: "error", message: text.networkError });
+    }
+  }
+
+  const money = new Intl.NumberFormat(locale === "en" ? "en-US" : "zh-Hant", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 4,
   });
-  const formattedSpend = spendFormatter.format(totalSpend);
-  const dayLabels = locale === "en"
-    ? { Mon: "Mon", Tue: "Tue", Wed: "Wed", Thu: "Thu", Fri: "Fri", Sat: "Sat", Sun: "Sun" }
-    : { Mon: "週一", Tue: "週二", Wed: "週三", Thu: "週四", Fri: "週五", Sat: "週六", Sun: "週日" };
-  const dailyTrend = SEVEN_DAY_USAGE.map((day) => locale === "en"
-    ? `${dayLabels[day.day]} ${day.tokensMillions.toFixed(1)}M tokens / ${spendFormatter.format(day.spend)}`
-    : `${dayLabels[day.day]} ${day.tokensMillions.toFixed(1)}M 詞元 / ${spendFormatter.format(day.spend)}`
-  ).join(locale === "en" ? ", " : "、");
-  const modelSplitLabel = locale === "en"
-    ? `Model usage split: ${MODEL_USAGE.map((item) => `${item.model} ${item.percent} percent`).join(", ")}`
-    : `模型用量分布：${MODEL_USAGE.map((item) => `${item.model} ${item.percent}%`).join("、")}`;
-  const usageChartLabel = locale === "en"
-    ? `Seven-day illustrative usage: ${totalTokens.toFixed(1)} million tokens; illustrative spend ${formattedSpend}. Daily trend: ${dailyTrend}`
-    : `七日展示用量：${totalTokens.toFixed(1)}M 詞元；展示支出 ${formattedSpend}。每日趨勢：${dailyTrend}`;
-  const illustrativeBalance = locale === "en" ? "Illustrative balance" : "展示餘額";
-  const inertKeyLabel = locale === "en" ? "Inert example key" : "無作用範例 Key";
 
-  async function copyDemoKey() {
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error("Clipboard unavailable");
-      }
-      await navigator.clipboard.writeText("sk-b300-YOUR-KEY");
-      setCopyFeedback("copied");
-    } catch {
-      setCopyFeedback("unavailable");
-    }
-  }
+  const Heading = compact ? "h3" : "h2";
 
   return (
     <div className={`console-view${compact ? " console-view-compact" : ""}`}>
       <div className="console-topline">
-        <p><span className="status-dot" />{copy.console.previewLabel}</p>
-        <span>{copy.console.previewDescription}</span>
+        <p><span className="status-dot status-dot-live" />{text.liveLabel}</p>
       </div>
 
       <div className="console-summary">
         <div className="balance-block">
-          <Heading>{illustrativeBalance}</Heading>
-          <strong>$184.20</strong>
-          {!compact && <button className="console-add-credit" onClick={() => openLaunchAccess()} type="button">{copy.nav.getTokens}</button>}
-        </div>
-        <div className="usage-block">
-          <div className="usage-heading">
-            <Heading>{copy.console.sevenDay}</Heading>
-            <strong>{empty ? "0" : `${totalTokens.toFixed(1)}M`} <span>{copy.console.tokens}</span></strong>
-          </div>
-          {!empty && <p className="spend-summary">{copy.console.illustrativeSpend}{locale === "en" ? ": " : "："}{formattedSpend}</p>}
-          {empty ? (
-            <p className="empty-usage">{copy.console.noUsage}</p>
-          ) : (
-            <div aria-label={usageChartLabel} className="usage-chart" role="img">
-              {SEVEN_DAY_USAGE.map((day) => (
-                <span aria-hidden="true" key={day.day} style={{ "--bar-height": `${(day.tokensMillions / maxTokens) * 100}%` } as CSSProperties} />
-              ))}
-            </div>
+          <Heading>{text.title}</Heading>
+          <p className="balance-lead">{text.lead}</p>
+          <form className="balance-form" onSubmit={checkBalance}>
+            <input
+              aria-label={text.placeholder}
+              autoComplete="off"
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder={text.placeholder}
+              spellCheck={false}
+              type="password"
+              value={apiKey}
+            />
+            <button disabled={balance.status === "loading" || !apiKey.trim()} type="submit">
+              {balance.status === "loading" ? text.checking : text.check}
+            </button>
+          </form>
+          {balance.status === "ok" && (
+            <dl className="balance-result" role="status">
+              <div>
+                <dt>{text.plan}</dt>
+                <dd>{balance.plan === "postpaid" ? text.postpaid : balance.plan}</dd>
+              </div>
+              <div>
+                <dt>{text.remaining}</dt>
+                <dd>
+                  {balance.remaining === null
+                    ? text.postpaid
+                    : <strong>{money.format(balance.remaining)}</strong>}
+                </dd>
+              </div>
+            </dl>
           )}
+          {balance.status === "error" && (
+            <p className="balance-error" role="alert">{balance.message}</p>
+          )}
+          <p className="balance-hint">
+            {text.redeemHint}
+            {" · "}
+            <button className="balance-request-link" onClick={() => openLaunchAccess()} type="button">{text.requestKey}</button>
+          </p>
         </div>
       </div>
-
-      {!empty && (
-        <section className="model-usage-section">
-          <Heading className="console-subheading">{copy.console.modelSplit}</Heading>
-          <div aria-label={modelSplitLabel} className="model-usage" role="img">
-            {MODEL_USAGE.map((item) => (
-              <div className="model-usage-row" key={item.model}>
-                <span>{item.model}</span>
-                <div className="model-usage-track">
-                  <span className={`model-usage-fill ${item.model.toLowerCase()}`} style={{ width: `${item.percent}%` }} />
-                </div>
-                <strong>{item.percent}%{!compact ? ` · ${item.tokens}` : ""}</strong>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {!compact && (
-        <div className="console-details">
-          <section aria-labelledby="recent-requests-title" className="recent-requests">
-            <h2 id="recent-requests-title">{copy.console.recent}</h2>
-            {empty ? (
-              <p className="empty-usage">{copy.console.noRecent}</p>
-            ) : (
-              <div className="request-list">
-                {compact ? recentRequests.map(([model, tokens, latency]) => (
-                  <div className="request-row" key={model}>
-                    <code>{model}</code>
-                    <span>{tokens} {copy.console.tokens}</span>
-                    <span>{latency}</span>
-                  </div>
-                )) : RECENT_REQUESTS.map((request) => (
-                  <div className="request-row" key={request.id}>
-                    <code>{request.id}</code>
-                    <span>{request.model} · {request.tokens} {copy.console.tokens}</span>
-                    <span>{request.cost} · {locale === "en" ? request.status : "完成"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-          <section aria-labelledby="demo-key-title" className="demo-key">
-            <h2 id="demo-key-title">{inertKeyLabel}</h2>
-            <code>{DEMO_KEY}</code>
-            <div className="demo-key-actions">
-              <button onClick={copyDemoKey} type="button">{copy.console.copy}</button>
-              <span aria-live="polite" role="status">
-                {copyFeedback === "copied" ? copy.console.copied : copyFeedback === "unavailable" ? copy.shared.copyUnavailable : ""}
-              </span>
-            </div>
-          </section>
-        </div>
-      )}
     </div>
   );
 }

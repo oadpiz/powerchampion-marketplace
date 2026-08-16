@@ -6,13 +6,14 @@ import { useModalIsolation } from "./use-modal-isolation";
 
 export type AccessInterestId = "developer" | "product" | "enterprise";
 
-type AccessStep = "choose" | "review" | "complete";
 type LaunchAccessEventDetail = {
   interestId?: AccessInterestId;
   restoreFocusTarget?: HTMLElement | null;
 };
 
 const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+
+const ACCESS_EMAIL = "info@powerchampion.org";
 
 export function openLaunchAccess(interestId?: AccessInterestId) {
   window.dispatchEvent(new CustomEvent<LaunchAccessEventDetail>("powerchampion:launch-access", {
@@ -21,34 +22,50 @@ export function openLaunchAccess(interestId?: AccessInterestId) {
 }
 
 export function LaunchAccessDialog({ initialInterest, open }: { initialInterest?: AccessInterestId; open?: boolean }) {
-  const { copy, locale } = useLocale();
+  const { locale } = useLocale();
   const [isOpen, setIsOpen] = useState(open ?? false);
-  const [selectedInterestId, setSelectedInterestId] = useState<AccessInterestId>(initialInterest ?? "developer");
-  const [step, setStep] = useState<AccessStep>("choose");
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
-  const nextActionRef = useRef<HTMLButtonElement>(null);
-  const completeCloseRef = useRef<HTMLButtonElement>(null);
-  const previousStepRef = useRef<AccessStep>(step);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useModalIsolation(isOpen, dialogRef);
 
-  const interests: { id: AccessInterestId; label: string; detail: string }[] = locale === "en"
-    ? [
-      { id: "developer", label: "Developer exploration", detail: "Review the public catalog and integration preview." },
-      { id: "product", label: "Product evaluation", detail: "Compare illustrative model and usage decisions." },
-      { id: "enterprise", label: "Enterprise planning", detail: "Discuss future deployment review inputs." },
-    ]
-    : [
-      { id: "developer", label: "開發者探索", detail: "檢視公開目錄與整合預覽。" },
-      { id: "product", label: "產品評估", detail: "比較展示模型與用量決策。" },
-      { id: "enterprise", label: "企業規劃", detail: "討論未來部署審查輸入。" },
-    ];
-  const selectedInterest = interests.find((interest) => interest.id === selectedInterestId) ?? interests[0];
+  const text = locale === "en" ? {
+    eyebrow: "API access",
+    title: "Get your API key",
+    lead: "Keys are issued per customer with prepaid balance. Tell us what you plan to build and we will set you up.",
+    stepsTitle: "How access works",
+    steps: [
+      { title: "Request a key", detail: "Email us with your intended use case. We reply with your key and top-up instructions." },
+      { title: "Top up balance", detail: "Prepaid balance with nano-USD precision. Add credit with redeem codes." },
+      { title: "Start building", detail: "One OpenAI-compatible endpoint — review the quick start while you wait." },
+    ],
+    mailtoSubject: "API access request — Power Champion",
+    mailtoBody: "Hello,\n\nI would like to request an API key.\n\nIntended use case: \nExpected volume (tokens/month): \n\nThank you.",
+    cta: "Email info@powerchampion.org",
+    docs: "Read the quick start",
+    close: "Close",
+  } : {
+    eyebrow: "API 存取",
+    title: "取得你的 API Key",
+    lead: "Keys 以客戶為單位發放，採預付儲值制。告訴我們你打算建造什麼，我們會為你設定。",
+    stepsTitle: "存取流程",
+    steps: [
+      { title: "申請 Key", detail: "Email 告知你的使用情境，我們會回覆 Key 與儲值說明。" },
+      { title: "儲值", detail: "預付餘額，nano-USD 精度。使用 redeem code 加值。" },
+      { title: "開始建造", detail: "單一 OpenAI 相容端點——等待期間可先看快速開始文件。" },
+    ],
+    mailtoSubject: "API 存取申請 — Power Champion",
+    mailtoBody: "你好，\n\n我想申請 API Key。\n\n使用情境：\n預估用量（tokens/月）：\n\n謝謝。",
+    cta: "Email info@powerchampion.org",
+    docs: "閱讀快速開始",
+    close: "關閉",
+  };
+
+  const mailtoHref = `mailto:${ACCESS_EMAIL}?subject=${encodeURIComponent(text.mailtoSubject)}&body=${encodeURIComponent(text.mailtoBody)}`;
 
   const close = () => {
     setIsOpen(false);
-    setStep("choose");
     queueMicrotask(() => {
       const target = triggerRef.current;
       if (target?.isConnected) {
@@ -59,10 +76,8 @@ export function LaunchAccessDialog({ initialInterest, open }: { initialInterest?
 
   useEffect(() => {
     const handleCheckout = (event: Event) => {
-      const { interestId, restoreFocusTarget } = (event as CustomEvent<LaunchAccessEventDetail>).detail ?? {};
+      const { restoreFocusTarget } = (event as CustomEvent<LaunchAccessEventDetail>).detail ?? {};
       triggerRef.current = restoreFocusTarget ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-      setSelectedInterestId(interestId ?? "developer");
-      setStep("choose");
       setIsOpen(true);
     };
 
@@ -75,9 +90,7 @@ export function LaunchAccessDialog({ initialInterest, open }: { initialInterest?
       return;
     }
 
-    const dialog = dialogRef.current;
-    const focusableElements = () => Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
-    focusableElements()[0]?.focus();
+    closeRef.current?.focus();
 
     const handleKeydown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -89,7 +102,9 @@ export function LaunchAccessDialog({ initialInterest, open }: { initialInterest?
         return;
       }
 
-      const elements = focusableElements();
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const elements = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
       const first = elements[0];
       const last = elements.at(-1);
       if (!first || !last) {
@@ -109,77 +124,38 @@ export function LaunchAccessDialog({ initialInterest, open }: { initialInterest?
     return () => document.removeEventListener("keydown", handleKeydown);
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      previousStepRef.current = step;
-      return;
-    }
-
-    if (previousStepRef.current !== step) {
-      previousStepRef.current = step;
-      (step === "complete" ? completeCloseRef : nextActionRef).current?.focus();
-    }
-  }, [isOpen, step]);
-
   if (!isOpen) {
     return null;
   }
 
-  const continueCheckout = () => {
-    setStep((current) => current === "choose" ? "review" : "complete");
-  };
-
   return (
     <div className="checkout-backdrop">
-      <div aria-describedby="checkout-disclaimer" aria-labelledby="checkout-title" aria-modal="true" className="demo-checkout" ref={dialogRef} role="dialog">
+      <div aria-labelledby="checkout-title" aria-modal="true" className="demo-checkout access-dialog" ref={dialogRef} role="dialog">
         <div className="checkout-header">
           <div>
-            <p className="eyebrow">{copy.shared.illustrative}</p>
-            <h2 id="checkout-title">{copy.checkout.title}</h2>
+            <p className="eyebrow">{text.eyebrow}</p>
+            <h2 id="checkout-title">{text.title}</h2>
           </div>
-          <button aria-label={copy.checkout.close} className="checkout-close" onClick={close} type="button">×</button>
+          <button aria-label={text.close} className="checkout-close" onClick={close} ref={closeRef} type="button">×</button>
         </div>
-        <ol aria-label={copy.checkout.title} className="checkout-steps">
-          <li aria-current={step === "choose" ? "step" : undefined}>{copy.checkout.choose}</li>
-          <li aria-current={step === "review" ? "step" : undefined}>{copy.checkout.review}</li>
-          <li aria-current={step === "complete" ? "step" : undefined}>{locale === "en" ? "Complete" : "完成"}</li>
-        </ol>
-        {step === "choose" && (
-          <div className="checkout-pack-list">
-            {interests.map((interest) => (
-              <button
-                aria-pressed={selectedInterestId === interest.id}
-                className="checkout-pack"
-                key={interest.id}
-                onClick={() => setSelectedInterestId(interest.id)}
-                type="button"
-              >
-                <span>{interest.label}</span>
-                <small>{interest.detail}</small>
-              </button>
+        <p className="access-lead">{text.lead}</p>
+        <div className="access-steps">
+          <h3>{text.stepsTitle}</h3>
+          <ol>
+            {text.steps.map((step, i) => (
+              <li key={i}>
+                <span aria-hidden="true" className="access-step-number">{String(i + 1).padStart(2, "0")}</span>
+                <div>
+                  <strong>{step.title}</strong>
+                  <p>{step.detail}</p>
+                </div>
+              </li>
             ))}
-          </div>
-        )}
-        {step === "review" && (
-          <div className="checkout-review">
-            <p>{selectedInterest.label}</p>
-            <dl>
-              <div><dt>{locale === "en" ? "Interest" : "意向"}</dt><dd>{selectedInterest.label}</dd></div>
-              <div><dt>{locale === "en" ? "Local handling" : "本機處理"}</dt><dd>{locale === "en" ? "Browser only" : "僅限瀏覽器"}</dd></div>
-            </dl>
-          </div>
-        )}
-        {step === "complete" && (
-          <div className="checkout-complete" role="status">
-            <h3>{copy.checkout.complete}</h3>
-            <p>{copy.checkout.requestComplete}</p>
-          </div>
-        )}
-        <p className="checkout-disclaimer" id="checkout-disclaimer">{copy.checkout.launchNotice}</p>
-        <div className="checkout-actions">
-          {step === "review" && <button className="checkout-back" onClick={() => setStep("choose")} type="button">{copy.checkout.back}</button>}
-          {step !== "complete" && <button className="token-button" onClick={continueCheckout} ref={nextActionRef} type="button">{copy.checkout.next}</button>}
-          {step === "complete" && <button className="token-button" onClick={close} ref={completeCloseRef} type="button">{copy.checkout.close}</button>}
+          </ol>
+        </div>
+        <div className="checkout-actions access-actions">
+          <a className="token-button access-mailto" href={mailtoHref}>{text.cta}</a>
+          <a className="access-docs-link" href="/docs">{text.docs} →</a>
         </div>
       </div>
     </div>

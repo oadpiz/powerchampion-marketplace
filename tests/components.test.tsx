@@ -14,7 +14,7 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
 
-    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Join launch access" })).toBeVisible();
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Get API access" })).toBeVisible();
     unmount();
     window.history.replaceState({}, "", "/");
   });
@@ -176,7 +176,7 @@ describe("SiteShell", () => {
 
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     const menu = screen.getByRole("dialog", { name: "Open menu" });
-    await user.click(within(menu).getByRole("button", { name: "Join launch access" }));
+    await user.click(within(menu).getByRole("button", { name: "Get API access" }));
     expect(launchAccessEvents).toBe(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
@@ -185,7 +185,7 @@ describe("SiteShell", () => {
     expect(
       within(screen.getByRole("dialog", { name: "開啟選單" })).getByRole(
         "button",
-        { name: "加入啟動存取" },
+        { name: "取得 API 存取" },
       ),
     ).toBeInTheDocument();
 
@@ -207,7 +207,7 @@ describe("SiteShell", () => {
 
     const menu = screen.getByRole("dialog", { name: "Open menu" });
     const closeButton = within(menu).getByRole("button", { name: "Close menu" });
-    const checkoutButton = within(menu).getByRole("button", { name: "Join launch access" });
+    const checkoutButton = within(menu).getByRole("button", { name: "Get API access" });
     expect(closeButton).toHaveFocus();
 
     await user.tab({ shift: true });
@@ -262,15 +262,15 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
 
-    const trigger = screen.getByRole("button", { name: "Join launch access" });
+    const trigger = screen.getByRole("button", { name: "Get API access" });
     await user.click(trigger);
 
-    const dialog = screen.getByRole("dialog", { name: "Request launch access" });
+    const dialog = screen.getByRole("dialog", { name: "Get your API key" });
     expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
 
     await user.keyboard("{Escape}");
 
-    expect(screen.queryByRole("dialog", { name: "Request launch access" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Get your API key" })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
 
@@ -287,10 +287,10 @@ describe("SiteShell", () => {
     const shell = container.querySelector(".site-shell");
     expect(shell).not.toBeNull();
     shell!.setAttribute("aria-hidden", "false");
-    const trigger = within(screen.getByRole("banner")).getByRole("button", { name: "Join launch access" });
+    const trigger = within(screen.getByRole("banner")).getByRole("button", { name: "Get API access" });
     await user.click(trigger);
 
-    const dialog = screen.getByRole("dialog", { name: "Request launch access" });
+    const dialog = screen.getByRole("dialog", { name: "Get your API key" });
     expect(shell).toHaveAttribute("inert");
     expect(shell).toHaveAttribute("aria-hidden", "true");
     expect(document.body.style.overflow).toBe("hidden");
@@ -319,8 +319,8 @@ describe("SiteShell", () => {
 
     const menuTrigger = screen.getByRole("button", { name: "Open menu" });
     await user.click(menuTrigger);
-    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Join launch access" }));
-    expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
+    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Get API access" }));
+    expect(screen.getByRole("dialog", { name: "Get your API key" })).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
 
@@ -339,10 +339,10 @@ describe("SiteShell", () => {
 
     const menuTrigger = screen.getByRole("button", { name: "Open menu" });
     await user.click(menuTrigger);
-    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Join launch access" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Get API access" }));
 
     expect(screen.queryByRole("dialog", { name: "Open menu" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Request launch access" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Get your API key" })).toBeInTheDocument();
     expect(document.body.style.overflow).toBe("hidden");
 
     await user.keyboard("{Escape}");
@@ -350,7 +350,7 @@ describe("SiteShell", () => {
     expect(menuTrigger).toHaveFocus();
   });
 
-  it("describes launch-access completion as local in both locales without claiming persistence", async () => {
+  it("offers the real email-based access request in both locales without fake completion", async () => {
     const user = userEvent.setup();
     const { unmount } = render(
       <LocaleProvider>
@@ -359,12 +359,14 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Join launch access" }));
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Launch-access review completed locally.");
-    expect(screen.getByRole("dialog")).not.toHaveTextContent(/saved/i);
-    expect(screen.getByRole("dialog")).toHaveTextContent("It is not transmitted or persisted.");
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Get API access" }));
+    const dialog = screen.getByRole("dialog", { name: "Get your API key" });
+    expect(within(dialog).getByText("How access works")).toBeVisible();
+    expect(within(dialog).getByRole("link", { name: /Email info@powerchampion.org/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("mailto:info@powerchampion.org"),
+    );
+    expect(dialog).not.toHaveTextContent(/completed locally/i);
     unmount();
 
     render(
@@ -374,11 +376,13 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "加入啟動存取" }));
-    await user.click(screen.getByRole("button", { name: "繼續" }));
-    await user.click(screen.getByRole("button", { name: "繼續" }));
-    expect(screen.getByRole("status")).toHaveTextContent("啟動存取審查已在本機完成。");
-    expect(screen.getByRole("dialog")).not.toHaveTextContent("已儲存");
-    expect(screen.getByRole("dialog")).toHaveTextContent("不會傳送或保存");
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "取得 API 存取" }));
+    const zhDialog = screen.getByRole("dialog", { name: "取得你的 API Key" });
+    expect(within(zhDialog).getByText(/存取流程/)).toBeVisible();
+    expect(within(zhDialog).getByRole("link", { name: /Email info@powerchampion.org/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("mailto:info@powerchampion.org"),
+    );
+    expect(zhDialog).not.toHaveTextContent("已在本機完成");
   });
 });

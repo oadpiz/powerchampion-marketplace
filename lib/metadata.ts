@@ -18,23 +18,23 @@ export type RoutePath =
 const ROUTE_METADATA = {
   "/": {
     title: "Power Champion — OpenAI-compatible API · Live",
-    description: "Explore indicative token-access plans for leading open AI models. Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available.",
+    description: "One OpenAI-compatible endpoint for leading open AI models — text, vision, image, speech, and embeddings. Live API, prepaid balance, one key.",
   },
   "/models": {
     title: "Open Model Catalog | Power Champion",
-    description: "Compare illustrative open-model token rates, limits, features, and release-review states.",
+    description: "Compare live open-model token rates, context limits, features, and availability.",
   },
   "/pricing": {
-    title: "Illustrative pricing | Power Champion",
-    description: "Illustrative token rates and local launch-access planning; no payment or funded balance is available.",
+    title: "Pricing | Power Champion",
+    description: "Live token rates for every model — pay per use from prepaid balance. No subscription required.",
   },
   "/infrastructure": {
     title: "Infrastructure review | Power Champion",
     description: "Source-qualified infrastructure context and release gates for the Power Champion launch site; not a live deployment status.",
   },
   "/docs": {
-    title: "Documentation preview | Power Champion",
-    description: "Non-operational integration examples and release-gated future access for Power Champion.",
+    title: "Documentation | Power Champion",
+    description: "Quick start for the OpenAI-compatible API at b300.powerchampion.ai — cURL, Python, and JavaScript examples.",
   },
   "/trust": {
     title: "Trust review | Power Champion",
@@ -53,8 +53,8 @@ const ROUTE_METADATA = {
     description: "Review non-binding deployment interests locally in your browser.",
   },
   "/console": {
-    title: "Console preview | Power Champion",
-    description: "A local illustrative console preview with no account, funded balance, usable key, or live usage.",
+    title: "Console | Power Champion",
+    description: "Check your prepaid API balance with your key. Queries the gateway live; the key is never stored.",
   },
   "/faq": {
     title: "FAQ | Power Champion",
@@ -72,7 +72,7 @@ const ROUTE_METADATA = {
 
 const SOCIAL_METADATA = {
   title: "OpenAI-compatible API · Live.",
-  description: "Explore indicative open-model access and illustrative UI data. No funded balance or live API is currently available.",
+  description: "One OpenAI-compatible endpoint for leading open AI models. Live API, prepaid balance, one key.",
 };
 
 export function metadataForRoute(pathname: RoutePath): Metadata {
