@@ -1043,3 +1043,15 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 @media (min-width: 821px) {
   .mobile-navigation { display: none; }
 }
+
+/* Live model table on /status (fed by the b300 gateway) */
+.status-models { margin-top: 3rem; }
+.status-models h2 { font-size: 1.15rem; letter-spacing: -.01em; }
+.status-models p { color: var(--muted); font-size: .9rem; }
+.status-models table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.status-models th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); border-bottom: 1px solid var(--line); padding: .5rem .6rem; }
+.status-models td { border-bottom: 1px solid var(--line); padding: .6rem; font-size: .9rem; }
+.status-models td code { font-family: var(--font-geist-mono), monospace; font-size: .82rem; }
+.status-models tr[data-ready="false"] td { color: #8a3b2e; }
+.status-models tr[data-ready="true"] td:last-child strong { color: #355b08; }
+.status-models tr[data-ready="false"] td:last-child strong { color: #8a3b2e; }
