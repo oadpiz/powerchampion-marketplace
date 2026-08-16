@@ -38,7 +38,7 @@ export function PricingPageContent() {
 
       <section aria-labelledby="planning-packages-title" className="pricing-packs">
         <div className="pricing-block-heading">
-          <p className="eyebrow">{copy.shared.illustrative}</p>
+          <p className="eyebrow">{locale === "en" ? "Indicative examples" : "示意方案"}</p>
           <h2 id="planning-packages-title">{locale === "en" ? "Launch planning references" : "啟動規劃參考"}</h2>
         </div>
         <div className="credit-grid">
@@ -61,7 +61,7 @@ export function PricingPageContent() {
 
       <section aria-labelledby="billing-title" className="pricing-calculator">
         <div className="pricing-block-heading">
-          <p className="eyebrow">{copy.shared.illustrative}</p>
+          <p className="eyebrow">{locale === "en" ? "Live rates" : "即時費率"}</p>
           <h2 id="billing-title">{locale === "en" ? "How token billing works" : "Token 計費方式"}</h2>
         </div>
         <p className="pricing-billing-copy">
@@ -75,7 +75,7 @@ export function PricingPageContent() {
 
       <section aria-labelledby="rates-title" className="model-rates">
         <div className="pricing-block-heading">
-          <p className="eyebrow">{copy.shared.illustrative}</p>
+          <p className="eyebrow">{locale === "en" ? "Live rates" : "即時費率"}</p>
           <h2 id="rates-title">{copy.pricing.ratesTitle}</h2>
         </div>
         <p className="rate-table-cue" id="rate-table-scroll-cue">{copy.pricing.ratesScrollCue}</p>

@@ -51,7 +51,7 @@ export function DocsPageContent() {
         <dl className="docs-values">
           <div><dt>{copy.docs.baseUrl}</dt><dd><code>{BASE_URL}</code></dd></div>
           <div><dt>{copy.docs.chooseModel}</dt><dd><code>glm-5.2-fp8</code></dd></div>
-          <div><dt>{locale === "en" ? "Example status" : "範例狀態"}</dt><dd>{locale === "en" ? "Non-operational" : "不可運作"}</dd></div>
+          <div><dt>{locale === "en" ? "Endpoint status" : "端點狀態"}</dt><dd>{locale === "en" ? "Live" : "已上線"}</dd></div>
         </dl>
       </section>
 

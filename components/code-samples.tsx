@@ -69,7 +69,7 @@ export function CodeSamples() {
   return (
     <section aria-label={copy.docs.quickStart} className="code-samples">
       <p className="code-sample-notice">
-        {copy.docs.quickStart} — {copy.shared.illustrative}; {locale === "en" ? "non-operational examples only." : "僅限不可運作的範例。"}
+        {copy.docs.quickStart} — {locale === "en" ? "real requests against the live endpoint; substitute your own API key." : "對即時端點發出的真實請求；請替換為你自己的 API 金鑰。"}
       </p>
       <div aria-label={copy.docs.quickStart} className="code-tabs" role="tablist">
         {sampleLanguages.map((sample, index) => {
