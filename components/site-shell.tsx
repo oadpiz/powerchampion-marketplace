@@ -66,7 +66,7 @@ function dispatchLaunchAccess(restoreFocusTarget?: HTMLElement | null) {
 export function SiteShell({ children }: { children: ReactNode }) {
   const { copy, locale, setLocale } = useLocale();
   const pathname = usePathname();
-  const showHeaderLaunchAccess = pathname !== "/pricing";
+  const showHeaderLaunchAccess = true;
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);

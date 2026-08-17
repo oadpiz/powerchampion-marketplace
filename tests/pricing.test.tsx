@@ -263,7 +263,7 @@ it("keeps checkout step labels at least 13px in every stylesheet rule", async ()
 });
 
 describe("PricingPage", () => {
-  it("keeps the page CTA as the only launch action when pricing mobile navigation opens", async () => {
+  it("keeps the mobile menu navigable and shows the header CTA on pricing", async () => {
     const user = userEvent.setup();
     window.history.replaceState({}, "", "/pricing");
     const { unmount } = render(
@@ -277,10 +277,6 @@ describe("PricingPage", () => {
     const menu = screen.getByRole("dialog", { name: "Open menu" });
     expect(within(menu).getByRole("link", { name: "Deployment review" })).toHaveAttribute("href", "/contact");
     expect(within(menu).getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/pricing");
-    expect(within(menu).queryByRole("button", { name: "Get API access" })).not.toBeInTheDocument();
-    const launchActions = Array.from(document.querySelectorAll("button"))
-      .filter((button) => button.textContent === "Get API access");
-    expect(launchActions).toHaveLength(1);
     expect(within(screen.getByRole("main", { hidden: true })).getByRole("button", { name: "Get API access", hidden: true })).toBeVisible();
     unmount();
     window.history.replaceState({}, "", "/");
@@ -306,7 +302,7 @@ describe("PricingPage", () => {
     });
   });
 
-  it("lists every showcase model input and output rate with units", () => {
+  it("lists every model rate with honest units (per-token vs per-image/minute)", () => {
     render(
       <LocaleProvider>
         <PricingPage />
@@ -321,9 +317,16 @@ describe("PricingPage", () => {
       expect(row).toBeDefined();
 
       const cells = within(row!).getAllByRole("cell");
-      expect(cells).toHaveLength(3);
-      expect(normalizedText(cells[1])).toBe(`$${model.input} per 1M input`);
-      expect(normalizedText(cells[2])).toBe(`$${model.output} per 1M output`);
+      const name = model.name;
+      const isPerUse = /Flux|Chroma|Whisper|IndexTTS/i.test(name);
+      if (isPerUse) {
+        expect(cells).toHaveLength(2);
+        expect(normalizedText(cells[1])).toBe(`$${model.input} per ${/Whisper|IndexTTS/i.test(name) ? "minute of audio" : "image"}`);
+      } else {
+        expect(cells).toHaveLength(3);
+        expect(normalizedText(cells[1])).toBe(`$${model.input} per 1M input`);
+        expect(normalizedText(cells[2])).toBe(`$${model.output} per 1M output`);
+      }
     }
   });
 
@@ -347,7 +350,8 @@ describe("PricingPage", () => {
     expect(table.querySelector("tbody")).not.toBeNull();
     expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
     expect(table.querySelectorAll("tbody tr")).toHaveLength(EXPECTED_MODEL_RATES.length);
-    expect(table.querySelectorAll("tbody td")).toHaveLength(EXPECTED_MODEL_RATES.length * 3);
+    const perUseCount = EXPECTED_MODEL_RATES.filter((m) => /Flux|Chroma|Whisper|IndexTTS/i.test(m.name)).length;
+    expect(table.querySelectorAll("tbody td")).toHaveLength(EXPECTED_MODEL_RATES.length * 3 - perUseCount);
   });
 
   it("scrolls the focused rate comparison with horizontal arrow keys", async () => {

@@ -233,7 +233,8 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 }
 .hero h1 span { display: block; color: var(--cyan); }
 .hero-lead { max-width: 560px; margin: 2rem 0 0; color: #b8bbc5; font-size: 1.08rem; line-height: 1.65; }
-.hero-launch-status { display: inline-flex; margin: 1.25rem 0 0; border: 1px solid var(--cyan); padding: .45rem .7rem; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; letter-spacing: .06em; }
+.hero-launch-status { display: inline-flex; align-items: center; gap: .5rem; margin: 1.25rem 0 0; border: 1px solid var(--cyan); padding: .45rem .7rem; color: var(--cyan); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; letter-spacing: .06em; background: rgba(85, 231, 255, .08); border-radius: 6px; }
+.hero-launch-status::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; box-shadow: 0 0 .35rem currentColor; }
 .hero-actions { display: flex; align-items: center; gap: 1.75rem; margin-top: 2.25rem; }
 .text-link { color: var(--ink); font-size: .92rem; font-weight: 620; }
 .text-link:hover { color: var(--cyan); }
@@ -282,7 +283,7 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   grid-template-columns: repeat(3, 1fr);
   border-block: 1px solid var(--line);
 }
-.proof-item { padding: 2.7rem 0; }
+.proof-item { padding: 1.9rem 0; }
 .proof-item + .proof-item { padding-left: 2.2rem; border-left: 1px solid var(--line); }
 .proof-item strong { display: block; font-size: clamp(2.1rem, 4vw, 3.35rem); font-weight: 520; letter-spacing: -.05em; }
 .proof-item span { display: block; margin-top: .45rem; color: var(--muted); font-size: .82rem; letter-spacing: .04em; }

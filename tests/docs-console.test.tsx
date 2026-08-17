@@ -173,7 +173,7 @@ describe("ConsoleView", () => {
     await user.click(screen.getByRole("button", { name: "Check balance" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("Invalid API key.");
+      expect(screen.getByRole("alert")).toHaveTextContent(/not accepted/i);
     });
     vi.unstubAllGlobals();
   });

@@ -110,13 +110,27 @@ export function PricingPageContent() {
               </tr>
             </thead>
             <tbody>
-              {MODEL_CATALOG.map((model) => (
-                <tr className="rate-table-row" key={model.id}>
-                  <td>{model.name}</td>
-                  <td><strong>{formatRate(model.inputPerMillion)}</strong> {copy.shared.perMillionInput}</td>
-                  <td><strong>{formatRate(model.outputPerMillion)}</strong> {copy.shared.perMillionOutput}</td>
-                </tr>
-              ))}
+              {MODEL_CATALOG.map((model) => {
+                const isPerUse = model.categories.includes("image") || model.id.includes("whisper") || model.id.includes("indextts2");
+                return (
+                  <tr className="rate-table-row" key={model.id}>
+                    <td>{model.name}</td>
+                    {isPerUse ? (
+                      <td colSpan={2}>
+                        <strong>{formatRate(model.inputPerMillion)}</strong>{" "}
+                        {locale === "en"
+                          ? `per ${model.id.includes("whisper") || model.id.includes("indextts2") ? "minute of audio" : "image"}`
+                          : `每${model.id.includes("whisper") || model.id.includes("indextts2") ? "分鐘音訊" : "張圖片"}`}
+                      </td>
+                    ) : (
+                      <>
+                        <td><strong>{formatRate(model.inputPerMillion)}</strong> {copy.shared.perMillionInput}</td>
+                        <td><strong>{formatRate(model.outputPerMillion)}</strong> {copy.shared.perMillionOutput}</td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
