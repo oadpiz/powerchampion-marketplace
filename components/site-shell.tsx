@@ -144,6 +144,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
   return (
     <div className="site-shell">
       <a className="skip-link" href="#main-content">{copy.nav.skipToContent}</a>
+      <div className="site-header-wrapper">
       <header className="site-header">
         {/* vinext's Vite runtime does not provide next/link; this remains a root-relative semantic link. */}
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
@@ -172,6 +173,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </button>
         </div>
       </header>
+      </div>
 
       {isMobileMenuOpen && (
         <div

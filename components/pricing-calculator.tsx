@@ -99,7 +99,7 @@ export function PricingCalculator() {
           ) : (
             <p aria-live="polite" className="calculator-estimate">
               <span>{copy.pricing.estimate}</span>
-              <strong>{currencyFormatter.format(estimate)}</strong>
+              <strong>{estimate === null ? "—" : currencyFormatter.format(estimate)}</strong>
             </p>
           )}
         </>

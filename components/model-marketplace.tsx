@@ -33,6 +33,10 @@ export function ModelMarketplace() {
     reasoning: copy.models.reasoning,
     general: copy.models.general,
     multilingual: copy.models.multilingual,
+    vision: copy.models.vision,
+    image: copy.models.image,
+    audio: copy.models.audio,
+    embedding: copy.models.embedding,
   };
   const speedLabels: Record<ModelDefinition["speed"], string> = {
     Fast: copy.models.fast,
