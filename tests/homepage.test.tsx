@@ -42,11 +42,11 @@ describe("Power Champion homepage", () => {
 
     const expectedModels = [
       ["GLM 5.2 FP8", "$0.93 per 1M input", "$3.00 per 1M output", "131K", "16K", "Primary LLM for chat, reasoning, and coding workloads.", "主力 LLM，用於對話、推理與程式開發。"],
-      ["Qwen3-VL 30B", "$0.30 per 1M input", "$1.20 per 1M output", "32K", "4K", "Vision and OCR inference for document and image understanding.", "視覺與 OCR 推理，用於文件與圖片理解。"],
-      ["Flux Schnell", "$0.01 per 1M input", "$0.00 per 1M output", "—", "1 image", "Text-to-image generation for marketing and creative use.", "文生圖生成，用於行銷與創意場景。"],
-      ["Chroma1 HD", "$0.01 per 1M input", "$0.00 per 1M output", "—", "1 image", "Premium HD image generation for high-quality output.", "高品質 HD 圖像生成。"],
-      ["Whisper Large v3", "$0.01 per 1M input", "$0.00 per 1M output", "—", "transcript", "Audio transcription and subtitle generation.", "音訊轉錄與字幕生成。"],
-      ["IndexTTS2", "$0.03 per 1M input", "$0.00 per 1M output", "2K", "audio", "Text-to-speech with voice cloning capabilities.", "文字轉語音與語音克隆。"],
+      ["Qwen3-VL 30B", "$0.30 per 1M input", "$1.20 per 1M output", "33K", "4K", "Vision and OCR inference for document and image understanding.", "視覺與 OCR 推理，用於文件與圖片理解。"],
+      ["Flux Schnell", "$0.01 per image", null, "—", "1 image", "Text-to-image generation for marketing and creative use.", "文生圖生成，用於行銷與創意場景。"],
+      ["Chroma1 HD", "$0.01 per image", null, "—", "1 image", "Premium HD image generation for high-quality output.", "高品質 HD 圖像生成。"],
+      ["Whisper Large v3", "$0.01 per minute of audio", null, "—", "transcript", "Audio transcription and subtitle generation.", "音訊轉錄與字幕生成。"],
+      ["IndexTTS2", "$0.03 per minute of audio", null, "2K", "audio", "Text-to-speech with voice cloning capabilities.", "文字轉語音與語音克隆。"],
       ["BGE-M3", "$0.02 per 1M input", "$0.00 per 1M output", "8K", "vector", "Embedding generation for RAG and semantic search.", "嵌入向量生成，用於 RAG 與語意搜尋。"],
       ["BGE Reranker v2-m3", "$0.02 per 1M input", "$0.00 per 1M output", "8K", "scores", "Document reranking for retrieval-augmented generation.", "文件重排，用於檢索增強生成。"],
     ] as const;
@@ -56,7 +56,7 @@ describe("Power Champion homepage", () => {
       expect(within(row).getByText(context)).toBeVisible();
       expect(within(row).getByText(maxOutput)).toBeVisible();
       expect(within(row).getByText(inputRate)).toBeVisible();
-      expect(within(row).getByText(outputRate)).toBeVisible();
+      if (outputRate) expect(within(row).getByText(outputRate)).toBeVisible();
       expect(within(row).getByText("Live")).toBeVisible();
       expect(within(row).getByText(englishRole)).toBeVisible();
       expect(within(row).getByText("Available")).toBeVisible();

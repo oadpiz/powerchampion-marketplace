@@ -290,7 +290,7 @@ describe("PricingPage", () => {
     );
 
     expect(screen.getByRole("heading", { level: 2, name: "How token billing works" })).toBeVisible();
-    expect(screen.getByText(/input and output tokens are priced separately/i)).toBeVisible();
+    expect(screen.getByText(/text models bill per million input and output tokens/i)).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Get API access" })).toHaveLength(1);
     expect(document.body).not.toHaveTextContent(/buy now|checkout|funded balance/i);
   });

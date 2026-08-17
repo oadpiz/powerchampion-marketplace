@@ -71,8 +71,8 @@ export function PricingPageContent() {
         </div>
         <p className="pricing-billing-copy">
           {locale === "en"
-            ? "Input and output tokens are priced separately at the live per-million rates in the table below. The estimator applies those same rates locally in your browser."
-            : "輸入與輸出 Token 會依下方表格中的即時每百萬費率分別計價。估算器會在你的瀏覽器中以相同費率計算。"}
+            ? "Text models bill per million input and output tokens at the live rates below. Image models bill per generated image; audio models bill per minute of audio. The estimator applies the same rates locally in your browser."
+            : "文字模型依每百萬輸入/輸出 Token 以即時費率計費；影像模型依每張生成圖片計費；音訊模型依每分鐘音訊計費。估算器會在你的瀏覽器中以相同費率計算。"}
         </p>
       </section>
 

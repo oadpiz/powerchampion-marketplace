@@ -71,7 +71,7 @@ export const MODEL_CATALOG: ModelDefinition[] = [
     name: "Qwen3-VL 30B",
     modelId: "qwen3-vl-30b",
     categories: ["vision", "multilingual", "general"],
-    context: "32K",
+    context: "33K",
     speed: "Fast",
     inputPerMillion: 0.30,
     outputPerMillion: 1.20,

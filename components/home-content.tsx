@@ -23,7 +23,7 @@ export function HomeContent() {
     facts: "Marketplace facts",
     catalogEntries: "live models in the catalog",
     maximumContext: "maximum catalog context",
-    startingRate: "starting input rate",
+    startingRate: "starting rate, per request",
     price: "Live price",
     provenance: "Provenance review",
     release: "Release state",
@@ -47,7 +47,7 @@ export function HomeContent() {
     facts: "市集事實",
     catalogEntries: "目錄中的即時模型",
     maximumContext: "目錄最大上下文",
-    startingRate: "起始輸入費率",
+    startingRate: "起始費率（每請求）",
     price: "即時價格",
     provenance: "來源審查",
     release: "發布狀態",
@@ -106,7 +106,11 @@ export function HomeContent() {
               <dl className="model-facts">
                 <div><dt>{copy.models.context}</dt><dd>{model.context}</dd></div>
                 <div><dt>{copy.models.maxOutput}</dt><dd>{model.maxOutput}</dd></div>
-                <div><dt>{text.price}</dt><dd>${model.inputPerMillion.toFixed(2)} {copy.shared.perMillionInput}</dd><dd>${model.outputPerMillion.toFixed(2)} {copy.shared.perMillionOutput}</dd></div>
+                {model.categories.includes("image") || model.id.includes("whisper") || model.id.includes("indextts2") ? (
+                  <div><dt>{text.price}</dt><dd>{`$${model.inputPerMillion.toFixed(2)} ${model.id.includes("whisper") || model.id.includes("indextts2") ? (locale === "en" ? "per minute of audio" : "每分鐘音訊") : (locale === "en" ? "per image" : "每張圖片")}`}</dd></div>
+                ) : (
+                  <div><dt>{text.price}</dt><dd>{`$${model.inputPerMillion.toFixed(2)} ${copy.shared.perMillionInput}`}</dd><dd>{`$${model.outputPerMillion.toFixed(2)} ${copy.shared.perMillionOutput}`}</dd></div>
+                )}
                 <div><dt>{text.provenance}</dt><dd>{model.provenance.label[locale]}</dd></div>
                 <div><dt>{text.release}</dt><dd>{model.available ? copy.models.available : copy.models.unavailable}</dd></div>
               </dl>
@@ -125,7 +129,7 @@ export function HomeContent() {
         <div aria-label={text.rateAccess} className="home-rate-access" role="region">
           <p className="eyebrow">{copy.pricing.kicker}</p>
           <p>{text.rateLead}</p>
-          <p className="home-rate-value">${startingRate.toFixed(2)} {copy.shared.perMillionInput}</p>
+          <p className="home-rate-value">${startingRate.toFixed(2)} {locale === "en" ? "starting rate — text per 1M tokens, media per image/minute" : "起始費率 — 文字每 1M Token，媒體每張/每分鐘"}</p>
           <button className="credit-button" onClick={requestLaunchAccess} type="button">{copy.nav.getTokens}</button>
           <p className="showcase-note">{copy.pricing.demoNotice}</p>
         </div>

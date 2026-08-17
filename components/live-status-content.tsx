@@ -13,8 +13,10 @@ function fmtUptime(v: number | null): string {
   return v === null ? "—" : `${(v * 100).toFixed(2)}%`;
 }
 
-function fmtContext(v: number | null): string {
-  if (!v) return "—";
+function fmtContext(v: number | null, id: string): string {
+  // Image models report generation resolution (512) in this field — that is
+  // not a context window, so show an em dash instead of a misleading number.
+  if (!v || (v < 1000 && (id.includes("flux") || id.includes("chroma")))) return "—";
   return v >= 1000 ? `${Math.round(v / 1000)}K` : String(v);
 }
 
@@ -79,7 +81,7 @@ export function LiveStatusContent({ gateway, fetchedAt }: Props) {
                   <td>
                     <code>{m.id}</code>
                   </td>
-                  <td>{fmtContext(m.context_length)}</td>
+                  <td>{fmtContext(m.context_length, m.id)}</td>
                   <td>{fmtUptime(m.uptime)}</td>
                   <td>
                     <strong>{m.ready ? trust.ready : trust.unavailable}</strong>

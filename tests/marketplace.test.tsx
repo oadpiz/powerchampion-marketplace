@@ -64,7 +64,7 @@ describe("ModelMarketplace", () => {
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
     const qwen = screen.getByRole("article", { name: "Qwen3-VL 30B" });
 
-    expect(within(qwen).getByText("32K")).toBeVisible();
+    expect(within(qwen).getByText("33K")).toBeVisible();
     expect(within(qwen).getByText((_, element) => normalizedText(element!) === "$0.30 per 1M input")).toBeVisible();
     expect(within(qwen).getByText((_, element) => normalizedText(element!) === "$1.20 per 1M output")).toBeVisible();
   });
