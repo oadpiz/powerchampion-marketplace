@@ -17,11 +17,37 @@ const initialEnquiry: EnquiryState = {
   submitted: false,
 };
 
+const ENQUIRY_EMAIL = "info@powerchampion.org";
+
 export function EnterpriseEnquiry() {
-  const { copy } = useLocale();
+  const { locale } = useLocale();
   const [enquiry, setEnquiry] = useState<EnquiryState>(initialEnquiry);
   const [validationError, setValidationError] = useState(false);
   const interestRef = useRef<HTMLSelectElement>(null);
+
+  const text = locale === "en" ? {
+    interestLabel: "I am interested in",
+    interestPlaceholder: "Choose a topic",
+    launchAccess: "API access",
+    infrastructure: "Infrastructure planning",
+    partnership: "Model partnership",
+    messageLabel: "Context (optional)",
+    submit: "Open email draft",
+    interestRequired: "Choose a topic first.",
+    confirmation: "Your email draft is opening. If nothing happened, write to " + ENQUIRY_EMAIL + " directly.",
+    mailtoSubject: "Enquiry — Power Champion",
+  } : {
+    interestLabel: "我想洽詢",
+    interestPlaceholder: "選擇主題",
+    launchAccess: "API 存取",
+    infrastructure: "基礎設施規劃",
+    partnership: "模型合作",
+    messageLabel: "補充說明（選填）",
+    submit: "開啟 email 草稿",
+    interestRequired: "請先選擇主題。",
+    confirmation: "email 草稿正在開啟。若沒有反應，請直接寄信到 " + ENQUIRY_EMAIL + "。",
+    mailtoSubject: "洽詢 — Power Champion",
+  };
 
   const submitEnquiry = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -34,18 +60,27 @@ export function EnterpriseEnquiry() {
 
     setValidationError(false);
     setEnquiry((current) => ({ ...current, submitted: true }));
+
+    const interestCopy: Record<Exclude<Interest, "">, string> = locale === "en"
+      ? { "launch-access": text.launchAccess, "infrastructure": text.infrastructure, "partnership": text.partnership }
+      : { "launch-access": text.launchAccess, "infrastructure": text.infrastructure, "partnership": text.partnership };
+    const body = `${interestCopy[enquiry.interest]}\n\n${enquiry.message}`.trim();
+    const href = `mailto:${ENQUIRY_EMAIL}?subject=${encodeURIComponent(text.mailtoSubject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = href;
   };
 
   return (
     <section aria-labelledby="deployment-review-title" className="enterprise-enquiry">
       <div className="enquiry-intro">
-        <p className="eyebrow">{copy.enquiry.kicker}</p>
-        <h1 id="deployment-review-title">{copy.enquiry.title}</h1>
-        <p>{copy.enquiry.lead}</p>
+        <p className="eyebrow">{locale === "en" ? "Contact" : "聯絡"}</p>
+        <h1 id="deployment-review-title">{locale === "en" ? "Talk to us" : "與我們聯絡"}</h1>
+        <p>{locale === "en"
+          ? "Pick a topic and add context — we reply by email. For API keys, use “Get API access” for a prefilled request."
+          : "選擇主題並補充背景 — 我們會以 email 回覆。若要申請 API 金鑰，可用「取得 API 存取」的預填申請。"}</p>
       </div>
 
       <form className="enquiry-form" noValidate onSubmit={submitEnquiry}>
-        <label htmlFor="interest">{copy.enquiry.interestLabel}</label>
+        <label htmlFor="interest">{text.interestLabel}</label>
         <select
           aria-describedby={validationError ? "interest-error" : undefined}
           aria-invalid={validationError}
@@ -63,14 +98,14 @@ export function EnterpriseEnquiry() {
           ref={interestRef}
           value={enquiry.interest}
         >
-          <option value="">{copy.enquiry.interestPlaceholder}</option>
-          <option value="launch-access">{copy.enquiry.launchAccess}</option>
-          <option value="infrastructure">{copy.enquiry.infrastructure}</option>
-          <option value="partnership">{copy.enquiry.partnership}</option>
+          <option value="">{text.interestPlaceholder}</option>
+          <option value="launch-access">{text.launchAccess}</option>
+          <option value="infrastructure">{text.infrastructure}</option>
+          <option value="partnership">{text.partnership}</option>
         </select>
-        {validationError && <p id="interest-error" role="alert">{copy.enquiry.interestRequired}</p>}
+        {validationError && <p id="interest-error" role="alert">{text.interestRequired}</p>}
 
-        <label htmlFor="message">{copy.enquiry.messageLabel}</label>
+        <label htmlFor="message">{text.messageLabel}</label>
         <textarea
           aria-describedby="message-hint"
           autoComplete="off"
@@ -81,19 +116,13 @@ export function EnterpriseEnquiry() {
           }}
           value={enquiry.message}
         />
-        <p id="message-hint">{copy.enquiry.messageHint}</p>
+        <p id="message-hint">{locale === "en" ? "Optional — included in the email draft." : "選填 — 會帶入 email 草稿。"}</p>
 
-        <p className="enquiry-notice">{copy.enquiry.localNotice}</p>
-        <button type="submit">{copy.enquiry.submit}</button>
+        <button type="submit">{text.submit}</button>
         {enquiry.submitted && (
-          <>
-            <p role="status">{copy.enquiry.confirmation}</p>
-            <p className="enquiry-notice">{copy.enquiry.localNotice}</p>
-          </>
+          <p role="status">{text.confirmation}</p>
         )}
       </form>
-
-      <a className="enquiry-company-link" href="/company">{copy.enquiry.companyLink}</a>
     </section>
   );
 }

@@ -16,7 +16,8 @@ describe("CodeSamples", () => {
     expect(screen.getAllByRole("region", { name: "Quick start" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("region", { name: "Protected access" })).toBeVisible();
     expect(screen.getByText(/Live — the endpoint below is operational/i)).toBeVisible();
-    expect(screen.getByText("Demo API key")).toBeVisible();
+    expect(screen.getByText("API key")).toBeVisible();
+    expect(screen.getByRole("link", { name: /request yours by email/i })).toHaveAttribute("href", "#protected-access-title");
   });
 
   it("shows all release gates with their readiness state", () => {

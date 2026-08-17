@@ -7,12 +7,12 @@ export function AudiencePaths() {
   const text = locale === "en" ? {
     compareRates: "Compare token rates",
     deploymentReview: "Deployment review",
-    developerDescription: "Review model decision fields and indicative token rates before future access.",
+    developerDescription: "Compare live models and rates, estimate usage, then request your API key.",
     enterpriseDescription: "Start a non-binding deployment review using the public infrastructure context.",
   } : {
     compareRates: "比較 Token 費率",
     deploymentReview: "部署審查",
-    developerDescription: "在未來存取之前，先檢視模型決策欄位與展示 Token 費率。",
+    developerDescription: "比較即時模型與費率、估算用量，然後申請 API 金鑰。",
     enterpriseDescription: "透過公開基礎設施脈絡，開始非約束性的部署審查。",
   };
 

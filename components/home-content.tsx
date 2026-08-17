@@ -21,19 +21,19 @@ export function HomeContent() {
     compareRates: "Compare token rates",
     deploymentReview: "Deployment review",
     facts: "Marketplace facts",
-    catalogEntries: "catalog entries under review",
+    catalogEntries: "live models in the catalog",
     maximumContext: "maximum catalog context",
     startingRate: "starting input rate",
-    price: "Indicative price",
+    price: "Live price",
     provenance: "Provenance review",
     release: "Release state",
     access: "How access works",
     compare: "Compare",
     estimate: "Estimate",
     request: "Request",
-    accessLead: "Compare decision fields, estimate illustrative usage, then request launch access locally.",
-    rateAccess: "Indicative access",
-    rateLead: "Review illustrative token rates before requesting launch access.",
+    accessLead: "Compare decision fields, estimate usage, then request an API key by email.",
+    rateAccess: "Prepaid access",
+    rateLead: "One key, pay per use from your prepaid balance.",
     enterprise: "Enterprise planning",
     enterpriseLead: "Start with qualified public capacity context and the release inputs needed for a future deployment conversation.",
     infrastructure: "Review infrastructure context",
@@ -45,19 +45,19 @@ export function HomeContent() {
     compareRates: "比較 Token 費率",
     deploymentReview: "部署審查",
     facts: "市集事實",
-    catalogEntries: "正在審查的目錄項目",
+    catalogEntries: "目錄中的即時模型",
     maximumContext: "目錄最大上下文",
     startingRate: "起始輸入費率",
-    price: "展示價格",
+    price: "即時價格",
     provenance: "來源審查",
     release: "發布狀態",
     access: "存取方式",
     compare: "比較",
     estimate: "估算",
     request: "申請",
-    accessLead: "先比較決策欄位，再估算展示用量，最後在本機申請啟動存取。",
-    rateAccess: "展示存取",
-    rateLead: "先查看展示 Token 費率，再申請啟動存取。",
+    accessLead: "先比較決策欄位、估算用量，再透過 email 申請 API 金鑰。",
+    rateAccess: "預付存取",
+    rateLead: "一把金鑰，從預付餘額按量計費。",
     enterprise: "企業規劃",
     enterpriseLead: "先檢視限定的公開容量脈絡，以及未來部署對話所需的發布輸入。",
     infrastructure: "檢視基礎設施脈絡",
@@ -75,8 +75,8 @@ export function HomeContent() {
           <p className="eyebrow">{copy.home.kicker}</p>
           <h1 id="home-title">{copy.home.title}<span>{copy.home.accent}</span></h1>
           <p className="hero-lead">{locale === "en"
-            ? "Review the launch catalog, indicative token rates, and public evidence before future access."
-            : "在未來存取之前，先檢視啟動目錄、展示 Token 費率與公開證據。"}</p>
+            ? "One OpenAI-compatible endpoint for text, vision, image, speech, and retrieval — live now, pay per use."
+            : "單一 OpenAI 相容端點，涵蓋文字、視覺、圖像、語音與檢索 — 已上線，按量計費。"}</p>
           <p className="hero-launch-status" role="status">{copy.home.launchStatus}</p>
           <div className="hero-actions">
             <a className="primary-link" href="/pricing">{text.compareRates}</a>

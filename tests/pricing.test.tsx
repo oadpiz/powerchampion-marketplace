@@ -399,7 +399,7 @@ describe("PricingPage", () => {
     );
 
     await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
-    expect(screen.getByRole("heading", { name: "指示性方案，無需承諾。" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "按量計費，無需訂閱。" })).toBeInTheDocument();
     expect(screen.getByText("水平捲動以比較所有費率欄位。")).toBeVisible();
     expect(screen.getByRole("region", { name: "模型費率比較" })).toHaveAttribute("tabindex", "0");
     act(() => openLaunchAccess("product"));

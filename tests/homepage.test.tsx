@@ -104,10 +104,10 @@ describe("Power Champion homepage", () => {
   it("uses one launch-access action for the editorial rate section with truthful prepaid billing note", () => {
     renderInShell(<HomeContent />);
 
-    const access = screen.getByRole("region", { name: "Indicative access" });
+    const access = screen.getByRole("region", { name: "Prepaid access" });
     expect(within(access).getAllByRole("button", { name: "Get API access" })).toHaveLength(1);
     expect(within(access).getByText(
-      "Package values are indicative — actual billing is pay-per-use from your prepaid balance.",
+      "Billing is pay-per-use from your prepaid balance. Top up with redeem codes.",
     )).toBeVisible();
   });
 

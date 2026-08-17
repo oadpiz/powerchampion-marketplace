@@ -57,7 +57,7 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: {
       card: "summary_large_image",
       title: "OpenAI-compatible API · Live",
-      description: "Explore indicative open-model access and illustrative UI data. No funded balance or live API is currently available.",
+      description: "One OpenAI-compatible endpoint for leading open AI models. Live API, prepaid balance, one key.",
       images: ["/og.png"],
     },
     icons: {

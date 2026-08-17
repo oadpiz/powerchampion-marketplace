@@ -63,7 +63,7 @@ export function DocsPageContent() {
             : "API 金鑰以預付餘額形式逐客戶發行（nano-USD 精度）。使用金鑰可隨時呼叫 GET /dashboard/billing/subscription 查詢餘額，並可使用儲值碼加值。"}
         </p>
         <dl className="docs-values docs-values-single">
-          <div><dt>{copy.docs.apiKey}</dt><dd><code>{DEMO_KEY}</code></dd></div>
+          <div><dt>{locale === "en" ? "API key" : "API 金鑰"}</dt><dd><code>{DEMO_KEY}</code> — <a href="#protected-access-title">{locale === "en" ? "request yours by email" : "透過 email 申請"}</a></dd></div>
         </dl>
       </section>
 

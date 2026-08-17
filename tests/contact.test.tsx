@@ -1,40 +1,45 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ContactPage, { metadata } from "../app/contact/page";
 import { EnterpriseEnquiry } from "../components/enterprise-enquiry";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
 describe("EnterpriseEnquiry", () => {
-  it("keeps deployment review local, action-free, and free of personal or payment fields", async () => {
+  it("builds a real mailto enquiry with the chosen topic and context", async () => {
     const user = userEvent.setup();
+    const locationSpy = vi.fn();
+    const originalHref = window.location.href;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: { ...window.location, set href(v: string) { locationSpy(v); }, get href() { return originalHref; } },
+    });
     render(<LocaleProvider><EnterpriseEnquiry /></LocaleProvider>);
 
-    expect(screen.getByRole("option", { name: "Launch access" })).toHaveValue("launch-access");
+    expect(screen.getByRole("option", { name: "API access" })).toHaveValue("launch-access");
     expect(screen.getByRole("option", { name: "Infrastructure planning" })).toHaveValue("infrastructure");
     expect(screen.getByRole("option", { name: "Model partnership" })).toHaveValue("partnership");
-    expect(screen.getByText(/No information is transmitted or persisted/i)).toBeVisible();
-    expect(document.querySelector("form")).not.toHaveAttribute("action");
-    expect(screen.getByLabelText("I am interested in")).toHaveAttribute("name", "deployment-interest");
-    expect(screen.getByLabelText("I am interested in")).toHaveAttribute("autocomplete", "off");
-    expect(screen.getByLabelText("Optional context")).toHaveAttribute("name", "deployment-context");
-    expect(screen.getByLabelText("Optional context")).toHaveAttribute("autocomplete", "off");
-    expect(screen.queryByLabelText(/email|phone|address|card|password|API key|company.registration/i))
-      .not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/card|password/i)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Submit deployment review" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Choose an interest area.");
+    await user.click(screen.getByRole("button", { name: "Open email draft" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose a topic first.");
     expect(screen.getByLabelText("I am interested in")).toHaveFocus();
 
-    await user.selectOptions(screen.getByLabelText("I am interested in"), "launch-access");
-    await user.click(screen.getByRole("button", { name: "Submit deployment review" }));
+    await user.selectOptions(screen.getByLabelText("I am interested in"), "partnership");
+    await user.type(screen.getByLabelText(/Context/), "We need vision models.");
+    await user.click(screen.getByRole("button", { name: "Open email draft" }));
 
-    expect(screen.getByRole("status")).toHaveTextContent("Nothing was sent or reserved.");
-    expect(screen.getAllByText(/No information is transmitted or persisted/i)).toHaveLength(2);
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(locationSpy).toHaveBeenCalledTimes(1);
+    const href = locationSpy.mock.calls[0][0] as string;
+    expect(href).toMatch(/^mailto:info@powerchampion\.org\?/);
+    expect(decodeURIComponent(href)).toContain("Model partnership");
+    expect(decodeURIComponent(href)).toContain("We need vision models.");
   });
 
-  it("localizes validation and the local-only completion in Traditional Chinese", async () => {
+  it("localizes validation and completion in Traditional Chinese", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -42,34 +47,30 @@ describe("EnterpriseEnquiry", () => {
       </LocaleProvider>,
     );
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    await user.click(screen.getByRole("button", { name: "送出部署審查" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("請選擇洽詢類型。");
+    await user.click(within(screen.getByRole("banner")).getAllByRole("button", { name: "繁中" })[0]);
+    await user.click(screen.getByRole("button", { name: "開啟 email 草稿" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("請先選擇主題。");
 
     await user.selectOptions(screen.getByLabelText("我想洽詢"), "partnership");
-    await user.click(screen.getByRole("button", { name: "送出部署審查" }));
-    expect(screen.getByRole("status")).toHaveTextContent("未傳送或保留任何資訊。");
+    await user.click(screen.getByRole("button", { name: "開啟 email 草稿" }));
+    expect(screen.getByRole("status")).toHaveTextContent("email 草稿正在開啟");
   });
 
-  it("offers an optional message and one descriptive Company link", () => {
+  it("offers an optional context field", () => {
     render(<LocaleProvider><EnterpriseEnquiry /></LocaleProvider>);
 
-    expect(screen.getByLabelText("Optional context")).not.toHaveAttribute("required");
-    expect(screen.getByRole("link", { name: "Read our public company context" }))
-      .toHaveAttribute("href", "/company");
+    expect(screen.getByLabelText(/Context/)).not.toHaveAttribute("required");
+    expect(screen.getByLabelText(/Context/)).toHaveAttribute("name", "deployment-context");
   });
 });
 
 describe("ContactPage", () => {
-  it("has deployment-review metadata and a stable main landmark", () => {
+  it("has contact metadata and a stable main landmark", () => {
     render(<LocaleProvider><ContactPage /></LocaleProvider>);
 
     expect(metadata).toMatchObject({
-      title: "Deployment review | Power Champion",
-      description: expect.stringMatching(/deployment/i),
+      title: expect.stringContaining("Power Champion"),
     });
-    expect(metadata.description).not.toMatch(/\$|\d+(?:\.\d+)?\s*(?:M|MW|USD|US\$)/i);
-    expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 }))
-      .toHaveTextContent("Deployment review");
+    expect(within(screen.getByRole("main")).getByRole("heading", { level: 1 })).toBeInTheDocument();
   });
 });

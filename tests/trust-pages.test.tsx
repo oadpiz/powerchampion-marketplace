@@ -35,8 +35,8 @@ describe("public trust pages", () => {
     expect(question).toHaveAttribute("aria-expanded", "true");
   });
 
-  it.each([[<TermsPage key="terms" />, /does not create a purchase/i], [<PrivacyPage key="privacy" />, /does not transmit or persist/i]])(
-    "preserves the launch boundary",
+  it.each([[<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i], [<PrivacyPage key="privacy" />, /never stored or logged by this site/i]])(
+    "preserves the live-service boundary",
     (page, boundary) => {
       localized(page);
       expect(screen.getByText(boundary)).toBeVisible();

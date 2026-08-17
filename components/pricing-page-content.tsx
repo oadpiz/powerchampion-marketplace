@@ -17,14 +17,14 @@ export function PricingPageContent() {
     : { starter: "入門", builder: "建置", scale: "規模" };
   const packDescriptions: Record<CreditPack["id"], string> = locale === "en"
     ? {
-      starter: "A small-scope planning reference.",
-      builder: "A team planning reference.",
-      scale: "A larger-scope planning reference.",
+      starter: "Prepaid balance for trying every endpoint.",
+      builder: "More runway for continuous workloads.",
+      scale: "For production traffic and teams.",
     }
     : {
-      starter: "小規模規劃參考。",
-      builder: "團隊規劃參考。",
-      scale: "較大規模規劃參考。",
+      starter: "預付餘額，試用所有端點。",
+      builder: "更多額度，支應持續工作負載。",
+      scale: "供正式流量與團隊使用。",
     };
 
   return (
@@ -38,8 +38,8 @@ export function PricingPageContent() {
 
       <section aria-labelledby="planning-packages-title" className="pricing-packs">
         <div className="pricing-block-heading">
-          <p className="eyebrow">{locale === "en" ? "Indicative examples" : "示意方案"}</p>
-          <h2 id="planning-packages-title">{locale === "en" ? "Launch planning references" : "啟動規劃參考"}</h2>
+          <p className="eyebrow">{locale === "en" ? "Prepaid balance" : "預付餘額"}</p>
+          <h2 id="planning-packages-title">{locale === "en" ? "Top up your key" : "為金鑰儲值"}</h2>
         </div>
         <div className="credit-grid">
           {CREDIT_PACKS.map((pack) => (
@@ -48,12 +48,17 @@ export function PricingPageContent() {
               <p className="credit-bonus">{packDescriptions[pack.id]}</p>
               <p className="credit-value">
                 {locale === "en"
-                  ? "Availability and service access are not enabled."
-                  : "可用性與服務存取尚未啟用。"}
+                  ? `US$${pack.price} → US$${pack.credit.toFixed(2)} prepaid balance${pack.bonusPercent > 0 ? ` (incl. ${pack.bonusPercent}% bonus)` : ""}.`
+                  : `US$${pack.price} → US$${pack.credit.toFixed(2)} 預付餘額${pack.bonusPercent > 0 ? `（含 ${pack.bonusPercent}% 加贈）` : ""}。`}
               </p>
             </article>
           ))}
         </div>
+        <p className="pricing-credit-note" style={{ marginTop: 8 }}>
+          {locale === "en"
+            ? "Packs are fulfilled manually with redeem codes — request a key and top-up by email."
+            : "方案以人工儲值碼發放 — 請透過 email 申請金鑰與儲值。"}
+        </p>
         <button className="credit-button pricing-launch-action" onClick={() => openLaunchAccess()} type="button">
           {copy.nav.getTokens}
         </button>
