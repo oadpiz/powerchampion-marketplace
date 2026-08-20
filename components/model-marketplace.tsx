@@ -13,12 +13,22 @@ const categories: ModelCategory[] = [
   "all",
   "coding",
   "reasoning",
+  "vision",
+  "image",
+  "audio",
+  "embedding",
   "general",
   "multilingual",
 ];
 
 function formatRate(rate: number) {
   return `$${rate.toFixed(2)}`;
+}
+
+function getBillingMode(model: ModelDefinition): "token" | "image" | "audio" {
+  if (model.categories.includes("image")) return "image";
+  if (model.categories.includes("audio") || model.id.includes("whisper") || model.id.includes("indextts2")) return "audio";
+  return "token";
 }
 
 export function ModelMarketplace() {
@@ -113,14 +123,43 @@ export function ModelMarketplace() {
                   <dt>{copy.models.context}</dt>
                   <dd>{model.context}</dd>
                 </dl>
-                <dl className="marketplace-summary-fact">
-                  <dt>{copy.models.input}</dt>
-                  <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perMillionInput}</span></dd>
-                </dl>
-                <dl className="marketplace-summary-fact">
-                  <dt>{copy.models.output}</dt>
-                  <dd>{formatRate(model.outputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perMillionOutput}</span></dd>
-                </dl>
+                {(() => {
+                  const billingMode = getBillingMode(model);
+                  if (billingMode === "image") {
+                    return (
+                      <>
+                        <dl className="marketplace-summary-fact">
+                          <dt>{copy.models.input}</dt>
+                          <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perImage}</span></dd>
+                        </dl>
+                        <dl className="marketplace-summary-fact marketplace-summary-fact-placeholder" aria-hidden="true"><dt> </dt><dd> </dd></dl>
+                      </>
+                    );
+                  }
+                  if (billingMode === "audio") {
+                    return (
+                      <>
+                        <dl className="marketplace-summary-fact">
+                          <dt>{copy.models.input}</dt>
+                          <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perMinute}</span></dd>
+                        </dl>
+                        <dl className="marketplace-summary-fact marketplace-summary-fact-placeholder" aria-hidden="true"><dt> </dt><dd> </dd></dl>
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <dl className="marketplace-summary-fact">
+                        <dt>{copy.models.input}</dt>
+                        <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perMillionInput}</span></dd>
+                      </dl>
+                      <dl className="marketplace-summary-fact">
+                        <dt>{copy.models.output}</dt>
+                        <dd>{formatRate(model.outputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perMillionOutput}</span></dd>
+                      </dl>
+                    </>
+                  );
+                })()}
                 <button
                   aria-controls={detailsId}
                   aria-expanded={isExpanded}

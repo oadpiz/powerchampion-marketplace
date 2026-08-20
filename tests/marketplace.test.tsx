@@ -74,12 +74,24 @@ describe("ModelMarketplace", () => {
 
     for (const model of MODEL_CATALOG) {
       const row = screen.getByRole("article", { name: model.name });
-      const inputRate = `$${model.inputPerMillion.toFixed(2)} per 1M input`;
-      const outputRate = `$${model.outputPerMillion.toFixed(2)} per 1M output`;
 
       expect(within(row).getByText(model.context)).toBeVisible();
-      expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
-      expect(within(row).getByText((_, element) => normalizedText(element!) === outputRate)).toBeVisible();
+
+      const isImage = model.categories.includes("image");
+      const isAudio = model.categories.includes("audio") || model.id.includes("whisper") || model.id.includes("indextts2");
+
+      if (isImage) {
+        const inputRate = `$${model.inputPerMillion.toFixed(2)} per image`;
+        expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
+      } else if (isAudio) {
+        const inputRate = `$${model.inputPerMillion.toFixed(2)} per minute of audio`;
+        expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
+      } else {
+        const inputRate = `$${model.inputPerMillion.toFixed(2)} per 1M input`;
+        const outputRate = `$${model.outputPerMillion.toFixed(2)} per 1M output`;
+        expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
+        expect(within(row).getByText((_, element) => normalizedText(element!) === outputRate)).toBeVisible();
+      }
     }
   });
 
