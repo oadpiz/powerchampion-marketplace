@@ -85,19 +85,19 @@ export function HomeContent() {
         </div>
       </section>
 
-      <section aria-label={text.facts} className="proof-strip">
+      <section aria-label={text.facts} className="proof-strip" data-reveal-stagger>
         <div className="proof-item"><strong>{catalogCount}</strong><span>{text.catalogEntries}</span></div>
         <div className="proof-item"><strong>{maxContext}K</strong><span>{text.maximumContext}</span></div>
         <div className="proof-item"><strong>${startingRate.toFixed(2)}</strong><span>{text.startingRate}</span></div>
       </section>
 
-      <section aria-labelledby="featured-models-title" className="home-section model-marketplace">
+      <section aria-labelledby="featured-models-title" className="home-section model-marketplace" data-reveal>
         <div className="section-intro">
           <p className="eyebrow">{copy.models.kicker}</p>
           <h2 id="featured-models-title">{copy.home.modelsTitle}</h2>
           <p>{copy.home.modelsLead}</p>
         </div>
-        <div className="model-list">
+        <div className="model-list" data-reveal-stagger>
           {MODEL_CATALOG.map((model, index) => (
             <article aria-label={model.name} className={`model-row model-row-${model.id}`} key={model.id}>
               <span aria-hidden="true" className="model-rail" />
@@ -119,9 +119,9 @@ export function HomeContent() {
         </div>
       </section>
 
-      <section aria-label={text.access} className="home-section home-access-section">
+      <section aria-label={text.access} className="home-section home-access-section" data-reveal>
         <div className="section-intro section-intro-split"><div><p className="eyebrow">{copy.home.stepsKicker}</p><h2>{copy.home.stepsTitle}</h2></div><p>{text.accessLead}</p></div>
-        <ol className="home-access-steps">
+        <ol className="home-access-steps" data-reveal-stagger>
           {[[text.compare, copy.home.steps.discover], [text.estimate, copy.home.steps.review], [text.request, copy.home.steps.request]].map(([title, detail]) => (
             <li key={title}><h3>{title}</h3><p>{detail}</p></li>
           ))}
@@ -136,14 +136,14 @@ export function HomeContent() {
         <div className="home-console-preview"><ConsoleView compact /></div>
       </section>
 
-      <section aria-label={text.enterprise} className="home-section home-enterprise-bridge">
+      <section aria-label={text.enterprise} className="home-section home-enterprise-bridge" data-reveal>
         <div className="section-intro section-intro-split"><div><p className="eyebrow">{trust.infrastructure.kicker}</p><h2>{text.enterprise}</h2></div><p>{text.enterpriseLead}</p></div>
         <p className="home-enterprise-capacity"><strong>{company.capacity.initialMw}</strong>{company.home.context}</p>
         <a className="text-link" href="/infrastructure">{text.infrastructure}</a>
         <a className="primary-link" href="/contact">{text.deploymentReview}</a>
       </section>
 
-      <section aria-label={text.trust} className="home-section home-trust-strip">
+      <section aria-label={text.trust} className="home-section home-trust-strip" data-reveal>
         <p className="eyebrow">{trust.status.kicker}</p>
         <h2>{text.trust}</h2>
         <p>{text.trustLead}</p>

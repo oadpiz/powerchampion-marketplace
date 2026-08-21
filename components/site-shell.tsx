@@ -9,6 +9,7 @@ import {
 import { usePathname } from "next/navigation";
 import { useLocale } from "./locale-provider";
 import { useModalIsolation } from "./use-modal-isolation";
+import { useScrollReveal } from "./use-scroll-reveal";
 import type { CopyDictionary } from "../lib/content";
 
 type NavigationKey = keyof CopyDictionary["nav"];
@@ -73,6 +74,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
   const pendingMobileCheckoutRef = useRef(false);
 
   useModalIsolation(isMobileMenuOpen, mobileMenuRef);
+  useScrollReveal();
 
   useEffect(() => {
     if (!isMobileMenuOpen || !mobileMenuRef.current) {
