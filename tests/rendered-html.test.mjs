@@ -33,23 +33,23 @@ async function render(pathname, host = "localhost", forwardedHost) {
 const routeMetadata = {
   "/": {
     title: "Power Champion — OpenAI-compatible API · Live",
-    description: "Explore indicative token-access plans for leading open AI models. Launch access is coming soon; pricing and UI data are illustrative, with no funded balance or live API currently available.",
+    description: "One OpenAI-compatible endpoint for leading open AI models — text, vision, image, speech, and embeddings. Live API, prepaid balance, one key.",
   },
   "/models": {
     title: "Open Model Catalog | Power Champion",
-    description: "Compare illustrative open-model token rates, limits, features, and release-review states.",
+    description: "Compare live open-model token rates, context limits, features, and availability.",
   },
   "/pricing": {
-    title: "Illustrative pricing | Power Champion",
-    description: "Illustrative token rates and local launch-access planning; no payment or funded balance is available.",
+    title: "Pricing | Power Champion",
+    description: "Live token rates for every model — pay per use from prepaid balance. No subscription required.",
   },
   "/infrastructure": {
     title: "Infrastructure review | Power Champion",
     description: "Source-qualified infrastructure context and release gates for the Power Champion launch site; not a live deployment status.",
   },
   "/docs": {
-    title: "Documentation preview | Power Champion",
-    description: "Non-operational integration examples and release-gated future access for Power Champion.",
+    title: "Documentation | Power Champion",
+    description: "Quick start for the OpenAI-compatible API at b300.powerchampion.ai — cURL, Python, and JavaScript examples.",
   },
   "/trust": {
     title: "Trust review | Power Champion",
@@ -68,8 +68,8 @@ const routeMetadata = {
     description: "Review non-binding deployment interests locally in your browser.",
   },
   "/console": {
-    title: "Console preview | Power Champion",
-    description: "A local illustrative console preview with no account, funded balance, usable key, or live usage.",
+    title: "Console | Power Champion",
+    description: "Check your prepaid API balance with your key. Queries the gateway live; the key is never stored.",
   },
   "/faq": {
     title: "FAQ | Power Champion",
@@ -126,7 +126,7 @@ test("server-renders a complete English marketplace shell with social metadata",
     assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
     assert.doesNotMatch(
       html,
-      /all systems operational|buy now|funded account|live inference|SOC 2 certified|ISO 27001 certified|we own (?:a|the) data cent(?:re|er)|deployed 3\.1 MW/i,
+      /buy now|funded account|SOC 2 certified|ISO 27001 certified|we own (?:a|the) data cent(?:re|er)|deployed 3\.1 MW/i,
     );
     assert.match(html, /property="og:title" content="OpenAI-compatible API · Live\."/);
     assert.match(html, /property="og:image:width" content="1200"/);
@@ -201,12 +201,12 @@ test("server-renders route-specific launch boundaries and protected facts", asyn
   assert.match(homeHtml, /href="\/contact"[^>]*>Deployment review/i);
 
   const statusHtml = await (await render("/status")).text();
-  assert.match(statusHtml, /Inference API[\s\S]*Not ready/i);
-  assert.match(statusHtml, /Payments[\s\S]*Not ready/i);
+  assert.match(statusHtml, /Inference API[\s\S]*Ready/i);
+  assert.match(statusHtml, /Payments[\s\S]*Ready/i);
 
   const docsHtml = await (await render("/docs")).text();
-  assert.match(docsHtml, /non-operational examples only/i);
-  assert.match(docsHtml, /sk-b300-YOUR-KEY/i);
+  assert.match(docsHtml, /Live — the endpoint below is operational/i);
+  assert.match(docsHtml, /\u00abredacted:sk-\u2026\u00bb/i);
 
   const contactHtml = await (await render("/contact")).text();
   assert.doesNotMatch(contactHtml, /<(?:input|textarea|select)[^>]+(?:card|bank|email|password|payment|billing)/i);
@@ -227,7 +227,7 @@ test("server-renders local-only contact without payment or personal-data fields"
   assert.match(html, /<title>Deployment review \| Power Champion<\/title>/);
   assert.match(html, /Deployment review/i);
   assert.match(html, /No information is transmitted or persisted/i);
-  assert.match(html, /<option value="launch-access">Launch access<\/option>/);
+  assert.match(html, /<option value="launch-access">API access<\/option>/);
   assert.doesNotMatch(html, /<form[^>]+action=/i);
   assert.match(html, /href="\/company"/);
   assert.doesNotMatch(html, /<(?:input|textarea)[^>]+(?:card|bank|email|password|payment|billing)/i);
@@ -270,34 +270,32 @@ test("server-renders the model marketplace", async () => {
   assert.match(html, /Qwen/i);
 });
 
-test("server-renders non-binding launch access without payment fields", async () => {
+test("server-renders prepaid pricing without payment fields", async () => {
   const response = await render("/pricing");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Indicative packages. No commitment./i);
-  assert.match(html, /Join launch access/i);
-  assert.match(html, /do not create orders, charges, or reservations/i);
+  assert.match(html, /Pay per use\. No subscription\./i);
+  assert.match(html, /Top up your key/i);
+  assert.match(html, /redeem codes/i);
   assert.doesNotMatch(html, /<input[^>]+(?:card|payment|billing)/i);
   assert.match(html, /Estimate usage/i);
-  assert.match(html, /How token billing works/i);
   assert.match(html, /Model rates/i);
 });
 
-test("server-renders docs and the local illustrative console preview", async () => {
+test("server-renders docs and the live console", async () => {
   const docs = await render("/docs");
   const docsHtml = await docs.text();
   assert.equal(docs.status, 200);
   assert.match(docsHtml, /One endpoint\. Familiar tools\./i);
-  assert.match(docsHtml, /Public preview/i);
+  assert.match(docsHtml, /Live — the endpoint below is operational/i);
   assert.match(docsHtml, /Protected access/i);
-  assert.match(docsHtml, /sk-b300-YOUR-KEY/i);
+  assert.match(docsHtml, /\u00abredacted:sk-\u2026\u00bb/i);
 
   const consoleResponse = await render("/console");
   const consoleHtml = await consoleResponse.text();
   assert.equal(consoleResponse.status, 200);
-  assert.match(consoleHtml, /Launch preview — illustrative only/i);
-  assert.match(consoleHtml, /Local display only\. No account, funded balance, usable API key, live API, or live usage\./i);
-  assert.match(consoleHtml, /Join launch access/i);
-  assert.match(consoleHtml, /\$184\.20/);
+  assert.match(consoleHtml, /Live — queries the gateway directly/i);
+  assert.match(consoleHtml, /Check your balance/i);
+  assert.match(consoleHtml, /Need a key\?/i);
   assert.doesNotMatch(consoleHtml, /sk-[A-Za-z0-9]{12}/);
 });

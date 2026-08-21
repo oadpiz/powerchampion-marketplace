@@ -35,7 +35,7 @@ describe("public trust pages", () => {
     expect(question).toHaveAttribute("aria-expanded", "true");
   });
 
-  it.each([[<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i], [<PrivacyPage key="privacy" />, /never stored or logged by this site/i]])(
+  it.each([[<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i], [<PrivacyPage key="privacy" />, /not transmitted to this site's server and is not persisted or logged/i]])(
     "preserves the live-service boundary",
     (page, boundary) => {
       localized(page);

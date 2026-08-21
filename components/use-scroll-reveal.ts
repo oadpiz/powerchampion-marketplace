@@ -12,10 +12,24 @@ import { useEffect } from "react";
  */
 export function useScrollReveal() {
   useEffect(() => {
-    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
 
-    if (prefersReduced || elements.length === 0) {
+    if (elements.length === 0) return;
+
+    // Guard for environments without matchMedia (jsdom, very old browsers)
+    const matchMedia =
+      typeof window !== "undefined" ? window.matchMedia : undefined;
+    const prefersReduced = matchMedia
+      ? matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false;
+
+    if (prefersReduced) {
+      elements.forEach((el) => el.setAttribute("data-revealed", "true"));
+      return;
+    }
+
+    // Guard for environments without IntersectionObserver
+    if (typeof IntersectionObserver === "undefined") {
       elements.forEach((el) => el.setAttribute("data-revealed", "true"));
       return;
     }

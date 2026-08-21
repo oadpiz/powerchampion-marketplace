@@ -139,9 +139,9 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
     privacy: {
       kicker: "Privacy",
       title: "Privacy boundary",
-      lead: "What this site processes, and what the API meter records.",
+      lead: "What this launch site processes, and what the API meter records.",
       sections: [
-        { id: "current-interactions", title: "What this site processes", body: ["The pricing estimator runs in your browser. The balance checker sends your API key only to the b300 gateway (POST /api/balance) to look up your balance; it is never stored or logged by this site."] },
+        { id: "current-interactions", title: "What this site processes", body: ["The pricing estimator runs in your browser. The balance checker sends your API key only to the b300 gateway (POST /api/balance) to look up your balance; it is not transmitted to this site's server and is not persisted or logged."] },
         { id: "api-usage-data", title: "API usage data", body: ["Requests to the API itself are metered by the b300 gateway for billing (tokens, timestamps, model). This is operational billing data for the service you call — see the data-retention policy at b300.powerchampion.ai/data-retention."] },
         { id: "future-changes", title: "Future changes", body: ["If a future release changes data handling, the public privacy notice and the relevant service controls will be updated before that release."] },
       ],
@@ -170,9 +170,9 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
     privacy: {
       kicker: "隱私權",
       title: "隱私權邊界",
-      lead: "本站處理什麼，以及 API 計費記錄什麼。",
+      lead: "本上線站處理什麼，以及 API 計費記錄什麼。",
       sections: [
-        { id: "current-interactions", title: "本站處理的資料", body: ["價格估算器在你的瀏覽器中執行。餘額查詢只會把你的 API 金鑰送到 b300 閘道（POST /api/balance）查詢餘額；本站不會儲存或記錄金鑰。"] },
+        { id: "current-interactions", title: "本站處理的資料", body: ["價格估算器在你的瀏覽器中執行。餘額查詢只會把你的 API 金鑰送到 b300 閘道（POST /api/balance）查詢餘額；金鑰不會傳輸至本站伺服器，也不會被儲存或記錄。"] },
         { id: "api-usage-data", title: "API 用量資料", body: ["對 API 本身的請求會由 b300 閘道計量以供計費（Token 數、時間、模型）。這是你所呼叫服務的營運計費資料 — 詳見 b300.powerchampion.ai/data-retention。"] },
         { id: "future-changes", title: "未來變更", body: ["若未來版本變更資料處理方式，會在發布前更新公開隱私權聲明與相關服務控制。"] },
       ],

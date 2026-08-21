@@ -77,6 +77,9 @@ export function EnterpriseEnquiry() {
         <p>{locale === "en"
           ? "Pick a topic and add context — we reply by email. For API keys, use “Get API access” for a prefilled request."
           : "選擇主題並補充背景 — 我們會以 email 回覆。若要申請 API 金鑰，可用「取得 API 存取」的預填申請。"}</p>
+        <p className="enquiry-privacy">{locale === "en"
+          ? "No information is transmitted or persisted until you send the email yourself."
+          : "在你自行寄出 email 之前，不會有任何資訊被傳輸或儲存。"}</p>
       </div>
 
       <form className="enquiry-form" noValidate onSubmit={submitEnquiry}>

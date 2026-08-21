@@ -6,7 +6,7 @@ import { CodeSamples } from "./code-samples";
 import { useLocale } from "./locale-provider";
 
 const BASE_URL = "https://b300.powerchampion.ai/v1";
-const DEMO_KEY = "sk-b300-YOUR-KEY";
+const DEMO_KEY = "«redacted:sk-…»";
 
 type ModelFeatureGate = "streaming" | "tools" | "structuredOutput";
 

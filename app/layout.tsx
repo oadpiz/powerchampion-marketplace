@@ -56,7 +56,7 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: metadataOrigin(host),
     twitter: {
       card: "summary_large_image",
-      title: "OpenAI-compatible API · Live",
+      title: "OpenAI-compatible API · Live.",
       description: "One OpenAI-compatible endpoint for leading open AI models. Live API, prepaid balance, one key.",
       images: ["/og.png"],
     },
@@ -67,6 +67,58 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+const ORGANIZATION_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Power Champion",
+  url: "https://powerchampion.ai",
+  description:
+    "One OpenAI-compatible endpoint for leading open AI models — text, vision, image, speech, and embeddings. Live API, prepaid balance, one key.",
+};
+
+const WEBSITE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Power Champion",
+  url: "https://powerchampion.ai",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: "https://powerchampion.ai/models?q={search_term_string}",
+    "query-input": "required name=search_term_string",
+  },
+};
+
+const SERVICE_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "WebAPI",
+  name: "Power Champion API",
+  description:
+    "OpenAI-compatible API for leading open AI models. Prepaid balance, one key, pay per use.",
+  url: "https://powerchampion.ai",
+  documentation: "https://powerchampion.ai/docs",
+  termsOfService: "https://powerchampion.ai/terms",
+  provider: {
+    "@type": "Organization",
+    name: "Power Champion",
+    url: "https://powerchampion.ai",
+  },
+};
+
+function StructuredData() {
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify([
+          ORGANIZATION_JSON_LD,
+          WEBSITE_JSON_LD,
+          SERVICE_JSON_LD,
+        ]),
+      }}
+    />
+  );
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -74,6 +126,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <StructuredData />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
