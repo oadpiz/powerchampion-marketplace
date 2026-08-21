@@ -43,7 +43,7 @@ describe("public trust pages", () => {
     },
   );
 
-  it("renders the published infrastructure destination with release-gated stages", async () => {
+  it("renders the published infrastructure destination with live stages", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
@@ -51,14 +51,14 @@ describe("public trust pages", () => {
       </LocaleProvider>,
     );
 
-    expect(screen.getByRole("heading", { level: 1, name: /future delivery/i })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: /live delivery/i })).toBeVisible();
     expect(screen.getAllByText(/counterparty-reported expected hosting capacity; not live or completed deployment/i)).not.toHaveLength(0);
-    expect(screen.getByText(/model serving remains release-gated/i)).toBeVisible();
-    expect(screen.getByText(/public integration preview/i)).toBeVisible();
+    expect(screen.getByText(/model serving is live/i)).toBeVisible();
+    expect(screen.getByText(/live at b300\.powerchampion\.ai/i)).toBeVisible();
     expect(screen.getByRole("link", { name: "Deployment review" })).toHaveAttribute("href", "/contact");
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    expect(screen.getByRole("heading", { level: 1, name: /未來交付/i })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: /即時交付/i })).toBeVisible();
   });
 
   it("renders the trust evidence sections with policy and source links", () => {

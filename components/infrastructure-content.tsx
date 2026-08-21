@@ -6,8 +6,8 @@ import { useLocale } from "./locale-provider";
 
 const stages = [
   { id: "capacity", state: "counterparty-context" },
-  { id: "serving", state: "release-gated" },
-  { id: "delivery", state: "preview" },
+  { id: "serving", state: "live" },
+  { id: "delivery", state: "live" },
 ] as const;
 
 export function InfrastructureContent() {
