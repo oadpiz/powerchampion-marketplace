@@ -12,7 +12,7 @@ import { useEffect } from "react";
  */
 export function useScrollReveal() {
   useEffect(() => {
-    const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal]"));
+    const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-reveal], [data-reveal-stagger]"));
 
     if (elements.length === 0) return;
 
