@@ -1018,10 +1018,19 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   .site-navigation, .site-actions > .token-button { display: none; }
   .menu-trigger { display: flex; align-items: center; min-height: 44px; }
   .text-link { min-height: 44px; display: inline-flex; align-items: center; }
+  .primary-link { min-height: 44px; }
   .site-footer nav a { min-height: 44px; display: inline-flex; align-items: center; }
   .site-footer .footer-company a { min-height: 44px; display: inline-flex; align-items: center; }
   .home-trust-strip a { min-height: 44px; display: inline-flex; align-items: center; }
   .contact-details a { min-height: 44px; display: inline-flex; align-items: center; }
+  .company-related-links a { min-height: 44px; display: inline-flex; align-items: center; }
+  .enquiry-company-link { min-height: 44px; display: inline-flex; align-items: center; }
+  .trust-policy-links a { min-height: 44px; display: inline-flex; align-items: center; }
+  .preparation-page nav a { min-height: 44px; display: inline-flex; align-items: center; }
+  .marketplace-categories button { min-height: 44px; display: inline-flex; align-items: center; }
+  .marketplace-expand { width: 44px; height: 44px; }
+  .code-tabs button { min-height: 44px; display: inline-flex; align-items: center; }
+  .code-sample-actions button, .demo-key-actions button { min-height: 44px; display: inline-flex; align-items: center; }
   .hero {
     min-height: 680px;
     display: flex;
@@ -1105,9 +1114,18 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   .site-actions { gap: .35rem; }
   .locale-toggle button { padding-inline: .5rem; min-height: 44px; display: inline-flex; align-items: center; }
   .text-link { min-height: 44px; display: inline-flex; align-items: center; }
+  .primary-link { min-height: 44px; }
   .site-footer nav a { min-height: 44px; display: inline-flex; align-items: center; }
   .site-footer .footer-company a { min-height: 44px; display: inline-flex; align-items: center; }
   .home-trust-strip a { min-height: 44px; display: inline-flex; align-items: center; }
+  .company-related-links a { min-height: 44px; display: inline-flex; align-items: center; }
+  .enquiry-company-link { min-height: 44px; display: inline-flex; align-items: center; }
+  .trust-policy-links a { min-height: 44px; display: inline-flex; align-items: center; }
+  .preparation-page nav a { min-height: 44px; display: inline-flex; align-items: center; }
+  .marketplace-categories button { min-height: 44px; display: inline-flex; align-items: center; }
+  .marketplace-expand { width: 44px; height: 44px; }
+  .code-tabs button { min-height: 44px; display: inline-flex; align-items: center; }
+  .code-sample-actions button, .demo-key-actions button { min-height: 44px; display: inline-flex; align-items: center; }
   .mobile-navigation a { min-height: 44px; display: flex; align-items: center; }
   .contact-details a { min-height: 44px; display: inline-flex; align-items: center; }
   .hero { min-height: 640px; }
