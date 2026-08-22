@@ -1019,6 +1019,8 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   .menu-trigger { display: flex; align-items: center; min-height: 44px; }
   .text-link { min-height: 44px; display: inline-flex; align-items: center; }
   .site-footer nav a { min-height: 44px; display: inline-flex; align-items: center; }
+  .site-footer .footer-company a { min-height: 44px; display: inline-flex; align-items: center; }
+  .home-trust-strip a { min-height: 44px; display: inline-flex; align-items: center; }
   .contact-details a { min-height: 44px; display: inline-flex; align-items: center; }
   .hero {
     min-height: 680px;
@@ -1104,6 +1106,8 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   .locale-toggle button { padding-inline: .5rem; min-height: 44px; display: inline-flex; align-items: center; }
   .text-link { min-height: 44px; display: inline-flex; align-items: center; }
   .site-footer nav a { min-height: 44px; display: inline-flex; align-items: center; }
+  .site-footer .footer-company a { min-height: 44px; display: inline-flex; align-items: center; }
+  .home-trust-strip a { min-height: 44px; display: inline-flex; align-items: center; }
   .mobile-navigation a { min-height: 44px; display: flex; align-items: center; }
   .contact-details a { min-height: 44px; display: inline-flex; align-items: center; }
   .hero { min-height: 640px; }
