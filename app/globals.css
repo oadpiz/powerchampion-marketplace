@@ -203,7 +203,7 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .site-footer { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; margin-top: auto; padding: 2.5rem 0; border-top: 1px solid var(--line); color: var(--muted); font-size: .875rem; }
 .site-footer nav { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; }
 .footer-locale-toggle { display: flex; flex: 0 0 auto; gap: .75rem; }
-.footer-locale-toggle button { border: 0; padding: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.footer-locale-toggle button { border: 0; padding: .35rem .25rem; min-height: 44px; display: inline-flex; align-items: center; background: transparent; color: var(--muted); cursor: pointer; }
 .footer-locale-toggle button[aria-pressed="true"] { color: var(--ink); text-decoration: underline; text-underline-offset: .25rem; }
 
 .home-page { flex: 1; }
@@ -617,7 +617,7 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .balance-result dd strong { display: inline; margin: 0; font-size: clamp(1.6rem, 3.5vw, 2.4rem); font-weight: 540; letter-spacing: -.04em; color: var(--cyan); }
 .balance-error { margin: 1.25rem 0 0; color: #ffb8c2; font-size: .9rem; }
 .balance-hint { margin: 1.5rem 0 0; color: var(--muted); font-size: .8125rem; }
-.balance-request-link { border: 0; padding: 0; background: none; color: var(--cyan); cursor: pointer; font-size: .8125rem; text-decoration: underline; text-underline-offset: .25rem; }
+.balance-request-link { border: 0; padding: .35rem .25rem; min-height: 44px; display: inline-flex; align-items: center; background: none; color: var(--cyan); cursor: pointer; font-size: .8125rem; text-decoration: underline; text-underline-offset: .25rem; }
 .usage-heading { display: flex; justify-content: space-between; align-items: baseline; }
 .usage-heading strong { font-size: 1.5rem; font-weight: 540; }
 .usage-heading strong span { color: var(--muted); font-size: .8125rem; font-weight: 450; }
@@ -1016,7 +1016,10 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 @media (max-width: 720px) {
   :root { --section-space: 58px; --page-frame: 40px; }
   .site-navigation, .site-actions > .token-button { display: none; }
-  .menu-trigger { display: block; }
+  .menu-trigger { display: flex; align-items: center; min-height: 44px; }
+  .text-link { min-height: 44px; display: inline-flex; align-items: center; }
+  .site-footer nav a { min-height: 44px; display: inline-flex; align-items: center; }
+  .contact-details a { min-height: 44px; display: inline-flex; align-items: center; }
   .hero {
     min-height: 680px;
     display: flex;
@@ -1098,7 +1101,11 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   :root { --page-frame: 28px; --section-space: 52px; }
   .site-header { min-height: 74px; }
   .site-actions { gap: .35rem; }
-  .locale-toggle button { padding-inline: .5rem; }
+  .locale-toggle button { padding-inline: .5rem; min-height: 44px; display: inline-flex; align-items: center; }
+  .text-link { min-height: 44px; display: inline-flex; align-items: center; }
+  .site-footer nav a { min-height: 44px; display: inline-flex; align-items: center; }
+  .mobile-navigation a { min-height: 44px; display: flex; align-items: center; }
+  .contact-details a { min-height: 44px; display: inline-flex; align-items: center; }
   .hero { min-height: 640px; }
   .hero-copy { padding-top: 220px; padding-bottom: 48px; }
   .hero h1 { font-size: clamp(3rem, 16vw, 4rem); }
@@ -1213,6 +1220,15 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 /* ── Motion layer: entrance, depth, beam, glow ── */
 
 /* Scroll reveal — elements start hidden, animate in when data-revealed */
+/* Progressive enhancement: if scripting is disabled, all reveal content
+   is visible immediately (no opacity:0 lock). */
+@media (scripting: none) {
+  [data-reveal],
+  [data-reveal-stagger] > * {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
 [data-reveal] {
   opacity: 0;
   transform: translateY(24px);
