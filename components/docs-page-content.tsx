@@ -74,6 +74,21 @@ export function DocsPageContent() {
         </ul>
       </section>
 
+      <section aria-labelledby="endpoints-title" className="docs-quick-start docs-endpoints">
+        <h2 id="endpoints-title">{locale === "en" ? "Available endpoints" : "可用端點"}</h2>
+        <dl className="docs-values">
+          <div><dt>POST /v1/chat/completions</dt><dd>{locale === "en" ? "Chat, reasoning, coding (GLM 5.2 FP8, Qwen3-VL 30B)" : "對話、推理、程式開發（GLM 5.2 FP8、Qwen3-VL 30B）"}</dd></div>
+          <div><dt>POST /v1/images/generations</dt><dd>{locale === "en" ? "Text-to-image (Flux Schnell, Chroma1 HD)" : "文生圖（Flux Schnell、Chroma1 HD）"}</dd></div>
+          <div><dt>POST /v1/audio/transcriptions</dt><dd>{locale === "en" ? "Speech-to-text (Whisper Large v3)" : "語音轉文字（Whisper Large v3）"}</dd></div>
+          <div><dt>POST /v1/audio/speech</dt><dd>{locale === "en" ? "Text-to-speech (IndexTTS2)" : "文字轉語音（IndexTTS2）"}</dd></div>
+          <div><dt>POST /v1/embeddings</dt><dd>{locale === "en" ? "Embeddings for RAG (BGE-M3)" : "RAG 嵌入向量（BGE-M3）"}</dd></div>
+          <div><dt>POST /v1/rerank</dt><dd>{locale === "en" ? "Document reranking (BGE Reranker v2-m3)" : "文件重排（BGE Reranker v2-m3）"}</dd></div>
+          <div><dt>GET /v1/models</dt><dd>{locale === "en" ? "List available models" : "列出可用模型"}</dd></div>
+          <div><dt>GET /dashboard/billing/subscription</dt><dd>{locale === "en" ? "Check prepaid balance" : "查詢預付餘額"}</dd></div>
+          <div><dt>POST /v1/redeem</dt><dd>{locale === "en" ? "Redeem a top-up code" : "使用儲值碼加值"}</dd></div>
+        </dl>
+      </section>
+
       <CodeSamples />
     </main>
   );

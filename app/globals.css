@@ -691,6 +691,11 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .docs-release-gates li { border: 1px solid var(--line); padding: .8rem; color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; line-height: 1.45; }
 .code-samples { margin-top: 4rem; }
 .code-sample-notice { margin: 0 0 1rem; color: var(--muted); font-size: .875rem; }
+.code-group-selector { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
+.code-group-selector button { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .9rem; background: transparent; color: var(--muted); cursor: pointer; font-size: .8125rem; font-weight: 500; transition: color 140ms ease, border-color 140ms ease, background 140ms ease; }
+.code-group-selector button:hover { border-color: var(--cyan); color: var(--cyan); }
+.code-group-selector button[aria-pressed="true"] { border-color: var(--cyan); color: var(--cyan); background: rgba(85, 231, 255, .06); }
+.code-group-description { margin: 0 0 1.25rem; color: var(--muted); font-size: .8125rem; line-height: 1.5; }
 .code-tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
 .code-sample-panel { border: 1px solid rgba(255, 255, 255, .08); border-radius: 10px; background: var(--surface); overflow: hidden; }
 .code-tabs button { border: 1px solid var(--line); border-radius: 999px; padding: .45rem .8rem; background: transparent; color: var(--muted); cursor: pointer; font-size: .8125rem; transition: color 140ms ease, border-color 140ms ease; }
@@ -1030,6 +1035,7 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   .marketplace-categories button { min-height: 44px; display: inline-flex; align-items: center; }
   .marketplace-expand { width: 44px; height: 44px; }
   .code-tabs button { min-height: 44px; display: inline-flex; align-items: center; }
+  .code-group-selector button { min-height: 44px; display: inline-flex; align-items: center; }
   .code-sample-actions button, .demo-key-actions button { min-height: 44px; display: inline-flex; align-items: center; }
   .hero {
     min-height: 680px;
@@ -1125,6 +1131,7 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
   .marketplace-categories button { min-height: 44px; display: inline-flex; align-items: center; }
   .marketplace-expand { width: 44px; height: 44px; }
   .code-tabs button { min-height: 44px; display: inline-flex; align-items: center; }
+  .code-group-selector button { min-height: 44px; display: inline-flex; align-items: center; }
   .code-sample-actions button, .demo-key-actions button { min-height: 44px; display: inline-flex; align-items: center; }
   .mobile-navigation a { min-height: 44px; display: flex; align-items: center; }
   .contact-details a { min-height: 44px; display: inline-flex; align-items: center; }
