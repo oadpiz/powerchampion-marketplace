@@ -214,10 +214,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
           ))}
         </div>
         <div className="footer-company">
-          <p><strong>PowerChampion</strong> — 7F, No. 38-1, Section 1, Ren&rsquo;ai Rd, Zhongzheng District, Taipei City 100, Taiwan</p>
+          <p><strong>PowerChampion</strong> — {locale === "en" ? "7F, No. 38-1, Section 1, Ren'ai Rd, Zhongzheng District, Taipei City 100, Taiwan" : "100 台北市中正區仁愛路一段 38-1 號 7 樓"}</p>
           <p>
-            Tel <a href="tel:+886223960605">+886 2 2396 0605</a>
-            {" · "}Email <a href="mailto:info@powerchampion.org">info@powerchampion.org</a>
+            {locale === "en" ? "Tel" : "電話"} <a href="tel:+886****0605">+886 2 2396 0605</a>
+            {" · "}{locale === "en" ? "Email" : "信箱"} <a href="mailto:info@powerchampion.org">info@powerchampion.org</a>
             {" · "}API <a href="https://b300.powerchampion.ai">b300.powerchampion.ai</a>
           </p>
         </div>
