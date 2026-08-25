@@ -63,8 +63,10 @@ describe("responsive marketplace contracts", () => {
     const css = await stylesheet();
     const tablet = mediaBlock(css, 820);
 
-    expect(tablet).toMatch(/\.site-navigation\s*,\s*\.site-actions\s*>\s*\.token-button\s*\{[^}]*display:\s*none/);
+    expect(tablet).toMatch(/\.site-navigation\s*\{[^}]*display:\s*none/);
     expect(tablet).toMatch(/\.menu-trigger\s*\{[^}]*display:\s*block/);
+    // CTA stays visible on tablet — only hidden at phone width (720px)
+    expect(tablet).not.toMatch(/\.site-actions\s*>\s*\.token-button\s*\{[^}]*display:\s*none/);
     expect(css).not.toMatch(/@media\s*\(min-width:\s*721px\)[\s\S]*?\.mobile-navigation\s*\{[^}]*display:\s*none/);
     expect(css).toMatch(/@media\s*\(min-width:\s*821px\)[\s\S]*?\.mobile-navigation\s*\{[^}]*display:\s*none/);
   });

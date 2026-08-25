@@ -70,19 +70,22 @@ const ROUTE_METADATA = {
   },
 } satisfies Record<RoutePath, { title: string; description: string }>;
 
-const SOCIAL_METADATA = {
-  title: "OpenAI-compatible API · Live.",
-  description: "One OpenAI-compatible endpoint for leading open AI models. Live API, prepaid balance, one key.",
-};
-
 export function metadataForRoute(pathname: RoutePath): Metadata {
+  const route = ROUTE_METADATA[pathname];
   return {
-    ...ROUTE_METADATA[pathname],
+    ...route,
     alternates: { canonical: pathname },
     openGraph: {
-      ...SOCIAL_METADATA,
+      title: route.title,
+      description: route.description,
       url: pathname,
       images: [{ url: "/og.png", width: 1200, height: 630 }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: route.title,
+      description: route.description,
+      images: ["/og.png"],
     },
   };
 }

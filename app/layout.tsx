@@ -54,12 +54,6 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     ...metadataForRoute("/"),
     metadataBase: metadataOrigin(host),
-    twitter: {
-      card: "summary_large_image",
-      title: "OpenAI-compatible API · Live.",
-      description: "One OpenAI-compatible endpoint for leading open AI models. Live API, prepaid balance, one key.",
-      images: ["/og.png"],
-    },
     icons: {
       icon: "/favicon.png",
       shortcut: "/favicon.png",
@@ -81,11 +75,6 @@ const WEBSITE_JSON_LD = {
   "@type": "WebSite",
   name: "Power Champion",
   url: "https://powerchampion.ai",
-  potentialAction: {
-    "@type": "SearchAction",
-    target: "https://powerchampion.ai/models?q={search_term_string}",
-    "query-input": "required name=search_term_string",
-  },
 };
 
 const SERVICE_JSON_LD = {

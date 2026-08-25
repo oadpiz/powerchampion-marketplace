@@ -80,7 +80,7 @@ export function HomeContent() {
           <p className="hero-launch-status" role="status">{copy.home.launchStatus}</p>
           <div className="hero-actions">
             <a className="primary-link" href="/pricing">{text.compareRates}</a>
-            <a className="text-link" href="/contact">{text.deploymentReview} <span aria-hidden="true">↗</span></a>
+            <a className="text-link" href="/contact">{text.deploymentReview} <span aria-hidden="true">→</span></a>
           </div>
         </div>
       </section>
