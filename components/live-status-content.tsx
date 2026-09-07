@@ -1,6 +1,6 @@
 "use client";
 
-import { SERVICE_READINESS, isReady } from "../lib/trust";
+import { SERVICE_READINESS, deriveGatewayReadiness, isReady } from "../lib/trust";
 import { useLocale } from "./locale-provider";
 import type { GatewayStatus } from "../lib/gateway-status";
 
@@ -21,20 +21,22 @@ function fmtContext(v: number | null, id: string): string {
 }
 
 /**
- * Live status ledger: static service-readiness rows (the marketplace's own
- * release gates) followed by per-model availability measured by the API
- * gateway. Gateway unreachable → the model table renders an offline note
- * rather than pretending nothing serves.
+ * Live status ledger: the website row reflects this site itself; backend rows
+ * (manifest/inference/usage/payments) are derived from the gateway's live
+ * /status.json — never statically claimed ready. Gateway unreachable →
+ * backend rows show "Not verified" and the model table renders an offline
+ * note rather than pretending nothing serves.
  */
 export function LiveStatusContent({ gateway, fetchedAt }: Props) {
   const { locale } = useLocale();
   const trust = locale === "zh" ? ZH : EN;
+  const derived = deriveGatewayReadiness(gateway);
   const rows = [
     [trust.labels.website, SERVICE_READINESS.website],
-    [trust.labels.manifest, SERVICE_READINESS.manifest],
-    [trust.labels.inference, SERVICE_READINESS.inference],
-    [trust.labels.usageAccounting, SERVICE_READINESS.usageAccounting],
-    [trust.labels.payments, SERVICE_READINESS.payments],
+    [trust.labels.manifest, derived.manifest],
+    [trust.labels.inference, derived.inference],
+    [trust.labels.usageAccounting, derived.usageAccounting],
+    [trust.labels.payments, derived.payments],
     [trust.labels.enterpriseReview, SERVICE_READINESS.enterpriseReview],
   ] as const;
 
@@ -120,6 +122,8 @@ const EN = {
   },
   states: {
     ready: "Ready",
+    degraded: "Degraded",
+    unknown: "Not verified",
     preview: "Preview",
     preparation: "In preparation",
     "not-ready": "Not ready",
@@ -151,6 +155,8 @@ const ZH = {
   },
   states: {
     ready: "已就緒",
+    degraded: "部分可用",
+    unknown: "未驗證",
     preview: "預覽",
     preparation: "準備中",
     "not-ready": "未就緒",

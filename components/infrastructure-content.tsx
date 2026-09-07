@@ -1,7 +1,8 @@
 "use client";
 
 import { COMPANY_CONTENT, COMPANY_SOURCES } from "../lib/company";
-import { SERVICE_READINESS, TRUST_CONTENT, isReady } from "../lib/trust";
+import { SERVICE_READINESS, TRUST_CONTENT, deriveGatewayReadiness, isReady } from "../lib/trust";
+import type { GatewayStatus } from "../lib/gateway-status";
 import { useLocale } from "./locale-provider";
 
 const stages = [
@@ -10,13 +11,17 @@ const stages = [
   { id: "delivery", state: "live" },
 ] as const;
 
-export function InfrastructureContent() {
+type Props = {
+  gateway: GatewayStatus | null;
+};
+
+export function InfrastructureContent({ gateway }: Props) {
   const { locale } = useLocale();
   const company = COMPANY_CONTENT[locale];
   const trust = TRUST_CONTENT[locale];
   const source = COMPANY_SOURCES[0];
   const sourceCopy = source.copy[locale];
-  const servingState = SERVICE_READINESS.inference;
+  const servingState = deriveGatewayReadiness(gateway).inference;
   const deliveryState = SERVICE_READINESS.website;
 
   const stageCopy = {

@@ -10,6 +10,12 @@ services:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: 0.0.0.0
+      # Server-side origin of the b300 gateway, consumed by /status and
+      # /api/balance. Unset keeps the public hostname
+      # https://b300.powerchampion.ai (the app's built-in fallback); set
+      # GATEWAY_ORIGIN in the Dokploy environment (or a .env file) to point a
+      # stage or prod deployment at a different gateway without rebuilding.
+      GATEWAY_ORIGIN: ${GATEWAY_ORIGIN:-https://b300.powerchampion.ai}
     networks:
       - dokploy-network
       - default

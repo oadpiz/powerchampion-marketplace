@@ -1,7 +1,8 @@
 "use client";
 
 import { MODEL_CATALOG } from "../lib/models";
-import { SERVICE_READINESS, TRUST_CONTENT, isReady, type ReadinessState } from "../lib/trust";
+import { TRUST_CONTENT, deriveGatewayReadiness, isReady, type ReadinessState } from "../lib/trust";
+import type { GatewayStatus } from "../lib/gateway-status";
 import { CodeSamples } from "./code-samples";
 import { useLocale } from "./locale-provider";
 
@@ -15,21 +16,30 @@ export function modelFeatureGateState(
   models: ReadonlyArray<Pick<(typeof MODEL_CATALOG)[number], "available" | "features">>,
   feature: ModelFeatureGate,
 ): ReadinessState {
-  return isReady(inference) && models.length > 0 && models.every((model) => model.available && model.features[feature])
+  // An unverified/degraded inference signal is passed through as-is — the
+  // gate must not claim "ready" on unverified input, nor mask "unknown"
+  // behind a definitive "not-ready".
+  if (!isReady(inference)) return inference;
+  return models.length > 0 && models.every((model) => model.available && model.features[feature])
     ? "ready"
     : "not-ready";
 }
 
-export function DocsPageContent() {
+type Props = {
+  gateway: GatewayStatus | null;
+};
+
+export function DocsPageContent({ gateway }: Props) {
   const { copy, locale } = useLocale();
   const readiness = TRUST_CONTENT[locale].status.states;
+  const derived = deriveGatewayReadiness(gateway);
   const releaseGates = [
-    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: modelFeatureGateState(SERVICE_READINESS.inference, MODEL_CATALOG, "streaming") },
-    { id: "usage", label: locale === "en" ? "Usage accounting" : "用量計算", state: SERVICE_READINESS.usageAccounting },
-    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: modelFeatureGateState(SERVICE_READINESS.inference, MODEL_CATALOG, "tools") },
-    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: modelFeatureGateState(SERVICE_READINESS.inference, MODEL_CATALOG, "structuredOutput") },
-    { id: "manifest", label: locale === "en" ? "Provider manifest" : "供應商 Manifest", state: SERVICE_READINESS.manifest },
-    { id: "status", label: locale === "en" ? "Operational status" : "營運狀態", state: SERVICE_READINESS.inference },
+    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "streaming") },
+    { id: "usage", label: locale === "en" ? "Usage accounting" : "用量計算", state: derived.usageAccounting },
+    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "tools") },
+    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "structuredOutput") },
+    { id: "manifest", label: locale === "en" ? "Provider manifest" : "供應商 Manifest", state: derived.manifest },
+    { id: "status", label: locale === "en" ? "Operational status" : "營運狀態", state: derived.inference },
   ] as const;
 
   return (
@@ -38,7 +48,7 @@ export function DocsPageContent() {
         <p className="eyebrow">{copy.docs.kicker}</p>
         <h1 id="docs-title">{copy.docs.title}</h1>
         <p>{copy.docs.lead}</p>
-        <p className="docs-notice">{locale === "en" ? "Live — the endpoint below is operational" : "已上線 — 下方端點皆可運作"}</p>
+        <p className="docs-notice">{locale === "en" ? "Deployed — the endpoint below is live; current model availability is shown on the status page" : "已部署 — 下方端點皆為正式端點；目前模型可用性請見狀態頁"}</p>
       </section>
 
       <section aria-labelledby="public-preview-title" className="docs-quick-start">
@@ -51,7 +61,7 @@ export function DocsPageContent() {
         <dl className="docs-values">
           <div><dt>{copy.docs.baseUrl}</dt><dd><code>{BASE_URL}</code></dd></div>
           <div><dt>{copy.docs.chooseModel}</dt><dd><code>glm-5.2-fp8</code></dd></div>
-          <div><dt>{locale === "en" ? "Endpoint status" : "端點狀態"}</dt><dd>{locale === "en" ? "Live" : "已上線"}</dd></div>
+          <div><dt>{locale === "en" ? "Endpoint status" : "端點狀態"}</dt><dd>{locale === "en" ? "Deployed" : "已部署"}</dd></div>
         </dl>
       </section>
 

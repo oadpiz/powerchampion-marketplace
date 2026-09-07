@@ -3,25 +3,26 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CodeSamples } from "../components/code-samples";
 import { modelFeatureGateState } from "../components/docs-page-content";
+import { DocsPageContent } from "../components/docs-page-content";
 import { ConsoleView } from "../components/console-view";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
-import DocsPage, { metadata as docsMetadata } from "../app/docs/page";
+import { metadata as docsMetadata } from "../app/docs/page";
 import ConsolePage, { metadata as consoleMetadata } from "../app/console/page";
 
 describe("CodeSamples", () => {
-  it("separates quick start from protected access and shows the live boundary notice", () => {
-    render(<LocaleProvider><DocsPage /></LocaleProvider>);
+  it("separates quick start from protected access and shows the deployed boundary notice", () => {
+    render(<LocaleProvider><DocsPageContent gateway={null} /></LocaleProvider>);
 
     expect(screen.getAllByRole("region", { name: "Quick start" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("region", { name: "Protected access" })).toBeVisible();
-    expect(screen.getByText(/Live — the endpoint below is operational/i)).toBeVisible();
+    expect(screen.getByText(/Deployed — the endpoint below is live/i)).toBeVisible();
     expect(screen.getByText("API key")).toBeVisible();
     expect(screen.getByRole("link", { name: /request yours by email/i })).toHaveAttribute("href", "#protected-access-title");
   });
 
   it("shows all release gates with their readiness state", () => {
-    render(<LocaleProvider><DocsPage /></LocaleProvider>);
+    render(<LocaleProvider><DocsPageContent gateway={null} /></LocaleProvider>);
 
     const gatesList = document.querySelector(".docs-release-gates ul");
     expect(gatesList).not.toBeNull();
@@ -29,7 +30,8 @@ describe("CodeSamples", () => {
     expect(items).toHaveLength(6);
     for (const item of items) {
       const label = item.textContent?.replace(/\s+/g, " ").trim();
-      expect(label).toMatch(/^(Streaming|Usage accounting|Tool use|Structured output|Provider manifest|Operational status): (Ready|Not ready)$/);
+      // With no gateway evidence, gates must read "Not verified" — not ready.
+      expect(label).toMatch(/^(Streaming|Usage accounting|Tool use|Structured output|Provider manifest|Operational status): Not verified$/);
     }
   });
 
@@ -42,6 +44,10 @@ describe("CodeSamples", () => {
     expect(modelFeatureGateState("ready", [unavailableModel], "tools")).toBe("not-ready");
     expect(modelFeatureGateState("ready", [missingStreaming], "streaming")).toBe("not-ready");
     expect(modelFeatureGateState("ready", [enabledModel], "structuredOutput")).toBe("ready");
+    // Unverified/degraded inference passes through as-is instead of being
+    // masked behind a definitive not-ready (or a false ready) claim.
+    expect(modelFeatureGateState("unknown", [enabledModel], "streaming")).toBe("unknown");
+    expect(modelFeatureGateState("degraded", [enabledModel], "streaming")).toBe("degraded");
   });
 
   it("has truthful docs metadata", () => {

@@ -1,7 +1,14 @@
 import type { Locale } from "./content";
 import { COMPANY_CAPACITY_MW } from "./company";
+import type { GatewayStatus } from "./gateway-status";
 
-export type ReadinessState = "ready" | "preview" | "preparation" | "not-ready";
+export type ReadinessState =
+  | "ready"
+  | "degraded"
+  | "unknown"
+  | "preview"
+  | "preparation"
+  | "not-ready";
 
 export type ServiceReadiness = {
   website: ReadinessState;
@@ -12,14 +19,51 @@ export type ServiceReadiness = {
   enterpriseReview: ReadinessState;
 };
 
+/**
+ * Static baseline: only what THIS site can vouch for without asking the
+ * gateway. Backend-facing rows default to "unknown" and are replaced at
+ * render time by deriveGatewayReadiness() from the live /status.json feed —
+ * a static "ready" here would keep claiming readiness through an outage.
+ */
 export const SERVICE_READINESS: ServiceReadiness = {
   website: "ready",
-  manifest: "ready",
-  inference: "ready",
-  usageAccounting: "ready",
-  payments: "ready",
+  manifest: "unknown",
+  inference: "unknown",
+  usageAccounting: "unknown",
+  payments: "unknown",
   enterpriseReview: "preparation",
 };
+
+/**
+ * Derive backend readiness from the gateway's live status payload.
+ *
+ * - inference follows the gateway's own status field (ok→ready,
+ *   warn→degraded, down→not-ready, unreachable→unknown).
+ * - usage accounting / payments / manifest have no probe in /status.json;
+ *   they stay "unknown" (unverified from this site) rather than "ready".
+ */
+export function deriveGatewayReadiness(
+  gateway: GatewayStatus | null,
+): Pick<ServiceReadiness, "manifest" | "inference" | "usageAccounting" | "payments"> {
+  if (!gateway) {
+    return {
+      manifest: "unknown",
+      inference: "unknown",
+      usageAccounting: "unknown",
+      payments: "unknown",
+    };
+  }
+  const inference: ReadinessState =
+    gateway.status === "ok" ? "ready"
+      : gateway.status === "warn" ? "degraded"
+        : "not-ready";
+  return {
+    manifest: "unknown",
+    inference,
+    usageAccounting: "unknown",
+    payments: "unknown",
+  };
+}
 
 export function isReady(state: ReadinessState | undefined): boolean {
   return state === "ready";
@@ -80,7 +124,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
     sections: [
       { id: "data", title: "Current data behavior", body: ["The current enquiry, estimator, console, and launch-access interactions stay in this browser and are not transmitted or persisted."] },
       { id: "provenance", title: "Model provenance", body: ["Every catalog entry requires model-license, serving-authorization, and deployment review before release."] },
-      { id: "controls", title: "Release controls", body: ["Manifest, inference, usage accounting, payment, and operational status are verified and live for the current service."] },
+      { id: "controls", title: "Release controls", body: ["Inference readiness is derived from the gateway's live status feed. Usage accounting and payments are not independently verified by this site and display as unverified until measured."] },
       { id: "policies", title: "Policies and sources", body: ["Privacy, Terms, Status, and Company pages define the current public boundary and cited context."] },
     ],
     infrastructure: {
@@ -88,8 +132,8 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
       title: "From qualified capacity context to live delivery.",
       lead: "Separate counterparty-reported capacity from the serving and delivery controls that are now live.",
       capacityStage: "Counterparty-reported expected hosting capacity; not live or completed deployment.",
-      servingStage: "Model serving is live — deployment, authorization, and runtime evidence have been verified for all catalog models.",
-      deliveryStage: "The unified API is live at b300.powerchampion.ai with pay-per-use billing from your prepaid balance.",
+      servingStage: "Model serving availability is measured live by the b300 gateway; this site reports it as-is and does not pre-claim readiness it cannot observe.",
+      deliveryStage: "The unified API is deployed at b300.powerchampion.ai with pay-per-use billing from prepaid balance; current availability is shown on the status page.",
       checklistTitle: "Deployment review inputs",
       checklist: ["Workload", "Model requirements", "Usage profile", "Deployment region", "Data handling", "Service-readiness gates"],
     },
@@ -98,7 +142,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
       title: "Service status",
       lead: "Website and live service readiness are reported separately.",
       labels: { website: "Website", manifest: "Provider manifest", inference: "Inference API", usageAccounting: "Usage accounting", payments: "Payments", enterpriseReview: "Enterprise review" },
-      states: { ready: "Ready", preview: "Preview", preparation: "In preparation", "not-ready": "Not ready" },
+      states: { ready: "Ready", degraded: "Degraded", unknown: "Not verified", preview: "Preview", preparation: "In preparation", "not-ready": "Not ready" },
     },
     deploymentReview: "Deployment review",
   },
@@ -110,7 +154,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
     sections: [
       { id: "data", title: "目前的資料行為", body: ["目前的洽詢、估算器、控制台與啟動存取互動僅保留在此瀏覽器，不會傳送或持久保存。"] },
       { id: "provenance", title: "模型來源", body: ["每筆模型目錄項目都必須在發布前完成模型授權、服務授權與部署審查。"] },
-      { id: "controls", title: "發布控制", body: ["Manifest、推論、用量計算、付款與營運狀態均已驗證且目前服務已上線。"] },
+      { id: "controls", title: "發布控制", body: ["推論就緒狀態由閘道的即時狀態資料推導。用量計算與付款未經本站獨立驗證，在實測前以「未驗證」標示。"] },
       { id: "policies", title: "政策與來源", body: ["隱私權、條款、狀態與公司頁面界定目前的公開邊界及引用脈絡。"] },
     ],
     infrastructure: {
@@ -118,8 +162,8 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
       title: "從受限定的容量脈絡，到即時交付。",
       lead: "將交易對手報告的容量，與目前已上線的服務及交付控制清楚分開。",
       capacityStage: "交易對手報告的預期託管容量；並非即時或已完成部署。",
-      servingStage: "模型服務已上線 — 所有目錄模型均已完成部署、授權與執行證據驗證。",
-      deliveryStage: "統一 API 已上線於 b300.powerchampion.ai，從預付餘額按量計費。",
+      servingStage: "模型服務可用性由 b300 閘道即時量測；本站如實呈現，不預先宣稱無法觀測的就緒狀態。",
+      deliveryStage: "統一 API 已部署於 b300.powerchampion.ai，採預付餘額按量計費；目前可用性請見狀態頁。",
       checklistTitle: "部署審查輸入",
       checklist: ["工作負載", "模型需求", "用量輪廓", "部署區域", "資料處理", "服務就緒門檻"],
     },
@@ -128,7 +172,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
       title: "服務狀態",
       lead: "網站與即時服務的就緒狀態分開呈現。",
       labels: { website: "網站", manifest: "供應商 Manifest", inference: "推論 API", usageAccounting: "用量計算", payments: "付款", enterpriseReview: "企業審查" },
-      states: { ready: "已就緒", preview: "預覽", preparation: "準備中", "not-ready": "尚未就緒" },
+      states: { ready: "已就緒", degraded: "部分可用", unknown: "未驗證", preview: "預覽", preparation: "準備中", "not-ready": "尚未就緒" },
     },
     deploymentReview: "部署審查",
   },
@@ -159,7 +203,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
     faq: [
       { id: "buy-tokens", question: "Can I buy tokens now?", answer: "Yes. Keys are prepaid with a balance in nano-USD; top up by requesting a redeem code via email, then POST /v1/redeem with your key." },
       { id: "rates-final", question: "Are the displayed rates final?", answer: "Yes. The listed rates are the live chargeable rates the meter bills from — input and output priced separately, per million tokens (or per image/minute for media models)." },
-      { id: "api-live", question: "Is the API live?", answer: "Yes. The OpenAI-compatible endpoint is live at b300.powerchampion.ai — text, vision, image, speech, embeddings, and reranking behind one key." },
+      { id: "api-live", question: "Is the API live?", answer: "The OpenAI-compatible endpoint is deployed at b300.powerchampion.ai — text, vision, image, speech, embeddings, and reranking behind one key. Whether models are currently serving is shown live on the status page; this site does not claim availability it cannot observe." },
       { id: "entered-information", question: "What happens to information entered here?", answer: "The balance checker sends your key only to the b300 gateway (POST /api/balance) to look up your balance; it is never stored or logged by this site." },
       { id: "capacity-deployed", question: `Is ${COMPANY_CAPACITY_MW} already deployed?`, answer: "No. The figure is counterparty-reported expected capacity, not completed deployment.", href: "/company", linkLabel: "Read company context" },
       { id: "deployment-review", question: "What is a deployment review?", answer: "It is a non-binding channel for discussing deployment inputs; it does not reserve capacity or create a service commitment." },
@@ -190,7 +234,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
     faq: [
       { id: "buy-tokens", question: "我現在可以購買 Token 嗎？", answer: "可以。金鑰以 nano-USD 預付餘額運作；透過 email 申請儲值碼後，用金鑰 POST /v1/redeem 即可加值。" },
       { id: "rates-final", question: "顯示的費率是最終價格嗎？", answer: "是。表列費率即為計費表實際扣款的即時費率 — 輸入與輸出分開計價，以每百萬 Token 計（媒體模型以每張圖/每分鐘計）。" },
-      { id: "api-live", question: "API 已經上線了嗎？", answer: "已上線。OpenAI 相容端點位於 b300.powerchampion.ai — 文字、視覺、圖像、語音、嵌入與重排序，一把金鑰全部搞定。" },
+      { id: "api-live", question: "API 已經上線了嗎？", answer: "OpenAI 相容端點已部署於 b300.powerchampion.ai — 文字、視覺、圖像、語音、嵌入與重排序，一把金鑰全部搞定。模型目前是否正在服務，以狀態頁即時呈現為準；本站不宣稱無法觀測的可用性。" },
       { id: "entered-information", question: "我在這裡輸入的資訊會怎麼處理？", answer: "餘額查詢只會把你的金鑰送到 b300 閘道（POST /api/balance）查詢餘額；本站不會儲存或記錄金鑰。" },
       { id: "capacity-deployed", question: `${COMPANY_CAPACITY_MW} 已經部署了嗎？`, answer: "沒有。該數字是交易對手報告的預期容量，並非已完成部署。", href: "/company", linkLabel: "閱讀公司脈絡" },
       { id: "deployment-review", question: "什麼是部署審查？", answer: "這是非約束性的洽談管道，用於討論部署輸入；不會預留容量或形成服務承諾。" },
