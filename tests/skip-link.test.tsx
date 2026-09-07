@@ -2,10 +2,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import ConsolePage from "../app/console/page";
-import DocsPage from "../app/docs/page";
 import Home from "../app/page";
 import ModelsPage from "../app/models/page";
 import PricingPage from "../app/pricing/page";
+import { DocsPageContent } from "../components/docs-page-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
@@ -27,7 +27,7 @@ describe("skip navigation", () => {
     ["home", Home],
     ["models", ModelsPage],
     ["pricing", PricingPage],
-    ["docs", DocsPage],
+    ["docs", () => <DocsPageContent gateway={null} />],
     ["console", ConsolePage],
   ])("gives the %s route a stable main-content landmark", (_name, Page) => {
     render(<LocaleProvider><Page /></LocaleProvider>);

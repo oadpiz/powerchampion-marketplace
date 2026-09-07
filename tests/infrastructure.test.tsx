@@ -5,7 +5,7 @@ import { LocaleProvider } from "../components/locale-provider";
 
 describe("InfrastructureContent", () => {
   it("qualifies infrastructure figures beside the source-backed facts", () => {
-    render(<LocaleProvider><InfrastructureContent /></LocaleProvider>);
+    render(<LocaleProvider><InfrastructureContent gateway={null} /></LocaleProvider>);
     const capacity = screen.getByRole("region", { name: /Capacity context/i });
 
     expect(within(capacity).getByText("Approximately 3.1 MW")).toBeVisible();
@@ -18,7 +18,7 @@ describe("InfrastructureContent", () => {
   });
 
   it("does not turn expected capacity into an ownership or deployment claim", () => {
-    render(<LocaleProvider><InfrastructureContent /></LocaleProvider>);
+    render(<LocaleProvider><InfrastructureContent gateway={null} /></LocaleProvider>);
 
     expect(document.body).not.toHaveTextContent(/we own|our data centre|deployed 3\.1 MW/i);
   });

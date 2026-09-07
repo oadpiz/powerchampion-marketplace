@@ -3,13 +3,24 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import FaqPage from "../app/faq/page";
-import InfrastructurePage from "../app/infrastructure/page";
 import PrivacyPage from "../app/privacy/page";
 import TermsPage from "../app/terms/page";
-import TrustPage from "../app/trust/page";
+import { InfrastructureContent } from "../components/infrastructure-content";
 import { LiveStatusContent } from "../components/live-status-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
+import { TrustContent } from "../components/trust-content";
+import type { GatewayStatus } from "../lib/gateway-status";
+
+function gatewayWith(status: GatewayStatus["status"]): GatewayStatus {
+  return {
+    status,
+    summary: status,
+    updated: 0,
+    uptime_window_days: 1,
+    models: [{ id: "m", name: "m", ready: status === "ok", context_length: null, uptime: null }],
+  };
+}
 
 function localized(ui: ReactNode) {
   return render(<LocaleProvider>{ui}</LocaleProvider>);
@@ -18,12 +29,25 @@ function localized(ui: ReactNode) {
 describe("public trust pages", () => {
   it("renders launch-safe policy and status routes", () => {
     // Simulate the server component's offline fallback: gateway unreachable,
-    // static readiness rows still render.
+    // backend readiness rows must show "Not verified" — not "Ready".
     localized(<LiveStatusContent gateway={null} fetchedAt={0} />);
     expect(screen.getByRole("heading", { level: 1, name: "Service status" })).toBeVisible();
-    expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Ready");
+    expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Not verified");
+    expect(screen.getByText("Payments").closest("li")).toHaveTextContent("Not verified");
     expect(screen.queryByText(/all systems operational/i)).not.toBeInTheDocument();
     expect(screen.getByText(/unreachable/i)).toBeVisible();
+  });
+
+  it("reports a gateway outage as not-ready, never a surviving ready claim", () => {
+    localized(<LiveStatusContent gateway={gatewayWith("down")} fetchedAt={0} />);
+    expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Not ready");
+  });
+
+  it("reports gateway ok as ready while payments stay unverified", () => {
+    localized(<LiveStatusContent gateway={gatewayWith("ok")} fetchedAt={0} />);
+    expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Ready");
+    expect(screen.getByText("Payments").closest("li")).toHaveTextContent("Not verified");
+    expect(screen.getByText("Usage accounting").closest("li")).toHaveTextContent("Not verified");
   });
 
   it("offers accessible bilingual FAQ disclosures", async () => {
@@ -35,7 +59,7 @@ describe("public trust pages", () => {
     expect(question).toHaveAttribute("aria-expanded", "true");
   });
 
-  it.each([[<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i], [<PrivacyPage key="privacy" />, /not transmitted to this site's server and is not persisted or logged/i]])(
+  it.each([[<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i], [<PrivacyPage key="terms" />, /not transmitted to this site's server and is not persisted or logged/i]])(
     "preserves the live-service boundary",
     (page, boundary) => {
       localized(page);
@@ -43,18 +67,19 @@ describe("public trust pages", () => {
     },
   );
 
-  it("renders the published infrastructure destination with live stages", async () => {
+  it("renders the published infrastructure stages without unverified live claims", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <SiteShell><InfrastructurePage /></SiteShell>
+        <SiteShell><InfrastructureContent gateway={null} /></SiteShell>
       </LocaleProvider>,
     );
 
     expect(screen.getByRole("heading", { level: 1, name: /live delivery/i })).toBeVisible();
     expect(screen.getAllByText(/counterparty-reported expected hosting capacity; not live or completed deployment/i)).not.toHaveLength(0);
-    expect(screen.getByText(/model serving is live/i)).toBeVisible();
-    expect(screen.getByText(/live at b300\.powerchampion\.ai/i)).toBeVisible();
+    // Serving availability is reported as measured/unverified, not claimed live.
+    expect(screen.getByText(/measured live by the b300 gateway/i)).toBeVisible();
+    expect(screen.getByText(/deployed at b300\.powerchampion\.ai/i)).toBeVisible();
     expect(screen.getByRole("link", { name: "Deployment review" })).toHaveAttribute("href", "/contact");
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
@@ -62,7 +87,7 @@ describe("public trust pages", () => {
   });
 
   it("renders the trust evidence sections with policy and source links", () => {
-    localized(<TrustPage />);
+    localized(<TrustContent gateway={null} />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Evidence before promises." })).toBeVisible();
     expect(screen.getByRole("heading", { level: 2, name: "Current data behavior" })).toBeVisible();
@@ -81,12 +106,12 @@ describe("public trust pages", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
-      render(<LocaleProvider><SiteShell><TrustPage /></SiteShell></LocaleProvider>);
+      render(<LocaleProvider><SiteShell><TrustContent gateway={gatewayWith("ok")} /></SiteShell></LocaleProvider>);
 
       for (const [name, state] of [
-        ["Provider manifest", "Ready"],
+        ["Provider manifest", "Not verified"],
         ["Inference API", "Ready"],
-        ["Payments", "Ready"],
+        ["Payments", "Not verified"],
       ]) {
         const row = screen.getByRole("listitem", { name: `${name}: ${state}` });
         expect(row).toHaveTextContent(`${name} — ${state}`);
@@ -94,9 +119,9 @@ describe("public trust pages", () => {
 
       await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
       for (const [name, state] of [
-        ["供應商 Manifest", "已就緒"],
+        ["供應商 Manifest", "未驗證"],
         ["推論 API", "已就緒"],
-        ["付款", "已就緒"],
+        ["付款", "未驗證"],
       ]) {
         const row = screen.getByRole("listitem", { name: `${name}：${state}` });
         expect(row).toHaveTextContent(`${name} — ${state}`);

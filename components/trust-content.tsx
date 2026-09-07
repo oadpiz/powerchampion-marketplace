@@ -1,15 +1,21 @@
 "use client";
 
-import { SERVICE_READINESS, TRUST_CONTENT, isReady } from "../lib/trust";
+import { TRUST_CONTENT, deriveGatewayReadiness, isReady } from "../lib/trust";
+import type { GatewayStatus } from "../lib/gateway-status";
 import { useLocale } from "./locale-provider";
 
-export function TrustContent() {
+type Props = {
+  gateway: GatewayStatus | null;
+};
+
+export function TrustContent({ gateway }: Props) {
   const { locale, copy } = useLocale();
   const content = TRUST_CONTENT[locale];
+  const derived = deriveGatewayReadiness(gateway);
   const readiness = [
-    { id: "manifest", state: SERVICE_READINESS.manifest },
-    { id: "inference", state: SERVICE_READINESS.inference },
-    { id: "payments", state: SERVICE_READINESS.payments },
+    { id: "manifest", state: derived.manifest },
+    { id: "inference", state: derived.inference },
+    { id: "payments", state: derived.payments },
   ] as const;
 
   return (
