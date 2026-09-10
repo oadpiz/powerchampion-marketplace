@@ -1470,3 +1470,5 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 }
 
 .marketplace-model-notice { grid-column: 1 / -1; margin: .45rem 0 0; padding: .35rem .6rem; border-left: 2px solid var(--cyan); color: var(--muted); font-size: .8125rem; line-height: 1.5; }
+
+.catalog-snapshot-notice { max-width: 640px; margin: 1rem 0 0; padding: .5rem .75rem; border: 1px dashed var(--line); color: var(--muted); font-size: .875rem; line-height: 1.5; }

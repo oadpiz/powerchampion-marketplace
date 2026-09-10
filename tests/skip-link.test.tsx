@@ -2,12 +2,13 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import ConsolePage from "../app/console/page";
-import Home from "../app/page";
-import ModelsPage from "../app/models/page";
-import PricingPage from "../app/pricing/page";
 import { DocsPageContent } from "../components/docs-page-content";
+import { HomeContent } from "../components/home-content";
 import { LocaleProvider } from "../components/locale-provider";
+import { ModelsPageContent } from "../components/models-page-content";
+import { PricingPageContent } from "../components/pricing-page-content";
 import { SiteShell } from "../components/site-shell";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 
 describe("skip navigation", () => {
   it("is localized and targets the main content landmark", async () => {
@@ -24,10 +25,10 @@ describe("skip navigation", () => {
   });
 
   it.each([
-    ["home", Home],
-    ["models", ModelsPage],
-    ["pricing", PricingPage],
-    ["docs", () => <DocsPageContent gateway={null} />],
+    ["home", () => <HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} />],
+    ["models", () => <ModelsPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />],
+    ["pricing", () => <PricingPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />],
+    ["docs", () => <DocsPageContent gateway={null} models={SNAPSHOT_CATALOG} />],
     ["console", ConsolePage],
   ])("gives the %s route a stable main-content landmark", (_name, Page) => {
     render(<LocaleProvider><Page /></LocaleProvider>);

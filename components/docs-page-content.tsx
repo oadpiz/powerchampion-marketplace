@@ -1,6 +1,6 @@
 "use client";
 
-import { SNAPSHOT_CATALOG, type ModelDefinition } from "../lib/models";
+import type { ModelDefinition } from "../lib/models";
 import { TRUST_CONTENT, deriveGatewayReadiness, isReady, type ReadinessState } from "../lib/trust";
 import type { GatewayStatus } from "../lib/gateway-status";
 import { CodeSamples } from "./code-samples";
@@ -27,17 +27,18 @@ export function modelFeatureGateState(
 
 type Props = {
   gateway: GatewayStatus | null;
+  models: ModelDefinition[];
 };
 
-export function DocsPageContent({ gateway }: Props) {
+export function DocsPageContent({ gateway, models }: Props) {
   const { copy, locale } = useLocale();
   const readiness = TRUST_CONTENT[locale].status.states;
   const derived = deriveGatewayReadiness(gateway);
   const releaseGates = [
-    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: modelFeatureGateState(derived.inference, SNAPSHOT_CATALOG, "streaming") },
+    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: modelFeatureGateState(derived.inference, models, "streaming") },
     { id: "usage", label: locale === "en" ? "Usage accounting" : "用量計算", state: derived.usageAccounting },
-    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: modelFeatureGateState(derived.inference, SNAPSHOT_CATALOG, "tools") },
-    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: modelFeatureGateState(derived.inference, SNAPSHOT_CATALOG, "structuredOutput") },
+    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: modelFeatureGateState(derived.inference, models, "tools") },
+    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: modelFeatureGateState(derived.inference, models, "structuredOutput") },
     { id: "manifest", label: locale === "en" ? "Provider manifest" : "供應商 Manifest", state: derived.manifest },
     { id: "status", label: locale === "en" ? "Operational status" : "營運狀態", state: derived.inference },
   ] as const;

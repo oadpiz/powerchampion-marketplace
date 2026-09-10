@@ -4,11 +4,12 @@ import { describe, expect, it } from "vitest";
 import { HomeContent } from "../components/home-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 
 function renderHome() {
   return render(
     <LocaleProvider>
-      <SiteShell><HomeContent /></SiteShell>
+      <SiteShell><HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} /></SiteShell>
     </LocaleProvider>,
   );
 }

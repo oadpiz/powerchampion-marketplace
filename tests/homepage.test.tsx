@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { HomeContent } from "../components/home-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 
 function renderInShell(content: ReactNode) {
   return render(
@@ -16,7 +17,7 @@ function renderInShell(content: ReactNode) {
 
 describe("Power Champion homepage", () => {
   it("routes the hero through token-rate comparison and deployment review", () => {
-    renderInShell(<HomeContent />);
+    renderInShell(<HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} />);
 
     const hero = screen.getByRole("region", { name: "Every model.One power core." });
     expect(within(hero).getByRole("link", { name: "Compare token rates" }))
@@ -27,7 +28,7 @@ describe("Power Champion homepage", () => {
   });
 
   it("shows derived catalog facts instead of an availability claim", () => {
-    renderInShell(<HomeContent />);
+    renderInShell(<HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} />);
 
     const proof = screen.getByRole("region", { name: "Marketplace facts" });
     expect(within(proof).queryByText("99.98%")).not.toBeInTheDocument();
@@ -38,7 +39,7 @@ describe("Power Champion homepage", () => {
 
   it("uses each model's live serving role and availability in both locales", async () => {
     const user = userEvent.setup();
-    renderInShell(<HomeContent />);
+    renderInShell(<HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} />);
 
     const expectedModels = [
       ["GLM 5.2 FP8", "$0.93 per 1M input", "$3.00 per 1M output", "131K", "33K", "Primary LLM for chat, reasoning, and coding workloads.", "主力 LLM，用於對話、推理與程式開發。"],
@@ -78,7 +79,7 @@ describe("Power Champion homepage", () => {
   });
 
   it("shows the three access steps in their approved order", () => {
-    renderInShell(<HomeContent />);
+    renderInShell(<HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} />);
 
     const access = screen.getByRole("region", { name: "How access works" });
     expect(within(access).getByRole("list").querySelectorAll("h3")).toHaveLength(3);
@@ -87,7 +88,7 @@ describe("Power Champion homepage", () => {
   });
 
   it("bridges enterprise and trust journeys to their public routes", () => {
-    renderInShell(<HomeContent />);
+    renderInShell(<HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} />);
 
     const enterprise = screen.getByRole("region", { name: "Enterprise planning" });
     expect(within(enterprise).getByRole("link", { name: "Review infrastructure context" }))
@@ -103,7 +104,7 @@ describe("Power Champion homepage", () => {
   });
 
   it("uses one launch-access action for the editorial rate section with truthful prepaid billing note", () => {
-    renderInShell(<HomeContent />);
+    renderInShell(<HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} />);
 
     const access = screen.getByRole("region", { name: "Prepaid access" });
     expect(within(access).getAllByRole("button", { name: "Get API access" })).toHaveLength(1);
@@ -114,7 +115,7 @@ describe("Power Champion homepage", () => {
 
   it("repeats the primary catalog facts after switching to Traditional Chinese", async () => {
     const user = userEvent.setup();
-    renderInShell(<HomeContent />);
+    renderInShell(<HomeContent models={SNAPSHOT_CATALOG} snapshotDate={null} />);
 
     await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
 

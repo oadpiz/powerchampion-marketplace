@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SNAPSHOT_CATALOG } from "../lib/models";
+import type { ModelDefinition } from "../lib/models";
 import { calculateUsageCost } from "../lib/pricing";
 import { useLocale } from "./locale-provider";
 
@@ -20,12 +20,12 @@ function parseTokenAmount(value: string) {
   return Number.isSafeInteger(amount) && amount >= 0 ? amount : null;
 }
 
-export function PricingCalculator() {
+export function PricingCalculator({ models }: { models: ModelDefinition[] }) {
   const { copy, locale } = useLocale();
-  const [modelId, setModelId] = useState(SNAPSHOT_CATALOG[0].id);
+  const [modelId, setModelId] = useState(models[0].id);
   const [inputTokens, setInputTokens] = useState("0");
   const [outputTokens, setOutputTokens] = useState("0");
-  const model = SNAPSHOT_CATALOG.find((candidate) => candidate.id === modelId) ?? SNAPSHOT_CATALOG[0];
+  const model = models.find((candidate) => candidate.id === modelId) ?? models[0];
 
   // Media models bill per image / per minute of audio, not per token —
   // a token-pair estimator would be meaningless for them.
@@ -64,7 +64,7 @@ export function PricingCalculator() {
             <label>
               <span>{copy.pricing.selectModel}</span>
               <select autoComplete="off" name="estimator-model" onChange={(event) => setModelId(event.target.value)} value={modelId}>
-                {SNAPSHOT_CATALOG.map((option) => (
+                {models.map((option) => (
                   <option key={option.id} value={option.id}>{option.name}</option>
                 ))}
               </select>
@@ -112,7 +112,7 @@ export function PricingCalculator() {
           <label>
             <span>{copy.pricing.selectModel}</span>
             <select autoComplete="off" name="estimator-model" onChange={(event) => setModelId(event.target.value)} value={modelId}>
-              {SNAPSHOT_CATALOG.map((option) => (
+              {models.map((option) => (
                 <option key={option.id} value={option.id}>{option.name}</option>
               ))}
             </select>

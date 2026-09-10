@@ -1,7 +1,8 @@
 "use client";
 
-import { SNAPSHOT_CATALOG } from "../lib/models";
+import type { ModelDefinition } from "../lib/models";
 import { CREDIT_PACKS, type CreditPack } from "../lib/pricing";
+import { CatalogSnapshotNotice } from "./catalog-snapshot-notice";
 import { openLaunchAccess } from "./demo-checkout";
 import { useLocale } from "./locale-provider";
 import { PricingCalculator } from "./pricing-calculator";
@@ -10,7 +11,7 @@ function formatRate(rate: number) {
   return `$${rate.toFixed(2)}`;
 }
 
-export function PricingPageContent() {
+export function PricingPageContent({ models, snapshotDate }: { models: ModelDefinition[]; snapshotDate: string | null }) {
   const { copy, locale } = useLocale();
   const packLabels: Record<CreditPack["id"], string> = locale === "en"
     ? { starter: "Starter", builder: "Builder", scale: "Scale" }
@@ -34,6 +35,7 @@ export function PricingPageContent() {
         <h1 id="pricing-title">{copy.pricing.title}</h1>
         <p>{copy.pricing.lead}</p>
         <p className="pricing-notice">{copy.pricing.demoNotice}</p>
+        <CatalogSnapshotNotice snapshotDate={snapshotDate} />
       </section>
 
       <section aria-labelledby="planning-packages-title" className="pricing-packs">
@@ -76,7 +78,7 @@ export function PricingPageContent() {
         </p>
       </section>
 
-      <PricingCalculator />
+      <PricingCalculator models={models} />
 
       <section aria-labelledby="rates-title" className="model-rates">
         <div className="pricing-block-heading">
@@ -110,7 +112,7 @@ export function PricingPageContent() {
               </tr>
             </thead>
             <tbody>
-              {SNAPSHOT_CATALOG.map((model) => (
+              {models.map((model) => (
                 <tr className="rate-table-row" key={model.id}>
                   <td>{model.name}</td>
                   {model.billingUnit !== "token" && model.unitPrice !== null ? (

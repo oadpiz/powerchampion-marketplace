@@ -9,10 +9,11 @@ import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 import { metadata as docsMetadata } from "../app/docs/page";
 import ConsolePage, { metadata as consoleMetadata } from "../app/console/page";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 
 describe("CodeSamples", () => {
   it("separates quick start from protected access and shows the deployed boundary notice", () => {
-    render(<LocaleProvider><DocsPageContent gateway={null} /></LocaleProvider>);
+    render(<LocaleProvider><DocsPageContent gateway={null} models={SNAPSHOT_CATALOG} /></LocaleProvider>);
 
     expect(screen.getAllByRole("region", { name: "Quick start" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("region", { name: "Protected access" })).toBeVisible();
@@ -22,7 +23,7 @@ describe("CodeSamples", () => {
   });
 
   it("shows all release gates with their readiness state", () => {
-    render(<LocaleProvider><DocsPageContent gateway={null} /></LocaleProvider>);
+    render(<LocaleProvider><DocsPageContent gateway={null} models={SNAPSHOT_CATALOG} /></LocaleProvider>);
 
     const gatesList = document.querySelector(".docs-release-gates ul");
     expect(gatesList).not.toBeNull();

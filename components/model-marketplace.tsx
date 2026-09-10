@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  SNAPSHOT_CATALOG,
   filterModels,
   type ModelCategory,
   type ModelDefinition,
@@ -25,12 +24,12 @@ function formatRate(rate: number) {
   return `$${rate.toFixed(2)}`;
 }
 
-export function ModelMarketplace() {
+export function ModelMarketplace({ models: catalog }: { models: ModelDefinition[] }) {
   const { copy, locale } = useLocale();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ModelCategory>("all");
   const [expandedId, setExpandedId] = useState<ModelDefinition["id"] | null>(null);
-  const models = filterModels(SNAPSHOT_CATALOG, query, category);
+  const models = filterModels(catalog, query, category);
   const categoryLabels: Record<ModelCategory, string> = {
     all: copy.models.all,
     coding: copy.models.coding,

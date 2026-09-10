@@ -1,20 +1,20 @@
 "use client";
 
 import { COMPANY_CONTENT } from "../lib/company";
-import { SNAPSHOT_CATALOG } from "../lib/models";
+import type { ModelDefinition } from "../lib/models";
 import { TRUST_CONTENT } from "../lib/trust";
 import { AudiencePaths } from "./audience-paths";
+import { CatalogSnapshotNotice } from "./catalog-snapshot-notice";
 import { ConsoleView } from "./console-view";
 import { useLocale } from "./locale-provider";
 
-export function HomeContent() {
+export function HomeContent({ models, snapshotDate }: { models: ModelDefinition[]; snapshotDate: string | null }) {
   const { copy, locale } = useLocale();
   const company = COMPANY_CONTENT[locale];
   const trust = TRUST_CONTENT[locale];
   // The proof strip counts what is actually serving right now, and quotes the
   // cheapest *token* rate — media models bill per image/minute, so folding
   // their zero prompt price in would advertise "$0.00".
-  const models = SNAPSHOT_CATALOG;
   const activeRoutes = models.filter((model) => model.available).length;
   const maxContext = models.reduce((max, model) => {
     const parsed = Number.parseInt(model.context, 10);
@@ -97,6 +97,7 @@ export function HomeContent() {
         <div className="proof-item"><strong>{maxContext}K</strong><span>{text.maximumContext}</span></div>
         <div className="proof-item"><strong>${startingRate.toFixed(2)}</strong><span>{text.startingRate}</span></div>
       </section>
+      <CatalogSnapshotNotice snapshotDate={snapshotDate} />
 
       <section aria-labelledby="featured-models-title" className="home-section model-marketplace" data-reveal>
         <div className="section-intro">

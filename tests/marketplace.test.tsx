@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocaleProvider } from "../components/locale-provider";
 import { ModelMarketplace } from "../components/model-marketplace";
+import { ModelsPageContent } from "../components/models-page-content";
 import { SiteShell } from "../components/site-shell";
 import { SNAPSHOT_CATALOG } from "../lib/models";
 
@@ -15,7 +16,7 @@ function normalizedText(element: Element) {
 describe("ModelMarketplace", () => {
   it("filters by category and search query", async () => {
     const user = userEvent.setup();
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     await user.click(screen.getByRole("button", { name: "Coding" }));
     await user.type(screen.getByRole("searchbox", { name: "Search models" }), "GLM");
     expect(screen.getByText("GLM 5.2 FP8")).toBeInTheDocument();
@@ -24,7 +25,7 @@ describe("ModelMarketplace", () => {
 
   it("expands details and exposes availability", async () => {
     const user = userEvent.setup();
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     await user.click(screen.getByRole("button", { name: "Whisper Large v3" }));
     expect(screen.getByText("whisper-large-v3")).toBeInTheDocument();
     expect(screen.getByText("Available")).toBeInTheDocument();
@@ -32,7 +33,7 @@ describe("ModelMarketplace", () => {
 
   it("shows all decision facts for an expanded model", async () => {
     const user = userEvent.setup();
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     await user.click(screen.getByRole("button", { name: "Qwen3-VL 30B" }));
 
     const details = screen.getByRole("region", { name: "Qwen3-VL 30B details" });
@@ -52,7 +53,7 @@ describe("ModelMarketplace", () => {
   });
 
   it("names the search field, disables autofill, and uses an example cue", () => {
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
 
     const search = screen.getByRole("searchbox", { name: "Search models" });
     expect(search).toHaveAttribute("name", "model-query");
@@ -61,7 +62,7 @@ describe("ModelMarketplace", () => {
   });
 
   it("keeps summary facts visible before expansion", () => {
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     const qwen = screen.getByRole("article", { name: "Qwen3-VL 30B" });
 
     expect(within(qwen).getByText("33K")).toBeVisible();
@@ -70,7 +71,7 @@ describe("ModelMarketplace", () => {
   });
 
   it("renders exact input and output units for every catalog model", () => {
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
 
     for (const model of SNAPSHOT_CATALOG) {
       const row = screen.getByRole("article", { name: model.name });
@@ -93,7 +94,7 @@ describe("ModelMarketplace", () => {
   });
 
   it("shows the uncensored model's usage notice on its card", () => {
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
 
     const row = screen.getByRole("article", { name: "GLM 5.3 Flash Uncensored" });
     expect(within(row).getByText("No content filtering; you are responsible for compliant use.")).toBeVisible();
@@ -101,14 +102,14 @@ describe("ModelMarketplace", () => {
 
   it("shows a useful empty result", async () => {
     const user = userEvent.setup();
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     await user.type(screen.getByRole("searchbox", { name: "Search models" }), "no such model");
     expect(screen.getByText(/No models match/i)).toBeInTheDocument();
   });
 
   it("lets keyboard users expand a model details region", async () => {
     const user = userEvent.setup();
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     const qwen = screen.getByRole("button", { name: "Qwen3-VL 30B" });
     qwen.focus();
     await user.keyboard("{Enter}");
@@ -120,7 +121,7 @@ describe("ModelMarketplace", () => {
   });
 
   it("keeps a collapsed expansion control connected to its details region", () => {
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     const qwen = screen.getByRole("button", { name: "Qwen3-VL 30B" });
     const details = document.getElementById(qwen.getAttribute("aria-controls") ?? "");
 
@@ -144,7 +145,7 @@ describe("ModelMarketplace", () => {
 
     expect(narrowRules).toMatch(/\.marketplace-tagline\s*\{[^}]*display:\s*block;/);
 
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     expect(screen.getByText("Vision and OCR inference for document and image understanding.")).toBeVisible();
   });
 
@@ -152,7 +153,7 @@ describe("ModelMarketplace", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <SiteShell><ModelMarketplace /></SiteShell>
+        <SiteShell><ModelMarketplace models={SNAPSHOT_CATALOG} /></SiteShell>
       </LocaleProvider>,
     );
     await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
@@ -163,12 +164,61 @@ describe("ModelMarketplace", () => {
 
   it("clears an empty search result", async () => {
     const user = userEvent.setup();
-    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+    render(<LocaleProvider><ModelMarketplace models={SNAPSHOT_CATALOG} /></LocaleProvider>);
     const search = screen.getByRole("searchbox", { name: "Search models" });
     await user.type(search, "no such model");
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
 
     expect(search).toHaveValue("");
     expect(screen.getByText("Qwen3-VL 30B")).toBeInTheDocument();
+  });
+});
+
+describe("catalogue source notice", () => {
+  it("warns when the models come from a snapshot", () => {
+    render(
+      <LocaleProvider>
+        <ModelsPageContent models={SNAPSHOT_CATALOG} snapshotDate="2026-09-09" />
+      </LocaleProvider>,
+    );
+
+    expect(
+      screen.getByText("Catalogue shown from a snapshot taken 2026-09-09; live availability unavailable."),
+    ).toBeVisible();
+  });
+
+  it("says nothing when the models are live", () => {
+    render(
+      <LocaleProvider>
+        <ModelsPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />
+      </LocaleProvider>,
+    );
+
+    expect(screen.queryByText(/snapshot taken/i)).not.toBeInTheDocument();
+  });
+
+  it("localizes the snapshot notice", async () => {
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell>
+          <ModelsPageContent models={SNAPSHOT_CATALOG} snapshotDate="2026-09-09" />
+        </SiteShell>
+      </LocaleProvider>,
+    );
+
+    await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
+    expect(screen.getByText("目錄取自 2026-09-09 的快照；即時可用性目前無法取得。")).toBeVisible();
+  });
+
+  it("marks a model the gateway reports as not ready", () => {
+    const unavailable = SNAPSHOT_CATALOG.map((model) =>
+      model.id === "chroma1-hd" ? { ...model, available: false } : model,
+    );
+    render(<LocaleProvider><ModelMarketplace models={unavailable} /></LocaleProvider>);
+
+    const row = screen.getByRole("article", { name: "Chroma1 HD" });
+    expect(within(row).getByRole("button", { name: "Chroma1 HD" })).toBeInTheDocument();
+    expect(row.className).toContain("marketplace-row-chroma1-hd");
   });
 });

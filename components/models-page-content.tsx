@@ -1,9 +1,16 @@
 "use client";
 
+import type { ModelDefinition } from "../lib/models";
+import { CatalogSnapshotNotice } from "./catalog-snapshot-notice";
 import { ModelMarketplace } from "./model-marketplace";
 import { useLocale } from "./locale-provider";
 
-export function ModelsPageContent() {
+type Props = {
+  models: ModelDefinition[];
+  snapshotDate: string | null;
+};
+
+export function ModelsPageContent({ models, snapshotDate }: Props) {
   const { copy, locale } = useLocale();
 
   return (
@@ -13,8 +20,9 @@ export function ModelsPageContent() {
         <h1 id="models-title">{copy.models.title}</h1>
         <p>{copy.models.lead}</p>
         <p className="models-notice">{locale === "en" ? "Live catalog — all models served by the b300 gateway." : "即時目錄——所有模型由 b300 閘道提供服務。"}</p>
+        <CatalogSnapshotNotice snapshotDate={snapshotDate} />
       </section>
-      <ModelMarketplace />
+      <ModelMarketplace models={models} />
     </main>
   );
 }

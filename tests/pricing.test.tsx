@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import PricingPage, { metadata } from "../app/pricing/page";
+import { metadata } from "../app/pricing/page";
 import { LaunchAccessDialog, openLaunchAccess } from "../components/demo-checkout";
 import { LocaleProvider } from "../components/locale-provider";
 import { PricingCalculator } from "../components/pricing-calculator";
@@ -20,7 +20,7 @@ describe("PricingCalculator", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <PricingCalculator />
+        <PricingCalculator models={SNAPSHOT_CATALOG} />
       </LocaleProvider>,
     );
 
@@ -37,7 +37,7 @@ describe("PricingCalculator", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <PricingCalculator />
+        <PricingCalculator models={SNAPSHOT_CATALOG} />
       </LocaleProvider>,
     );
 
@@ -51,7 +51,7 @@ describe("PricingCalculator", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <PricingCalculator />
+        <PricingCalculator models={SNAPSHOT_CATALOG} />
       </LocaleProvider>,
     );
 
@@ -66,7 +66,7 @@ describe("PricingCalculator", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <PricingCalculator />
+        <PricingCalculator models={SNAPSHOT_CATALOG} />
       </LocaleProvider>,
     );
 
@@ -82,7 +82,7 @@ describe("PricingCalculator", () => {
   it("announces valid estimates politely", () => {
     render(
       <LocaleProvider>
-        <PricingCalculator />
+        <PricingCalculator models={SNAPSHOT_CATALOG} />
       </LocaleProvider>,
     );
 
@@ -92,7 +92,7 @@ describe("PricingCalculator", () => {
   it("names browser-only estimator fields and disables autofill", () => {
     render(
       <LocaleProvider>
-        <PricingCalculator />
+        <PricingCalculator models={SNAPSHOT_CATALOG} />
       </LocaleProvider>,
     );
 
@@ -107,7 +107,7 @@ describe("PricingCalculator", () => {
   it("uses non-negative whole-number controls for token quantities", () => {
     render(
       <LocaleProvider>
-        <PricingCalculator />
+        <PricingCalculator models={SNAPSHOT_CATALOG} />
       </LocaleProvider>,
     );
 
@@ -124,7 +124,7 @@ describe("PricingCalculator", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <PricingCalculator />
+        <PricingCalculator models={SNAPSHOT_CATALOG} />
       </LocaleProvider>,
     );
 
@@ -258,7 +258,7 @@ describe("PricingPage", () => {
     window.history.replaceState({}, "", "/pricing");
     const { unmount } = render(
       <LocaleProvider>
-        <SiteShell><PricingPageContent /></SiteShell>
+        <SiteShell><PricingPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} /></SiteShell>
         <LaunchAccessDialog />
       </LocaleProvider>,
     );
@@ -275,7 +275,7 @@ describe("PricingPage", () => {
   it("explains separate token billing and offers one non-binding launch action", () => {
     render(
       <LocaleProvider>
-        <PricingPage />
+        <PricingPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />
       </LocaleProvider>,
     );
 
@@ -295,7 +295,7 @@ describe("PricingPage", () => {
   it("lists every model rate with honest units (per-token vs per-image/minute)", () => {
     render(
       <LocaleProvider>
-        <PricingPage />
+        <PricingPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />
       </LocaleProvider>,
     );
 
@@ -322,7 +322,7 @@ describe("PricingPage", () => {
   it("labels the keyboard-scrollable rate comparison with a visible cue", () => {
     render(
       <LocaleProvider>
-        <PricingPage />
+        <PricingPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />
       </LocaleProvider>,
     );
 
@@ -347,7 +347,7 @@ describe("PricingPage", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <PricingPage />
+        <PricingPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />
       </LocaleProvider>,
     );
 
@@ -368,7 +368,7 @@ describe("PricingPage", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <PricingPage />
+        <PricingPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />
         <LaunchAccessDialog />
       </LocaleProvider>,
     );
@@ -385,7 +385,7 @@ describe("PricingPage", () => {
     render(
       <LocaleProvider>
         <SiteShell>
-          <PricingPage />
+          <PricingPageContent models={SNAPSHOT_CATALOG} snapshotDate={null} />
         </SiteShell>
         <LaunchAccessDialog />
       </LocaleProvider>,

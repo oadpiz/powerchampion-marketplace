@@ -1,6 +1,8 @@
 import { DocsPageContent } from "../../components/docs-page-content";
+import { fetchCatalog } from "../../lib/catalog";
 import { fetchGatewayStatus, type GatewayStatus } from "../../lib/gateway-status";
 import { metadataForRoute } from "../../lib/metadata";
+import { mergeCatalog } from "../../lib/models";
 
 export const metadata = metadataForRoute("/docs");
 
@@ -14,5 +16,6 @@ export default async function DocsPage() {
   } catch {
     gateway = null;
   }
-  return <DocsPageContent gateway={gateway} />;
+  const catalog = await fetchCatalog();
+  return <DocsPageContent gateway={gateway} models={mergeCatalog(catalog.models)} />;
 }

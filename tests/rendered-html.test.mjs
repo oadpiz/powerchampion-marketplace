@@ -274,13 +274,29 @@ test("server-renders the finished marketplace homepage", async () => {
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
-test("server-renders the model marketplace", async () => {
+test("server-renders the model marketplace from the catalogue", async () => {
   const response = await render("/models");
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Choose the mind for the task/i);
   assert.match(html, /Search models/i);
   assert.match(html, /Qwen/i);
+  assert.match(html, /GLM 5\.3 Flash Uncensored/);
+  assert.match(html, /No content filtering; you are responsible for compliant use\./);
+});
+
+test("says so when the catalogue falls back to the snapshot", async () => {
+  // The build has no reachable gateway, so /catalog.json fails and every
+  // catalogue page must admit it is showing a snapshot rather than live data.
+  for (const pathname of ["/", "/models", "/pricing"]) {
+    const response = await render(pathname);
+    const html = await response.text();
+    assert.match(
+      html,
+      /Catalogue shown from a snapshot taken \d{4}-\d{2}-\d{2}; live availability unavailable\./,
+      `${pathname} discloses the snapshot fallback`,
+    );
+  }
 });
 
 test("server-renders prepaid pricing without payment fields", async () => {
