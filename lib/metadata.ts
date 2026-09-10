@@ -13,7 +13,8 @@ export type RoutePath =
   | "/console"
   | "/faq"
   | "/terms"
-  | "/privacy";
+  | "/privacy"
+  | "/data-retention";
 
 const ROUTE_METADATA = {
   "/": {
@@ -67,6 +68,10 @@ const ROUTE_METADATA = {
   "/privacy": {
     title: "Privacy | Power Champion",
     description: "The current privacy boundary for local Power Champion launch-site interactions.",
+  },
+  "/data-retention": {
+    title: "Data retention | Power Champion",
+    description: "How long the b300 gateway keeps usage metadata, and why prompt content is never persisted.",
   },
 } satisfies Record<RoutePath, { title: string; description: string }>;
 

@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
+import DataRetentionPage from "../app/data-retention/page";
 import FaqPage from "../app/faq/page";
 import PrivacyPage from "../app/privacy/page";
 import TermsPage from "../app/terms/page";
@@ -59,7 +60,11 @@ describe("public trust pages", () => {
     expect(question).toHaveAttribute("aria-expanded", "true");
   });
 
-  it.each([[<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i], [<PrivacyPage key="terms" />, /not transmitted to this site's server and is not persisted or logged/i]])(
+  it.each([
+    [<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i],
+    [<PrivacyPage key="privacy" />, /not transmitted to this site's server and is not persisted or logged/i],
+    [<DataRetentionPage key="data-retention" />, /not written to persistent storage/i],
+  ])(
     "preserves the live-service boundary",
     (page, boundary) => {
       localized(page);

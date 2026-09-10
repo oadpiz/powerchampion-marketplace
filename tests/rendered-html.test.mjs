@@ -83,11 +83,16 @@ const routeMetadata = {
     title: "Privacy | Power Champion",
     description: "The current privacy boundary for local Power Champion launch-site interactions.",
   },
+  "/data-retention": {
+    title: "Data retention | Power Champion",
+    description: "How long the b300 gateway keeps usage metadata, and why prompt content is never persisted.",
+  },
 };
 
 const routes = [
   "/", "/models", "/pricing", "/infrastructure", "/docs", "/trust",
   "/status", "/company", "/contact", "/console", "/faq", "/terms", "/privacy",
+  "/data-retention",
 ];
 
 const shellDestinations = [
@@ -227,7 +232,7 @@ test("server-renders route-specific launch boundaries and protected facts", asyn
 
   for (const pathname of ["/terms", "/privacy"]) {
     const policyHtml = await (await render(pathname)).text();
-    assert.match(policyHtml, /launch site/i, `${pathname} names the current launch-site boundary`);
+    assert.match(policyHtml, /marketing site|launch site/i, `${pathname} names this site's boundary`);
     assert.match(policyHtml, /(?:does not|not enabled|no purchase|not transmitted|not persist)/i, `${pathname} states a non-operational boundary`);
   }
 });
@@ -343,4 +348,19 @@ test("server-renders docs and the live console", async () => {
   assert.match(consoleHtml, /Check your balance/i);
   assert.match(consoleHtml, /Need a key\?/i);
   assert.doesNotMatch(consoleHtml, /sk-[A-Za-z0-9]{12}/);
+});
+
+test("server-renders the three policies without placeholders", async () => {
+  for (const pathname of ["/privacy", "/terms", "/data-retention"]) {
+    const response = await render(pathname);
+    assert.equal(response.status, 200, `${pathname} returns 200`);
+    const html = await response.text();
+
+    assert.match(html, /Power Champion Investment Limited/, `${pathname} names the entity`);
+    assert.match(html, /Effective 2026-09-09/, `${pathname} states the effective date`);
+    assert.match(html, /info@powerchampion\.org/, `${pathname} publishes the contact address`);
+    assert.doesNotMatch(html, /TBD|yourdomain/i, `${pathname} has no placeholder`);
+    assert.doesNotMatch(html, /https?:\/\/[^"'\s]*powerchampion\.org/i, `${pathname} has no .org URL`);
+    assert.match(html, /href="\/privacy"|href="\/terms"|href="\/data-retention"/, `${pathname} cross-links`);
+  }
 });

@@ -13,7 +13,7 @@ import { useScrollReveal } from "./use-scroll-reveal";
 import type { CopyDictionary } from "../lib/content";
 
 type NavigationKey = keyof CopyDictionary["nav"];
-type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy";
+type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy" | "dataRetention";
 
 const primaryDestinations: readonly [NavigationKey, string][] = [
   ["models", "/models"],
@@ -44,14 +44,14 @@ const footerDestinationGroups: readonly {
   },
   {
     label: "policies",
-    destinations: [["faq", "/faq"], ["terms", "/terms"], ["privacy", "/privacy"]],
+    destinations: [["faq", "/faq"], ["terms", "/terms"], ["privacy", "/privacy"], ["dataRetention", "/data-retention"]],
   },
 ];
 
 const focusableSelector = 'a[href], button:not([disabled])';
 
 function footerDestinationLabel(copy: CopyDictionary, key: FooterDestinationKey) {
-  if (key === "about" || key === "terms" || key === "privacy" || key === "status") {
+  if (key === "about" || key === "terms" || key === "privacy" || key === "status" || key === "dataRetention") {
     return copy.footer[key];
   }
 

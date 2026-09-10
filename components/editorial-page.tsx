@@ -3,17 +3,19 @@
 import { useLocale } from "./locale-provider";
 import { POLICY_CONTENT } from "../lib/trust";
 
-type PolicyPage = "privacy" | "terms";
+type PolicyPage = "privacy" | "terms" | "dataRetention";
 
 export function EditorialPage({ policy }: { policy: PolicyPage }) {
   const { locale } = useLocale();
   const content = POLICY_CONTENT[locale][policy];
+  const relatedLabel = locale === "en" ? "Related policies" : "相關政策";
 
   return (
     <main className="editorial-page" id="main-content">
       <header aria-labelledby="editorial-title" className="editorial-hero">
         <p className="eyebrow">{content.kicker}</p>
         <h1 id="editorial-title">{content.title}</h1>
+        <p className="editorial-meta">{content.meta}</p>
         <p>{content.lead}</p>
       </header>
       <nav aria-label={content.title} className="editorial-section-navigation">
@@ -29,6 +31,14 @@ export function EditorialPage({ policy }: { policy: PolicyPage }) {
           {section.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
         </section>
       ))}
+      <nav aria-label={relatedLabel} className="editorial-related">
+        <h2>{relatedLabel}</h2>
+        <ul>
+          {content.related.map((link) => (
+            <li key={link.href}><a href={link.href}>{link.label}</a></li>
+          ))}
+        </ul>
+      </nav>
     </main>
   );
 }

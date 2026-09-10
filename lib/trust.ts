@@ -83,9 +83,25 @@ export type FaqEntry = {
   linkLabel?: string;
 };
 
+export type PolicyLink = {
+  href: string;
+  label: string;
+};
+
+export type PolicyDocument = {
+  kicker: string;
+  title: string;
+  /** Entity and effective date, shown under the heading. */
+  meta: string;
+  lead: string;
+  sections: EditorialSection[];
+  related: PolicyLink[];
+};
+
 export type PolicyLocaleContent = {
-  privacy: { kicker: string; title: string; lead: string; sections: EditorialSection[] };
-  terms: { kicker: string; title: string; lead: string; sections: EditorialSection[] };
+  privacy: PolicyDocument;
+  terms: PolicyDocument;
+  dataRetention: PolicyDocument;
   faq: FaqEntry[];
 };
 
@@ -178,26 +194,173 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
   },
 };
 
+/**
+ * The published legal identity. These four values used to be duplicated (and
+ * to disagree) across the gateway's inline HTML, this file, and a retired
+ * static site. One definition, referenced everywhere, is the whole point.
+ */
+export const LEGAL_EFFECTIVE_DATE = "2026-09-09";
+export const LEGAL_ENTITY = "Power Champion Investment Limited";
+export const LEGAL_CONTACT_EMAIL = "info@powerchampion.org";
+export const LEGAL_GATEWAY_HOST = "b300.powerchampion.ai";
+
+const EN_META = `${LEGAL_ENTITY} · Effective ${LEGAL_EFFECTIVE_DATE}`;
+const ZH_META = `${LEGAL_ENTITY} · 生效日期 ${LEGAL_EFFECTIVE_DATE}`;
+const EN_CONTACT = `${LEGAL_ENTITY} — ${LEGAL_CONTACT_EMAIL}`;
+const ZH_CONTACT = `${LEGAL_ENTITY} — ${LEGAL_CONTACT_EMAIL}`;
+
 export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
   en: {
     privacy: {
       kicker: "Privacy",
-      title: "Privacy boundary",
-      lead: "What this launch site processes, and what the API meter records.",
+      title: "Privacy Policy",
+      meta: EN_META,
+      lead: `This policy describes how ${LEGAL_ENTITY} ("we") handles data for its inference API at ${LEGAL_GATEWAY_HOST}, and what this marketing site itself processes.`,
       sections: [
-        { id: "current-interactions", title: "What this site processes", body: ["The pricing estimator runs in your browser. The balance checker sends your API key only to the b300 gateway (POST /api/balance) to look up your balance; it is not transmitted to this site's server and is not persisted or logged."] },
-        { id: "api-usage-data", title: "API usage data", body: ["Requests to the API itself are metered by the b300 gateway for billing (tokens, timestamps, model). This is operational billing data for the service you call — see the data-retention policy at b300.powerchampion.ai/data-retention."] },
-        { id: "future-changes", title: "Future changes", body: ["If a future release changes data handling, the public privacy notice and the relevant service controls will be updated before that release."] },
+        {
+          id: "current-interactions",
+          title: "What this site processes",
+          body: ["The pricing estimator runs in your browser. The balance checker sends your API key only to the b300 gateway (POST /api/balance) to look up your balance; it is not transmitted to this site's server and is not persisted or logged."],
+        },
+        {
+          id: "what-we-process",
+          title: "What we process",
+          body: ["To serve a request, we transiently process the prompt and parameters you send in order to generate a completion. Inference runs on our own GPU nodes."],
+        },
+        {
+          id: "what-we-log",
+          title: "What we log",
+          body: ["We log usage metadata only — timestamps, API-key identifiers, model identifiers, measured token or media usage, a billing record identifier, and an operational status note when needed — for billing and reconciliation. We do not store prompt or completion content."],
+        },
+        {
+          id: "no-training",
+          title: "No training on your data",
+          body: ["We do not use requests, prompts, or completions to train or fine-tune any model."],
+        },
+        {
+          id: "retention",
+          title: "Retention",
+          body: ["Usage-metadata billing records are retained only as long as needed for billing, accounting, and reconciliation. No conversation content is retained. The specific handling rules are published in our Data Retention Policy."],
+        },
+        {
+          id: "security",
+          title: "Security",
+          body: ["All traffic is served over HTTPS. GPU nodes are not publicly exposed and are reached only through a private channel. API access requires a bearer key."],
+        },
+        {
+          id: "third-parties",
+          title: "Third parties",
+          body: ["If you reach our API through a marketplace such as OpenRouter, that provider routes and bills the request under its own policies before it reaches us."],
+        },
+        {
+          id: "future-changes",
+          title: "Future changes",
+          body: ["If a future release changes data handling, this notice and the relevant service controls will be updated before that release."],
+        },
+        { id: "contact", title: "Contact", body: [EN_CONTACT] },
+      ],
+      related: [
+        { href: "/data-retention", label: "Data Retention Policy" },
+        { href: "/terms", label: "Terms of Service" },
       ],
     },
     terms: {
       kicker: "Terms",
-      title: "Site terms",
-      lead: "This site describes the service and links to the live API; commercial terms for API usage are formed when a key is issued.",
+      title: "Terms of Service",
+      meta: EN_META,
+      lead: `These terms govern use of the inference API at ${LEGAL_GATEWAY_HOST} and of this site.`,
       sections: [
-        { id: "informational-site", title: "Site scope", body: ["Marketing pages provide public context. The API service at b300.powerchampion.ai is a live, transactional service billed on measured usage."] },
-        { id: "api-access", title: "API access", body: ["API keys and redeem-code top-ups are issued manually by email. Usage is billed per the live published rates from your prepaid balance; failed requests are not billed."] },
-        { id: "external-sources", title: "External sources", body: ["Company and capacity context is qualified by the cited external sources and does not create a promise of deployment, capacity, or service."] },
+        {
+          id: "informational-site",
+          title: "Site scope",
+          body: ["Marketing pages provide public context. The API service at b300.powerchampion.ai is a live, transactional service billed on measured usage; commercial terms for API usage are formed when a key is issued."],
+        },
+        {
+          id: "service",
+          title: "Service",
+          body: [`${LEGAL_ENTITY} provides an OpenAI-compatible inference API for hosted open-weight models at ${LEGAL_GATEWAY_HOST}. Access requires a valid API key.`],
+        },
+        {
+          id: "acceptable-use",
+          title: "Acceptable use",
+          body: ["You agree not to use the service for unlawful purposes, to comply with the licenses of the underlying models, and not to attempt to disrupt, overload, or gain unauthorized access to the service or its infrastructure."],
+        },
+        {
+          id: "pricing-billing",
+          title: "Pricing and billing",
+          body: [
+            "Usage is billed in USD by the metered unit published on our pricing page and model catalog, either through a marketplace such as OpenRouter or under a direct agreement.",
+            "API keys and redeem-code top-ups are issued manually by email. Usage is billed per the live published rates from your prepaid balance; failed requests are not billed.",
+          ],
+        },
+        {
+          id: "data-processing",
+          title: "Data processing",
+          body: ["Our Privacy Policy and Data Retention Policy describe how request data and usage metadata are handled."],
+        },
+        {
+          id: "availability",
+          title: "Availability",
+          body: ["The service is provided on a best-effort basis. Unless a separate service-level agreement is signed, no specific uptime or latency is guaranteed."],
+        },
+        {
+          id: "warranty-liability",
+          title: "Warranty and liability",
+          body: [`The service is provided "as is" without warranties of any kind. To the extent permitted by law, ${LEGAL_ENTITY} is not liable for indirect or consequential damages arising from use of the service.`],
+        },
+        {
+          id: "external-sources",
+          title: "External sources",
+          body: ["Company and capacity context is qualified by the cited external sources and does not create a promise of deployment, capacity, or service."],
+        },
+        {
+          id: "changes",
+          title: "Changes",
+          body: ["We may update these terms; continued use after an update constitutes acceptance."],
+        },
+        { id: "contact", title: "Contact", body: [EN_CONTACT] },
+      ],
+      related: [
+        { href: "/privacy", label: "Privacy Policy" },
+        { href: "/data-retention", label: "Data Retention Policy" },
+      ],
+    },
+    dataRetention: {
+      kicker: "Data retention",
+      title: "Data Retention Policy",
+      meta: EN_META,
+      lead: "Prompt content is not persisted. The usage metadata that billing needs is, and this policy says for how long and why.",
+      sections: [
+        {
+          id: "scope",
+          title: "Scope",
+          body: [`This policy supplements our Privacy Policy and describes how data is retained for the inference API at ${LEGAL_GATEWAY_HOST}.`],
+        },
+        {
+          id: "prompt-content",
+          title: "Prompt and output content",
+          body: ["Prompt content and model output are processed only to complete the inference request. They are released when request processing finishes and are not written to persistent storage. Conversation content is not kept in billing records or operational usage logs."],
+        },
+        {
+          id: "usage-metadata",
+          title: "Usage metadata",
+          body: ["We retain metering metadata such as timestamps, API-key identifiers, model identifiers, measured token or media usage, a billing record identifier, and an operational status note when needed, only as long as needed for billing and reconciliation purposes. These records do not contain prompt or output content."],
+        },
+        {
+          id: "no-training",
+          title: "No training use",
+          body: ["Prompt content and model output are not used to train, fine-tune, or evaluate machine-learning models."],
+        },
+        {
+          id: "deletion",
+          title: "Deletion and legal obligations",
+          body: ["When records are no longer needed for their stated billing, accounting, security, or legal purpose, they are deleted or de-identified. If applicable law requires a record to be preserved, we keep only the minimum required scope for the required period."],
+        },
+        { id: "contact", title: "Contact", body: [EN_CONTACT] },
+      ],
+      related: [
+        { href: "/privacy", label: "Privacy Policy" },
+        { href: "/terms", label: "Terms of Service" },
       ],
     },
     faq: [
@@ -213,22 +376,154 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
   zh: {
     privacy: {
       kicker: "隱私權",
-      title: "隱私權邊界",
-      lead: "本上線站處理什麼，以及 API 計費記錄什麼。",
+      title: "隱私權政策",
+      meta: ZH_META,
+      lead: `本政策說明 ${LEGAL_ENTITY} 就其推理 API（${LEGAL_GATEWAY_HOST}）如何處理資料，以及本行銷網站本身處理哪些資料。`,
       sections: [
-        { id: "current-interactions", title: "本站處理的資料", body: ["價格估算器在你的瀏覽器中執行。餘額查詢只會把你的 API 金鑰送到 b300 閘道（POST /api/balance）查詢餘額；金鑰不會傳輸至本站伺服器，也不會被儲存或記錄。"] },
-        { id: "api-usage-data", title: "API 用量資料", body: ["對 API 本身的請求會由 b300 閘道計量以供計費（Token 數、時間、模型）。這是你所呼叫服務的營運計費資料 — 詳見 b300.powerchampion.ai/data-retention。"] },
-        { id: "future-changes", title: "未來變更", body: ["若未來版本變更資料處理方式，會在發布前更新公開隱私權聲明與相關服務控制。"] },
+        {
+          id: "current-interactions",
+          title: "本站處理的資料",
+          body: ["價格估算器在你的瀏覽器中執行。餘額查詢只會把你的 API 金鑰送到 b300 閘道（POST /api/balance）查詢餘額；金鑰不會傳輸至本站伺服器，也不會被儲存或記錄。"],
+        },
+        {
+          id: "what-we-process",
+          title: "我們處理什麼",
+          body: ["為完成一次請求，我們會暫時處理你所傳送的提示內容與參數，以產生回應。推理運算執行於本公司自有的 GPU 節點。"],
+        },
+        {
+          id: "what-we-log",
+          title: "我們記錄什麼",
+          body: ["我們僅記錄使用中繼資料 — 時間戳記、API 金鑰識別碼、模型識別碼、實測 Token 或媒體用量、計費紀錄識別碼，以及必要時的營運狀態註記 — 供計費與對帳之用。我們不儲存提示或回應的內容本文。"],
+        },
+        {
+          id: "no-training",
+          title: "不以你的資料訓練模型",
+          body: ["我們不會將請求、提示內容或回應內容用於訓練或微調任何模型。"],
+        },
+        {
+          id: "retention",
+          title: "保存期間",
+          body: ["使用中繼資料之計費紀錄，僅於計費、會計與對帳所需期間內保存。對話內容一律不予保存。具體處理規則公布於本公司《資料保存政策》。"],
+        },
+        {
+          id: "security",
+          title: "資料安全",
+          body: ["所有流量均以 HTTPS 傳輸。GPU 節點不對公網暴露，僅透過私有通道連線。存取 API 須持有 Bearer 金鑰。"],
+        },
+        {
+          id: "third-parties",
+          title: "第三方",
+          body: ["若你透過 OpenRouter 等市集連線至本服務，該供應商會依其自身政策先行路由與計費，之後請求才會抵達我們。"],
+        },
+        {
+          id: "future-changes",
+          title: "未來變更",
+          body: ["若未來版本變更資料處理方式，會在發布前更新本聲明與相關服務控制。"],
+        },
+        { id: "contact", title: "聯絡我們", body: [ZH_CONTACT] },
+      ],
+      related: [
+        { href: "/data-retention", label: "資料保存政策" },
+        { href: "/terms", label: "服務條款" },
       ],
     },
     terms: {
       kicker: "條款",
-      title: "網站條款",
-      lead: "本網站說明服務並連結至即時 API；API 使用的商業條款於金鑰發放時成立。",
+      title: "服務條款",
+      meta: ZH_META,
+      lead: `本條款規範 ${LEGAL_GATEWAY_HOST} 推理 API 及本網站之使用。`,
       sections: [
-        { id: "informational-site", title: "網站範圍", body: ["行銷頁面提供公開脈絡。b300.powerchampion.ai 的 API 服務是即時、交易性的服務，依實際用量計費。"] },
-        { id: "api-access", title: "API 存取", body: ["API 金鑰與儲值碼以 email 人工發放。用量依公布之即時費率從預付餘額扣款；失敗的請求不計費。"] },
-        { id: "external-sources", title: "外部來源", body: ["公司與容量脈絡受引用外部來源的限定，並不構成部署、容量或服務的承諾。"] },
+        {
+          id: "informational-site",
+          title: "網站範圍",
+          body: ["行銷頁面提供公開脈絡。b300.powerchampion.ai 的 API 服務是即時、交易性的服務，依實際用量計費；API 使用的商業條款於金鑰發放時成立。"],
+        },
+        {
+          id: "service",
+          title: "服務說明",
+          body: [`${LEGAL_ENTITY} 於 ${LEGAL_GATEWAY_HOST} 提供相容於 OpenAI 規格的推理 API，服務託管之開源權重模型。存取本服務須持有有效的 API 金鑰。`],
+        },
+        {
+          id: "acceptable-use",
+          title: "可接受使用",
+          body: ["你同意不將本服務用於違法目的，遵守底層模型之授權條款，且不得試圖干擾、超載本服務或其基礎設施，或未經授權存取之。"],
+        },
+        {
+          id: "pricing-billing",
+          title: "費用與計費",
+          body: [
+            "用量以美元計價，依本公司價格頁與模型目錄所公布之計費單位收費，可透過 OpenRouter 等市集或依個別協議進行。",
+            "API 金鑰與儲值碼以 email 人工發放。用量依公布之即時費率從預付餘額扣款；失敗的請求不計費。",
+          ],
+        },
+        {
+          id: "data-processing",
+          title: "資料處理",
+          body: ["本公司《隱私權政策》與《資料保存政策》說明請求資料與使用中繼資料之處理方式。"],
+        },
+        {
+          id: "availability",
+          title: "服務可用性",
+          body: ["本服務以合理努力（best-effort）為基礎提供。除另行簽訂服務水準協議（SLA）外，不保證特定之可用率或延遲。"],
+        },
+        {
+          id: "warranty-liability",
+          title: "保證與責任限制",
+          body: [`本服務以「現狀」（AS IS）提供，不附任何明示或默示之保證。於法律允許之最大範圍內，${LEGAL_ENTITY} 對因使用本服務所生之間接或衍生性損害不負賠償責任。`],
+        },
+        {
+          id: "external-sources",
+          title: "外部來源",
+          body: ["公司與容量脈絡受引用外部來源的限定，並不構成部署、容量或服務的承諾。"],
+        },
+        {
+          id: "changes",
+          title: "條款修訂",
+          body: ["我們可能更新本條款；於更新後繼續使用本服務，即視為接受修訂後之條款。"],
+        },
+        { id: "contact", title: "聯絡我們", body: [ZH_CONTACT] },
+      ],
+      related: [
+        { href: "/privacy", label: "隱私權政策" },
+        { href: "/data-retention", label: "資料保存政策" },
+      ],
+    },
+    dataRetention: {
+      kicker: "資料保存",
+      title: "資料保存政策",
+      meta: ZH_META,
+      lead: "提示內容不落地保存；計費所需的使用中繼資料則有明確的保存期間與目的，本政策逐項說明。",
+      sections: [
+        {
+          id: "scope",
+          title: "政策範圍",
+          body: [`本政策為《隱私權政策》之補充，說明推理 API（${LEGAL_GATEWAY_HOST}）之資料保存方式。`],
+        },
+        {
+          id: "prompt-content",
+          title: "提示內容與模型輸出",
+          body: ["提示內容與模型輸出僅為完成該次推理請求而處理，請求處理完畢後即釋放，不寫入持久化儲存。對話內容不會保留於計費紀錄或營運用量日誌中。"],
+        },
+        {
+          id: "usage-metadata",
+          title: "使用中繼資料",
+          body: ["我們保存計量中繼資料，例如時間戳記、API 金鑰識別碼、模型識別碼、實測 Token 或媒體用量、計費紀錄識別碼，以及必要時的營運狀態註記，且僅於計費與對帳所需期間內保存。這些紀錄不含提示或輸出內容。"],
+        },
+        {
+          id: "no-training",
+          title: "不用於訓練",
+          body: ["提示內容與模型輸出不會被用於訓練、微調或評估任何機器學習模型。"],
+        },
+        {
+          id: "deletion",
+          title: "刪除與法定義務",
+          body: ["當紀錄已無計費、會計、資安或法律目的之必要時，即予刪除或去識別化。若適用法律要求保存特定紀錄，我們僅於法定最小範圍與期間內保存。"],
+        },
+        { id: "contact", title: "聯絡我們", body: [ZH_CONTACT] },
+      ],
+      related: [
+        { href: "/privacy", label: "隱私權政策" },
+        { href: "/terms", label: "服務條款" },
       ],
     },
     faq: [
