@@ -27,7 +27,7 @@ export type GatewayStatus = {
   models: GatewayModelStatus[];
 };
 
-const GATEWAY_ORIGIN =
+export const GATEWAY_ORIGIN =
   process.env.GATEWAY_ORIGIN ?? "https://b300.powerchampion.ai";
 
 export async function fetchGatewayStatus(): Promise<GatewayStatus> {
