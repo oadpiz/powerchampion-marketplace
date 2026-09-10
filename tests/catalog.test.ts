@@ -38,7 +38,7 @@ afterEach(() => {
 
 describe("fetchCatalog", () => {
   it("returns the live gateway models when the endpoint answers", async () => {
-    const mock = vi.fn(async () => jsonResponse(livePayload));
+    const mock = vi.fn<typeof fetch>(async () => jsonResponse(livePayload));
     vi.stubGlobal("fetch", mock);
 
     const result = await fetchCatalog();
@@ -51,7 +51,7 @@ describe("fetchCatalog", () => {
   });
 
   it("passes an abort signal so a hung gateway cannot hang the page", async () => {
-    const mock = vi.fn(async () => jsonResponse(livePayload));
+    const mock = vi.fn<typeof fetch>(async () => jsonResponse(livePayload));
     vi.stubGlobal("fetch", mock);
 
     await fetchCatalog();
