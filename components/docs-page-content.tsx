@@ -98,6 +98,9 @@ export function DocsPageContent({ gateway, models }: Props) {
           <div><dt>GET /dashboard/billing/subscription</dt><dd>{locale === "en" ? "Check prepaid balance" : "查詢預付餘額"}</dd></div>
           <div><dt>POST /v1/redeem</dt><dd>{locale === "en" ? "Redeem a top-up code" : "使用儲值碼加值"}</dd></div>
         </dl>
+        <p className="docs-guidance">
+          <a href="/openapi.json">{copy.shared.openApiSpec}</a>
+        </p>
       </section>
 
       <CodeSamples />

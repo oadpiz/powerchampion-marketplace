@@ -117,6 +117,15 @@ describe("CodeSamples", () => {
       }
     }
   });
+
+  it("links to the published OpenAPI specification from the endpoint list", () => {
+    render(<LocaleProvider><DocsPageContent gateway={null} models={SNAPSHOT_CATALOG} /></LocaleProvider>);
+
+    const link = screen.getByRole("link", { name: "OpenAPI specification" });
+    expect(link).toHaveAttribute("href", "/openapi.json");
+    expect(within(screen.getByRole("region", { name: "Available endpoints" })).getByRole("link", { name: "OpenAPI specification" }))
+      .toBe(link);
+  });
 });
 
 describe("ConsoleView", () => {

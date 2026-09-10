@@ -1,0 +1,752 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Power Champion Gateway API",
+    "version": "2026-09-09",
+    "summary": "OpenAI-compatible inference for the open models Power Champion serves.",
+    "description": "One OpenAI-compatible endpoint for text, vision, image, speech, embedding and reranking models. Authenticate with a bearer API key; usage is billed from a prepaid balance. Only the publicly documented subset of each request body is described here — the gateway forwards the OpenAI-compatible fields it recognises and ignores the rest.",
+    "contact": {
+      "name": "Power Champion",
+      "email": "info@powerchampion.org",
+      "url": "https://powerchampion.ai/contact"
+    },
+    "license": {
+      "name": "Terms of service",
+      "url": "https://powerchampion.ai/terms"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://b300.powerchampion.ai",
+      "description": "Production gateway"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    { "name": "Models", "description": "Discovery of the served catalogue." },
+    { "name": "Text", "description": "Chat, completion and embedding endpoints." },
+    { "name": "Image", "description": "Text-to-image generation." },
+    { "name": "Audio", "description": "Text-to-speech and speech-to-text." },
+    { "name": "Status", "description": "Unauthenticated machine-readable service data." }
+  ],
+  "paths": {
+    "/v1/models": {
+      "get": {
+        "tags": ["Models"],
+        "operationId": "listModels",
+        "summary": "List the models this key may call.",
+        "responses": {
+          "200": {
+            "description": "The served model list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModelList" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": ["Text"],
+        "operationId": "createChatCompletion",
+        "summary": "Chat, reasoning, coding and vision requests.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatCompletionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A completion, or a text/event-stream of deltas when `stream` is true.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChatCompletion" }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string",
+                  "description": "Server-sent events, each `data:` line carrying a chat.completion.chunk object, terminated by `data: [DONE]`."
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/ModelNotAvailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/CapacityExhausted" }
+        }
+      }
+    },
+    "/v1/completions": {
+      "post": {
+        "tags": ["Text"],
+        "operationId": "createCompletion",
+        "summary": "Legacy prompt completion.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CompletionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A completion, or a text/event-stream of deltas when `stream` is true.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Completion" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/ModelNotAvailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/CapacityExhausted" }
+        }
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "tags": ["Text"],
+        "operationId": "createEmbedding",
+        "summary": "Embed text for retrieval.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EmbeddingRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One embedding per input.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmbeddingList" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/ModelNotAvailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/CapacityExhausted" }
+        }
+      }
+    },
+    "/v1/rerank": {
+      "post": {
+        "tags": ["Text"],
+        "operationId": "createRerank",
+        "summary": "Score documents against a query.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RerankRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Documents ordered by relevance.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RerankResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/ModelNotAvailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/CapacityExhausted" }
+        }
+      }
+    },
+    "/v1/images/generations": {
+      "post": {
+        "tags": ["Image"],
+        "operationId": "createImage",
+        "summary": "Generate an image from a text prompt.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ImageGenerationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The generated image or images.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImageGenerationResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/ModelNotAvailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/CapacityExhausted" }
+        }
+      }
+    },
+    "/v1/audio/speech": {
+      "post": {
+        "tags": ["Audio"],
+        "operationId": "createSpeech",
+        "summary": "Synthesise speech from text.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SpeechRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The synthesised audio. Billed tokens are returned in the X-Usage-Tokens response header.",
+            "headers": {
+              "X-Usage-Tokens": {
+                "description": "Tokens billed for this request.",
+                "schema": { "type": "integer" }
+              }
+            },
+            "content": {
+              "audio/mpeg": {
+                "schema": { "type": "string", "format": "binary" }
+              },
+              "audio/wav": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/ModelNotAvailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/CapacityExhausted" }
+        }
+      }
+    },
+    "/v1/audio/transcriptions": {
+      "post": {
+        "tags": ["Audio"],
+        "operationId": "createTranscription",
+        "summary": "Transcribe an uploaded audio file.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/TranscriptionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The transcript.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Transcription" }
+              },
+              "text/plain": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/ModelNotAvailable" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/CapacityExhausted" }
+        }
+      }
+    },
+    "/status.json": {
+      "get": {
+        "tags": ["Status"],
+        "operationId": "getStatus",
+        "summary": "Machine-readable service status.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Current readiness and per-model uptime.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Status" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog.json": {
+      "get": {
+        "tags": ["Status"],
+        "operationId": "getCatalog",
+        "summary": "Machine-readable model catalogue with prices.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Every model on sale, with modalities, limits and prices.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Catalog" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Send your API key as `Authorization: Bearer <key>`."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request body could not be parsed.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid API key.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "ModelNotAvailable": {
+        "description": "The requested model is not on sale, or is draining.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "RateLimited": {
+        "description": "The key's rate or balance limit was exceeded.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "CapacityExhausted": {
+        "description": "No replica was available to serve the request.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "message": { "type": "string" },
+              "type": { "type": ["string", "null"] },
+              "param": { "type": ["string", "null"] },
+              "code": { "type": ["string", "null"] }
+            },
+            "required": ["message"]
+          }
+        },
+        "required": ["error"]
+      },
+      "Usage": {
+        "type": "object",
+        "properties": {
+          "prompt_tokens": { "type": "integer" },
+          "completion_tokens": { "type": "integer" },
+          "total_tokens": { "type": "integer" }
+        },
+        "required": ["prompt_tokens", "total_tokens"]
+      },
+      "ModelList": {
+        "type": "object",
+        "properties": {
+          "object": { "type": "string", "const": "list" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "examples": ["glm-5.2-fp8"] },
+                "object": { "type": "string", "const": "model" },
+                "created": { "type": "integer" },
+                "owned_by": { "type": "string" }
+              },
+              "required": ["id", "object"]
+            }
+          }
+        },
+        "required": ["object", "data"]
+      },
+      "ChatMessage": {
+        "type": "object",
+        "properties": {
+          "role": { "type": "string", "enum": ["system", "user", "assistant", "tool"] },
+          "content": {
+            "description": "Plain text, or an array of content parts for vision models.",
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string", "enum": ["text", "image_url"] },
+                    "text": { "type": "string" },
+                    "image_url": {
+                      "type": "object",
+                      "properties": { "url": { "type": "string" } },
+                      "required": ["url"]
+                    }
+                  },
+                  "required": ["type"]
+                }
+              }
+            ]
+          },
+          "name": { "type": "string" },
+          "tool_call_id": { "type": "string" }
+        },
+        "required": ["role", "content"]
+      },
+      "ChatCompletionRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "examples": ["glm-5.2-fp8"] },
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/ChatMessage" }
+          },
+          "stream": { "type": "boolean", "default": false },
+          "max_tokens": { "type": "integer", "minimum": 1 },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+          "top_p": { "type": "number", "minimum": 0, "maximum": 1 },
+          "n": { "type": "integer", "minimum": 1, "default": 1 },
+          "stop": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "seed": { "type": "integer" },
+          "presence_penalty": { "type": "number" },
+          "frequency_penalty": { "type": "number" },
+          "response_format": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["text", "json_object", "json_schema"] },
+              "json_schema": { "type": "object" }
+            },
+            "required": ["type"]
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string", "const": "function" },
+                "function": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "description": { "type": "string" },
+                    "parameters": { "type": "object" }
+                  },
+                  "required": ["name"]
+                }
+              },
+              "required": ["type", "function"]
+            }
+          },
+          "tool_choice": {
+            "oneOf": [
+              { "type": "string", "enum": ["none", "auto", "required"] },
+              { "type": "object" }
+            ]
+          }
+        },
+        "required": ["model", "messages"]
+      },
+      "ChatCompletion": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "type": "string", "const": "chat.completion" },
+          "created": { "type": "integer" },
+          "model": { "type": "string" },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "message": { "$ref": "#/components/schemas/ChatMessage" },
+                "finish_reason": { "type": ["string", "null"] }
+              },
+              "required": ["index", "message"]
+            }
+          },
+          "usage": { "$ref": "#/components/schemas/Usage" }
+        },
+        "required": ["id", "object", "model", "choices"]
+      },
+      "CompletionRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string" },
+          "prompt": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "stream": { "type": "boolean", "default": false },
+          "max_tokens": { "type": "integer", "minimum": 1 },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+          "top_p": { "type": "number", "minimum": 0, "maximum": 1 },
+          "stop": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          }
+        },
+        "required": ["model", "prompt"]
+      },
+      "Completion": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "type": "string", "const": "text_completion" },
+          "created": { "type": "integer" },
+          "model": { "type": "string" },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "text": { "type": "string" },
+                "finish_reason": { "type": ["string", "null"] }
+              },
+              "required": ["index", "text"]
+            }
+          },
+          "usage": { "$ref": "#/components/schemas/Usage" }
+        },
+        "required": ["id", "object", "model", "choices"]
+      },
+      "EmbeddingRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "examples": ["bge-m3"] },
+          "input": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "encoding_format": { "type": "string", "enum": ["float", "base64"], "default": "float" }
+        },
+        "required": ["model", "input"]
+      },
+      "EmbeddingList": {
+        "type": "object",
+        "properties": {
+          "object": { "type": "string", "const": "list" },
+          "model": { "type": "string" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "object": { "type": "string", "const": "embedding" },
+                "index": { "type": "integer" },
+                "embedding": { "type": "array", "items": { "type": "number" } }
+              },
+              "required": ["object", "index", "embedding"]
+            }
+          },
+          "usage": { "$ref": "#/components/schemas/Usage" }
+        },
+        "required": ["object", "data"]
+      },
+      "RerankRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "examples": ["bge-reranker-v2-m3"] },
+          "query": { "type": "string" },
+          "documents": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "top_n": { "type": "integer", "minimum": 1 },
+          "return_documents": { "type": "boolean", "default": false }
+        },
+        "required": ["model", "query", "documents"]
+      },
+      "RerankResponse": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string" },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "relevance_score": { "type": "number" },
+                "document": { "type": ["string", "null"] }
+              },
+              "required": ["index", "relevance_score"]
+            }
+          },
+          "usage": { "$ref": "#/components/schemas/Usage" }
+        },
+        "required": ["results"]
+      },
+      "ImageGenerationRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "examples": ["flux-schnell"] },
+          "prompt": { "type": "string" },
+          "n": { "type": "integer", "minimum": 1, "default": 1 },
+          "size": { "type": "string", "examples": ["1024x1024"] },
+          "response_format": { "type": "string", "enum": ["b64_json", "url"], "default": "b64_json" }
+        },
+        "required": ["model", "prompt"]
+      },
+      "ImageGenerationResponse": {
+        "type": "object",
+        "properties": {
+          "created": { "type": "integer" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "b64_json": { "type": "string" },
+                "url": { "type": "string" },
+                "revised_prompt": { "type": "string" }
+              }
+            }
+          }
+        },
+        "required": ["data"]
+      },
+      "SpeechRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "examples": ["indextts2"] },
+          "input": { "type": "string" },
+          "voice": { "type": "string" },
+          "response_format": { "type": "string", "enum": ["mp3", "wav"], "default": "mp3" },
+          "speed": { "type": "number", "minimum": 0.25, "maximum": 4, "default": 1 }
+        },
+        "required": ["model", "input"]
+      },
+      "TranscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "format": "binary" },
+          "model": { "type": "string", "examples": ["whisper-large-v3"] },
+          "language": { "type": "string", "description": "ISO-639-1 code; omit to auto-detect." },
+          "prompt": { "type": "string" },
+          "response_format": { "type": "string", "enum": ["json", "text", "verbose_json"], "default": "json" },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "required": ["file", "model"]
+      },
+      "Transcription": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" }
+        },
+        "required": ["text"]
+      },
+      "Status": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["ok", "warn", "down"] },
+          "summary": { "type": "string" },
+          "updated": { "type": "integer" },
+          "uptime_window_days": { "type": "integer" },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": ["string", "null"] },
+                "ready": { "type": "boolean" },
+                "context_length": { "type": ["integer", "null"] },
+                "uptime": { "type": ["number", "null"] }
+              },
+              "required": ["id", "ready"]
+            }
+          }
+        },
+        "required": ["status", "summary", "updated", "uptime_window_days", "models"]
+      },
+      "Catalog": {
+        "type": "object",
+        "properties": {
+          "updated": { "type": "string", "format": "date-time" },
+          "models": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CatalogModel" }
+          }
+        },
+        "required": ["updated", "models"]
+      },
+      "CatalogModel": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "modalities": {
+            "type": "object",
+            "properties": {
+              "input": { "type": "array", "items": { "type": "string" } },
+              "output": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["input", "output"]
+          },
+          "context_length": { "type": ["integer", "null"] },
+          "max_output_length": { "type": ["integer", "null"] },
+          "pricing": {
+            "type": "object",
+            "properties": {
+              "unit": { "type": "string", "const": "per_million_tokens" },
+              "prompt_usd": { "type": "number" },
+              "completion_usd": { "type": "number" }
+            },
+            "required": ["unit", "prompt_usd", "completion_usd"]
+          },
+          "billing_note": { "type": ["string", "null"] },
+          "ready": { "type": "boolean" },
+          "uptime": { "type": ["number", "null"] }
+        },
+        "required": ["id", "name", "modalities", "pricing", "ready"]
+      }
+    }
+  }
+}
