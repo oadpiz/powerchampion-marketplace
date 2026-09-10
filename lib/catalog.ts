@@ -171,10 +171,93 @@ export const CATALOG_SNAPSHOT: CatalogModel[] = [
 ];
 // catalog-snapshot:end
 
-function isCatalogPayload(value: unknown): value is CatalogPayload {
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+/**
+ * A single catalogue entry, validated field by field.
+ *
+ * A malformed 200 is worse than an outage: mergeCatalog() reads
+ * `model.pricing.prompt_usd` and `model.modalities.input` unguarded, so one bad
+ * entry used to take the whole page down with a TypeError. Anything that does
+ * not carry the fields a card needs is dropped, and the caller decides what to
+ * do when nothing is left.
+ */
+function isCatalogModel(value: unknown): value is CatalogModel {
   if (typeof value !== "object" || value === null) return false;
+  const model = value as Record<string, unknown>;
+
+  if (typeof model.id !== "string" || model.id.length === 0) return false;
+  if (typeof model.name !== "string") return false;
+  if (typeof model.ready !== "boolean") return false;
+
+  const modalities = model.modalities;
+  if (typeof modalities !== "object" || modalities === null) return false;
+  const { input, output } = modalities as Record<string, unknown>;
+  if (!isStringArray(input) || !isStringArray(output)) return false;
+
+  const pricing = model.pricing;
+  if (typeof pricing !== "object" || pricing === null) return false;
+  const { prompt_usd: prompt, completion_usd: completion } = pricing as Record<string, unknown>;
+  if (typeof prompt !== "number" || !Number.isFinite(prompt)) return false;
+  if (typeof completion !== "number" || !Number.isFinite(completion)) return false;
+
+  if (!isNullableNumber(model.context_length)) return false;
+  if (!isNullableNumber(model.max_output_length)) return false;
+  if (!isNullableNumber(model.uptime)) return false;
+
+  return true;
+}
+
+/**
+ * Pull the usable models out of an unknown payload.
+ *
+ * Returns null — meaning "use the snapshot" — when the payload is not an
+ * object with a models array, or when every entry in it was rejected. A
+ * partially valid payload keeps its valid entries: one broken model should not
+ * hide the eight that are fine.
+ */
+function validCatalogModels(value: unknown): CatalogModel[] | null {
+  if (typeof value !== "object" || value === null) return null;
   const models = (value as { models?: unknown }).models;
-  return Array.isArray(models) && models.length > 0;
+  if (!Array.isArray(models)) return null;
+  const valid = models.filter(isCatalogModel);
+  return valid.length > 0 ? valid : null;
+}
+
+/**
+ * Negative-result memo.
+ *
+ * vinext does not cache a failed fetch, so during a gateway outage every
+ * request paid the full 4 s timeout again — 4 s on /, /models and /pricing and
+ * 8 s on /docs, on every single request. After a failure the network is
+ * skipped for FAILURE_MEMO_MS and the snapshot is returned immediately.
+ * A success clears it, so recovery is picked up on the next request.
+ */
+export const FAILURE_MEMO_MS = 60_000;
+
+let lastFailureAt: number | null = null;
+
+/** Test seam: forget the memoized failure. */
+export function resetCatalogFailureMemo(): void {
+  lastFailureAt = null;
+}
+
+function memoIsFresh(): boolean {
+  return lastFailureAt !== null && Date.now() - lastFailureAt < FAILURE_MEMO_MS;
+}
+
+function snapshotResult(): CatalogResult {
+  return {
+    source: "snapshot",
+    updated: CATALOG_SNAPSHOT_DATE,
+    models: CATALOG_SNAPSHOT,
+  };
 }
 
 /**
@@ -185,6 +268,8 @@ function isCatalogPayload(value: unknown): value is CatalogPayload {
  * Callers branch on `source` to decide whether to show the snapshot notice.
  */
 export async function fetchCatalog(): Promise<CatalogResult> {
+  if (memoIsFresh()) return snapshotResult();
+
   try {
     const response = await fetch(`${GATEWAY_ORIGIN}/catalog.json`, {
       next: { revalidate: 60 },
@@ -194,19 +279,19 @@ export async function fetchCatalog(): Promise<CatalogResult> {
       throw new Error(`gateway catalog ${response.status}`);
     }
     const payload: unknown = await response.json();
-    if (!isCatalogPayload(payload)) {
-      throw new Error("gateway catalog payload has no models");
+    const models = validCatalogModels(payload);
+    if (!models) {
+      throw new Error("gateway catalog payload has no usable models");
     }
+    const updated = (payload as { updated?: unknown }).updated;
+    lastFailureAt = null;
     return {
       source: "live",
-      updated: payload.updated || CATALOG_SNAPSHOT_DATE,
-      models: payload.models,
+      updated: typeof updated === "string" && updated ? updated : CATALOG_SNAPSHOT_DATE,
+      models,
     };
   } catch {
-    return {
-      source: "snapshot",
-      updated: CATALOG_SNAPSHOT_DATE,
-      models: CATALOG_SNAPSHOT,
-    };
+    lastFailureAt = Date.now();
+    return snapshotResult();
   }
 }

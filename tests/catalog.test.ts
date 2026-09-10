@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CATALOG_SNAPSHOT,
   CATALOG_SNAPSHOT_DATE,
+  FAILURE_MEMO_MS,
   fetchCatalog,
+  resetCatalogFailureMemo,
   type CatalogPayload,
 } from "../lib/catalog";
 
@@ -31,9 +33,17 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+beforeEach(() => {
+  // The negative-result memo is module state: without this, one test's
+  // simulated outage would make the next test skip the network entirely.
+  resetCatalogFailureMemo();
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
+  resetCatalogFailureMemo();
 });
 
 describe("fetchCatalog", () => {
@@ -87,6 +97,111 @@ describe("fetchCatalog", () => {
     const result = await fetchCatalog();
 
     expect(result.source).toBe("snapshot");
+  });
+
+  it("accepts a live payload whose nullable fields are actually null", async () => {
+    const nullCarrying: CatalogPayload = {
+      updated: "2026-09-10T00:00:00Z",
+      models: [
+        {
+          ...livePayload.models[0],
+          id: "whisper-large-v3",
+          name: "Whisper Large v3",
+          context_length: null,
+          max_output_length: null,
+          uptime: null,
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(nullCarrying)));
+
+    const result = await fetchCatalog();
+
+    expect(result.source).toBe("live");
+    expect(result.models[0].context_length).toBeNull();
+    expect(result.models[0].max_output_length).toBeNull();
+    expect(result.models[0].uptime).toBeNull();
+  });
+
+  it.each([
+    ["an empty object", {}],
+    ["a non-array models field", { models: "x" }],
+    ["a null models field", { updated: "x", models: null }],
+    ["models that are not objects", { updated: "x", models: ["glm-5.2-fp8"] }],
+    ["an entry with no fields at all", { updated: "x", models: [{}] }],
+  ])("falls back to the snapshot for %s", async (_label, payload) => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(payload)));
+
+    const result = await fetchCatalog();
+
+    expect(result.source).toBe("snapshot");
+    expect(result.models).toEqual(CATALOG_SNAPSHOT);
+  });
+
+  it("falls back to the snapshot when the only model has no pricing", async () => {
+    const withoutPricing: Record<string, unknown> = { ...livePayload.models[0] };
+    delete withoutPricing.pricing;
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ updated: "x", models: [withoutPricing] })));
+
+    const result = await fetchCatalog();
+
+    expect(result.source).toBe("snapshot");
+  });
+
+  it("drops only the invalid entries when some models are usable", async () => {
+    const broken: Record<string, unknown> = { ...livePayload.models[0] };
+    delete broken.pricing;
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({
+      updated: "2026-09-10",
+      models: [{ ...broken, id: "broken" }, livePayload.models[0], { id: "no-modalities", name: "x", ready: true }],
+    })));
+
+    const result = await fetchCatalog();
+
+    expect(result.source).toBe("live");
+    expect(result.models.map((model) => model.id)).toEqual(["glm-5.2-fp8"]);
+  });
+
+  it("skips the network for a minute after a failure, then retries", async () => {
+    vi.useFakeTimers();
+    const mock = vi.fn<typeof fetch>(async () => {
+      throw new DOMException("The operation was aborted.", "TimeoutError");
+    });
+    vi.stubGlobal("fetch", mock);
+
+    expect((await fetchCatalog()).source).toBe("snapshot");
+    expect(mock).toHaveBeenCalledTimes(1);
+
+    // Second request during the outage: snapshot, no second round trip.
+    expect((await fetchCatalog()).source).toBe("snapshot");
+    expect(mock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(FAILURE_MEMO_MS - 1);
+    await fetchCatalog();
+    expect(mock).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(2);
+    await fetchCatalog();
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears the memo once the gateway answers again", async () => {
+    vi.useFakeTimers();
+    let healthy = false;
+    const mock = vi.fn<typeof fetch>(async () => {
+      if (!healthy) throw new Error("gateway down");
+      return jsonResponse(livePayload);
+    });
+    vi.stubGlobal("fetch", mock);
+
+    expect((await fetchCatalog()).source).toBe("snapshot");
+    healthy = true;
+    vi.advanceTimersByTime(FAILURE_MEMO_MS + 1);
+    expect((await fetchCatalog()).source).toBe("live");
+
+    // Memo cleared: the very next request goes to the network again.
+    await fetchCatalog();
+    expect(mock).toHaveBeenCalledTimes(3);
   });
 
   it("falls back to the snapshot when the body is not JSON", async () => {

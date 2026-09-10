@@ -7,7 +7,9 @@ import { DocsPageContent } from "../components/docs-page-content";
 import { ConsoleView } from "../components/console-view";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
-import { metadata as docsMetadata } from "../app/docs/page";
+import DocsPage, { metadata as docsMetadata } from "../app/docs/page";
+import { resetCatalogFailureMemo } from "../lib/catalog";
+import { resetGatewayStatusFailureMemo } from "../lib/gateway-status";
 import ConsolePage, { metadata as consoleMetadata } from "../app/console/page";
 import { SNAPSHOT_CATALOG } from "../lib/models";
 
@@ -220,5 +222,35 @@ describe("ConsoleView", () => {
 
     expect(screen.getByRole("heading", { level: 2, name: "Check your balance" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
+  });
+});
+
+describe("/docs gateway reads", () => {
+  it("issues both gateway requests concurrently, so an outage costs one timeout not two", async () => {
+    resetCatalogFailureMemo();
+    resetGatewayStatusFailureMemo();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const mock = vi.fn<typeof fetch>(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      throw new DOMException("The operation was aborted.", "TimeoutError");
+    });
+    vi.stubGlobal("fetch", mock);
+
+    try {
+      const page = await DocsPage();
+      // Both reads failed, and the page still renders from the snapshot.
+      expect(page.props.gateway).toBeNull();
+      expect(page.props.models.length).toBeGreaterThan(0);
+      expect(mock).toHaveBeenCalledTimes(2);
+      expect(maxInFlight).toBe(2);
+    } finally {
+      vi.unstubAllGlobals();
+      resetCatalogFailureMemo();
+      resetGatewayStatusFailureMemo();
+    }
   });
 });
