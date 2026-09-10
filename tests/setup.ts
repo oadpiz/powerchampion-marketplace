@@ -42,7 +42,7 @@ function createMemoryStorage(): Storage {
 }
 
 function ensureWorkingStorage(propertyName: "localStorage" | "sessionStorage") {
-  const current = (window as any)[propertyName];
+  const current: Storage | undefined = window[propertyName];
   if (current && typeof current.setItem === "function") return;
   Object.defineProperty(window, propertyName, {
     value: createMemoryStorage(),

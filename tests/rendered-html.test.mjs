@@ -231,6 +231,17 @@ test("server-renders route-specific launch boundaries and protected facts", asyn
   assert.doesNotMatch(contactHtml, /<(?:input|textarea|select)[^>]+(?:card|bank|email|password|payment|billing)/i);
   assert.doesNotMatch(contactHtml, /<form[^>]+action=/i);
 
+  // I1: the balance/playground key does reach this site's server. The policy
+  // must say so, and must not carry the old "not transmitted to this site"
+  // claim in either locale.
+  const privacyHtml = await (await render("/privacy")).text();
+  assert.match(privacyHtml, /send your API key to this site.{0,20}s own server/i, "/privacy admits the key reaches this site's server");
+  assert.match(privacyHtml, /does not store or log your key/i, "/privacy states the non-retention boundary");
+  assert.doesNotMatch(privacyHtml, /not transmitted to this site/i, "/privacy no longer claims the key never reaches this site");
+  const privacyZhHtml = await (await render("/privacy", "localhost", undefined, { "accept-language": "zh-TW,zh;q=0.9" })).text();
+  assert.match(privacyZhHtml, /送至本站伺服器/, "the zh privacy page admits the key reaches this site's server");
+  assert.doesNotMatch(privacyZhHtml, /金鑰不會傳輸至本站伺服器/, "the zh privacy page drops the old claim");
+
   for (const pathname of ["/terms", "/privacy"]) {
     const policyHtml = await (await render(pathname)).text();
     assert.match(policyHtml, /marketing site|marketing pages|launch site/i, `${pathname} names this site's boundary`);

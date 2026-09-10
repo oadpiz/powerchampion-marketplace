@@ -220,7 +220,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
         {
           id: "current-interactions",
           title: "What this site processes",
-          body: ["The pricing estimator runs in your browser. The balance checker sends your API key only to the b300 gateway (POST /api/balance) to look up your balance; it is not transmitted to this site's server and is not persisted or logged."],
+          body: ["The pricing estimator runs in your browser. The balance checker and the API playground send your API key to this site’s own server (POST /api/balance, POST /api/playground), which uses it solely to forward that one request to the b300 gateway and relay the answer back. This site does not store or log your key; the browser keeps it in page memory only, and never in browser storage."],
         },
         {
           id: "what-we-process",
@@ -367,7 +367,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
       { id: "buy-tokens", question: "Can I buy tokens now?", answer: "Yes. Keys are prepaid with a balance in nano-USD; top up by requesting a redeem code via email, then POST /v1/redeem with your key." },
       { id: "rates-final", question: "Are the displayed rates final?", answer: "Yes. The listed rates are the live chargeable rates the meter bills from — input and output priced separately, per million tokens (or per image/minute for media models)." },
       { id: "api-live", question: "Is the API live?", answer: "The OpenAI-compatible endpoint is deployed at b300.powerchampion.ai — text, vision, image, speech, embeddings, and reranking behind one key. Whether models are currently serving is shown live on the status page; this site does not claim availability it cannot observe." },
-      { id: "entered-information", question: "What happens to information entered here?", answer: "The balance checker sends your key only to the b300 gateway (POST /api/balance) to look up your balance; it is never stored or logged by this site." },
+      { id: "entered-information", question: "What happens to information entered here?", answer: "The balance checker sends your key to this site’s server (POST /api/balance), which forwards it to the b300 gateway for that one lookup and relays the answer; this site does not store or log it." },
       { id: "capacity-deployed", question: `Is ${COMPANY_CAPACITY_MW} already deployed?`, answer: "No. The figure is counterparty-reported expected capacity, not completed deployment.", href: "/company", linkLabel: "Read company context" },
       { id: "deployment-review", question: "What is a deployment review?", answer: "It is a non-binding channel for discussing deployment inputs; it does not reserve capacity or create a service commitment." },
       { id: "launch-access", question: "How do I request launch access?", answer: "Click “Get API access” — it opens a prefilled email to request your key. Keys and redeem-code top-ups are issued manually." },
@@ -383,7 +383,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
         {
           id: "current-interactions",
           title: "本站處理的資料",
-          body: ["價格估算器在你的瀏覽器中執行。餘額查詢只會把你的 API 金鑰送到 b300 閘道（POST /api/balance）查詢餘額；金鑰不會傳輸至本站伺服器，也不會被儲存或記錄。"],
+          body: ["價格估算器在你的瀏覽器中執行。餘額查詢與 API 測試工具會把你的 API 金鑰送至本站伺服器（POST /api/balance、POST /api/playground），本站僅以該金鑰代為向 b300 閘道轉送這一次請求並回傳結果。本站不會儲存或記錄你的金鑰；瀏覽器端僅將金鑰留在頁面記憶體，不存入瀏覽器儲存空間。"],
         },
         {
           id: "what-we-process",
@@ -530,7 +530,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
       { id: "buy-tokens", question: "我現在可以購買 Token 嗎？", answer: "可以。金鑰以 nano-USD 預付餘額運作；透過 email 申請儲值碼後，用金鑰 POST /v1/redeem 即可加值。" },
       { id: "rates-final", question: "顯示的費率是最終價格嗎？", answer: "是。表列費率即為計費表實際扣款的即時費率 — 輸入與輸出分開計價，以每百萬 Token 計（媒體模型以每張圖/每分鐘計）。" },
       { id: "api-live", question: "API 已經上線了嗎？", answer: "OpenAI 相容端點已部署於 b300.powerchampion.ai — 文字、視覺、圖像、語音、嵌入與重排序，一把金鑰全部搞定。模型目前是否正在服務，以狀態頁即時呈現為準；本站不宣稱無法觀測的可用性。" },
-      { id: "entered-information", question: "我在這裡輸入的資訊會怎麼處理？", answer: "餘額查詢只會把你的金鑰送到 b300 閘道（POST /api/balance）查詢餘額；本站不會儲存或記錄金鑰。" },
+      { id: "entered-information", question: "我在這裡輸入的資訊會怎麼處理？", answer: "餘額查詢會把你的金鑰送至本站伺服器（POST /api/balance），由本站代為向 b300 閘道轉送這一次查詢並回傳結果；本站不會儲存或記錄金鑰。" },
       { id: "capacity-deployed", question: `${COMPANY_CAPACITY_MW} 已經部署了嗎？`, answer: "沒有。該數字是交易對手報告的預期容量，並非已完成部署。", href: "/company", linkLabel: "閱讀公司脈絡" },
       { id: "deployment-review", question: "什麼是部署審查？", answer: "這是非約束性的洽談管道，用於討論部署輸入；不會預留容量或形成服務承諾。" },
       { id: "launch-access", question: "如何申請啟動存取？", answer: "點擊「取得 API 存取」— 會開啟預填 email 申請金鑰。金鑰與儲值碼以人工發放。" },

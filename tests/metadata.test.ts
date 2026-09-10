@@ -47,6 +47,16 @@ describe("sitemap", () => {
     }
   });
 
+  it("dates the three policies to the effective date they publish", async () => {
+    const xml = await sitemap();
+    for (const pathname of ["/terms", "/privacy", "/data-retention"]) {
+      const entry = xml.match(
+        new RegExp(`<loc>https://powerchampion\\.ai${pathname}</loc>\\s*<lastmod>([^<]+)</lastmod>`),
+      );
+      expect(entry?.[1]).toBe("2026-09-09");
+    }
+  });
+
   it("does not list /about, which is a redirect and not a page", async () => {
     expect(await sitemap()).not.toContain("powerchampion.ai/about");
   });

@@ -68,7 +68,7 @@ describe("public trust pages", () => {
 
   it.each([
     [<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i],
-    [<PrivacyPage key="privacy" />, /not transmitted to this site's server and is not persisted or logged/i],
+    [<PrivacyPage key="privacy" />, /forward that one request to the b300 gateway/i],
     [<DataRetentionPage key="data-retention" />, /not written to persistent storage/i],
   ])(
     "preserves the live-service boundary",
