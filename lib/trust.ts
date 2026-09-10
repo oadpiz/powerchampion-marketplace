@@ -329,7 +329,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
       kicker: "Data retention",
       title: "Data Retention Policy",
       meta: EN_META,
-      lead: "Prompt content is not persisted. The usage metadata that billing needs is, and this policy says for how long and why.",
+      lead: "Prompt content is not persisted. The usage metadata that billing needs is retained only as long as necessary, and this policy explains its purpose and scope.",
       sections: [
         {
           id: "scope",
@@ -492,7 +492,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
       kicker: "資料保存",
       title: "資料保存政策",
       meta: ZH_META,
-      lead: "提示內容不落地保存；計費所需的使用中繼資料則有明確的保存期間與目的，本政策逐項說明。",
+      lead: "提示內容不落地保存；計費所需的使用中繼資料則僅於必要期間內保存，本政策說明其目的與範圍。",
       sections: [
         {
           id: "scope",

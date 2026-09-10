@@ -350,6 +350,25 @@ test("server-renders docs and the live console", async () => {
   assert.doesNotMatch(consoleHtml, /sk-[A-Za-z0-9]{12}/);
 });
 
+// Each policy's own route must NOT appear among its own related-policies
+// links, and both siblings must.
+const POLICY_SIBLINGS = {
+  "/privacy": ["/terms", "/data-retention"],
+  "/terms": ["/privacy", "/data-retention"],
+  "/data-retention": ["/privacy", "/terms"],
+};
+
+// Scope to the `editorial-related` nav (rendered by EditorialPage as
+// `<nav aria-label="Related policies" class="editorial-related">...</nav>`
+// in the default English locale) rather than matching anywhere in the page —
+// the footer already links /privacy and /terms on every route, so an
+// unscoped match would pass even if the related-policies nav were broken.
+function relatedPoliciesNav(html, pathname) {
+  const match = html.match(/<nav aria-label="Related policies" class="editorial-related">([\s\S]*?)<\/nav>/);
+  assert.ok(match, `${pathname} has a related-policies nav`);
+  return match[1];
+}
+
 test("server-renders the three policies without placeholders", async () => {
   for (const pathname of ["/privacy", "/terms", "/data-retention"]) {
     const response = await render(pathname);
@@ -361,6 +380,11 @@ test("server-renders the three policies without placeholders", async () => {
     assert.match(html, /info@powerchampion\.org/, `${pathname} publishes the contact address`);
     assert.doesNotMatch(html, /TBD|yourdomain/i, `${pathname} has no placeholder`);
     assert.doesNotMatch(html, /https?:\/\/[^"'\s]*powerchampion\.org/i, `${pathname} has no .org URL`);
-    assert.match(html, /href="\/privacy"|href="\/terms"|href="\/data-retention"/, `${pathname} cross-links`);
+
+    const relatedHtml = relatedPoliciesNav(html, pathname);
+    for (const sibling of POLICY_SIBLINGS[pathname]) {
+      assert.match(relatedHtml, new RegExp(`href="${escaped(sibling)}"`), `${pathname} related-policies nav links to ${sibling}`);
+    }
+    assert.doesNotMatch(relatedHtml, new RegExp(`href="${escaped(pathname)}"`), `${pathname} related-policies nav does not link to itself`);
   }
 });

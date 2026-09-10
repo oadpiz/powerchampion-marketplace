@@ -50,6 +50,42 @@ const SIBLINGS = {
   dataRetention: ["privacy", "terms"],
 } as const;
 
+// Terms that are allowed to appear in Latin script inside zh-Hant body copy —
+// proper nouns, the contact address, a literal API path, and industry
+// acronyms/terms with no established zh translation on this site. These are
+// the same terms the *English* body also uses verbatim (endpoint names,
+// hardware acronyms, protocol terminology, third-party product names) —
+// not English prose that should have been translated.
+const LATIN_ALLOWLIST = [
+  "Power Champion Investment Limited",
+  "info@powerchampion.org",
+  "b300.powerchampion.ai",
+  "POST /api/balance",
+  "API",
+  "SLA",
+  "HTTPS",
+  "GPU",
+  "Bearer",
+  "OpenRouter",
+  "Tokens",
+  "Token",
+  "OpenAI",
+  "JSON",
+  "URL",
+];
+
+function stripAllowlist(text: string): string {
+  return LATIN_ALLOWLIST.reduce((acc, term) => acc.split(term).join(" "), text);
+}
+
+function countLatinWords(text: string): number {
+  return (stripAllowlist(text).match(/[A-Za-z]{3,}/g) ?? []).length;
+}
+
+function countCjkChars(text: string): number {
+  return (text.match(/[一-鿿]/g) ?? []).length;
+}
+
 describe("published legal pages", () => {
   it.each(pages)("%s carries the entity, effective date and contact", (_id, page) => {
     render(<LocaleProvider>{page}</LocaleProvider>);
@@ -85,8 +121,15 @@ describe("published legal pages", () => {
     expect(text).not.toMatch(/yourdomain/i);
     expect(text).not.toMatch(/https?:\/\/[^\s]*powerchampion\.org/i);
     expect(text).not.toMatch(/powerchampion\.org\//i);
-    // A Chinese page that still shows English body copy is an untranslated page.
-    expect(text).toMatch(/[\u4e00-\u9fff]/);
+    // A page that still shows English body copy is an untranslated page. A
+    // single stray CJK character among an otherwise-English body must not
+    // pass, so this binds on the actual mix: allowlisted proper nouns and
+    // acronyms aside, Latin words must be rare, and CJK characters must
+    // outnumber them outright.
+    const latinWordCount = countLatinWords(text);
+    const cjkCharCount = countCjkChars(text);
+    expect(latinWordCount).toBeLessThanOrEqual(5);
+    expect(cjkCharCount).toBeGreaterThan(latinWordCount);
   });
 
   it("cross-links the three policies in both directions", () => {
@@ -131,6 +174,23 @@ describe("published legal pages", () => {
     render(<LocaleProvider><DataRetentionPage /></LocaleProvider>);
     expect(screen.getByText(/not written to persistent storage/)).toBeVisible();
     expect(screen.getByText(/not used to train, fine-tune, or evaluate machine-learning models\./)).toBeVisible();
+  });
+
+  it("data-retention lead promises exactly what the body does: purpose-bound retention, no fixed window", () => {
+    // The body (usage-metadata section, both locales) only ever promises
+    // "only as long as needed for billing and reconciliation" — never a
+    // defined/fixed retention period. The lead must not over-promise a
+    // specific duration the body doesn't back up.
+    const enLead = POLICY_CONTENT.en.dataRetention.lead;
+    const zhLead = POLICY_CONTENT.zh.dataRetention.lead;
+
+    expect(enLead).not.toMatch(/for how long/i);
+    expect(enLead).not.toMatch(/defined|fixed|specific(?:ally)? (?:period|duration|window)/i);
+    expect(enLead).toMatch(/only as long as (?:necessary|needed)/i);
+
+    expect(zhLead).not.toMatch(/明確的保存期間/);
+    expect(zhLead).not.toMatch(/固定(?:的)?保存期間/);
+    expect(zhLead).toMatch(/僅於(?:必要|所需)期間內保存/);
   });
 
   it("states that there is no uptime guarantee without a signed SLA", () => {
