@@ -7,6 +7,12 @@ import type { GatewayStatus } from "../lib/gateway-status";
 type Props = {
   gateway: GatewayStatus | null;
   fetchedAt: number;
+  /**
+   * Where the machine-readable status lives. Passed in rather than imported so
+   * this client component never reads process.env, and so the link can never
+   * drift from the origin lib/gateway-status.ts actually fetched.
+   */
+  gatewayOrigin: string;
 };
 
 function fmtUptime(v: number | null): string {
@@ -27,7 +33,7 @@ function fmtContext(v: number | null, id: string): string {
  * backend rows show "Not verified" and the model table renders an offline
  * note rather than pretending nothing serves.
  */
-export function LiveStatusContent({ gateway, fetchedAt }: Props) {
+export function LiveStatusContent({ gateway, fetchedAt, gatewayOrigin }: Props) {
   const { locale } = useLocale();
   const trust = locale === "zh" ? ZH : EN;
   const derived = deriveGatewayReadiness(gateway);
@@ -93,7 +99,7 @@ export function LiveStatusContent({ gateway, fetchedAt }: Props) {
             </tbody>
           </table>
           <p>
-            <a href="https://b300.powerchampion.ai/status.json" rel="noreferrer">
+            <a href={`${gatewayOrigin}/status.json`} rel="noreferrer">
               {trust.machineReadable}
             </a>
           </p>

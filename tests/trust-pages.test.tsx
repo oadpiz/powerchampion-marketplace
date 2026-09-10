@@ -31,7 +31,7 @@ describe("public trust pages", () => {
   it("renders launch-safe policy and status routes", () => {
     // Simulate the server component's offline fallback: gateway unreachable,
     // backend readiness rows must show "Not verified" — not "Ready".
-    localized(<LiveStatusContent gateway={null} fetchedAt={0} />);
+    localized(<LiveStatusContent gateway={null} fetchedAt={0} gatewayOrigin="https://gateway.test" />);
     expect(screen.getByRole("heading", { level: 1, name: "Service status" })).toBeVisible();
     expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Not verified");
     expect(screen.getByText("Payments").closest("li")).toHaveTextContent("Not verified");
@@ -40,15 +40,21 @@ describe("public trust pages", () => {
   });
 
   it("reports a gateway outage as not-ready, never a surviving ready claim", () => {
-    localized(<LiveStatusContent gateway={gatewayWith("down")} fetchedAt={0} />);
+    localized(<LiveStatusContent gateway={gatewayWith("down")} fetchedAt={0} gatewayOrigin="https://gateway.test" />);
     expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Not ready");
   });
 
   it("reports gateway ok as ready while payments stay unverified", () => {
-    localized(<LiveStatusContent gateway={gatewayWith("ok")} fetchedAt={0} />);
+    localized(<LiveStatusContent gateway={gatewayWith("ok")} fetchedAt={0} gatewayOrigin="https://gateway.test" />);
     expect(screen.getByText("Inference API").closest("li")).toHaveTextContent("Ready");
     expect(screen.getByText("Payments").closest("li")).toHaveTextContent("Not verified");
     expect(screen.getByText("Usage accounting").closest("li")).toHaveTextContent("Not verified");
+  });
+
+  it("points the machine-readable status link at the origin it actually fetched", () => {
+    localized(<LiveStatusContent gateway={gatewayWith("ok")} fetchedAt={0} gatewayOrigin="https://gateway.test" />);
+    expect(screen.getByRole("link", { name: /machine-readable status/i }))
+      .toHaveAttribute("href", "https://gateway.test/status.json");
   });
 
   it("offers accessible bilingual FAQ disclosures", async () => {

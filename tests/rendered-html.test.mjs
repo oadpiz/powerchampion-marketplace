@@ -65,7 +65,7 @@ const routeMetadata = {
     description: "Public company context and cited AI infrastructure information for Power Champion.",
   },
   "/contact": {
-    title: "Deployment review | Power Champion",
+    title: "Contact | Power Champion",
     description: "Review non-binding deployment interests locally in your browser.",
   },
   "/console": {
@@ -78,11 +78,11 @@ const routeMetadata = {
   },
   "/terms": {
     title: "Terms | Power Champion",
-    description: "The current informational and non-transactional terms for the Power Champion launch site.",
+    description: "Terms governing use of the Power Champion inference API and this site, covering acceptable use, billing, and availability.",
   },
   "/privacy": {
     title: "Privacy | Power Champion",
-    description: "The current privacy boundary for local Power Champion launch-site interactions.",
+    description: "How Power Champion handles data for its inference API and this site — what is processed, what is logged, and what is never used for training.",
   },
   "/data-retention": {
     title: "Data retention | Power Champion",
@@ -233,7 +233,7 @@ test("server-renders route-specific launch boundaries and protected facts", asyn
 
   for (const pathname of ["/terms", "/privacy"]) {
     const policyHtml = await (await render(pathname)).text();
-    assert.match(policyHtml, /marketing site|launch site/i, `${pathname} names this site's boundary`);
+    assert.match(policyHtml, /marketing site|marketing pages|launch site/i, `${pathname} names this site's boundary`);
     assert.match(policyHtml, /(?:does not|not enabled|no purchase|not transmitted|not persist)/i, `${pathname} states a non-operational boundary`);
   }
 });
@@ -243,8 +243,8 @@ test("server-renders local-only contact without payment or personal-data fields"
   assert.equal(response.status, 200);
   const html = await response.text();
 
-  assert.match(html, /<title>Deployment review \| Power Champion<\/title>/);
-  assert.match(html, /Deployment review/i);
+  assert.match(html, /<title>Contact \| Power Champion<\/title>/);
+  assert.match(html, /Talk to us/i);
   assert.match(html, /No information is transmitted or persisted/i);
   assert.match(html, /<option value="launch-access">API access<\/option>/);
   assert.doesNotMatch(html, /<form[^>]+action=/i);
@@ -419,4 +419,14 @@ test("still defaults to English when the browser sends no Accept-Language", asyn
   const html = await response.text();
   assert.match(html, /<html[^>]*lang="en"/, "no header means English");
   assert.match(html, /Get API access/, "and English copy");
+});
+
+test("permanently redirects the legacy /about path to /company", async () => {
+  const response = await render("/about");
+  assert.equal(response.status, 308, "/about is gone for good, not moved temporarily");
+  assert.match(
+    response.headers.get("location") ?? "",
+    /\/company$/,
+    "/about points at the company page",
+  );
 });

@@ -50,7 +50,7 @@ const ROUTE_METADATA = {
     description: "Public company context and cited AI infrastructure information for Power Champion.",
   },
   "/contact": {
-    title: "Deployment review | Power Champion",
+    title: "Contact | Power Champion",
     description: "Review non-binding deployment interests locally in your browser.",
   },
   "/console": {
@@ -63,11 +63,11 @@ const ROUTE_METADATA = {
   },
   "/terms": {
     title: "Terms | Power Champion",
-    description: "The current informational and non-transactional terms for the Power Champion launch site.",
+    description: "Terms governing use of the Power Champion inference API and this site, covering acceptable use, billing, and availability.",
   },
   "/privacy": {
     title: "Privacy | Power Champion",
-    description: "The current privacy boundary for local Power Champion launch-site interactions.",
+    description: "How Power Champion handles data for its inference API and this site — what is processed, what is logged, and what is never used for training.",
   },
   "/data-retention": {
     title: "Data retention | Power Champion",

@@ -1,6 +1,6 @@
 import { LiveStatusContent } from "../../components/live-status-content";
 import { metadataForRoute } from "../../lib/metadata";
-import { fetchGatewayStatus, type GatewayStatus } from "../../lib/gateway-status";
+import { GATEWAY_ORIGIN, fetchGatewayStatus, type GatewayStatus } from "../../lib/gateway-status";
 
 export const metadata = metadataForRoute("/status");
 
@@ -15,5 +15,11 @@ export default async function StatusPage() {
   } catch {
     gateway = null; // render static readiness rows with a "unreachable" note
   }
-  return <LiveStatusContent gateway={gateway} fetchedAt={Date.now()} />;
+  return (
+    <LiveStatusContent
+      gateway={gateway}
+      fetchedAt={Date.now()}
+      gatewayOrigin={GATEWAY_ORIGIN}
+    />
+  );
 }
