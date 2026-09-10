@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  MODEL_CATALOG,
+  SNAPSHOT_CATALOG,
   filterModels,
   type ModelCategory,
   type ModelDefinition,
@@ -25,18 +25,12 @@ function formatRate(rate: number) {
   return `$${rate.toFixed(2)}`;
 }
 
-function getBillingMode(model: ModelDefinition): "token" | "image" | "audio" {
-  if (model.categories.includes("image")) return "image";
-  if (model.categories.includes("audio") || model.id.includes("whisper") || model.id.includes("indextts2")) return "audio";
-  return "token";
-}
-
 export function ModelMarketplace() {
   const { copy, locale } = useLocale();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ModelCategory>("all");
   const [expandedId, setExpandedId] = useState<ModelDefinition["id"] | null>(null);
-  const models = filterModels(MODEL_CATALOG, query, category);
+  const models = filterModels(SNAPSHOT_CATALOG, query, category);
   const categoryLabels: Record<ModelCategory, string> = {
     all: copy.models.all,
     coding: copy.models.coding,
@@ -118,30 +112,24 @@ export function ModelMarketplace() {
                     <span>{categoryLabels[model.categories[0]]}</span>
                   </div>
                   <p className="marketplace-tagline">{model.servingRole[locale]}</p>
+                  {model.notice ? (
+                    <p className="marketplace-model-notice">{model.notice[locale]}</p>
+                  ) : null}
                 </div>
                 <dl className="marketplace-summary-fact">
                   <dt>{copy.models.context}</dt>
                   <dd>{model.context}</dd>
                 </dl>
                 {(() => {
-                  const billingMode = getBillingMode(model);
-                  if (billingMode === "image") {
+                  if (model.billingUnit !== "token" && model.unitPrice !== null) {
+                    const unitLabel = model.billingUnit === "image"
+                      ? copy.shared.perImage
+                      : copy.shared.perMinute;
                     return (
                       <>
                         <dl className="marketplace-summary-fact">
                           <dt>{copy.models.input}</dt>
-                          <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perImage}</span></dd>
-                        </dl>
-                        <dl className="marketplace-summary-fact marketplace-summary-fact-placeholder" aria-hidden="true"><dt> </dt><dd> </dd></dl>
-                      </>
-                    );
-                  }
-                  if (billingMode === "audio") {
-                    return (
-                      <>
-                        <dl className="marketplace-summary-fact">
-                          <dt>{copy.models.input}</dt>
-                          <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perMinute}</span></dd>
+                          <dd>{formatRate(model.unitPrice)} <span className="marketplace-rate-unit">{unitLabel}</span></dd>
                         </dl>
                         <dl className="marketplace-summary-fact marketplace-summary-fact-placeholder" aria-hidden="true"><dt> </dt><dd> </dd></dl>
                       </>

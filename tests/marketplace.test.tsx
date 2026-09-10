@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { LocaleProvider } from "../components/locale-provider";
 import { ModelMarketplace } from "../components/model-marketplace";
 import { SiteShell } from "../components/site-shell";
-import { MODEL_CATALOG } from "../lib/models";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 
 function normalizedText(element: Element) {
   return element.textContent?.replace(/\s+/g, " ").trim();
@@ -72,19 +72,16 @@ describe("ModelMarketplace", () => {
   it("renders exact input and output units for every catalog model", () => {
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
 
-    for (const model of MODEL_CATALOG) {
+    for (const model of SNAPSHOT_CATALOG) {
       const row = screen.getByRole("article", { name: model.name });
 
       expect(within(row).getByText(model.context)).toBeVisible();
 
-      const isImage = model.categories.includes("image");
-      const isAudio = model.categories.includes("audio") || model.id.includes("whisper") || model.id.includes("indextts2");
-
-      if (isImage) {
-        const inputRate = `$${model.inputPerMillion.toFixed(2)} per image`;
+      if (model.billingUnit === "image") {
+        const inputRate = `$${model.unitPrice!.toFixed(2)} per image`;
         expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
-      } else if (isAudio) {
-        const inputRate = `$${model.inputPerMillion.toFixed(2)} per minute of audio`;
+      } else if (model.billingUnit === "audio-minute") {
+        const inputRate = `$${model.unitPrice!.toFixed(2)} per minute of audio`;
         expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
       } else {
         const inputRate = `$${model.inputPerMillion.toFixed(2)} per 1M input`;
@@ -93,6 +90,13 @@ describe("ModelMarketplace", () => {
         expect(within(row).getByText((_, element) => normalizedText(element!) === outputRate)).toBeVisible();
       }
     }
+  });
+
+  it("shows the uncensored model's usage notice on its card", () => {
+    render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
+
+    const row = screen.getByRole("article", { name: "GLM 5.3 Flash Uncensored" });
+    expect(within(row).getByText("No content filtering; you are responsible for compliant use.")).toBeVisible();
   });
 
   it("shows a useful empty result", async () => {

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { COMPANY_CAPACITY_MW, COMPANY_CONTENT } from "../lib/company";
 import type { GatewayStatus } from "../lib/gateway-status";
-import { MODEL_CATALOG } from "../lib/models";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 import {
   POLICY_CONTENT,
   SERVICE_READINESS,
@@ -68,7 +68,7 @@ describe("public truth foundation", () => {
   });
 
   it("publishes complete decision fields with live provenance", () => {
-    for (const model of MODEL_CATALOG) {
+    for (const model of SNAPSHOT_CATALOG) {
       expect(model.maxOutput).toBeTruthy();
       expect(model.features).toEqual({
         tools: expect.any(Boolean),
@@ -81,14 +81,27 @@ describe("public truth foundation", () => {
       expect(model.provenance.label.zh).toBe("已上線");
       expect(model.servingRole.en).toBeTruthy();
       expect(model.servingRole.zh).toBeTruthy();
+      expect(model.tagline.en).toBeTruthy();
+      expect(model.tagline.zh).toBeTruthy();
       expect(model.region).toBeTruthy();
-      expect(model.inputPerMillion).toBeGreaterThan(0);
-      expect(model.outputPerMillion).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it("keeps the catalog available for serving", () => {
-    for (const model of MODEL_CATALOG) {
+  it("quotes a positive price in whichever unit the model is billed in", () => {
+    for (const model of SNAPSHOT_CATALOG) {
+      if (model.billingUnit === "token") {
+        expect(model.inputPerMillion, model.id).toBeGreaterThan(0);
+        expect(model.outputPerMillion, model.id).toBeGreaterThanOrEqual(0);
+        expect(model.unitPrice, model.id).toBeNull();
+      } else {
+        expect(model.unitPrice, model.id).toBeGreaterThan(0);
+        expect(model.billingNote, model.id).toBeTruthy();
+      }
+    }
+  });
+
+  it("keeps the snapshot catalog marked available and self-identifying", () => {
+    for (const model of SNAPSHOT_CATALOG) {
       expect(model.available).toBe(true);
       expect(model.modelId).toBe(model.id);
     }

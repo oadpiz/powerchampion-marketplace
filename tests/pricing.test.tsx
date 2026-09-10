@@ -9,17 +9,7 @@ import { LocaleProvider } from "../components/locale-provider";
 import { PricingCalculator } from "../components/pricing-calculator";
 import { PricingPageContent } from "../components/pricing-page-content";
 import { SiteShell } from "../components/site-shell";
-
-const EXPECTED_MODEL_RATES = [
-  { name: "GLM 5.2 FP8", input: "0.93", output: "3.00" },
-  { name: "Qwen3-VL 30B", input: "0.30", output: "1.20" },
-  { name: "Flux Schnell", input: "0.01", output: "0.00" },
-  { name: "Chroma1 HD", input: "0.01", output: "0.00" },
-  { name: "Whisper Large v3", input: "0.01", output: "0.00" },
-  { name: "IndexTTS2", input: "0.03", output: "0.00" },
-  { name: "BGE-M3", input: "0.02", output: "0.00" },
-  { name: "BGE Reranker v2-m3", input: "0.02", output: "0.00" },
-] as const;
+import { SNAPSHOT_CATALOG } from "../lib/models";
 
 function normalizedText(element: Element) {
   return element.textContent?.replace(/\s+/g, " ").trim();
@@ -310,22 +300,21 @@ describe("PricingPage", () => {
     );
 
     const rows = screen.getAllByRole("row").filter((candidate) => within(candidate).queryAllByRole("cell").length > 0);
-    expect(rows).toHaveLength(EXPECTED_MODEL_RATES.length);
+    expect(rows).toHaveLength(SNAPSHOT_CATALOG.length);
 
-    for (const model of EXPECTED_MODEL_RATES) {
+    for (const model of SNAPSHOT_CATALOG) {
       const row = rows.find((candidate) => within(candidate).queryByRole("cell", { name: model.name }));
-      expect(row).toBeDefined();
+      expect(row, `no rate row for ${model.name}`).toBeDefined();
 
       const cells = within(row!).getAllByRole("cell");
-      const name = model.name;
-      const isPerUse = /Flux|Chroma|Whisper|IndexTTS/i.test(name);
-      if (isPerUse) {
-        expect(cells).toHaveLength(2);
-        expect(normalizedText(cells[1])).toBe(`$${model.input} per ${/Whisper|IndexTTS/i.test(name) ? "minute of audio" : "image"}`);
-      } else {
+      if (model.billingUnit === "token") {
         expect(cells).toHaveLength(3);
-        expect(normalizedText(cells[1])).toBe(`$${model.input} per 1M input`);
-        expect(normalizedText(cells[2])).toBe(`$${model.output} per 1M output`);
+        expect(normalizedText(cells[1])).toBe(`$${model.inputPerMillion.toFixed(2)} per 1M input`);
+        expect(normalizedText(cells[2])).toBe(`$${model.outputPerMillion.toFixed(2)} per 1M output`);
+      } else {
+        const unit = model.billingUnit === "audio-minute" ? "minute of audio" : "image";
+        expect(cells).toHaveLength(2);
+        expect(normalizedText(cells[1])).toBe(`$${model.unitPrice!.toFixed(2)} per ${unit}`);
       }
     }
   });
@@ -349,9 +338,9 @@ describe("PricingPage", () => {
     expect(table.querySelector("thead")).not.toBeNull();
     expect(table.querySelector("tbody")).not.toBeNull();
     expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
-    expect(table.querySelectorAll("tbody tr")).toHaveLength(EXPECTED_MODEL_RATES.length);
-    const perUseCount = EXPECTED_MODEL_RATES.filter((m) => /Flux|Chroma|Whisper|IndexTTS/i.test(m.name)).length;
-    expect(table.querySelectorAll("tbody td")).toHaveLength(EXPECTED_MODEL_RATES.length * 3 - perUseCount);
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(SNAPSHOT_CATALOG.length);
+    const perUseCount = SNAPSHOT_CATALOG.filter((m) => m.billingUnit !== "token").length;
+    expect(table.querySelectorAll("tbody td")).toHaveLength(SNAPSHOT_CATALOG.length * 3 - perUseCount);
   });
 
   it("scrolls the focused rate comparison with horizontal arrow keys", async () => {

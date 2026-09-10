@@ -1,7 +1,7 @@
 "use client";
 
 import { COMPANY_CONTENT } from "../lib/company";
-import { MODEL_CATALOG } from "../lib/models";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 import { TRUST_CONTENT } from "../lib/trust";
 import { AudiencePaths } from "./audience-paths";
 import { ConsoleView } from "./console-view";
@@ -11,12 +11,19 @@ export function HomeContent() {
   const { copy, locale } = useLocale();
   const company = COMPANY_CONTENT[locale];
   const trust = TRUST_CONTENT[locale];
-  const catalogCount = MODEL_CATALOG.length;
-  const maxContext = MODEL_CATALOG.reduce((max, model) => {
+  // The proof strip counts what is actually serving right now, and quotes the
+  // cheapest *token* rate — media models bill per image/minute, so folding
+  // their zero prompt price in would advertise "$0.00".
+  const models = SNAPSHOT_CATALOG;
+  const activeRoutes = models.filter((model) => model.available).length;
+  const maxContext = models.reduce((max, model) => {
     const parsed = Number.parseInt(model.context, 10);
     return Number.isFinite(parsed) ? Math.max(max, parsed) : max;
   }, 0);
-  const startingRate = Math.min(...MODEL_CATALOG.map((model) => model.inputPerMillion));
+  const tokenRates = models
+    .filter((model) => model.billingUnit === "token")
+    .map((model) => model.inputPerMillion);
+  const startingRate = tokenRates.length > 0 ? Math.min(...tokenRates) : 0;
   const text = locale === "en" ? {
     compareRates: "Compare token rates",
     deploymentReview: "Deployment review",
@@ -86,7 +93,7 @@ export function HomeContent() {
       </section>
 
       <section aria-label={text.facts} className="proof-strip" data-reveal-stagger>
-        <div className="proof-item"><strong>{catalogCount}</strong><span>{text.catalogEntries}</span></div>
+        <div className="proof-item"><strong>{activeRoutes}</strong><span>{text.catalogEntries}</span></div>
         <div className="proof-item"><strong>{maxContext}K</strong><span>{text.maximumContext}</span></div>
         <div className="proof-item"><strong>${startingRate.toFixed(2)}</strong><span>{text.startingRate}</span></div>
       </section>
@@ -98,7 +105,7 @@ export function HomeContent() {
           <p>{copy.home.modelsLead}</p>
         </div>
         <div className="model-list" data-reveal-stagger>
-          {MODEL_CATALOG.map((model, index) => (
+          {models.map((model, index) => (
             <article aria-label={model.name} className={`model-row model-row-${model.id}`} key={model.id}>
               <span aria-hidden="true" className="model-rail" />
               <div className="model-index">{String(index + 1).padStart(2, "0")}</div>
@@ -106,8 +113,8 @@ export function HomeContent() {
               <dl className="model-facts">
                 <div><dt>{copy.models.context}</dt><dd>{model.context}</dd></div>
                 <div><dt>{copy.models.maxOutput}</dt><dd>{model.maxOutput}</dd></div>
-                {model.categories.includes("image") || model.id.includes("whisper") || model.id.includes("indextts2") ? (
-                  <div><dt>{text.price}</dt><dd>{`$${model.inputPerMillion.toFixed(2)} ${model.id.includes("whisper") || model.id.includes("indextts2") ? (locale === "en" ? "per minute of audio" : "每分鐘音訊") : (locale === "en" ? "per image" : "每張圖片")}`}</dd></div>
+                {model.billingUnit !== "token" && model.unitPrice !== null ? (
+                  <div><dt>{text.price}</dt><dd>{`$${model.unitPrice.toFixed(2)} ${model.billingUnit === "audio-minute" ? (locale === "en" ? "per minute of audio" : "每分鐘音訊") : (locale === "en" ? "per image" : "每張圖片")}`}</dd></div>
                 ) : (
                   <div><dt>{text.price}</dt><dd>{`$${model.inputPerMillion.toFixed(2)} ${copy.shared.perMillionInput}`}</dd><dd>{`$${model.outputPerMillion.toFixed(2)} ${copy.shared.perMillionOutput}`}</dd></div>
                 )}

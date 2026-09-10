@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MODEL_CATALOG } from "../lib/models";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 import { calculateUsageCost } from "../lib/pricing";
 import { useLocale } from "./locale-provider";
 
@@ -22,14 +22,14 @@ function parseTokenAmount(value: string) {
 
 export function PricingCalculator() {
   const { copy, locale } = useLocale();
-  const [modelId, setModelId] = useState(MODEL_CATALOG[0].id);
+  const [modelId, setModelId] = useState(SNAPSHOT_CATALOG[0].id);
   const [inputTokens, setInputTokens] = useState("0");
   const [outputTokens, setOutputTokens] = useState("0");
-  const model = MODEL_CATALOG.find((candidate) => candidate.id === modelId) ?? MODEL_CATALOG[0];
+  const model = SNAPSHOT_CATALOG.find((candidate) => candidate.id === modelId) ?? SNAPSHOT_CATALOG[0];
 
   // Media models bill per image / per minute of audio, not per token —
   // a token-pair estimator would be meaningless for them.
-  const isTokenBilled = model.categories.some((c) => c === "reasoning" || c === "multilingual" || c === "vision" || c === "coding" || c === "general" || c === "embedding");
+  const isTokenBilled = model.billingUnit === "token";
 
   const inputAmount = parseTokenAmount(inputTokens);
   const outputAmount = parseTokenAmount(outputTokens);
@@ -41,9 +41,13 @@ export function PricingCalculator() {
       outputPerMillion: model.outputPerMillion,
     });
 
+  const mediaUnit = model.billingUnit === "audio-minute"
+    ? (locale === "en" ? "minute of audio" : "分鐘音訊")
+    : (locale === "en" ? "image" : "張圖片");
+  const mediaPrice = currencyFormatter.format(model.unitPrice ?? 0);
   const mediaNote = locale === "en"
-    ? `${model.name} is billed per ${model.id.includes("whisper") ? "minute of audio" : "image"} at ${currencyFormatter.format(model.inputPerMillion)} each — see the rates table below.`
-    : `${model.name} 以每${model.id.includes("whisper") ? "分鐘音訊" : "張圖片"}計費，單價 ${currencyFormatter.format(model.inputPerMillion)} — 見下方費率表。`;
+    ? `${model.name} is billed per ${mediaUnit} at ${mediaPrice} each — see the rates table below.`
+    : `${model.name} 以每${mediaUnit}計費，單價 ${mediaPrice} — 見下方費率表。`;
   const tokenNote = locale === "en"
     ? "Estimate runs in your browser using the same live rates the meter bills from."
     : "估算在你的瀏覽器內執行，採用與計費表相同的即時費率。";
@@ -60,7 +64,7 @@ export function PricingCalculator() {
             <label>
               <span>{copy.pricing.selectModel}</span>
               <select autoComplete="off" name="estimator-model" onChange={(event) => setModelId(event.target.value)} value={modelId}>
-                {MODEL_CATALOG.map((option) => (
+                {SNAPSHOT_CATALOG.map((option) => (
                   <option key={option.id} value={option.id}>{option.name}</option>
                 ))}
               </select>
@@ -108,7 +112,7 @@ export function PricingCalculator() {
           <label>
             <span>{copy.pricing.selectModel}</span>
             <select autoComplete="off" name="estimator-model" onChange={(event) => setModelId(event.target.value)} value={modelId}>
-              {MODEL_CATALOG.map((option) => (
+              {SNAPSHOT_CATALOG.map((option) => (
                 <option key={option.id} value={option.id}>{option.name}</option>
               ))}
             </select>

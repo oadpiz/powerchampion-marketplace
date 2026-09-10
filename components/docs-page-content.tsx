@@ -1,6 +1,6 @@
 "use client";
 
-import { MODEL_CATALOG } from "../lib/models";
+import { SNAPSHOT_CATALOG, type ModelDefinition } from "../lib/models";
 import { TRUST_CONTENT, deriveGatewayReadiness, isReady, type ReadinessState } from "../lib/trust";
 import type { GatewayStatus } from "../lib/gateway-status";
 import { CodeSamples } from "./code-samples";
@@ -13,7 +13,7 @@ type ModelFeatureGate = "streaming" | "tools" | "structuredOutput";
 
 export function modelFeatureGateState(
   inference: ReadinessState,
-  models: ReadonlyArray<Pick<(typeof MODEL_CATALOG)[number], "available" | "features">>,
+  models: ReadonlyArray<Pick<ModelDefinition, "available" | "features">>,
   feature: ModelFeatureGate,
 ): ReadinessState {
   // An unverified/degraded inference signal is passed through as-is — the
@@ -34,10 +34,10 @@ export function DocsPageContent({ gateway }: Props) {
   const readiness = TRUST_CONTENT[locale].status.states;
   const derived = deriveGatewayReadiness(gateway);
   const releaseGates = [
-    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "streaming") },
+    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: modelFeatureGateState(derived.inference, SNAPSHOT_CATALOG, "streaming") },
     { id: "usage", label: locale === "en" ? "Usage accounting" : "用量計算", state: derived.usageAccounting },
-    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "tools") },
-    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "structuredOutput") },
+    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: modelFeatureGateState(derived.inference, SNAPSHOT_CATALOG, "tools") },
+    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: modelFeatureGateState(derived.inference, SNAPSHOT_CATALOG, "structuredOutput") },
     { id: "manifest", label: locale === "en" ? "Provider manifest" : "供應商 Manifest", state: derived.manifest },
     { id: "status", label: locale === "en" ? "Operational status" : "營運狀態", state: derived.inference },
   ] as const;

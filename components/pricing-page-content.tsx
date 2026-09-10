@@ -1,6 +1,6 @@
 "use client";
 
-import { MODEL_CATALOG } from "../lib/models";
+import { SNAPSHOT_CATALOG } from "../lib/models";
 import { CREDIT_PACKS, type CreditPack } from "../lib/pricing";
 import { openLaunchAccess } from "./demo-checkout";
 import { useLocale } from "./locale-provider";
@@ -110,27 +110,24 @@ export function PricingPageContent() {
               </tr>
             </thead>
             <tbody>
-              {MODEL_CATALOG.map((model) => {
-                const isPerUse = model.categories.includes("image") || model.id.includes("whisper") || model.id.includes("indextts2");
-                return (
-                  <tr className="rate-table-row" key={model.id}>
-                    <td>{model.name}</td>
-                    {isPerUse ? (
-                      <td colSpan={2}>
-                        <strong>{formatRate(model.inputPerMillion)}</strong>{" "}
-                        {locale === "en"
-                          ? `per ${model.id.includes("whisper") || model.id.includes("indextts2") ? "minute of audio" : "image"}`
-                          : `每${model.id.includes("whisper") || model.id.includes("indextts2") ? "分鐘音訊" : "張圖片"}`}
-                      </td>
-                    ) : (
-                      <>
-                        <td><strong>{formatRate(model.inputPerMillion)}</strong> {copy.shared.perMillionInput}</td>
-                        <td><strong>{formatRate(model.outputPerMillion)}</strong> {copy.shared.perMillionOutput}</td>
-                      </>
-                    )}
-                  </tr>
-                );
-              })}
+              {SNAPSHOT_CATALOG.map((model) => (
+                <tr className="rate-table-row" key={model.id}>
+                  <td>{model.name}</td>
+                  {model.billingUnit !== "token" && model.unitPrice !== null ? (
+                    <td colSpan={2}>
+                      <strong>{formatRate(model.unitPrice)}</strong>{" "}
+                      {model.billingUnit === "audio-minute"
+                        ? (locale === "en" ? "per minute of audio" : "每分鐘音訊")
+                        : (locale === "en" ? "per image" : "每張圖片")}
+                    </td>
+                  ) : (
+                    <>
+                      <td><strong>{formatRate(model.inputPerMillion)}</strong> {copy.shared.perMillionInput}</td>
+                      <td><strong>{formatRate(model.outputPerMillion)}</strong> {copy.shared.perMillionOutput}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

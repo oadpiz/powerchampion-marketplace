@@ -31,9 +31,9 @@ describe("Power Champion homepage", () => {
 
     const proof = screen.getByRole("region", { name: "Marketplace facts" });
     expect(within(proof).queryByText("99.98%")).not.toBeInTheDocument();
-    expect(within(proof).getByText("8")).toBeVisible();
+    expect(within(proof).getByText("9")).toBeVisible();
     expect(within(proof).getByText("131K")).toBeVisible();
-    expect(within(proof).getByText("$0.01")).toBeVisible();
+    expect(within(proof).getByText("$0.02")).toBeVisible();
   });
 
   it("uses each model's live serving role and availability in both locales", async () => {
@@ -41,7 +41,8 @@ describe("Power Champion homepage", () => {
     renderInShell(<HomeContent />);
 
     const expectedModels = [
-      ["GLM 5.2 FP8", "$0.93 per 1M input", "$3.00 per 1M output", "131K", "16K", "Primary LLM for chat, reasoning, and coding workloads.", "主力 LLM，用於對話、推理與程式開發。"],
+      ["GLM 5.2 FP8", "$0.93 per 1M input", "$3.00 per 1M output", "131K", "33K", "Primary LLM for chat, reasoning, and coding workloads.", "主力 LLM，用於對話、推理與程式開發。"],
+      ["GLM 5.3 Flash Uncensored", "$0.30 per 1M input", "$1.00 per 1M output", "33K", "33K", "Research, red-teaming, and creative work where refusals get in the way.", "用於研究、紅隊測試與創作場景——拒答會妨礙工作的情境。"],
       ["Qwen3-VL 30B", "$0.30 per 1M input", "$1.20 per 1M output", "33K", "4K", "Vision and OCR inference for document and image understanding.", "視覺與 OCR 推理，用於文件與圖片理解。"],
       ["Flux Schnell", "$0.01 per image", null, "—", "1 image", "Text-to-image generation for marketing and creative use.", "文生圖生成，用於行銷與創意場景。"],
       ["Chroma1 HD", "$0.01 per image", null, "—", "1 image", "Premium HD image generation for high-quality output.", "高品質 HD 圖像生成。"],
@@ -53,8 +54,8 @@ describe("Power Champion homepage", () => {
 
     for (const [name, inputRate, outputRate, context, maxOutput, englishRole] of expectedModels) {
       const row = screen.getByRole("article", { name });
-      expect(within(row).getByText(context)).toBeVisible();
-      expect(within(row).getByText(maxOutput)).toBeVisible();
+      expect(within(row).getAllByText(context)[0]).toBeVisible();
+      expect(within(row).getAllByText(maxOutput)[0]).toBeVisible();
       expect(within(row).getByText(inputRate)).toBeVisible();
       if (outputRate) expect(within(row).getByText(outputRate)).toBeVisible();
       expect(within(row).getByText("Live")).toBeVisible();
@@ -118,9 +119,9 @@ describe("Power Champion homepage", () => {
     await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
 
     const proof = screen.getByRole("region", { name: "市集事實" });
-    expect(within(proof).getByText("8")).toBeVisible();
+    expect(within(proof).getByText("9")).toBeVisible();
     expect(within(proof).getByText("131K")).toBeVisible();
-    expect(within(proof).getByText("$0.01")).toBeVisible();
+    expect(within(proof).getByText("$0.02")).toBeVisible();
     expect(screen.getByText("API 已上線 — 一把金鑰，按量計費")).toBeVisible();
   });
 });
