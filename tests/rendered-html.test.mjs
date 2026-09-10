@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function request(pathname, host = "localhost", forwardedHost) {
+async function request(pathname, host = "localhost", forwardedHost, extraHeaders = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
@@ -12,6 +12,7 @@ async function request(pathname, host = "localhost", forwardedHost) {
         accept: "text/html",
         host,
         ...(forwardedHost === undefined ? {} : { "x-forwarded-host": forwardedHost }),
+        ...extraHeaders,
       },
     }),
     {
@@ -26,8 +27,8 @@ async function request(pathname, host = "localhost", forwardedHost) {
   );
 }
 
-async function render(pathname, host = "localhost", forwardedHost) {
-  return request(pathname, host, forwardedHost);
+async function render(pathname, host = "localhost", forwardedHost, extraHeaders) {
+  return request(pathname, host, forwardedHost, extraHeaders);
 }
 
 const routeMetadata = {
@@ -387,4 +388,35 @@ test("server-renders the three policies without placeholders", async () => {
     }
     assert.doesNotMatch(relatedHtml, new RegExp(`href="${escaped(pathname)}"`), `${pathname} related-policies nav does not link to itself`);
   }
+});
+
+test("server-renders Traditional Chinese for a zh-TW browser", async () => {
+  const response = await render("/", "localhost", undefined, {
+    "accept-language": "zh-TW,zh;q=0.9,en;q=0.8",
+  });
+  assert.equal(response.status, 200, "the zh request still renders");
+
+  const html = await response.text();
+  assert.match(html, /<html[^>]*lang="zh-Hant"/, "the server sets the document language");
+  assert.match(html, /取得 API 存取/, "the first paint carries the Chinese header CTA");
+  assert.match(html, /價格/, "the first paint carries the Chinese nav labels");
+});
+
+test("lets the pc-locale cookie override Accept-Language on the server", async () => {
+  const response = await render("/", "localhost", undefined, {
+    "accept-language": "zh-TW,zh;q=0.9",
+    cookie: "pc-locale=en",
+  });
+  assert.equal(response.status, 200, "the cookie request still renders");
+
+  const html = await response.text();
+  assert.match(html, /<html[^>]*lang="en"/, "the explicit choice wins");
+  assert.match(html, /Get API access/, "the first paint stays English");
+});
+
+test("still defaults to English when the browser sends no Accept-Language", async () => {
+  const response = await render("/");
+  const html = await response.text();
+  assert.match(html, /<html[^>]*lang="en"/, "no header means English");
+  assert.match(html, /Get API access/, "and English copy");
 });

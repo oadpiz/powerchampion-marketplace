@@ -104,3 +104,50 @@ describe("LocaleProvider auto-detection and persistence", () => {
     ).toBeVisible();
   });
 });
+
+describe("LocaleProvider cookie precedence and server-resolved initial locale", () => {
+  it("lets the cookie outrank localStorage and the browser language", async () => {
+    document.cookie = "pc-locale=zh; Path=/";
+    window.localStorage.setItem(STORAGE_KEY, "en");
+    setBrowserLanguages(["en-US", "en"]);
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(
+      await within(screen.getByRole("banner")).findByRole("button", { name: "取得 API 存取" }),
+    ).toBeVisible();
+    expect(document.documentElement).toHaveAttribute("lang", "zh-Hant");
+  });
+
+  it("keeps the server's initialLocale when the browser offers no opinion", () => {
+    setBrowserLanguages(["ja-JP", "fr-FR"]);
+    render(
+      <LocaleProvider initialLocale="zh">
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(
+      within(screen.getByRole("banner")).getByRole("button", { name: "取得 API 存取" }),
+    ).toBeVisible();
+    expect(document.documentElement).toHaveAttribute("lang", "zh-Hant");
+  });
+
+  it("writes the cookie as well as localStorage when the user toggles language", async () => {
+    setBrowserLanguages(["en-US"]);
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    await user.click(within(screen.getByRole("banner")).getAllByRole("button", { name: "繁中" })[0]);
+
+    expect(document.cookie).toMatch(/(?:^|;\s*)pc-locale=zh(?:;|$)/);
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("zh");
+  });
+});

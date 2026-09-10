@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import { LocaleProvider } from "../components/locale-provider";
 import { LaunchAccessDialog } from "../components/demo-checkout";
 import { SiteShell } from "../components/site-shell";
 import { metadataForRoute } from "../lib/metadata";
+import { LOCALE_COOKIE, htmlLangFor, resolveInitialLocale } from "../lib/locale";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -108,20 +109,26 @@ function StructuredData() {
   );
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const [cookieStore, requestHeaders] = await Promise.all([cookies(), headers()]);
+  const initialLocale = resolveInitialLocale({
+    cookie: cookieStore.get(LOCALE_COOKIE)?.value ?? null,
+    acceptLanguage: requestHeaders.get("accept-language"),
+  });
+
   return (
-    <html lang="en">
+    <html lang={htmlLangFor(initialLocale)}>
       <head>
         <StructuredData />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <LocaleProvider>
+        <LocaleProvider initialLocale={initialLocale}>
           <SiteShell>{children}</SiteShell>
           <LaunchAccessDialog />
         </LocaleProvider>

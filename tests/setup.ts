@@ -86,5 +86,10 @@ afterEach(() => {
   // LocaleProvider persists the user's locale choice; clear it between tests
   // so a test that switches to zh-Hant does not leak into the next one.
   window.localStorage.clear();
+  // Same choice, second store: the cookie is what the server reads, and it
+  // outranks localStorage, so leaving it set would silently pin every later
+  // test in this file to one language.
+  document.cookie = "pc-locale=; Path=/; Max-Age=0";
   document.documentElement.removeAttribute("lang");
+  document.documentElement.removeAttribute("data-locale");
 });
