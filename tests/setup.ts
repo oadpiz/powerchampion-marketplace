@@ -17,8 +17,11 @@ if (!window.matchMedia) {
 }
 
 // Polyfill IntersectionObserver — jsdom does not implement it
-if (typeof (globalThis as any).IntersectionObserver === "undefined") {
-  (globalThis as any).IntersectionObserver = class {
+if (typeof globalThis.IntersectionObserver === "undefined") {
+  globalThis.IntersectionObserver = class implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = "0px";
+    readonly thresholds = [0];
     observe() {}
     unobserve() {}
     disconnect() {}

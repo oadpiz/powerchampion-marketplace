@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 
 export type RoutePath =
   | "/"
+  | "/platform"
+  | "/compare"
+  | "/playground"
+  | "/integrations"
   | "/models"
   | "/pricing"
   | "/infrastructure"
@@ -16,8 +20,12 @@ export type RoutePath =
   | "/privacy";
 
 const ROUTE_METADATA = {
+  "/platform": { title: "Model Platform | Power Champion", description: "Explore, compare, test, and integrate model APIs in the Power Champion development platform." },
+  "/compare": { title: "Compare Models | Power Champion", description: "Compare model capabilities, billing units, and estimated costs for your workload." },
+  "/playground": { title: "API Playground | Power Champion", description: "Test model API requests with your own key and inspect responses and token usage." },
+  "/integrations": { title: "Integrations | Power Champion", description: "Generate model-specific Python, JavaScript, and cURL request examples and connection settings." },
   "/": {
-    title: "Power Champion — OpenAI-compatible API · Live",
+    title: "Power Champion — One API. Every possibility.",
     description: "One OpenAI-compatible endpoint for leading open AI models — text, vision, image, speech, and embeddings. Live API, prepaid balance, one key.",
   },
   "/models": {

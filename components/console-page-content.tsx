@@ -7,8 +7,8 @@ export function ConsolePageContent() {
   const { locale } = useLocale();
 
   const text = locale === "en"
-    ? { eyebrow: "Live balance check", lead: "Enter your key to query the b300 gateway directly. Your key is sent only to the gateway and never stored." }
-    : { eyebrow: "即時餘額查詢", lead: "輸入你的 Key 直接查詢 b300 閘道。Key 只會送往閘道，不會被儲存。" };
+    ? { eyebrow: "Live balance check", lead: "Your key is forwarded through this site to the Power Champion gateway to query your balance. It is not saved in browser storage." }
+    : { eyebrow: "即時餘額查詢", lead: "輸入金鑰，透過本站轉送至 Power Champion 閘道查詢餘額。金鑰不會存入瀏覽器儲存空間。" };
 
   return (
     <main className="console-page" id="main-content">

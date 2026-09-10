@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { COPY, type CopyDictionary, type Locale } from "../lib/content";
 
 type LocaleContextValue = {
@@ -13,46 +13,36 @@ const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 const STORAGE_KEY = "pc-locale";
 
-function detectLocale(): Locale {
-  // 1. User's explicit choice (persisted)
+function savedLocale(): Locale {
   if (typeof window !== "undefined") {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === "en" || stored === "zh") return stored;
-  }
-  // 2. Browser language preference
-  if (typeof navigator !== "undefined") {
-    const langs = navigator.languages ?? [navigator.language];
-    for (const lang of langs) {
-      const lower = lang.toLowerCase();
-      if (lower.startsWith("zh")) return "zh";
-      if (lower.startsWith("en")) return "en";
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored === "en" || stored === "zh") return stored;
+    } catch {
+      // Browsers may block storage; the default experience still works.
     }
   }
-  // 3. Default
   return "en";
 }
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  // Start with "en" for SSR hydration safety, then switch on mount
+  // English is the first-visit default, including for Chinese browsers.
+  // Restore an explicit saved choice after hydration to keep SSR consistent.
   const [locale, setLocaleState] = useState<Locale>("en");
-  const [hydrated, setHydrated] = useState(false);
 
-  // On mount: detect browser language (localStorage > navigator)
   useEffect(() => {
-    setLocaleState(detectLocale());
-    setHydrated(true);
+    // The browser-only preference is deliberately restored after the English
+    // server render has hydrated, avoiding a server/client markup mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLocaleState(savedLocale());
   }, []);
 
-  // Persist choice + sync <html lang>, handing the attribute back to the
+  // Sync <html lang>, handing the attribute back to the
   // host page on unmount (capture/restore on every run keeps the chain
   // intact across locale switches).
   useEffect(() => {
     const previousLanguage = document.documentElement.getAttribute("lang");
     document.documentElement.lang = locale === "en" ? "en" : "zh-Hant";
-    if (hydrated) {
-      window.localStorage.setItem(STORAGE_KEY, locale);
-    }
-
     return () => {
       if (previousLanguage === null) {
         document.documentElement.removeAttribute("lang");
@@ -60,13 +50,20 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
         document.documentElement.lang = previousLanguage;
       }
     };
-  }, [locale, hydrated]);
+  }, [locale]);
 
-  const setLocale = (next: Locale) => setLocaleState(next);
+  const setLocale = useCallback((next: Locale) => {
+    setLocaleState(next);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Keep the current page usable when persistence is unavailable.
+    }
+  }, []);
 
   const value = useMemo(
     () => ({ locale, copy: COPY[locale], setLocale }),
-    [locale],
+    [locale, setLocale],
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;

@@ -59,7 +59,9 @@ export function ModelMarketplace() {
   };
   const unavailablePublication = locale === "en" ? "not published" : "尚未發布";
   const provenanceStatus = (model: ModelDefinition) => (
-    locale === "en" ? model.provenance.label.en.toLowerCase() : model.provenance.label[locale]
+    model.provenance.status === "live"
+      ? (locale === "en" ? "published catalog" : "已刊登目錄")
+      : (locale === "en" ? model.provenance.label.en.toLowerCase() : model.provenance.label[locale])
   );
 
   const clearFilters = () => {
@@ -109,15 +111,16 @@ export function ModelMarketplace() {
             const detailsId = `model-details-${model.id}`;
 
             return (
-              <article aria-labelledby={`model-name-${model.id}`} className={`marketplace-row marketplace-row-${model.id}`} key={model.id}>
+              <article id={model.id} aria-labelledby={`model-name-${model.id}`} className={`marketplace-row marketplace-row-${model.id}`} key={model.id}>
                 <span aria-hidden="true" className="marketplace-rail" />
                 <div className="marketplace-index">{String(index + 1).padStart(2, "0")}</div>
                 <div className="marketplace-identity">
                   <div className="marketplace-name-line">
-                    <h2 id={`model-name-${model.id}`}>{model.name}</h2>
+                    <h2 id={`model-name-${model.id}`}><a href={`/models/${model.id}`}>{model.name}</a></h2>
                     <span>{categoryLabels[model.categories[0]]}</span>
                   </div>
                   <p className="marketplace-tagline">{model.servingRole[locale]}</p>
+                  <a className="marketplace-detail-link" href={`/models/${model.id}`}>{locale === "en" ? "View model" : "查看模型"}<span aria-hidden="true">↗</span></a>
                 </div>
                 <dl className="marketplace-summary-fact">
                   <dt>{copy.models.context}</dt>
@@ -220,9 +223,7 @@ export function ModelMarketplace() {
                       </div>
                       <div>
                         <dt>{copy.models.availability}</dt>
-                        <dd className={model.available ? "marketplace-available" : "marketplace-unavailable"}>
-                          {model.available ? copy.models.available : copy.models.unavailable}
-                        </dd>
+                        <dd><a href="/status">{locale === "en" ? "Check live status" : "查看即時狀態"}</a></dd>
                       </div>
                     </>}
                   </dl>

@@ -59,7 +59,7 @@ describe("public trust pages", () => {
     expect(question).toHaveAttribute("aria-expanded", "true");
   });
 
-  it.each([[<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i], [<PrivacyPage key="terms" />, /not transmitted to this site's server and is not persisted or logged/i]])(
+  it.each([[<TermsPage key="terms" />, /commercial terms for API usage are formed when a key is issued/i], [<PrivacyPage key="terms" />, /forwarded through this site.*fixed Power Champion gateway/i]])(
     "preserves the live-service boundary",
     (page, boundary) => {
       localized(page);
@@ -75,7 +75,7 @@ describe("public trust pages", () => {
       </LocaleProvider>,
     );
 
-    expect(screen.getByRole("heading", { level: 1, name: /live delivery/i })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: /Compute, shaped around your workload/i })).toBeVisible();
     expect(screen.getAllByText(/counterparty-reported expected hosting capacity; not live or completed deployment/i)).not.toHaveLength(0);
     // Serving availability is reported as measured/unverified, not claimed live.
     expect(screen.getByText(/measured live by the b300 gateway/i)).toBeVisible();
@@ -83,7 +83,7 @@ describe("public trust pages", () => {
     expect(screen.getByRole("link", { name: "Deployment review" })).toHaveAttribute("href", "/contact");
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    expect(screen.getByRole("heading", { level: 1, name: /即時交付/i })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: /從工作負載出發，規劃合適算力/i })).toBeVisible();
   });
 
   it("renders the trust evidence sections with policy and source links", () => {
@@ -98,7 +98,7 @@ describe("public trust pages", () => {
     expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
     expect(screen.getByRole("link", { name: "Status" })).toHaveAttribute("href", "/status");
     expect(screen.getByRole("link", { name: "Company" })).toHaveAttribute("href", "/company");
-    expect(document.body).not.toHaveTextContent(/SOC 2|ISO|GDPR|uptime|availability/i);
+    expect(document.body).not.toHaveTextContent(/\b(?:SOC 2|ISO|GDPR|uptime|availability)\b/i);
   });
 
   it("renders distinguishable localized service-name and state pairs without duplicate React keys", async () => {

@@ -124,7 +124,7 @@ describe("ConsoleView", () => {
     const main = container.querySelector("main");
 
     expect(main?.firstElementChild).toHaveTextContent(/live balance check/i);
-    expect(main?.firstElementChild).toHaveTextContent(/sent only to the gateway/i);
+    expect(main?.firstElementChild).toHaveTextContent(/forwarded through this site to the Power Champion gateway/i);
   });
 
   it("has truthful console metadata", () => {

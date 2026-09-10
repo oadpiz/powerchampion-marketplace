@@ -27,7 +27,7 @@ describe("ModelMarketplace", () => {
     render(<LocaleProvider><ModelMarketplace /></LocaleProvider>);
     await user.click(screen.getByRole("button", { name: "Whisper Large v3" }));
     expect(screen.getByText("whisper-large-v3")).toBeInTheDocument();
-    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Check live status" })).toBeInTheDocument();
   });
 
   it("shows all decision facts for an expanded model", async () => {
@@ -44,10 +44,10 @@ describe("ModelMarketplace", () => {
     expect(details).toHaveTextContent("Structured output");
     expect(details).toHaveTextContent("Enabled");
     expect(details).toHaveTextContent("Streaming");
-    expect(details).toHaveTextContent("Provenance live");
+    expect(details).toHaveTextContent("Provenance published catalog");
     expect(details).toHaveTextContent("Serving role");
     expect(details).toHaveTextContent("Region TH");
-    expect(details).toHaveTextContent("Available");
+    expect(details).toHaveTextContent("Check live status");
     expect(within(details).getByText("qwen3-vl-30b").closest("code")).toHaveAttribute("translate", "no");
   });
 

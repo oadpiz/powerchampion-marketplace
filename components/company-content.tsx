@@ -4,79 +4,138 @@ import {
   COMPANY_CONTENT,
   COMPANY_SOURCES,
 } from "../lib/company";
+import { MODEL_CATALOG } from "../lib/models";
+import { SERVICE_CONTENT } from "../lib/service-content";
 import { useLocale } from "./locale-provider";
 
 export function CompanyContent() {
   const { locale } = useLocale();
   const content = COMPANY_CONTENT[locale];
+  const service = SERVICE_CONTENT[locale];
+  const platformRows = [service.nextGenerationPlatform, ...content.gpuPlatforms.rows];
 
   return (
-    <main className="company-page" id="main-content">
-      {/* Hero */}
-      <section aria-labelledby="company-title" className="company-hero">
-        <p className="eyebrow">{content.kicker}</p>
-        <h1 id="company-title">{content.title}</h1>
-        <p>{content.lead}</p>
+    <main className="company-page service-page" id="main-content">
+      <section aria-labelledby="company-title" className="company-hero service-page-hero">
+        <div>
+          <p className="eyebrow">{service.company.kicker}</p>
+          <h1 id="company-title">{service.company.title}</h1>
+          <p className="service-hero-lead">{service.company.lead}</p>
+          <div className="service-page-actions">
+            {service.heroLinks.map((link) => <a href={link.href} key={link.href}>{link.label}<span aria-hidden="true">↗</span></a>)}
+          </div>
+        </div>
+        <div className="service-hero-aside">
+          <p className="service-hero-statement">{service.company.statement}</p>
+          <nav aria-label={service.serviceTitle}>
+            {service.services.map((item, index) => (
+              <a href={`#${item.id}`} key={item.id}>
+                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                {item.title}
+                <span aria-hidden="true">↓</span>
+              </a>
+            ))}
+          </nav>
+        </div>
       </section>
 
-      {/* Services — from .org integration */}
-      <section aria-labelledby="services-title" className="company-services">
-        <h2 id="services-title">{content.services.title}</h2>
-        <p className="section-lead">{content.services.lead}</p>
-        <div className="services-grid">
-          {content.services.items.map((item, i) => (
-            <article key={i} className="service-card">
-              <h3>{item.title}</h3>
+      <section aria-labelledby="services-title" className="service-editorial-section">
+        <div className="service-section-heading">
+          <p className="eyebrow">{locale === "en" ? "01 / Services" : "01 / 服務內容"}</p>
+          <div>
+            <h2 id="services-title">{service.serviceTitle}</h2>
+            <p>{service.serviceLead}</p>
+          </div>
+        </div>
+        <div className="service-offering-grid">
+          {service.services.map((item, index) => (
+            <article aria-labelledby={`${item.id}-title`} className="service-offering" id={item.id} key={item.id}>
+              <span className="service-item-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              <h3 id={`${item.id}-title`}>{item.title}</h3>
+              <p className="service-audience">{item.audience}</p>
               <p>{item.description}</p>
+              <h4>{service.deliverablesLabel}</h4>
+              <ul>{item.deliverables.map((deliverable) => <li key={deliverable}>{deliverable}</li>)}</ul>
+              <div className="service-offering-access">
+                <h4>{service.accessLabel}</h4>
+                <p>{item.access}</p>
+                <a href={item.link.href}>{item.link.label}<span aria-hidden="true">↗</span></a>
+              </div>
             </article>
           ))}
         </div>
       </section>
 
-      {/* GPU Platforms */}
-      <section aria-labelledby="gpu-title" className="company-gpu">
-        <h2 id="gpu-title">{content.gpuPlatforms.title}</h2>
-        <p className="section-lead">{content.gpuPlatforms.lead}</p>
-        <div className="gpu-table-wrapper">
-          <table className="gpu-table">
-            <thead>
-              <tr>
-                <th>{content.gpuPlatforms.headers.category}</th>
-                <th>{content.gpuPlatforms.headers.platform}</th>
-                <th>{content.gpuPlatforms.headers.useCase}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {content.gpuPlatforms.rows.map((row, i) => (
-                <tr key={i}>
-                  <td data-label={content.gpuPlatforms.headers.category}>{row.category}</td>
-                  <td data-label={content.gpuPlatforms.headers.platform} className="mono">{row.platform}</td>
-                  <td data-label={content.gpuPlatforms.headers.useCase}>{row.useCase}</td>
-                </tr>
-              ))}
-            </tbody>
+      <section aria-labelledby="company-workloads-title" className="service-editorial-section">
+        <div className="service-section-heading">
+          <p className="eyebrow">{locale === "en" ? "02 / Applications" : "02 / 應用場景"}</p>
+          <div>
+            <h2 id="company-workloads-title">{service.workloadTitle}</h2>
+            <p>{service.workloadLead}</p>
+          </div>
+        </div>
+        <div className="service-workload-grid">
+          {service.workloads.map((workload) => {
+            const models = MODEL_CATALOG.filter((model) => workload.modelIds.includes(model.id));
+            return (
+              <article aria-labelledby={`workload-${workload.id}`} className="service-workload" key={workload.id}>
+                <p className="service-audience">{workload.audience}</p>
+                <h3 id={`workload-${workload.id}`}>{workload.title}</h3>
+                <p>{workload.description}</p>
+                <h4>{service.modelLabel}</h4>
+                <ul className="service-model-links">
+                  {models.map((model) => <li key={model.id}><a href={`/models#${model.id}`}>{model.name}</a></li>)}
+                </ul>
+              </article>
+            );
+          })}
+        </div>
+        <div className="service-section-footnote">
+          <p>{service.catalogNote}</p>
+          {/* The vinext runtime uses root-relative links for page navigation. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/models">{service.catalogLink}<span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+
+      <section aria-labelledby="gpu-title" className="company-gpu service-editorial-section">
+        <div className="service-section-heading">
+          <p className="eyebrow">{locale === "en" ? "03 / Infrastructure" : "03 / 基礎設施"}</p>
+          <div>
+            <h2 id="gpu-title">{content.gpuPlatforms.title}</h2>
+            <p>{content.gpuPlatforms.lead}</p>
+          </div>
+        </div>
+        <div className="service-platform-table-wrap">
+          <table className="service-platform-table">
+            <thead><tr>
+              <th scope="col">{content.gpuPlatforms.headers.category}</th>
+              <th scope="col">{content.gpuPlatforms.headers.platform}</th>
+              <th scope="col">{content.gpuPlatforms.headers.useCase}</th>
+            </tr></thead>
+            <tbody>{platformRows.map((row) => <tr key={row.platform}>
+              <th scope="row">{row.category}</th><td>{row.platform}</td><td>{row.useCase}</td>
+            </tr>)}</tbody>
           </table>
         </div>
-        <p className="gpu-note">{content.gpuPlatforms.note}</p>
+        <p className="service-inline-note">{service.platformNote}</p>
       </section>
 
-      {/* Deployment Models */}
-      <section aria-labelledby="deploy-title" className="company-deployment">
-        <h2 id="deploy-title">{content.deploymentModels.title}</h2>
-        <p className="section-lead">{content.deploymentModels.lead}</p>
-        <div className="deployment-grid">
-          {content.deploymentModels.items.map((item, i) => (
-            <article key={i} className="deployment-card">
-              <span className="deployment-number">{String(i + 1).padStart(2, "0")}</span>
-              <h3>{item.title}</h3>
-              <p>{item.description}</p>
-            </article>
-          ))}
+      <section aria-labelledby="deploy-title" className="service-editorial-section">
+        <div className="service-section-heading">
+          <p className="eyebrow">{locale === "en" ? "04 / Getting started" : "04 / 開始使用"}</p>
+          <div><h2 id="deploy-title">{service.approachTitle}</h2><p>{service.approachLead}</p></div>
         </div>
+        <ol className="service-process-list service-process-three">
+          {service.approach.map((item, index) => <li key={item.title}>
+            <span className="service-item-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+            <h3>{item.title}</h3><p>{item.description}</p>
+          </li>)}
+        </ol>
       </section>
 
       {/* Company record */}
-      <section aria-labelledby="company-record-title" className="company-record">
+      <section aria-labelledby="company-record-title" className="company-record service-public-record">
         <h2 id="company-record-title">{content.record.heading}</h2>
         <ol className="company-timeline">
           <li>

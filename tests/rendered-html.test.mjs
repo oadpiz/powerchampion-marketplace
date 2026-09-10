@@ -32,7 +32,7 @@ async function render(pathname, host = "localhost", forwardedHost) {
 
 const routeMetadata = {
   "/": {
-    title: "Power Champion — OpenAI-compatible API · Live",
+    title: "Power Champion — One API. Every possibility.",
     description: "One OpenAI-compatible endpoint for leading open AI models — text, vision, image, speech, and embeddings. Live API, prepaid balance, one key.",
   },
   "/models": {
@@ -207,8 +207,8 @@ test("normalizes valid metadata hosts and fails closed on malformed values", asy
 
 test("server-renders route-specific launch boundaries and protected facts", async () => {
   const homeHtml = await (await render("/")).text();
-  assert.match(homeHtml, /href="\/pricing"[^>]*>Compare token rates<\/a>/i);
-  assert.match(homeHtml, /href="\/contact"[^>]*>Deployment review/i);
+  assert.match(homeHtml, /href="#models"[^>]*>Explore models/i);
+  assert.match(homeHtml, /href="\/contact"[^>]*>Talk to our team/i);
 
   const statusHtml = await (await render("/status")).text();
   // Backend rows are derived from the live gateway feed at render time; the
@@ -225,11 +225,13 @@ test("server-renders route-specific launch boundaries and protected facts", asyn
   assert.doesNotMatch(contactHtml, /<(?:input|textarea|select)[^>]+(?:card|bank|email|password|payment|billing)/i);
   assert.doesNotMatch(contactHtml, /<form[^>]+action=/i);
 
-  for (const pathname of ["/terms", "/privacy"]) {
-    const policyHtml = await (await render(pathname)).text();
-    assert.match(policyHtml, /launch site/i, `${pathname} names the current launch-site boundary`);
-    assert.match(policyHtml, /(?:does not|not enabled|no purchase|not transmitted|not persist)/i, `${pathname} states a non-operational boundary`);
-  }
+  const termsHtml = await (await render("/terms")).text();
+  assert.match(termsHtml, /commercial terms for API usage are formed when a key is issued/i);
+  const privacyHtml = await (await render("/privacy")).text();
+  assert.match(privacyHtml, /forwarded through this site.{0,100}fixed Power Champion gateway/i);
+  assert.match(privacyHtml, /do not save them in browser storage/i);
+  assert.doesNotMatch(privacyHtml, /not transmitted to this site/i);
+
 });
 
 test("server-renders local-only contact without payment or personal-data fields", async () => {
@@ -266,11 +268,11 @@ test("server-renders the finished marketplace homepage", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Power Champion/i);
-  assert.match(html, /Every model\./i);
-  assert.match(html, /One power core\./i);
-  assert.match(html, /Model marketplace/i);
-  assert.match(html, /OpenAI-compatible API · Live/i);
-  assert.match(html, /Counterparty-reported expected contracted hosting capacity; not live or completed deployment\./i);
+  assert.match(html, /One API\./i);
+  assert.match(html, /Every possibility\./i);
+  assert.match(html, /THE MODEL COLLECTION/i);
+  assert.match(html, /Check service availability/i);
+  assert.match(html, /Configuration, capacity, and delivery are scoped to your project\./i);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/i);
 });
 
@@ -311,4 +313,31 @@ test("server-renders docs and the live console", async () => {
   assert.match(consoleHtml, /Check your balance/i);
   assert.match(consoleHtml, /Need a key\?/i);
   assert.doesNotMatch(consoleHtml, /sk-[A-Za-z0-9]{12}/);
+});
+
+
+test("server-renders the model platform tools and all model detail routes", async () => {
+  const tools = [
+    ["/platform", "From model to application."],
+    ["/compare", "Find the right fit."],
+    ["/playground", "Playground"],
+    ["/integrations?model=chroma1-hd", "Your next integration."],
+  ];
+  for (const [path, heading] of tools) {
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+    const html = await response.text();
+    assert.match(html, new RegExp(`<h1[^>]*>${escaped(heading)}</h1>`), path);
+    assert.equal((html.match(/<main[ >]/g) ?? []).length, 1, path);
+    assert.match(html, /aria-label="Platform navigation"/);
+  }
+  for (const id of ["glm-5.2-fp8", "qwen3-vl-30b", "flux-schnell", "chroma1-hd", "whisper-large-v3", "indextts2", "bge-m3", "bge-reranker-v2-m3"]) {
+    const response = await render(`/models/${id}`);
+    assert.equal(response.status, 200, id);
+    const html = await response.text();
+    assert.match(html, new RegExp(`href="/integrations\\?model=${id}"`));
+    assert.equal((html.match(/<main[ >]/g) ?? []).length, 1, id);
+  }
+  const missing = await render("/models/unpublished-model");
+  assert.equal(missing.status, 404);
 });

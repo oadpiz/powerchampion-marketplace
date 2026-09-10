@@ -21,7 +21,7 @@ export function openLaunchAccess(interestId?: AccessInterestId) {
   }));
 }
 
-export function LaunchAccessDialog({ initialInterest, open }: { initialInterest?: AccessInterestId; open?: boolean }) {
+export function LaunchAccessDialog({ open }: { initialInterest?: AccessInterestId; open?: boolean }) {
   const { locale } = useLocale();
   const [isOpen, setIsOpen] = useState(open ?? false);
   const dialogRef = useRef<HTMLDivElement>(null);

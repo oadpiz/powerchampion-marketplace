@@ -45,6 +45,7 @@ export function PricingPageContent() {
           {CREDIT_PACKS.map((pack) => (
             <article className="credit-column" key={pack.id}>
               <p className="credit-pack-name">{packLabels[pack.id]}</p>
+              <p className="credit-price"><span>US$</span>{pack.price}</p>
               <p className="credit-bonus">{packDescriptions[pack.id]}</p>
               <p className="credit-value">
                 {locale === "en"
@@ -66,13 +67,13 @@ export function PricingPageContent() {
 
       <section aria-labelledby="billing-title" className="pricing-calculator">
         <div className="pricing-block-heading">
-          <p className="eyebrow">{locale === "en" ? "Live rates" : "即時費率"}</p>
+          <p className="eyebrow">{locale === "en" ? "Published rates" : "已刊登費率"}</p>
           <h2 id="billing-title">{locale === "en" ? "How token billing works" : "Token 計費方式"}</h2>
         </div>
         <p className="pricing-billing-copy">
           {locale === "en"
-            ? "Text models bill per million input and output tokens at the live rates below. Image models bill per generated image; audio models bill per minute of audio. The estimator applies the same rates locally in your browser."
-            : "文字模型依每百萬輸入/輸出 Token 以即時費率計費；影像模型依每張生成圖片計費；音訊模型依每分鐘音訊計費。估算器會在你的瀏覽器中以相同費率計算。"}
+            ? "Text models bill per million input and output tokens at the published rates below. Image models bill per generated image; audio models bill per minute of audio. The estimator applies the same rates locally in your browser."
+            : "文字模型依每百萬輸入/輸出 Token 以已刊登費率計費；影像模型依每張生成圖片計費；音訊模型依每分鐘音訊計費。估算器會在你的瀏覽器中以相同費率計算。"}
         </p>
       </section>
 
@@ -80,7 +81,7 @@ export function PricingPageContent() {
 
       <section aria-labelledby="rates-title" className="model-rates">
         <div className="pricing-block-heading">
-          <p className="eyebrow">{locale === "en" ? "Live rates" : "即時費率"}</p>
+          <p className="eyebrow">{locale === "en" ? "Published rates" : "已刊登費率"}</p>
           <h2 id="rates-title">{copy.pricing.ratesTitle}</h2>
         </div>
         <p className="rate-table-cue" id="rate-table-scroll-cue">{copy.pricing.ratesScrollCue}</p>
@@ -139,8 +140,8 @@ export function PricingPageContent() {
 
       <p className="pricing-credit-note">
         {locale === "en"
-          ? "Rates are live and billed exactly as listed. Prepaid keys bill on measured usage; failed requests are not billed."
-          : "費率為即時生效價格，按實際用量計費；預付金鑰用多少扣多少，失敗的請求不計費。"}
+          ? "Estimates use the published catalog rates. Actual charges depend on measured usage; check your key balance for billing information."
+          : "試算採模型目錄已刊登的費率。實際費用依計量用量計算，計費資訊請查詢金鑰餘額。"}
       </p>
     </main>
   );
