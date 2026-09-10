@@ -115,6 +115,39 @@ describe("mergeCatalog", () => {
     ]);
     expect(merged[0].categories).toEqual(["embedding"]);
   });
+
+  // Gateway contract change (2026-09-10): context_length is null when the
+  // config has no context window; max_output_length is null when the model's
+  // output modality does not include "text". Both must render as an em dash,
+  // never "0K", "nullK", or NaN.
+  it("formats a whisper-shaped entry (audio in, text out, no configured context window)", () => {
+    const merged = mergeCatalog([
+      catalogModel({
+        id: "unknown-whisper-shaped",
+        modalities: { input: ["audio"], output: ["text"] },
+        context_length: null,
+        max_output_length: 4096,
+      }),
+    ]);
+    expect(merged[0].context).toBe("—");
+    expect(merged[0].context).not.toMatch(/null|NaN/i);
+    // output modality includes "text", so max_output_length is a real value here.
+    expect(merged[0].maxOutput).toBe("4K");
+  });
+
+  it("formats a bge-shaped entry (text in, embedding out, no max output length)", () => {
+    const merged = mergeCatalog([
+      catalogModel({
+        id: "unknown-bge-shaped",
+        modalities: { input: ["text"], output: ["embedding"] },
+        context_length: 8192,
+        max_output_length: null,
+      }),
+    ]);
+    expect(merged[0].context).toBe("8K");
+    expect(merged[0].maxOutput).toBe("—");
+    expect(merged[0].maxOutput).not.toMatch(/null|NaN|0K/i);
+  });
 });
 
 describe("SNAPSHOT_CATALOG", () => {

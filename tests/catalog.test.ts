@@ -137,4 +137,43 @@ describe("CATALOG_SNAPSHOT", () => {
       expect(model.billing_note).toBeTruthy();
     }
   });
+
+  // Gateway contract change (2026-09-10, gateway final review I1/I2): a model
+  // with no configured context window reports null, not 0; a model whose
+  // output is not text reports max_output_length null, not 0. The hand-edited
+  // snapshot must agree with that shape so the sync script's output and the
+  // checked-in snapshot never disagree on null vs 0.
+  it("reports null context_length for a model with no configured context window", () => {
+    const whisper = CATALOG_SNAPSHOT.find((model) => model.id === "whisper-large-v3");
+    expect(whisper).toBeDefined();
+    expect(whisper!.context_length).toBeNull();
+  });
+
+  it("reports null max_output_length for every model whose output is not text", () => {
+    const nonTextOutput = CATALOG_SNAPSHOT.filter((model) => !model.modalities.output.includes("text"));
+    expect(nonTextOutput.map((model) => model.id)).toEqual([
+      "flux-schnell",
+      "chroma1-hd",
+      "indextts2",
+      "bge-m3",
+      "bge-reranker-v2-m3",
+    ]);
+    for (const model of nonTextOutput) {
+      expect(model.max_output_length, `${model.id} should be null`).toBeNull();
+    }
+  });
+
+  it("never reports the OpenRouter manifest slug as a model name", () => {
+    for (const model of CATALOG_SNAPSHOT) {
+      expect(model.name).not.toMatch(/PowerChampion Thailand B300/);
+    }
+  });
+
+  it("keeps prices and the model list unchanged by the null-shape edit", () => {
+    const byId = Object.fromEntries(CATALOG_SNAPSHOT.map((model) => [model.id, model]));
+    expect(byId["glm-5.2-fp8"].pricing).toEqual({ unit: "per_million_tokens", prompt_usd: 0.93, completion_usd: 3.0 });
+    expect(byId["flux-schnell"].pricing).toEqual({ unit: "per_million_tokens", prompt_usd: 0.0, completion_usd: 10.0 });
+    expect(byId["whisper-large-v3"].pricing).toEqual({ unit: "per_million_tokens", prompt_usd: 0.0, completion_usd: 3.33 });
+    expect(byId["bge-m3"].pricing).toEqual({ unit: "per_million_tokens", prompt_usd: 0.02, completion_usd: 0.0 });
+  });
 });
