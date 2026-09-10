@@ -35,18 +35,17 @@ describe("SiteShell", () => {
     expect(englishPrimary).toEqual([
       ["Models", "/models"],
       ["Pricing", "/pricing"],
-      ["Infrastructure", "/infrastructure"],
-      ["Docs", "/docs"],
-      ["Trust", "/trust"],
+      ["GPU Cloud", "/infrastructure"],
+      ["Developers", "/docs"],
       ["Company", "/company"],
-      ["Status", "/status"],
     ]);
 
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     const englishMobile = within(screen.getByRole("navigation", { name: "Mobile navigation" }))
       .getAllByRole("link")
-      .map((link) => [link.textContent, link.getAttribute("href")]);
+      .map((link) => [link.textContent?.replace("↗", ""), link.getAttribute("href")]);
     expect(englishMobile).toEqual([
+      ["Open platform", "/platform"],
       ...englishPrimary,
       ["Deployment review", "/contact"],
     ]);
@@ -60,18 +59,17 @@ describe("SiteShell", () => {
     expect(chinesePrimary).toEqual([
       ["模型", "/models"],
       ["價格", "/pricing"],
-      ["基礎設施", "/infrastructure"],
-      ["文件", "/docs"],
-      ["信任", "/trust"],
+      ["算力服務", "/infrastructure"],
+      ["開發文件", "/docs"],
       ["公司", "/company"],
-      ["狀態", "/status"],
     ]);
 
     await user.click(screen.getByRole("button", { name: "開啟選單" }));
     expect(within(screen.getByRole("navigation", { name: "行動版導覽" }))
       .getAllByRole("link")
-      .map((link) => [link.textContent, link.getAttribute("href")]))
+      .map((link) => [link.textContent?.replace("↗", ""), link.getAttribute("href")]))
       .toEqual([
+        ["進入平台", "/platform"],
         ...chinesePrimary,
         ["部署審查", "/contact"],
       ]);
@@ -111,11 +109,18 @@ describe("SiteShell", () => {
     expect(within(footer).getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "/faq");
     expect(within(footer).getByRole("link", { name: "Status" })).not.toHaveAttribute("aria-disabled");
     expect(within(footer).getByRole("button", { name: "繁中" })).toBeInTheDocument();
+    expect(within(footer).getByText("Intelligence, ready to build on.")).toBeVisible();
+    expect(within(footer).getByText("Power Champion Investment Limited")).toBeVisible();
+    expect(within(footer).getByRole("link", { name: "+886 2 2396 0605" })).toHaveAttribute("href", "tel:+886223960605");
+    expect(within(footer).getByRole("link", { name: "info@powerchampion.org" })).toHaveAttribute("href", "mailto:info@powerchampion.org");
+    expect(within(footer).getAllByRole("link").map((link) => link.getAttribute("href")))
+      .toEqual(expect.arrayContaining(["/models", "/pricing", "/docs", "/console", "/company", "/infrastructure", "/trust", "/status", "/contact", "/faq", "/terms", "/privacy"]));
 
     await user.click(within(footer).getByRole("button", { name: "繁中" }));
 
     expect(screen.getByRole("navigation", { name: "主要導覽" })).toBeInTheDocument();
     expect(screen.getByRole("contentinfo", { name: "頁尾" })).toBeInTheDocument();
+    expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByText("智慧就緒，讓創新即刻展開。")).toBeVisible();
     expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "關於" }))
       .toHaveAttribute("href", "/company");
     expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "服務狀態" }))

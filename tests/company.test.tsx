@@ -23,7 +23,7 @@ describe("company data", () => {
       </LocaleProvider>,
     );
 
-    expect(screen.getByRole("heading", { level: 1, name: /Infrastructure, made accountable/i }))
+    expect(screen.getByRole("heading", { level: 1, name: /AI models to build with. Infrastructure to grow on/i }))
       .toBeInTheDocument();
     expect(screen.getByText("Approximately 3.1 MW")).toBeVisible();
     expect(screen.getByText("Approximately US$27.9M over the initial contract term"))
@@ -40,6 +40,26 @@ describe("company data", () => {
       .toHaveAttribute("href", "/infrastructure");
     expect(screen.getByRole("link", { name: "Start deployment review" }))
       .toHaveAttribute("href", "/contact");
+  });
+
+  it("connects concrete services and application patterns to real access routes", () => {
+    render(<LocaleProvider><CompanyContent /></LocaleProvider>);
+
+    const api = screen.getByRole("article", { name: "Model API" });
+    const gpu = screen.getByRole("article", { name: "Dedicated GPU" });
+    const custom = screen.getByRole("article", { name: "Custom deployment" });
+    expect(within(api).getByRole("link", { name: "Read API documentation" })).toHaveAttribute("href", "/docs");
+    expect(within(gpu).getByRole("link", { name: "Explore GPU infrastructure" })).toHaveAttribute("href", "/infrastructure");
+    expect(within(custom).getByRole("link", { name: "Discuss a custom deployment" })).toHaveAttribute("href", "/contact");
+    expect(within(gpu).getByText(/availability, and commercial terms are confirmed through review/)).toBeVisible();
+
+    const applications = screen.getByRole("region", { name: "Start with what you want to build." });
+    expect(within(applications).getAllByRole("article")).toHaveLength(4);
+    expect(within(applications).getByRole("link", { name: "Qwen3-VL 30B" })).toHaveAttribute("href", "/models#qwen3-vl-30b");
+    expect(within(applications).getByRole("link", { name: "BGE-M3" })).toHaveAttribute("href", "/models#bge-m3");
+    expect(within(applications).getByRole("link", { name: "Whisper Large v3" })).toHaveAttribute("href", "/models#whisper-large-v3");
+    expect(screen.getByText(/platform overview is a starting point for review, not a capacity commitment/)).toBeVisible();
+    expect(document.body).not.toHaveTextContent(/1000\+|without egress fees|trillion-parameter|400G\/800G/);
   });
 
   it("renders a third counterparty-reported deposit fact in the capacity sequence", () => {
@@ -69,6 +89,10 @@ describe("company data", () => {
 
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
 
+    expect(screen.getByRole("heading", { level: 1, name: "以模型打造應用，以算力支撐成長。" })).toBeVisible();
+    expect(screen.getByRole("article", { name: "專屬 GPU" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "智慧文件處理" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "閱讀 API 文件" })).toHaveAttribute("href", "/docs");
     expect(screen.getByRole("link", { name: "Azio AI Holdings，附件 99.1" }))
       .toBeVisible();
     expect(screen.getByText("交易對手向 SEC 提交的揭露")).toBeVisible();

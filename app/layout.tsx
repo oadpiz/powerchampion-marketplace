@@ -7,6 +7,14 @@ import { SiteShell } from "../components/site-shell";
 import { metadataForRoute } from "../lib/metadata";
 import { LOCALE_COOKIE, htmlLangFor, resolveInitialLocale } from "../lib/locale";
 import "./globals.css";
+import "./brand.css";
+import "./shell.css";
+import "./platform-story.css";
+import "./service-pages.css";
+import "./platform.css";
+import "./model-detail.css";
+import "./playground.css";
+import "./integrations.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

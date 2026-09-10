@@ -22,7 +22,7 @@ describe("route metadata", () => {
   });
 
   it("leaves the other route titles alone", () => {
-    expect(metadataForRoute("/").title).toBe("Power Champion — OpenAI-compatible API · Live");
+    expect(metadataForRoute("/").title).toBe("Power Champion — One API. Every possibility.");
     expect(metadataForRoute("/console").title).toBe("Console | Power Champion");
   });
 

@@ -49,8 +49,8 @@ export function PricingCalculator({ models }: { models: ModelDefinition[] }) {
     ? `${model.name} is billed per ${mediaUnit} at ${mediaPrice} each — see the rates table below.`
     : `${model.name} 以每${mediaUnit}計費，單價 ${mediaPrice} — 見下方費率表。`;
   const tokenNote = locale === "en"
-    ? "Estimate runs in your browser using the same live rates the meter bills from."
-    : "估算在你的瀏覽器內執行，採用與計費表相同的即時費率。";
+    ? "Estimate runs in your browser using the published model catalog rates."
+    : "估算在你的瀏覽器內執行，採用模型目錄已刊登的費率。";
 
   return (
     <section aria-labelledby="calculator-title" className="pricing-calculator">

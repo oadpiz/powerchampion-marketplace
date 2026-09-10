@@ -338,6 +338,14 @@ export function mergeCatalog(
  */
 export const SNAPSHOT_CATALOG: ModelDefinition[] = mergeCatalog(CATALOG_SNAPSHOT);
 
+/**
+ * Compatibility alias for modules that need a module-level catalogue constant
+ * (playground/integration examples, model detail pages). Snapshot-derived;
+ * live catalogue consumers use fetchCatalog() + mergeCatalog() instead so the
+ * availability flags they render are the gateway's, not the snapshot's.
+ */
+export const MODEL_CATALOG: ModelDefinition[] = SNAPSHOT_CATALOG;
+
 export function filterModels(
   models: ModelDefinition[],
   query: string,

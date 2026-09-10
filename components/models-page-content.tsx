@@ -19,7 +19,7 @@ export function ModelsPageContent({ models, snapshotDate }: Props) {
         <p className="eyebrow">{copy.models.kicker}</p>
         <h1 id="models-title">{copy.models.title}</h1>
         <p>{copy.models.lead}</p>
-        <p className="models-notice">{locale === "en" ? "Live catalog — all models served by the b300 gateway." : "即時目錄——所有模型由 b300 閘道提供服務。"}</p>
+        <p className="models-notice">{locale === "en" ? "Live catalog — all models served by the b300 gateway. " : "即時目錄——所有模型由 b300 閘道提供服務。"}<a href="/status">{locale === "en" ? "Check current service availability →" : "查看即時服務狀態 →"}</a></p>
         <CatalogSnapshotNotice snapshotDate={snapshotDate} />
       </section>
       <ModelMarketplace models={models} />

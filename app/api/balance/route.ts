@@ -33,13 +33,14 @@ export async function POST(request: Request) {
         headers: { Authorization: `Bearer ${key.trim()}` },
         signal: AbortSignal.timeout(6000),
         cache: "no-store",
+        redirect: "error",
       },
     );
 
     const text = await upstream.text();
     return new Response(text, {
       status: upstream.status,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     });
   } catch {
     return Response.json({ detail: "Gateway unreachable." }, { status: 502 });

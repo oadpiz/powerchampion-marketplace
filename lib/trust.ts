@@ -138,7 +138,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
     lead: "Review the public boundaries, sources, and release state behind Power Champion access.",
     releaseBoundary: "This marketing site provides public context. The live, transactional API service operates at b300.powerchampion.ai with pay-per-use billing from your prepaid balance.",
     sections: [
-      { id: "data", title: "Current data behavior", body: ["The current enquiry, estimator, console, and launch-access interactions stay in this browser and are not transmitted or persisted."] },
+      { id: "data", title: "Current data behavior", body: ["Comparison, estimates, and generated integration code run locally. Balance lookups and playground requests use this site’s server to contact the Power Champion gateway. API keys are held in page memory, not saved in browser storage. Email enquiries open a draft for you to send."] },
       { id: "provenance", title: "Model provenance", body: ["Every catalog entry requires model-license, serving-authorization, and deployment review before release."] },
       { id: "controls", title: "Release controls", body: ["Inference readiness is derived from the gateway's live status feed. Usage accounting and payments are not independently verified by this site and display as unverified until measured."] },
       { id: "policies", title: "Policies and sources", body: ["Privacy, Terms, Status, and Company pages define the current public boundary and cited context."] },
@@ -168,7 +168,7 @@ export const TRUST_CONTENT: Record<Locale, TrustLocaleContent> = {
     lead: "檢視 Power Champion 存取服務背後的公開邊界、來源與發布狀態。",
     releaseBoundary: "此行銷網站提供公開脈絡。即時交易性 API 服務運作於 b300.powerchampion.ai，從預付餘額按量計費。",
     sections: [
-      { id: "data", title: "目前的資料行為", body: ["目前的洽詢、估算器、控制台與啟動存取互動僅保留在此瀏覽器，不會傳送或持久保存。"] },
+      { id: "data", title: "目前的資料行為", body: ["模型比較、費用試算與串接程式碼在瀏覽器執行。餘額查詢與模型測試透過本站伺服器連接 Power Champion 閘道。API 金鑰僅保留在頁面記憶體，不存入瀏覽器儲存空間。Email 洽詢會開啟草稿，由你決定寄送。"] },
       { id: "provenance", title: "模型來源", body: ["每筆模型目錄項目都必須在發布前完成模型授權、服務授權與部署審查。"] },
       { id: "controls", title: "發布控制", body: ["推論就緒狀態由閘道的即時狀態資料推導。用量計算與付款未經本站獨立驗證，在實測前以「未驗證」標示。"] },
       { id: "policies", title: "政策與來源", body: ["隱私權、條款、狀態與公司頁面界定目前的公開邊界及引用脈絡。"] },

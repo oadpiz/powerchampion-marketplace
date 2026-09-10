@@ -15,10 +15,13 @@ export default async function StatusPage() {
   } catch {
     gateway = null; // render static readiness rows with a "unreachable" note
   }
+  // This async server page timestamps the completed request, not a client render.
+  // eslint-disable-next-line react-hooks/purity
+  const fetchedAt = Date.now();
   return (
     <LiveStatusContent
       gateway={gateway}
-      fetchedAt={Date.now()}
+      fetchedAt={fetchedAt}
       gatewayOrigin={GATEWAY_ORIGIN}
     />
   );

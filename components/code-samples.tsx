@@ -203,8 +203,8 @@ const transcript = response.text;`,
     id: "tts",
     label: { en: "Text-to-Speech", zh: "文字轉語音" },
     description: {
-      en: "Generate speech from text with IndexTTS2, including voice cloning.",
-      zh: "使用 IndexTTS2 從文字生成語音，支援語音克隆。",
+      en: "Generate speech with IndexTTS2 using a reference voice ID provisioned for your deployment.",
+      zh: "使用 IndexTTS2 生成語音，需填入已為部署配置的參考聲音 ID。",
     },
     samples: {
       curl: `curl ${BASE}/audio/speech \\
@@ -213,7 +213,7 @@ const transcript = response.text;`,
   -d '{
     "model": "indextts2",
     "input": "Hello, this is a test of text-to-speech.",
-    "voice": "alloy"
+    "voice": "YOUR_REGISTERED_VOICE_ID"
   }' \\
   --output speech.mp3`,
       python: `from openai import OpenAI
@@ -226,7 +226,7 @@ client = OpenAI(
 response = client.audio.speech.create(
     model="indextts2",
     input="Hello, this is a test of text-to-speech.",
-    voice="alloy",
+    voice="YOUR_REGISTERED_VOICE_ID",
 )
 
 response.stream_to_file("speech.mp3")`,
@@ -241,7 +241,7 @@ const client = new OpenAI({
 const response = await client.audio.speech.create({
   model: "indextts2",
   input: "Hello, this is a test of text-to-speech.",
-  voice: "alloy",
+  voice: "YOUR_REGISTERED_VOICE_ID",
 });
 
 fs.writeFileSync("speech.mp3", Buffer.from(await response.arrayBuffer()));`,
