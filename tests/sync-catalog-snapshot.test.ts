@@ -39,6 +39,24 @@ describe("renderSnapshotBlock", () => {
     expect(block).toContain('"uptime": null');
   });
 
+  it("writes ready: true regardless of a transient outage at sync time", () => {
+    // I4: the snapshot is served under "live availability unavailable". Baking
+    // a model that happened to be restarting into the fallback would show it as
+    // unavailable for as long as the gateway stays unreachable.
+    const block = renderSnapshotBlock({
+      updated: "2026-10-01T00:00:00Z",
+      models: [
+        { ...payload.models[0], ready: false, uptime: 0.4 },
+        { ...payload.models[0], id: "bge-m3", name: "BGE-M3", ready: true, uptime: 0.999 },
+      ],
+    });
+
+    expect(block).not.toContain('"ready": false');
+    expect(block.match(/"ready": true/g)).toHaveLength(2);
+    expect(block.match(/"uptime": null/g)).toHaveLength(2);
+    expect(block).not.toContain('"uptime": 0.4');
+  });
+
   it("rejects a payload with no models rather than emptying the snapshot", () => {
     expect(() => renderSnapshotBlock({ updated: "2026-10-01", models: [] }))
       .toThrow(/at least one model/i);

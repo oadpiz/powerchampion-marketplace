@@ -194,3 +194,77 @@ describe("LocaleProvider cookie precedence and server-resolved initial locale", 
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe("zh");
   });
 });
+
+describe("LocaleProvider localStorage-to-cookie promotion", () => {
+  function cookieLocale() {
+    return document.cookie.match(/(?:^|;\s*)pc-locale=([^;]*)/)?.[1] ?? null;
+  }
+
+  it("promotes a pre-cookie stored choice to the cookie once, so the server stops flashing English", () => {
+    window.localStorage.setItem(STORAGE_KEY, "zh");
+    expect(cookieLocale()).toBeNull();
+
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(cookieLocale()).toBe("zh");
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "取得 API 存取" })).toBeVisible();
+  });
+
+  it("does not touch an existing cookie, even when localStorage disagrees", () => {
+    document.cookie = "pc-locale=en; Path=/";
+    window.localStorage.setItem(STORAGE_KEY, "zh");
+
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(cookieLocale()).toBe("en");
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Get API access" })).toBeVisible();
+  });
+
+  it("writes no cookie for a visitor who never chose a language", () => {
+    setBrowserLanguages(["zh-TW", "zh"]);
+
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(cookieLocale()).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("ignores an unsupported stored value instead of promoting it", () => {
+    window.localStorage.setItem(STORAGE_KEY, "zh-CN");
+
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(cookieLocale()).toBeNull();
+  });
+
+  it("stays usable when storage is blocked and there is nothing to promote", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Storage access is blocked", "SecurityError");
+    });
+
+    render(
+      <LocaleProvider>
+        <SiteShell><main>Content</main></SiteShell>
+      </LocaleProvider>,
+    );
+
+    expect(cookieLocale()).toBeNull();
+    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Get API access" })).toBeVisible();
+  });
+});

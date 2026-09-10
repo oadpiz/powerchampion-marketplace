@@ -48,9 +48,19 @@ export function renderSnapshotBlock(payload) {
   const entries = models.map((model) => {
     const ordered = {};
     for (const field of CATALOG_FIELDS) {
-      // uptime is a rolling health reading; freezing it would publish a stale
-      // percentage as if it were current.
-      ordered[field] = field === "uptime" ? null : (model[field] ?? null);
+      // The snapshot is the fallback shown *while the gateway is unreachable*,
+      // under a notice that says live availability is unknown. Two fields must
+      // therefore never be copied from the live payload:
+      //
+      //   uptime — a rolling health reading; freezing it would publish a stale
+      //            percentage as if it were current.
+      //   ready  — a transient outage at sync time would otherwise be baked in
+      //            and shown as "unavailable" for as long as the snapshot is
+      //            served. The hand-written snapshot in lib/catalog.ts uses
+      //            `ready: true, uptime: null` for every model; keep that.
+      if (field === "uptime") ordered[field] = null;
+      else if (field === "ready") ordered[field] = true;
+      else ordered[field] = model[field] ?? null;
     }
     if (!ordered.id || !ordered.pricing) {
       throw new Error(`Gateway model is missing id or pricing: ${JSON.stringify(model)}`);

@@ -65,6 +65,24 @@ export function LocaleProvider({
   // On mount: re-resolve from the browser, falling back to whatever the server
   // (Path A) or the bootstrap script (Path B) decided.
   useEffect(() => {
+    // M1: a visitor who chose a language before the cookie existed still has it
+    // only in localStorage, which the server cannot read — so every server
+    // render hands them English and they see a post-hydration flip on every
+    // page load. Promote that stored choice to the cookie once. This is not
+    // implicit detection: the value in localStorage only ever got there from an
+    // explicit toggle. Nothing is written when a cookie already exists (the
+    // cookie is authoritative, and rewriting it would resurrect a stale
+    // preference the visitor has since changed).
+    if (!readLocaleCookie()) {
+      let stored: Locale | null = null;
+      try {
+        stored = normalizeLocale(window.localStorage.getItem(LOCALE_STORAGE_KEY));
+      } catch {
+        // Storage may be blocked; there is simply nothing to promote.
+      }
+      if (stored) writeLocaleCookie(stored);
+    }
+
     // The browser-only preference is deliberately resolved after the server
     // render has hydrated, avoiding a server/client markup mismatch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
