@@ -30,6 +30,19 @@ describe("portal service boundary", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("allows cleartext in production only to a private Compose service name", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "auth_required" }, { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("PC_PORTAL_ORIGIN", "http://powerchampion-portal:3020");
+    expect((await GET(request("/session", "GET", undefined, {}, "https://powerchampion.ai"))).status).toBe(401);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://powerchampion-portal:3020/api/portal/session");
+    for (const value of ["http://portal.example:3020", "http://10.0.0.5:3020", "http://[fd00::1]:3020", "http://2130706433:3020"]) {
+      vi.stubEnv("PC_PORTAL_ORIGIN", value);
+      expect((await GET(request("/session", "GET", undefined, {}, "https://powerchampion.ai"))).status).toBe(503);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks cross-origin mutations, arbitrary endpoints, invalid months and oversized input", async () => {
     vi.stubGlobal("fetch", vi.fn()); vi.stubEnv("PC_PORTAL_ORIGIN", "");
     expect((await POST(request("/auth/login", "POST", {}, { origin: "https://evil.example" }))).status).toBe(403);

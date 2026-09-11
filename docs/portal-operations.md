@@ -1,6 +1,6 @@
 # Power Champion 帳號後台與上線交接
 
-目前版本在本機提供可持續儲存的客戶帳號與管理後台。正式網站、既有推論服務及正式付款流程尚未部署或變更。
+目前版本提供可持續儲存的客戶帳號與管理後台，並隨 powerchampion.ai 一起部署（見下方「正式環境（Dokploy）」）。既有推論服務及正式付款流程未變更；閘道金鑰自助發放與匿名試用維持關閉。
 
 ## 開啟本機版本
 
@@ -56,6 +56,24 @@ python3 -m server.manage reset-password --email you@example.com
 ```
 
 重設密碼會登出該帳號的所有工作階段。系統目前不會寄送驗證信或密碼重設信。
+
+## 正式環境（Dokploy）
+
+`docker-compose.dokploy.yml` 同時啟動網站與帳號服務（`server/Dockerfile`）：
+
+- 帳號服務容器 `powerchampion-portal` 只在 Compose 內部網路，沒有對外 port、沒有 Traefik 路由，也不在 `dokploy-network`；網站以 `PC_PORTAL_ORIGIN=http://powerchampion-portal:3020` 連線。BFF 只允許單段主機名（Compose 服務名）使用 http，其他明文位址一律拒絕。
+- 資料庫在具名 volume `portal-data`（容器內 `/data/portal.sqlite3`），重新部署不會清除。備份需另外在 Dokploy 設定 Volume Backup。
+- 已設定 `PC_PORTAL_ENV=production`、`PC_PORTAL_SECURE_COOKIES=1`、`PC_PORTAL_ALLOWED_ORIGINS=https://powerchampion.ai`。網站需 `VINEXT_TRUST_PROXY=1`，否則 TLS 在 Traefik 終止後同源檢查會失敗、全站會被標為 noindex。
+- **刻意未設定** `PC_GATEWAY_ADMIN_TOKEN`：sell-panel 以此 API 建立的金鑰不帶預付餘額，閘道會視為後付且無花費上限。客戶按「建立金鑰」會看到尚未開通；金鑰仍由營運者在 sell-panel 手動發放。要開放自助發放，需先讓閘道對新金鑰強制預付。
+- 匿名試用關閉（`PC_TRIAL_ENABLED=0`、無 `PC_TRIAL_API_KEY`）。
+
+建立第一個管理員：在 Dokploy 開啟 `powerchampion-portal` 容器的 Terminal，執行
+
+```sh
+python -m server.manage create-admin --email you@example.com
+```
+
+登入限制目前只有帳號層級（每帳號 15 分鐘 5 次失敗、註冊每帳號每小時 10 次）。建議另在邊緣（Cloudflare 或 Traefik）對 `/api/portal/auth/*` 設定以來源 IP 計的速率限制。
 
 ## 串接正式服務前
 

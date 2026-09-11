@@ -149,6 +149,18 @@ describe("chat API", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("reaches the trial service over a private Compose service name but not a dotted cleartext host", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ trialAvailable: false, maxOutputTokens: 512 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("PC_PORTAL_ORIGIN", "http://powerchampion-portal:3020");
+    await GET(new Request("https://powerchampion.ai/api/chat/config"));
+    expect(fetchMock.mock.calls[0][0]).toBe("http://powerchampion-portal:3020/api/portal/trial/config");
+    vi.stubEnv("PC_PORTAL_ORIGIN", "http://portal.example:3020");
+    const response = await POST(request({ ...body, key: "" }));
+    expect(response.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("maps known trial errors without disclosing private service text", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", "https://portal.internal.example");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "trial_limit", detail: "private service credential" }, { status: 429 })));

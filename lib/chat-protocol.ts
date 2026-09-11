@@ -58,7 +58,12 @@ export function sameOrigin(request: Request, required: boolean) {
   return !(required && !origin) && (!origin || origin === new URL(request.url).origin) && request.headers.get("sec-fetch-site") !== "cross-site";
 }
 
-/** Mirrors the portal BFF policy; arbitrary paths and remote cleartext are denied. */
+/**
+ * Mirrors the portal BFF policy; arbitrary paths and remote cleartext are denied.
+ * Cleartext is accepted only for a single-label host (a Compose service name such
+ * as `powerchampion-portal`), which never resolves on the public internet, or for
+ * loopback while the site itself is served locally.
+ */
 export function privateServiceOrigin(requestUrl: URL): string | null {
   const configured = process.env.PC_PORTAL_ORIGIN;
   const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(requestUrl.hostname);
@@ -66,8 +71,9 @@ export function privateServiceOrigin(requestUrl: URL): string | null {
   try {
     const target = new URL(configured);
     const localTarget = ["localhost", "127.0.0.1", "[::1]"].includes(target.hostname);
+    const internalTarget = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(target.hostname);
     if (target.username || target.password || target.pathname !== "/" || target.search || target.hash) return null;
-    if (target.protocol !== "https:" && !(isLocal && localTarget && target.protocol === "http:")) return null;
+    if (target.protocol !== "https:" && !(target.protocol === "http:" && (internalTarget || (isLocal && localTarget)))) return null;
     return target.origin;
   } catch { return null; }
 }

@@ -22,6 +22,9 @@ services:
       # every page noindex. Safe only because this container publishes no
       # ports and is reached exclusively through Traefik.
       VINEXT_TRUST_PROXY: "1"
+      # Customer/admin service below, reachable only on this Compose network.
+      # The BFF accepts cleartext solely for a single-label service name.
+      PC_PORTAL_ORIGIN: http://powerchampion-portal:3020
     networks:
       - dokploy-network
       - default
@@ -38,6 +41,35 @@ services:
       traefik.http.routers.powerchampion-marketplace-websecure.tls.certresolver: letsencrypt
       traefik.http.routers.powerchampion-marketplace-websecure.service: powerchampion-marketplace-websecure
       traefik.http.services.powerchampion-marketplace-websecure.loadbalancer.server.port: "3000"
+
+  powerchampion-portal:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: powerchampion-portal:latest
+    container_name: powerchampion-portal
+    restart: unless-stopped
+    environment:
+      PC_PORTAL_ENV: production
+      PC_PORTAL_SECURE_COOKIES: "1"
+      PC_PORTAL_ALLOWED_ORIGINS: https://powerchampion.ai
+      PC_PORTAL_DB: /data/portal.sqlite3
+      PC_GATEWAY_ORIGIN: https://b300.powerchampion.ai
+      # Key self-service stays disconnected on purpose: PC_GATEWAY_ADMIN_TOKEN is
+      # not passed. Gateway keys created without a prepaid balance are post-paid
+      # with no spend cap, so connect it only together with prepaid enforcement.
+      # The anonymous chat trial stays off (no PC_TRIAL_API_KEY either).
+      PC_TRIAL_ENABLED: "0"
+    volumes:
+      - portal-data:/data
+    # No ports, no Traefik labels and not on dokploy-network: only the website
+    # container can reach this service.
+    networks:
+      - default
+
+volumes:
+  portal-data:
+
 networks:
   dokploy-network:
     external: true
