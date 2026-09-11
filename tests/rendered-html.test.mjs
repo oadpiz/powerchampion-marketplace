@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function request(pathname, host = "localhost", forwardedHost) {
+async function request(pathname, host = "localhost", forwardedHost, origin = "http://localhost") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request(new URL(pathname, "http://localhost"), {
+    new Request(new URL(pathname, origin), {
       headers: {
         accept: "text/html",
         host,
@@ -33,39 +33,43 @@ async function render(pathname, host = "localhost", forwardedHost) {
 const routeMetadata = {
   "/": {
     title: "Power Champion — One API. Every possibility.",
-    description: "One OpenAI-compatible endpoint for leading open AI models — text, vision, image, speech, and embeddings. Live API, prepaid balance, one key.",
+    description: "Build with open AI models for text, vision, images, speech, and retrieval. Explore published API pricing, integration tools, and dedicated GPU infrastructure.",
+  },
+  "/solutions": {
+    title: "Power Champion — One API. Every possibility.",
+    description: "Build with open AI models for text, vision, images, speech, and retrieval. Explore published API pricing, integration tools, and dedicated GPU infrastructure.",
   },
   "/models": {
     title: "Open Model Catalog | Power Champion",
-    description: "Compare live open-model token rates, context limits, features, and availability.",
+    description: "Explore open AI models for text, vision, images, speech, and retrieval. Compare published API rates, capabilities, and integration requirements.",
   },
   "/pricing": {
     title: "Pricing | Power Champion",
-    description: "Live token rates for every model — pay per use from prepaid balance. No subscription required.",
+    description: "Published API rates for tokens, images, and audio, with prepaid credit options and a workload cost calculator.",
   },
   "/infrastructure": {
-    title: "Infrastructure review | Power Champion",
-    description: "Source-qualified infrastructure context and release gates for the Power Champion launch site; not a live deployment status.",
+    title: "Dedicated GPU Infrastructure | Power Champion",
+    description: "Explore dedicated NVIDIA HGX GPU capacity, bare-metal deployments, and infrastructure planning for model inference and training.",
   },
   "/docs": {
     title: "Documentation | Power Champion",
     description: "Quick start for the OpenAI-compatible API at b300.powerchampion.ai — cURL, Python, and JavaScript examples.",
   },
   "/trust": {
-    title: "Trust review | Power Champion",
-    description: "Current public trust boundaries and review links for the Power Champion launch site.",
+    title: "Trust and Service Policies | Power Champion",
+    description: "Understand Power Champion service responsibilities, data handling, API access, and published company information.",
   },
   "/status": {
     title: "Service status | Power Champion",
-    description: "Current launch-readiness states for public Power Champion services.",
+    description: "Check the latest available gateway and model service status for Power Champion API services.",
   },
   "/company": {
     title: "Company | Power Champion",
-    description: "Public company context and cited AI infrastructure information for Power Champion.",
+    description: "Meet Power Champion Investment Limited and explore our model API, dedicated GPU, and deployment services.",
   },
   "/contact": {
-    title: "Deployment review | Power Champion",
-    description: "Review non-binding deployment interests locally in your browser.",
+    title: "Contact Our Team | Power Champion",
+    description: "Discuss model API access, GPU capacity, and enterprise deployment requirements with the Power Champion team.",
   },
   "/console": {
     title: "Console | Power Champion",
@@ -73,20 +77,20 @@ const routeMetadata = {
   },
   "/faq": {
     title: "FAQ | Power Champion",
-    description: "Plain-language answers about the current Power Champion launch site and its public boundaries.",
+    description: "Answers about model API access, prepaid credits, billing, integration, and dedicated GPU services.",
   },
   "/terms": {
     title: "Terms | Power Champion",
-    description: "The current informational and non-transactional terms for the Power Champion launch site.",
+    description: "Read the terms governing the Power Champion website and how commercial API service terms are established.",
   },
   "/privacy": {
     title: "Privacy | Power Champion",
-    description: "The current privacy boundary for local Power Champion launch-site interactions.",
+    description: "Learn how Power Champion handles website interactions, account information, and API requests.",
   },
 };
 
 const routes = [
-  "/", "/models", "/pricing", "/infrastructure", "/docs", "/trust",
+  "/", "/solutions", "/models", "/pricing", "/infrastructure", "/docs", "/trust",
   "/status", "/company", "/contact", "/console", "/faq", "/terms", "/privacy",
 ];
 
@@ -100,8 +104,9 @@ function escaped(value) {
 }
 
 function assertRouteUrls(html, pathname, origin) {
-  const resolved = new URL(pathname, origin);
-  const expected = pathname === "/" ? resolved.origin : resolved.href;
+  const canonicalPath = pathname === "/solutions" ? "/" : pathname;
+  const resolved = new URL(canonicalPath, origin);
+  const expected = canonicalPath === "/" ? resolved.origin : resolved.href;
   assert.match(html, new RegExp(`<link rel="canonical" href="${escaped(expected)}"`));
   assert.match(html, new RegExp(`<meta property="og:url" content="${escaped(expected)}"`));
 }
@@ -145,16 +150,16 @@ test("server-renders a complete English marketplace shell with social metadata",
     assert.match(html, /rel="shortcut icon" href="\/favicon\.png"/);
     assert.match(html, /rel="icon" href="\/favicon\.png"/);
     assert.doesNotMatch(html, /Explore leading open AI models with one API and one prepaid balance\./);
-    assert.match(html, /property="og:image" content="http:\/\/localhost\/og\.png"/);
+    assert.match(html, /property="og:image" content="https:\/\/powerchampion\.ai\/og-platform\.png"/);
     assert.match(html, /name="twitter:card" content="summary_large_image"/);
-    assertRouteUrls(html, pathname, "http://localhost");
+    assertRouteUrls(html, pathname, "https://powerchampion.ai");
   }
 
   const publicResponse = await render("/", "marketplace.example");
   const publicHtml = await publicResponse.text();
   assert.match(
     publicHtml,
-    /property="og:image" content="https:\/\/marketplace\.example\/og\.png"/,
+    /property="og:image" content="https:\/\/powerchampion\.ai\/og-platform\.png"/,
   );
 });
 
@@ -165,44 +170,164 @@ test("redirects the browser compatibility favicon to the published PNG", async (
   assert.equal(response.headers.get("location"), "http://localhost/favicon.png");
 });
 
-test("normalizes valid metadata hosts and fails closed on malformed values", async () => {
-  const cases = [
-    { host: "marketplace.example:8443", origin: "https://marketplace.example:8443" },
-    { host: "marketplace.example.", origin: "https://marketplace.example." },
-    { host: "203.0.113.10:9443", origin: "https://203.0.113.10:9443" },
-    { host: "[2001:db8::1]:8443", origin: "https://[2001:db8::1]:8443" },
-    { host: "localhost:4173", origin: "http://localhost:4173" },
-    { host: "localhost.:4173", origin: "http://localhost.:4173" },
-    { host: "127.0.0.1:4173", origin: "http://127.0.0.1:4173" },
-    { host: "[::1]:4173", origin: "http://[::1]:4173" },
+test("keeps canonical URLs fixed and prevents preview and private-page indexing", async () => {
+  for (const host of ["localhost:3010", "preview.example", "powerchampion.ai", "market place.example"]) {
+    const response = await request("/models", host, "powerchampion.ai");
+    const html = await response.text();
+    assertRouteUrls(html, "/models", "https://powerchampion.ai");
+    assert.match(html, /name="robots" content="noindex, nofollow"/);
+    assert.equal(response.headers.get("X-Robots-Tag"), "noindex, nofollow");
+  }
+  const production = await request("/models", "powerchampion.ai", undefined, "https://powerchampion.ai");
+  const productionHtml = await production.text();
+  assert.equal(production.headers.get("X-Robots-Tag"), null);
+  assert.match(productionHtml, /name="robots" content="index, follow"/);
+  assertRouteUrls(productionHtml, "/models", "https://powerchampion.ai");
+
+  for (const path of ["/console", "/account", "/admin", "/login", "/register", "/chat", "/agents/build"]) {
+    const response = await request(path, "powerchampion.ai", undefined, "https://powerchampion.ai");
+    assert.equal(response.headers.get("X-Robots-Tag"), "noindex, nofollow", path);
+    assert.match(await response.text(), /name="robots" content="noindex, nofollow"/, path);
+  }
+});
+
+test("server-renders complete model social metadata and breadcrumbs", async () => {
+  const html = await (await render("/models/bge-m3")).text();
+  assertRouteUrls(html, "/models/bge-m3", "https://powerchampion.ai");
+  assert.match(html, /property="og:image" content="https:\/\/powerchampion\.ai\/og-platform\.png"/);
+  assert.match(html, /name="twitter:title" content="BGE-M3/);
+  const structured = [...html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].flatMap((match) => JSON.parse(match[1]));
+  const breadcrumb = structured.find((entry) => entry["@type"] === "BreadcrumbList");
+  assert.equal(breadcrumb.itemListElement.at(-1).item, "https://powerchampion.ai/models/bge-m3");
+  const organization = structured.find((entry) => entry["@type"] === "Organization");
+  assert.equal(organization.legalName, "Power Champion Investment Limited");
+  assert.equal(organization.email, "info@powerchampion.org");
+});
+
+test("server-renders localized primary content with reciprocal search annotations", async () => {
+  const markers = { "zh-Hant": /模型/, "zh-Hans": /模型/, ja: /モデル/, ko: /모델/ };
+  for (const [language, marker] of Object.entries(markers)) {
+    for (const section of ["", "/models", "/pricing", "/infrastructure", "/company"]) {
+      const path = `/${language}${section}`;
+      const response = await render(path);
+      assert.equal(response.status, 200, path);
+      const html = await response.text();
+      assert.match(html, new RegExp(`<html lang="${language}"`), path);
+      assert.match(html, marker, path);
+      assert.match(html, new RegExp(`<link rel="canonical" href="https://powerchampion.ai/${language}${section}"`), path);
+      for (const alternate of ["en", "zh-Hant", "zh-Hans", "ja", "ko", "x-default"]) {
+        const alternatePath = alternate === "en" || alternate === "x-default"
+          ? section
+          : `/${alternate}${section}`;
+        assert.match(html, new RegExp(`<link rel="alternate" href="${escaped(`https://powerchampion.ai${alternatePath}`)}" hreflang="${alternate}"`), path);
+      }
+    }
+  }
+});
+
+test("server-renders the full premium homepage and usable controls in all five languages", async () => {
+  const homepages = [
+    { path: "/", language: "en", title: "One API. Every possibility.", picker: "Language: English", filter: "Filter models", code: "Code language", pause: "Pause motion" },
+    { path: "/zh-Hant", language: "zh-Hant", title: "一組 API。 無限可能。", picker: "語言：繁體中文", filter: "篩選模型", code: "程式碼語言", pause: "暫停動態" },
+    { path: "/zh-Hans", language: "zh-Hans", title: "一组 API。 无限可能。", picker: "语言：简体中文", filter: "筛选模型", code: "代码语言", pause: "暂停动态" },
+    { path: "/ja", language: "ja", title: "ひとつの API。 広がる可能性。", picker: "言語: 日本語", filter: "モデルを絞り込む", code: "コードの言語", pause: "動きを止める" },
+    { path: "/ko", language: "ko", title: "하나의 API. 무한한 가능성.", picker: "언어: 한국어", filter: "모델 필터", code: "코드 언어", pause: "동작 일시 정지" },
   ];
-
-  for (const { host, origin } of cases) {
-    const html = await (await render("/models", host)).text();
-    assert.match(html, new RegExp(`property="og:image" content="${escaped(`${origin}/og.png`)}"`));
-    assertRouteUrls(html, "/models", origin);
+  for (const homepage of homepages) {
+    const response = await render(homepage.path);
+    assert.equal(response.status, 200, homepage.path);
+    const html = await response.text();
+    assertRouteUrls(html, homepage.path, "https://powerchampion.ai");
+    assert.match(html, new RegExp(`<html lang="${homepage.language}"`), homepage.path);
+    const h1 = html.match(/<h1[^>]*>(.*?)<\/h1>/s)?.[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    assert.equal(h1, homepage.title, homepage.path);
+    assert.equal((html.match(/<h1[ >]/g) ?? []).length, 1, homepage.path);
+    assert.equal((html.match(/<main[ >]/g) ?? []).length, 1, homepage.path);
+    assert.match(html, new RegExp(`aria-label="${escaped(homepage.picker)}"`), homepage.path);
+    for (const id of ["brand-capabilities-title", "models-title", "applications-title", "developer-title", "model-service-title", "infrastructure-title", "company-title", "faq-title", "cta-title"]) {
+      assert.match(html, new RegExp(`id="${id}"`), `${homepage.path} includes ${id}`);
+    }
+    assert.match(html, /id="hero-model-0"[^>]*role="tab"[^>]*aria-selected="true"/, homepage.path);
+    assert.match(html, /id="hero-model-panel"[^>]*role="tabpanel"/, homepage.path);
+    assert.match(html, /id="brand-service-panel"[^>]*role="tabpanel"/, homepage.path);
+    assert.match(html, new RegExp(`role="group" aria-label="${escaped(homepage.filter)}"`), homepage.path);
+    assert.match(html, new RegExp(`role="group" aria-label="${escaped(homepage.code)}"`), homepage.path);
+    assert.match(html, /<button[^>]*aria-pressed="true"[^>]*>Python<\/button>/, homepage.path);
+    assert.match(html, /<button[^>]*>cURL<\/button>/, homepage.path);
+    const pauseButton = [...html.matchAll(/<button\b([^>]*)>(.*?)<\/button>/gs)].find((match) => match[2].replace(/<[^>]+>/g, "").endsWith(homepage.pause));
+    assert.ok(pauseButton, `${homepage.path} has a labeled motion control`);
+    assert.match(pauseButton[1], /aria-pressed="false"/, homepage.path);
+    assert.match(html, /<details[^>]*>.*?<summary>/s, homepage.path);
+    for (const section of ["models", "pricing", "infrastructure", "company"]) {
+      const destination = homepage.language === "en" ? `/${section}` : `/${homepage.language}/${section}`;
+      assert.match(html, new RegExp(`href="${escaped(destination)}"`), `${homepage.path} links to ${destination}`);
+    }
+    assert.doesNotMatch(html, /<textarea[^>]*id="ai-prompt"/, homepage.path);
   }
+});
 
-  const forwardedHtml = await (await render("/models", "internal.example", "edge.example:7443, internal.example")).text();
-  assert.match(forwardedHtml, /property="og:image" content="https:\/\/edge\.example:7443\/og\.png"/);
-  assertRouteUrls(forwardedHtml, "/models", "https://edge.example:7443");
-
-  for (const malformed of [
-    "market place.example",
-    "https://marketplace.example",
-    "user@marketplace.example",
-    "marketplace.example/path",
-    "marketplace.example:0",
-    "marketplace.example:65536",
-    "marketplace.example:not-a-port",
-    "marketplace.example%0d%0ax-injected:yes",
-    "-marketplace.example",
-    "marketplace..example",
-  ]) {
-    const html = await (await render("/models", malformed)).text();
-    assert.match(html, /property="og:image" content="http:\/\/localhost\/og\.png"/, malformed);
-    assertRouteUrls(html, "/models", "http://localhost");
+test("server-renders an accessible composer in the standalone chat tool", async () => {
+  for (const path of ["/chat"]) {
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+    const html = await response.text();
+    assert.match(html, /<h1>What will you<br\/?>\s*<em>make possible\?<\/em><\/h1>/, path);
+    assert.match(html, /aria-label="Message composer"/, path);
+    assert.match(html, /<label[^>]*for="ai-prompt"[^>]*>Your message<\/label>/, path);
+    assert.match(html, /<textarea[^>]*id="ai-prompt"/, path);
+    assert.match(html, /aria-label="Send message"/, path);
+    assert.match(html, /<option[^>]*value="glm-5.2-fp8"/, path);
+    assert.match(html, /<option[^>]*value="qwen3-vl-30b"/, path);
+    assert.match(html, /href="\/agents"/, path);
+    assert.match(html, /href="\/agents\/build"/, path);
+    assert.match(html, /aria-label="Start exploring"/, path);
+    assert.equal((html.match(/<main[ >]/g) ?? []).length, 1, path);
+    assert.doesNotMatch(html, /One API\.Every possibility\./, path);
   }
+});
+
+test("keeps the brand homepage canonical while chat remains a separate tool", async () => {
+  for (const path of ["/", "/solutions"]) {
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+    const html = await response.text();
+    assertRouteUrls(html, path, "https://powerchampion.ai");
+    assert.match(html, /One API\./, path);
+    assert.match(html, /Every possibility\./, path);
+    assert.match(html, /<link rel="alternate" href="https:\/\/powerchampion\.ai" hreflang="en"/, path);
+    assert.match(html, /<link rel="alternate" href="https:\/\/powerchampion\.ai" hreflang="x-default"/, path);
+    assert.doesNotMatch(html, /<textarea[^>]*id="ai-prompt"/, path);
+  }
+  const chatHtml = await (await render("/chat")).text();
+  assertRouteUrls(chatHtml, "/chat", "https://powerchampion.ai");
+  assert.match(chatHtml, /<title>AI Chat \| Power Champion<\/title>/);
+  assert.doesNotMatch(chatHtml, /<link rel="alternate"[^>]+hreflang=/);
+});
+
+test("server-renders assistant discovery and a clearly scoped agent builder", async () => {
+  const gallery = await render("/agents");
+  assert.equal(gallery.status, 200);
+  const galleryHtml = await gallery.text();
+  assertRouteUrls(galleryHtml, "/agents", "https://powerchampion.ai");
+  assert.match(galleryHtml, /<h1[^>]*>An assistant for the way you work\.<\/h1>/);
+  assert.match(galleryHtml, /Search assistants/);
+  assert.match(galleryHtml, /id="agent-services"/);
+  assert.match(galleryHtml, /require a separate integration/);
+  for (const id of ["support", "research", "content", "coding"]) {
+    assert.match(galleryHtml, new RegExp(`href="/chat\\?agent=${id}"`));
+    assert.match(galleryHtml, new RegExp(`href="/agents/build\\?template=${id}"`));
+  }
+  assert.equal((galleryHtml.match(/<main[ >]/g) ?? []).length, 1);
+
+  const builder = await render("/agents/build");
+  assert.equal(builder.status, 200);
+  const builderHtml = await builder.text();
+  assertRouteUrls(builderHtml, "/agents/build", "https://powerchampion.ai");
+  assert.match(builderHtml, /<h1[^>]*>Make it your own\.<\/h1>/);
+  assert.match(builderHtml, /Agent name/);
+  assert.match(builderHtml, /aria-label="Assembled instructions"/);
+  assert.match(builderHtml, /does not deploy a model or connect external tools/);
+  assert.equal((builderHtml.match(/<main[ >]/g) ?? []).length, 1);
 });
 
 test("server-renders route-specific launch boundaries and protected facts", async () => {
@@ -239,8 +364,8 @@ test("server-renders local-only contact without payment or personal-data fields"
   assert.equal(response.status, 200);
   const html = await response.text();
 
-  assert.match(html, /<title>Deployment review \| Power Champion<\/title>/);
-  assert.match(html, /Deployment review/i);
+  assert.match(html, /<title>Contact Our Team \| Power Champion<\/title>/);
+  assert.match(html, /<h1 id="deployment-review-title">Talk to us<\/h1>/i);
   assert.match(html, /No information is transmitted or persisted/i);
   assert.match(html, /<option value="launch-access">API access<\/option>/);
   assert.doesNotMatch(html, /<form[^>]+action=/i);
@@ -263,7 +388,7 @@ test("server-renders the cited company evidence brief", async () => {
   assert.match(html, /https:\/\/www\.sec\.gov\/Archives\/edgar\/data\/1563568\/000143774926023245\/ex_986209\.htm/);
 });
 
-test("server-renders the finished marketplace homepage", async () => {
+test("server-renders the complete brand homepage with models and infrastructure", async () => {
   const response = await render("/");
   assert.equal(response.status, 200);
   const html = await response.text();

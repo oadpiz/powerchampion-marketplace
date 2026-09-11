@@ -1,7 +1,19 @@
 import type { Metadata } from "next";
+import {
+  SITE_ORIGIN, SOCIAL_IMAGE, LOCALIZED_SECTIONS, languageAlternates,
+  localizedPath, isPrivatePath, type InternationalLocale, type LocalizedSection,
+} from "./seo";
 
 export type RoutePath =
   | "/"
+  | "/chat"
+  | "/agents"
+  | "/agents/build"
+  | "/solutions"
+  | "/account"
+  | "/admin"
+  | "/login"
+  | "/register"
   | "/platform"
   | "/compare"
   | "/playground"
@@ -19,46 +31,65 @@ export type RoutePath =
   | "/terms"
   | "/privacy";
 
-const ROUTE_METADATA = {
+const HOME_METADATA = {
+  title: "Power Champion — One API. Every possibility.",
+  description: "Build with open AI models for text, vision, images, speech, and retrieval. Explore published API pricing, integration tools, and dedicated GPU infrastructure.",
+};
+
+export const ROUTE_METADATA = {
+  "/chat": {
+    title: "AI Chat | Power Champion",
+    description: "Chat with supported AI models using your Power Champion API key, or explore clearly labeled example conversations.",
+  },
+  "/agents": {
+    title: "AI Assistants & Custom Agent Services | Power Champion",
+    description: "Try instruction-based AI assistants for support, research, content, and coding. Plan a custom AI agent around your company's knowledge, systems, and workflows.",
+  },
+  "/agents/build": {
+    title: "Agent Builder | Power Champion",
+    description: "Configure an agent draft with your own instructions and model settings. Preview instructions and export a reusable configuration.",
+  },
+  "/account": { title: "Your Account | Power Champion", description: "Manage your Power Champion account and model API access." },
+  "/admin": { title: "Administration | Power Champion", description: "Power Champion platform administration." },
+  "/login": { title: "Sign In | Power Champion", description: "Sign in to your Power Champion account." },
+  "/register": { title: "Create an Account | Power Champion", description: "Create your Power Champion account." },
   "/platform": { title: "Model Platform | Power Champion", description: "Explore, compare, test, and integrate model APIs in the Power Champion development platform." },
   "/compare": { title: "Compare Models | Power Champion", description: "Compare model capabilities, billing units, and estimated costs for your workload." },
   "/playground": { title: "API Playground | Power Champion", description: "Test model API requests with your own key and inspect responses and token usage." },
   "/integrations": { title: "Integrations | Power Champion", description: "Generate model-specific Python, JavaScript, and cURL request examples and connection settings." },
-  "/": {
-    title: "Power Champion — One API. Every possibility.",
-    description: "One OpenAI-compatible endpoint for leading open AI models — text, vision, image, speech, and embeddings. Live API, prepaid balance, one key.",
-  },
+  "/": HOME_METADATA,
+  "/solutions": HOME_METADATA,
   "/models": {
     title: "Open Model Catalog | Power Champion",
-    description: "Compare live open-model token rates, context limits, features, and availability.",
+    description: "Explore open AI models for text, vision, images, speech, and retrieval. Compare published API rates, capabilities, and integration requirements.",
   },
   "/pricing": {
     title: "Pricing | Power Champion",
-    description: "Live token rates for every model — pay per use from prepaid balance. No subscription required.",
+    description: "Published API rates for tokens, images, and audio, with prepaid credit options and a workload cost calculator.",
   },
   "/infrastructure": {
-    title: "Infrastructure review | Power Champion",
-    description: "Source-qualified infrastructure context and release gates for the Power Champion launch site; not a live deployment status.",
+    title: "Dedicated GPU Infrastructure | Power Champion",
+    description: "Explore dedicated NVIDIA HGX GPU capacity, bare-metal deployments, and infrastructure planning for model inference and training.",
   },
   "/docs": {
     title: "Documentation | Power Champion",
     description: "Quick start for the OpenAI-compatible API at b300.powerchampion.ai — cURL, Python, and JavaScript examples.",
   },
   "/trust": {
-    title: "Trust review | Power Champion",
-    description: "Current public trust boundaries and review links for the Power Champion launch site.",
+    title: "Trust and Service Policies | Power Champion",
+    description: "Understand Power Champion service responsibilities, data handling, API access, and published company information.",
   },
   "/status": {
     title: "Service status | Power Champion",
-    description: "Current launch-readiness states for public Power Champion services.",
+    description: "Check the latest available gateway and model service status for Power Champion API services.",
   },
   "/company": {
     title: "Company | Power Champion",
-    description: "Public company context and cited AI infrastructure information for Power Champion.",
+    description: "Meet Power Champion Investment Limited and explore our model API, dedicated GPU, and deployment services.",
   },
   "/contact": {
-    title: "Deployment review | Power Champion",
-    description: "Review non-binding deployment interests locally in your browser.",
+    title: "Contact Our Team | Power Champion",
+    description: "Discuss model API access, GPU capacity, and enterprise deployment requirements with the Power Champion team.",
   },
   "/console": {
     title: "Console | Power Champion",
@@ -66,34 +97,65 @@ const ROUTE_METADATA = {
   },
   "/faq": {
     title: "FAQ | Power Champion",
-    description: "Plain-language answers about the current Power Champion launch site and its public boundaries.",
+    description: "Answers about model API access, prepaid credits, billing, integration, and dedicated GPU services.",
   },
   "/terms": {
     title: "Terms | Power Champion",
-    description: "The current informational and non-transactional terms for the Power Champion launch site.",
+    description: "Read the terms governing the Power Champion website and how commercial API service terms are established.",
   },
   "/privacy": {
     title: "Privacy | Power Champion",
-    description: "The current privacy boundary for local Power Champion launch-site interactions.",
+    description: "Learn how Power Champion handles website interactions, account information, and API requests.",
   },
 } satisfies Record<RoutePath, { title: string; description: string }>;
 
-export function metadataForRoute(pathname: RoutePath): Metadata {
-  const route = ROUTE_METADATA[pathname];
+export function metadataForPage(
+  pathname: string,
+  title: string,
+  description: string,
+  language: InternationalLocale | "en" = "en",
+  languages?: Record<string, string>,
+): Metadata {
+  const canonical = new URL(pathname === "/solutions" ? "/" : pathname, SITE_ORIGIN).href;
+  const ogLocale = { en: "en_US", "zh-Hant": "zh_TW", "zh-Hans": "zh_CN", ja: "ja_JP", ko: "ko_KR" }[language];
   return {
-    ...route,
-    alternates: { canonical: pathname },
+    title,
+    description,
+    alternates: { canonical, ...(languages ? { languages } : {}) },
+    ...(isPrivatePath(pathname) ? { robots: { index: false, follow: false } } : {}),
     openGraph: {
-      title: route.title,
-      description: route.description,
-      url: pathname,
-      images: [{ url: "/og.png", width: 1200, height: 630 }],
+      type: "website",
+      siteName: "Power Champion",
+      title,
+      description,
+      url: canonical,
+      locale: ogLocale,
+      images: [{ url: SOCIAL_IMAGE, width: 1200, height: 630, alt: "Power Champion — model APIs and dedicated GPU infrastructure" }],
     },
     twitter: {
       card: "summary_large_image",
-      title: route.title,
-      description: route.description,
-      images: ["/og.png"],
+      title,
+      description,
+      images: [{ url: SOCIAL_IMAGE, alt: "Power Champion model platform" }],
     },
   };
+}
+
+export function metadataForRoute(pathname: RoutePath): Metadata {
+  const route = ROUTE_METADATA[pathname];
+  // /solutions remains a duplicate alias of the brand homepage. All language
+  // annotations point to the primary home URLs, never to that alias.
+  const section = pathname === "/solutions" ? "/" : pathname;
+  const localized = LOCALIZED_SECTIONS.some((entry) => entry === section);
+  return metadataForPage(pathname, route.title, route.description, "en",
+    localized ? languageAlternates(section as LocalizedSection) : undefined);
+}
+
+export function metadataForLocalizedPage(
+  language: InternationalLocale,
+  section: LocalizedSection,
+  title: string,
+  description: string,
+): Metadata {
+  return metadataForPage(localizedPath(language, section), title, description, language, languageAlternates(section));
 }

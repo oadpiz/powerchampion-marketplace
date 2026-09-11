@@ -40,3 +40,7 @@ yarn-error.log*
 /work/
 /.worktrees/
 /.superpowers/brainstorm/
+/.local/
+__pycache__/
+*.pyc
+.dev.vars*

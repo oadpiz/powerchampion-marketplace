@@ -2,13 +2,17 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import PricingPage, { metadata } from "../app/pricing/page";
 import { LaunchAccessDialog, openLaunchAccess } from "../components/demo-checkout";
+import { InternationalSite } from "../components/international-site";
 import { LocaleProvider } from "../components/locale-provider";
 import { PricingCalculator } from "../components/pricing-calculator";
 import { PricingPageContent } from "../components/pricing-page-content";
 import { SiteShell } from "../components/site-shell";
+
+beforeEach(() => act(() => window.history.replaceState({}, "", "/pricing")));
+afterEach(() => act(() => window.history.replaceState({}, "", "/")));
 
 const EXPECTED_MODEL_RATES = [
   { name: "GLM 5.2 FP8", input: "0.93", output: "3.00" },
@@ -212,6 +216,7 @@ describe("LaunchAccessDialog", () => {
 
   it("localizes the access flow to Traditional Chinese", async () => {
     const user = userEvent.setup();
+    act(() => window.history.replaceState({}, "", "/contact"));
     render(
       <LocaleProvider>
         <SiteShell><main>Content</main></SiteShell>
@@ -219,7 +224,9 @@ describe("LaunchAccessDialog", () => {
       </LocaleProvider>,
     );
 
-    await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
+    const header = within(screen.getByRole("banner"));
+    await user.click(header.getByRole("button", { name: "Language: English" }));
+    await user.click(header.getByRole("button", { name: "繁體中文" }));
     act(() => openLaunchAccess());
     const dialog = screen.getByRole("dialog", { name: "取得你的 API Key" });
     expect(within(dialog).getByText(/存取流程/)).toBeVisible();
@@ -265,7 +272,7 @@ it("keeps checkout step labels at least 13px in every stylesheet rule", async ()
 describe("PricingPage", () => {
   it("keeps the mobile menu navigable and shows the header CTA on pricing", async () => {
     const user = userEvent.setup();
-    window.history.replaceState({}, "", "/pricing");
+    act(() => window.history.replaceState({}, "", "/pricing"));
     const { unmount } = render(
       <LocaleProvider>
         <SiteShell><PricingPageContent /></SiteShell>
@@ -279,7 +286,7 @@ describe("PricingPage", () => {
     expect(within(menu).getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/pricing");
     expect(within(screen.getByRole("main", { hidden: true })).getByRole("button", { name: "Get API access", hidden: true })).toBeVisible();
     unmount();
-    window.history.replaceState({}, "", "/");
+    act(() => window.history.replaceState({}, "", "/"));
   });
 
   it("explains separate token billing and offers one non-binding launch action", () => {
@@ -298,7 +305,7 @@ describe("PricingPage", () => {
   it("has truthful pricing metadata", () => {
     expect(metadata).toMatchObject({
       title: "Pricing | Power Champion",
-      description: "Live token rates for every model — pay per use from prepaid balance. No subscription required.",
+      description: "Published API rates for tokens, images, and audio, with prepaid credit options and a workload cost calculator.",
     });
   });
 
@@ -391,24 +398,46 @@ describe("PricingPage", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("switches pricing and checkout copy to Traditional Chinese", async () => {
+  it("links to the Traditional Chinese pricing page with exact rates and qualified payment information", async () => {
     const user = userEvent.setup();
-    render(
+    window.localStorage.setItem("pc-locale", "zh");
+    const english = render(
       <LocaleProvider>
         <SiteShell>
           <PricingPage />
         </SiteShell>
-        <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
-    await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
-    expect(screen.getByRole("heading", { name: "按量計費，無需訂閱。" })).toBeInTheDocument();
-    expect(screen.getByText("水平捲動以比較所有費率欄位。")).toBeVisible();
-    expect(screen.getByRole("region", { name: "模型費率比較" })).toHaveAttribute("tabindex", "0");
-    act(() => openLaunchAccess("product"));
+    // The English canonical URL remains English despite a saved tool preference.
+    expect(screen.getByRole("heading", { name: "How token billing works" })).toBeVisible();
+    const header = within(screen.getByRole("banner"));
+    await user.click(header.getByRole("button", { name: "Language: English" }));
+    expect(header.getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant/pricing");
+    english.unmount();
 
-    expect(screen.getByRole("dialog", { name: "取得你的 API Key" })).toBeInTheDocument();
-    expect(within(screen.getByRole("dialog")).getByText(/存取流程/)).toBeInTheDocument();
+    act(() => window.history.replaceState({}, "", "/zh-Hant/pricing"));
+    render(<LocaleProvider><InternationalSite language="zh-Hant" section="pricing" /></LocaleProvider>);
+    expect(screen.getByRole("heading", { level: 1, name: "掌握每一次呼叫的成本。" })).toBeVisible();
+    expect(screen.getByText("US$1.68")).toBeVisible();
+
+    for (const model of EXPECTED_MODEL_RATES) {
+      const row = screen.getByRole("heading", { level: 3, name: model.name }).closest("article")!;
+      expect(within(row).getByText(`US$${model.input}`)).toBeVisible();
+      if (/Flux|Chroma/.test(model.name)) {
+        expect(within(row).getByText("每張圖像")).toBeVisible();
+      } else if (/Whisper|IndexTTS/.test(model.name)) {
+        expect(within(row).getByText("每分鐘音訊")).toBeVisible();
+      } else {
+        expect(within(row).getByText("每百萬詞元")).toBeVisible();
+        if (Number(model.output) > 0) expect(within(row).getByText(`US$${model.output}`)).toBeVisible();
+      }
+    }
+
+    expect(screen.getByText(/此頁不直接處理付款。專屬 GPU 與客製部署另行報價/)).toBeVisible();
+    for (const link of screen.getAllByRole("link", { name: /洽詢儲值/ })) {
+      expect(link).toHaveAttribute("href", "mailto:info@powerchampion.org");
+    }
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

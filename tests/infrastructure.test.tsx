@@ -2,12 +2,9 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { InfrastructureContent } from "../components/infrastructure-content";
-import { LocaleProvider, useLocale } from "../components/locale-provider";
-
-function LocaleSwitch() {
-  const { setLocale } = useLocale();
-  return <button type="button" onClick={() => setLocale("zh")}>繁中</button>;
-}
+import { LocaleProvider } from "../components/locale-provider";
+import { SiteShell } from "../components/site-shell";
+import { InternationalSite } from "../components/international-site";
 
 describe("InfrastructureContent", () => {
   it("qualifies infrastructure figures beside the source-backed facts", () => {
@@ -39,9 +36,10 @@ describe("InfrastructureContent", () => {
     expect(serving).toHaveAttribute("data-ready", "false");
   });
 
-  it("changes planning questions with the workload and preserves the choice when localized", async () => {
+  it("changes planning questions and links to the corresponding translated infrastructure page", async () => {
     const user = userEvent.setup();
-    render(<LocaleProvider><LocaleSwitch /><InfrastructureContent gateway={null} /></LocaleProvider>);
+    window.history.replaceState({}, "", "/infrastructure");
+    const english = render(<LocaleProvider><SiteShell><InfrastructureContent gateway={null} /></SiteShell></LocaleProvider>);
     const training = screen.getByRole("button", { name: "Training & fine-tuning" });
     expect(screen.getByText("Which models and precision will you serve?")).toBeVisible();
     await user.click(training);
@@ -51,12 +49,19 @@ describe("InfrastructureContent", () => {
     expect(screen.getByText("Are you pretraining, fine-tuning, or adapting an existing model?")).toBeVisible();
     expect(screen.getByRole("link", { name: "Discuss this workload" })).toHaveAttribute("href", "/contact");
 
-    await user.click(screen.getByRole("button", { name: "繁中" }));
-    expect(screen.getByRole("button", { name: "訓練與微調" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("是預訓練、微調，還是調整既有模型？")).toBeVisible();
-    expect(screen.getByRole("heading", { level: 1, name: "從工作負載出發，規劃合適算力。" })).toBeVisible();
-    expect(screen.getByText(/不代表可立即預訂的庫存/)).toBeVisible();
-    expect(screen.getByText(/不保證擴充權會被行使或增加容量/)).toBeVisible();
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
+    const languages = within(screen.getByRole("navigation", { name: "Website language" }));
+    expect(languages.getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant/infrastructure");
+    expect(languages.getByRole("link", { name: "한국어" })).toHaveAttribute("href", "/ko/infrastructure");
+    expect(training).toHaveAttribute("aria-pressed", "true");
+    english.unmount();
+    window.history.replaceState({}, "", "/zh-Hant/infrastructure");
+    render(<LocaleProvider><InternationalSite language="zh-Hant" section="infrastructure" /></LocaleProvider>);
+    expect(screen.getByRole("heading", { level: 1, name: "為你的工作負載，規劃算力。" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "NVIDIA HGX B300 / B200" })).toBeVisible();
+    expect(screen.getByText(/不代表即時庫存.*均須以專案提案確認/)).toBeVisible();
+    expect(screen.getByRole("heading", { name: "把需求轉成可驗收的交付範圍。" })).toBeVisible();
+    expect(screen.getByText("每日工作量、尖峰併發、延遲或完成時間目標")).toBeVisible();
   });
 
   it("does not turn expected capacity into an ownership or deployment claim", () => {

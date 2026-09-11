@@ -5,8 +5,11 @@ import { LocaleProvider } from "../components/locale-provider";
 import { LaunchAccessDialog } from "../components/demo-checkout";
 import { SiteShell } from "../components/site-shell";
 import { metadataForRoute } from "../lib/metadata";
+import { SITE_ORIGIN, isInternationalLocale } from "../lib/seo";
+import { COMPANY_CONTENT } from "../lib/company";
 import "./globals.css";
 import "./brand.css";
+import "./brand-motion.css";
 import "./shell.css";
 import "./platform-story.css";
 import "./service-pages.css";
@@ -14,6 +17,13 @@ import "./platform.css";
 import "./model-detail.css";
 import "./playground.css";
 import "./integrations.css";
+import "./portal.css";
+import "./international.css";
+import "./ai-workspace.css";
+import "./agents.css";
+import "./agent-builder.css";
+import "./language-picker.css";
+import "./brand-experience.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,80 +35,51 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-function metadataOrigin(host: string | null): URL {
-  const requestedHost = host?.split(",", 1)[0]?.trim().toLowerCase();
-  if (!requestedHost || /[\s/@\\?#%]/.test(requestedHost)) return new URL("http://localhost");
-
-  const bracketed = requestedHost.match(/^\[([0-9a-f:.]+)](?::(\d+))?$/);
-  const named = requestedHost.match(/^([^:]+)(?::(\d+))?$/);
-  if (!bracketed && !named) return new URL("http://localhost");
-
-  const hostname = bracketed?.[1] ?? named?.[1] ?? "";
-  const port = bracketed?.[2] ?? named?.[2];
-  if (port && (Number(port) < 1 || Number(port) > 65535)) return new URL("http://localhost");
-
-  const dnsHostname = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
-  const isIpv4 = /^\d+(?:\.\d+){3}$/.test(hostname)
-    && hostname.split(".").every((part) => Number(part) <= 255);
-  const isIpv6 = Boolean(bracketed) && hostname.includes(":");
-  const isDns = dnsHostname.length > 0 && dnsHostname.length <= 253
-    && dnsHostname.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
-  if (!isIpv4 && !isIpv6 && !isDns) return new URL("http://localhost");
-
-  try {
-    const scheme = dnsHostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
-      ? "http"
-      : "https";
-    return new URL(`${scheme}://${requestedHost}`);
-  } catch {
-    return new URL("http://localhost");
-  }
-}
-
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-
+  const indexable = requestHeaders.get("x-pc-indexable") === "true";
   return {
     ...metadataForRoute("/"),
-    metadataBase: metadataOrigin(host),
-    icons: {
-      icon: "/favicon.png",
-      shortcut: "/favicon.png",
-    },
+    metadataBase: new URL(SITE_ORIGIN),
+    robots: { index: indexable, follow: indexable },
+    icons: { icon: "/favicon.png", shortcut: "/favicon.png" },
   };
 }
 
 const ORGANIZATION_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "Organization",
+  "@id": `${SITE_ORIGIN}/#organization`,
   name: "Power Champion",
-  url: "https://powerchampion.ai",
-  description:
-    "One OpenAI-compatible endpoint for leading open AI models — text, vision, image, speech, and embeddings. Live API, prepaid balance, one key.",
+  legalName: COMPANY_CONTENT.en.record.name,
+  url: SITE_ORIGIN,
+  logo: `${SITE_ORIGIN}/favicon.png`,
+  email: COMPANY_CONTENT.en.contact.email,
+  telephone: COMPANY_CONTENT.en.contact.phone,
+  description: "Model API services and dedicated GPU infrastructure for AI development and deployment.",
 };
 
 const WEBSITE_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "WebSite",
+  "@id": `${SITE_ORIGIN}/#website`,
   name: "Power Champion",
-  url: "https://powerchampion.ai",
+  url: SITE_ORIGIN,
+  publisher: { "@id": `${SITE_ORIGIN}/#organization` },
+  inLanguage: ["en", "zh-Hant", "zh-Hans", "ja", "ko"],
 };
 
 const SERVICE_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "WebAPI",
+  "@id": `${SITE_ORIGIN}/#api`,
   name: "Power Champion API",
   description:
     "OpenAI-compatible API for leading open AI models. Prepaid balance, one key, pay per use.",
   url: "https://powerchampion.ai",
   documentation: "https://powerchampion.ai/docs",
   termsOfService: "https://powerchampion.ai/terms",
-  provider: {
-    "@type": "Organization",
-    name: "Power Champion",
-    url: "https://powerchampion.ai",
-  },
+  provider: { "@id": `${SITE_ORIGIN}/#organization` },
 };
 
 function StructuredData() {
@@ -110,19 +91,22 @@ function StructuredData() {
           ORGANIZATION_JSON_LD,
           WEBSITE_JSON_LD,
           SERVICE_JSON_LD,
-        ]),
+        ]).replace(/</g, "\\u003c"),
       }}
     />
   );
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const requestHeaders = await headers();
+  const requestedLanguage = requestHeaders.get("x-pc-language");
+  const language = isInternationalLocale(requestedLanguage) ? requestedLanguage : "en";
   return (
-    <html lang="en">
+    <html lang={language}>
       <head>
         <StructuredData />
       </head>

@@ -6,6 +6,7 @@ import FaqPage from "../app/faq/page";
 import PrivacyPage from "../app/privacy/page";
 import TermsPage from "../app/terms/page";
 import { InfrastructureContent } from "../components/infrastructure-content";
+import { InternationalSite } from "../components/international-site";
 import { LiveStatusContent } from "../components/live-status-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
@@ -69,7 +70,8 @@ describe("public trust pages", () => {
 
   it("renders the published infrastructure stages without unverified live claims", async () => {
     const user = userEvent.setup();
-    render(
+    window.history.replaceState({}, "", "/infrastructure");
+    const english = render(
       <LocaleProvider>
         <SiteShell><InfrastructureContent gateway={null} /></SiteShell>
       </LocaleProvider>,
@@ -82,8 +84,13 @@ describe("public trust pages", () => {
     expect(screen.getByText(/deployed at b300\.powerchampion\.ai/i)).toBeVisible();
     expect(screen.getByRole("link", { name: "Deployment review" })).toHaveAttribute("href", "/contact");
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    expect(screen.getByRole("heading", { level: 1, name: /從工作負載出發，規劃合適算力/i })).toBeVisible();
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
+    expect(within(screen.getByRole("navigation", { name: "Website language" })).getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant/infrastructure");
+    english.unmount();
+    window.history.replaceState({}, "", "/zh-Hant/infrastructure");
+    render(<LocaleProvider><InternationalSite language="zh-Hant" section="infrastructure" /></LocaleProvider>);
+    expect(screen.getByRole("heading", { level: 1, name: "為你的工作負載，規劃算力。" })).toBeVisible();
+    expect(screen.getByText(/不代表即時庫存.*均須以專案提案確認/)).toBeVisible();
   });
 
   it("renders the trust evidence sections with policy and source links", () => {
@@ -106,6 +113,7 @@ describe("public trust pages", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     try {
+      window.history.replaceState({}, "", "/trust");
       render(<LocaleProvider><SiteShell><TrustContent gateway={gatewayWith("ok")} /></SiteShell></LocaleProvider>);
 
       for (const [name, state] of [
@@ -117,7 +125,9 @@ describe("public trust pages", () => {
         expect(row).toHaveTextContent(`${name} — ${state}`);
       }
 
-      await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
+      await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
+      await user.click(within(screen.getByRole("navigation", { name: "Website language" })).getByRole("button", { name: "繁體中文" }));
+      expect(window.location.pathname).toBe("/trust");
       for (const [name, state] of [
         ["供應商 Manifest", "未驗證"],
         ["推論 API", "已就緒"],

@@ -1,20 +1,50 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { LaunchAccessDialog } from "../components/demo-checkout";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
+beforeEach(() => window.history.replaceState({}, "", "/contact"));
+
+async function switchHeaderToChinese(user: ReturnType<typeof userEvent.setup>) {
+  const header = within(screen.getByRole("banner"));
+  await user.click(header.getByRole("button", { name: "Language: English" }));
+  await user.click(header.getByRole("button", { name: "繁體中文" }));
+}
 
 describe("SiteShell", () => {
+  it("closes the language disclosure before closing the surrounding mobile menu", async () => {
+    const user = userEvent.setup();
+    render(<LocaleProvider><SiteShell><main>Content</main></SiteShell></LocaleProvider>);
+    const menuTrigger = screen.getByRole("button", { name: "Open menu" });
+    await user.click(menuTrigger);
+    const menu = screen.getByRole("dialog", { name: "Open menu" });
+    const languageTrigger = within(menu).getByRole("button", { name: "Language: English" });
+    await user.click(languageTrigger);
+    expect(within(menu).getByRole("navigation", { name: "Website language" })).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(menu).toBeVisible();
+    expect(languageTrigger).toHaveFocus();
+    expect(languageTrigger).toHaveAttribute("aria-expanded", "false");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Open menu" })).not.toBeInTheDocument();
+    expect(menuTrigger).toHaveFocus();
+  });
   it("keeps the header launch-access action on non-pricing routes", () => {
     window.history.replaceState({}, "", "/docs");
     const { unmount } = render(
       <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
       </LocaleProvider>,
     );
 
-    expect(within(screen.getByRole("banner")).getByRole("button", { name: "Get API access" })).toBeVisible();
+    expect(
+      within(screen.getByRole("banner")).getByRole("button", {
+        name: "Get API access",
+      }),
+    ).toBeVisible();
     unmount();
     window.history.replaceState({}, "", "/");
   });
@@ -29,7 +59,9 @@ describe("SiteShell", () => {
       </LocaleProvider>,
     );
 
-    const englishPrimary = within(screen.getByRole("navigation", { name: "Primary navigation" }))
+    const englishPrimary = within(
+      screen.getByRole("navigation", { name: "Primary navigation" }),
+    )
       .getAllByRole("link")
       .map((link) => [link.textContent, link.getAttribute("href")]);
     expect(englishPrimary).toEqual([
@@ -41,19 +73,27 @@ describe("SiteShell", () => {
     ]);
 
     await user.click(screen.getByRole("button", { name: "Open menu" }));
-    const englishMobile = within(screen.getByRole("navigation", { name: "Mobile navigation" }))
+    const englishMobile = within(
+      screen.getByRole("navigation", { name: "Mobile navigation" }),
+    )
       .getAllByRole("link")
-      .map((link) => [link.textContent?.replace("↗", ""), link.getAttribute("href")]);
+      .map((link) => [
+        link.textContent?.replace("↗", ""),
+        link.getAttribute("href"),
+      ]);
     expect(englishMobile).toEqual([
+      ["My account", "/account"],
       ["Open platform", "/platform"],
       ...englishPrimary,
       ["Deployment review", "/contact"],
     ]);
     await user.click(screen.getByRole("button", { name: "Close menu" }));
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    await switchHeaderToChinese(user);
 
-    const chinesePrimary = within(screen.getByRole("navigation", { name: "主要導覽" }))
+    const chinesePrimary = within(
+      screen.getByRole("navigation", { name: "主要導覽" }),
+    )
       .getAllByRole("link")
       .map((link) => [link.textContent, link.getAttribute("href")]);
     expect(chinesePrimary).toEqual([
@@ -65,14 +105,19 @@ describe("SiteShell", () => {
     ]);
 
     await user.click(screen.getByRole("button", { name: "開啟選單" }));
-    expect(within(screen.getByRole("navigation", { name: "行動版導覽" }))
-      .getAllByRole("link")
-      .map((link) => [link.textContent?.replace("↗", ""), link.getAttribute("href")]))
-      .toEqual([
-        ["進入平台", "/platform"],
-        ...chinesePrimary,
-        ["部署審查", "/contact"],
-      ]);
+    expect(
+      within(screen.getByRole("navigation", { name: "行動版導覽" }))
+        .getAllByRole("link")
+        .map((link) => [
+          link.textContent?.replace("↗", ""),
+          link.getAttribute("href"),
+        ]),
+    ).toEqual([
+      ["我的帳戶", "/account"],
+      ["進入平台", "/platform"],
+      ...chinesePrimary,
+      ["部署審查", "/contact"],
+    ]);
   });
 
   it("synchronizes document language transiently", async () => {
@@ -80,66 +125,138 @@ describe("SiteShell", () => {
     document.documentElement.lang = "test-host-language";
     const { unmount } = render(
       <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
       </LocaleProvider>,
     );
 
     expect(document.documentElement).toHaveAttribute("lang", "en");
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    await switchHeaderToChinese(user);
     expect(document.documentElement).toHaveAttribute("lang", "zh-Hant");
 
     unmount();
-    expect(document.documentElement).toHaveAttribute("lang", "test-host-language");
+    expect(document.documentElement).toHaveAttribute(
+      "lang",
+      "test-host-language",
+    );
   });
 
   it("localizes shell landmarks and footer content including its language switch", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
       </LocaleProvider>,
     );
 
-    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Primary navigation" }),
+    ).toBeInTheDocument();
     const footer = screen.getByRole("contentinfo", { name: "Footer" });
-    expect(within(footer).getByRole("link", { name: "About" })).toHaveAttribute("href", "/company");
-    expect(within(footer).getByRole("link", { name: "Status" })).toHaveAttribute("href", "/status");
-    expect(within(footer).getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
-    expect(within(footer).getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
-    expect(within(footer).getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "/faq");
-    expect(within(footer).getByRole("link", { name: "Status" })).not.toHaveAttribute("aria-disabled");
-    expect(within(footer).getByRole("button", { name: "繁中" })).toBeInTheDocument();
-    expect(within(footer).getByText("Intelligence, ready to build on.")).toBeVisible();
-    expect(within(footer).getByText("Power Champion Investment Limited")).toBeVisible();
-    expect(within(footer).getByRole("link", { name: "+886 2 2396 0605" })).toHaveAttribute("href", "tel:+886223960605");
-    expect(within(footer).getByRole("link", { name: "info@powerchampion.org" })).toHaveAttribute("href", "mailto:info@powerchampion.org");
-    expect(within(footer).getAllByRole("link").map((link) => link.getAttribute("href")))
-      .toEqual(expect.arrayContaining(["/models", "/pricing", "/docs", "/console", "/company", "/infrastructure", "/trust", "/status", "/contact", "/faq", "/terms", "/privacy"]));
+    expect(within(footer).getByRole("link", { name: "About" })).toHaveAttribute(
+      "href",
+      "/company",
+    );
+    expect(
+      within(footer).getByRole("link", { name: "Status" }),
+    ).toHaveAttribute("href", "/status");
+    expect(within(footer).getByRole("link", { name: "Terms" })).toHaveAttribute(
+      "href",
+      "/terms",
+    );
+    expect(
+      within(footer).getByRole("link", { name: "Privacy" }),
+    ).toHaveAttribute("href", "/privacy");
+    expect(within(footer).getByRole("link", { name: "FAQ" })).toHaveAttribute(
+      "href",
+      "/faq",
+    );
+    expect(
+      within(footer).getByRole("link", { name: "Status" }),
+    ).not.toHaveAttribute("aria-disabled");
+    expect(
+      within(footer).getByRole("button", { name: "繁中" }),
+    ).toBeInTheDocument();
+    expect(
+      within(footer).getByText("Intelligence, ready to build on."),
+    ).toBeVisible();
+    expect(
+      within(footer).getByText("Power Champion Investment Limited"),
+    ).toBeVisible();
+    expect(
+      within(footer).getByRole("link", { name: "+886 2 2396 0605" }),
+    ).toHaveAttribute("href", "tel:+886223960605");
+    expect(
+      within(footer).getByRole("link", { name: "info@powerchampion.org" }),
+    ).toHaveAttribute("href", "mailto:info@powerchampion.org");
+    expect(
+      within(footer)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual(
+      expect.arrayContaining([
+        "/models",
+        "/pricing",
+        "/docs",
+        "/console",
+        "/company",
+        "/infrastructure",
+        "/trust",
+        "/status",
+        "/contact",
+        "/faq",
+        "/terms",
+        "/privacy",
+      ]),
+    );
 
     await user.click(within(footer).getByRole("button", { name: "繁中" }));
 
-    expect(screen.getByRole("navigation", { name: "主要導覽" })).toBeInTheDocument();
-    expect(screen.getByRole("contentinfo", { name: "頁尾" })).toBeInTheDocument();
-    expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByText("智慧就緒，讓創新即刻展開。")).toBeVisible();
-    expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "關於" }))
-      .toHaveAttribute("href", "/company");
-    expect(within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole("link", { name: "服務狀態" }))
-      .toHaveAttribute("href", "/status");
+    expect(
+      screen.getByRole("navigation", { name: "主要導覽" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("contentinfo", { name: "頁尾" }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("contentinfo", { name: "頁尾" })).getByText(
+        "智慧就緒，讓創新即刻展開。",
+      ),
+    ).toBeVisible();
+    expect(
+      within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole(
+        "link",
+        { name: "關於" },
+      ),
+    ).toHaveAttribute("href", "/company");
+    expect(
+      within(screen.getByRole("contentinfo", { name: "頁尾" })).getByRole(
+        "link",
+        { name: "服務狀態" },
+      ),
+    ).toHaveAttribute("href", "/status");
   });
 
   it("localizes the mobile navigation landmark", async () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
       </LocaleProvider>,
     );
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    await switchHeaderToChinese(user);
     await user.click(screen.getByRole("button", { name: "開啟選單" }));
 
     const dialog = screen.getByRole("dialog", { name: "開啟選單" });
-    expect(within(dialog).getByRole("navigation", { name: "行動版導覽" })).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("navigation", { name: "行動版導覽" }),
+    ).toBeInTheDocument();
   });
 
   it("opens and closes the mobile menu accessibly", async () => {
@@ -181,11 +298,13 @@ describe("SiteShell", () => {
 
     await user.click(screen.getByRole("button", { name: "Open menu" }));
     const menu = screen.getByRole("dialog", { name: "Open menu" });
-    await user.click(within(menu).getByRole("button", { name: "Get API access" }));
+    await user.click(
+      within(menu).getByRole("button", { name: "Get API access" }),
+    );
     expect(launchAccessEvents).toBe(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    await switchHeaderToChinese(user);
     await user.click(screen.getByRole("button", { name: "開啟選單" }));
     expect(
       within(screen.getByRole("dialog", { name: "開啟選單" })).getByRole(
@@ -211,8 +330,12 @@ describe("SiteShell", () => {
     await user.click(trigger);
 
     const menu = screen.getByRole("dialog", { name: "Open menu" });
-    const closeButton = within(menu).getByRole("button", { name: "Close menu" });
-    const checkoutButton = within(menu).getByRole("button", { name: "Get API access" });
+    const closeButton = within(menu).getByRole("button", {
+      name: "Close menu",
+    });
+    const checkoutButton = within(menu).getByRole("button", {
+      name: "Get API access",
+    });
     expect(closeButton).toHaveFocus();
 
     await user.tab({ shift: true });
@@ -230,7 +353,9 @@ describe("SiteShell", () => {
     render(
       <LocaleProvider>
         <SiteShell>
-          <main aria-hidden="false" data-testid="background-content">Content</main>
+          <main aria-hidden="false" data-testid="background-content">
+            Content
+          </main>
         </SiteShell>
       </LocaleProvider>,
     );
@@ -248,7 +373,9 @@ describe("SiteShell", () => {
 
     await user.keyboard("{Escape}");
 
-    expect(screen.queryByRole("dialog", { name: "Open menu" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Open menu" }),
+    ).not.toBeInTheDocument();
     expect(background).not.toHaveAttribute("inert");
     expect(background).toHaveAttribute("aria-hidden", "false");
     expect(document.body.style.overflow).toBe("clip");
@@ -275,7 +402,9 @@ describe("SiteShell", () => {
 
     await user.keyboard("{Escape}");
 
-    expect(screen.queryByRole("dialog", { name: "Get your API key" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Get your API key" }),
+    ).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
 
@@ -284,7 +413,9 @@ describe("SiteShell", () => {
     document.body.style.overflow = "auto";
     const { container } = render(
       <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
         <LaunchAccessDialog />
       </LocaleProvider>,
     );
@@ -292,7 +423,9 @@ describe("SiteShell", () => {
     const shell = container.querySelector(".site-shell");
     expect(shell).not.toBeNull();
     shell!.setAttribute("aria-hidden", "false");
-    const trigger = within(screen.getByRole("banner")).getByRole("button", { name: "Get API access" });
+    const trigger = within(screen.getByRole("banner")).getByRole("button", {
+      name: "Get API access",
+    });
     await user.click(trigger);
 
     const dialog = screen.getByRole("dialog", { name: "Get your API key" });
@@ -324,8 +457,15 @@ describe("SiteShell", () => {
 
     const menuTrigger = screen.getByRole("button", { name: "Open menu" });
     await user.click(menuTrigger);
-    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Get API access" }));
-    expect(screen.getByRole("dialog", { name: "Get your API key" })).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Open menu" })).getByRole(
+        "button",
+        { name: "Get API access" },
+      ),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Get your API key" }),
+    ).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
 
@@ -337,17 +477,28 @@ describe("SiteShell", () => {
     const user = userEvent.setup();
     render(
       <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
         <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
     const menuTrigger = screen.getByRole("button", { name: "Open menu" });
     await user.click(menuTrigger);
-    await user.click(within(screen.getByRole("dialog", { name: "Open menu" })).getByRole("button", { name: "Get API access" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Open menu" })).getByRole(
+        "button",
+        { name: "Get API access" },
+      ),
+    );
 
-    expect(screen.queryByRole("dialog", { name: "Open menu" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Get your API key" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Open menu" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Get your API key" }),
+    ).toBeInTheDocument();
     expect(document.body.style.overflow).toBe("hidden");
 
     await user.keyboard("{Escape}");
@@ -359,15 +510,25 @@ describe("SiteShell", () => {
     const user = userEvent.setup();
     const { unmount } = render(
       <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
         <LaunchAccessDialog />
       </LocaleProvider>,
     );
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Get API access" }));
+    await user.click(
+      within(screen.getByRole("banner")).getByRole("button", {
+        name: "Get API access",
+      }),
+    );
     const dialog = screen.getByRole("dialog", { name: "Get your API key" });
     expect(within(dialog).getByText("How access works")).toBeVisible();
-    expect(within(dialog).getByRole("link", { name: /Email info@powerchampion.org/ })).toHaveAttribute(
+    expect(
+      within(dialog).getByRole("link", {
+        name: /Email info@powerchampion.org/,
+      }),
+    ).toHaveAttribute(
       "href",
       expect.stringContaining("mailto:info@powerchampion.org"),
     );
@@ -376,15 +537,25 @@ describe("SiteShell", () => {
 
     render(
       <LocaleProvider>
-        <SiteShell><main>Content</main></SiteShell>
+        <SiteShell>
+          <main>Content</main>
+        </SiteShell>
         <LaunchAccessDialog />
       </LocaleProvider>,
     );
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "取得 API 存取" }));
+    await switchHeaderToChinese(user);
+    await user.click(
+      within(screen.getByRole("banner")).getByRole("button", {
+        name: "取得 API 存取",
+      }),
+    );
     const zhDialog = screen.getByRole("dialog", { name: "取得你的 API Key" });
     expect(within(zhDialog).getByText(/存取流程/)).toBeVisible();
-    expect(within(zhDialog).getByRole("link", { name: /Email info@powerchampion.org/ })).toHaveAttribute(
+    expect(
+      within(zhDialog).getByRole("link", {
+        name: /Email info@powerchampion.org/,
+      }),
+    ).toHaveAttribute(
       "href",
       expect.stringContaining("mailto:info@powerchampion.org"),
     );

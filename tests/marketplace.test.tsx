@@ -1,12 +1,16 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { InternationalSite } from "../components/international-site";
 import { LocaleProvider } from "../components/locale-provider";
 import { ModelMarketplace } from "../components/model-marketplace";
 import { SiteShell } from "../components/site-shell";
 import { MODEL_CATALOG } from "../lib/models";
+
+beforeEach(() => act(() => window.history.replaceState({}, "", "/models")));
+afterEach(() => act(() => window.history.replaceState({}, "", "/")));
 
 function normalizedText(element: Element) {
   return element.textContent?.replace(/\s+/g, " ").trim();
@@ -144,17 +148,30 @@ describe("ModelMarketplace", () => {
     expect(screen.getByText("Vision and OCR inference for document and image understanding.")).toBeVisible();
   });
 
-  it("localizes the expanded details region", async () => {
+  it("links to the Traditional Chinese catalog and preserves model prices and detail links", async () => {
     const user = userEvent.setup();
-    render(
+    const english = render(
       <LocaleProvider>
         <SiteShell><ModelMarketplace /></SiteShell>
       </LocaleProvider>,
     );
-    await user.click(screen.getAllByRole("button", { name: "繁中" })[0]);
-    await user.click(screen.getByRole("button", { name: "Qwen3-VL 30B" }));
+    const header = within(screen.getByRole("banner"));
+    await user.click(header.getByRole("button", { name: "Language: English" }));
+    expect(header.getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant/models");
+    expect(header.queryByRole("button", { name: "繁體中文" })).not.toBeInTheDocument();
+    english.unmount();
 
-    expect(screen.getByRole("region", { name: "Qwen3-VL 30B 詳細資料" })).toBeInTheDocument();
+    // A regional choice navigates to a new URL and renders its own document.
+    act(() => window.history.replaceState({}, "", "/zh-Hant/models"));
+    render(<LocaleProvider><InternationalSite language="zh-Hant" section="models" /></LocaleProvider>);
+
+    expect(screen.getByRole("heading", { level: 1, name: "為每個任務，找到合適模型。" })).toBeVisible();
+    const qwen = within(screen.getByRole("article", { name: "Qwen3-VL 30B" }));
+    expect(qwen.getByText("US$0.30")).toBeVisible();
+    expect(qwen.getByText("US$1.20")).toBeVisible();
+    expect(qwen.getByText("每百萬詞元")).toBeVisible();
+    expect(qwen.getByRole("link", { name: /模型詳情.*Qwen3-VL 30B/ })).toHaveAttribute("href", "/models/qwen3-vl-30b");
+    expect(screen.getByText(/可用性請以服務狀態及實際 API 回應為準/)).toBeVisible();
   });
 
   it("clears an empty search result", async () => {

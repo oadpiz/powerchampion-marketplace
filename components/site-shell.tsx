@@ -3,10 +3,19 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useLocale } from "./locale-provider";
+import { LanguagePicker } from "./language-picker";
 import { useModalIsolation } from "./use-modal-isolation";
 import { PlatformFrame, isPlatformPath } from "./platform-frame";
 import { useScrollReveal } from "./use-scroll-reveal";
+import { AiWorkspaceShell, isAiWorkspacePath } from "./ai-workspace-shell";
 import type { CopyDictionary, Locale } from "../lib/content";
+import {
+  getInternationalRoute,
+  INTERNATIONAL_LANGUAGES,
+  LANGUAGE_NAMES,
+  internationalPath,
+  type InternationalSection,
+} from "../lib/languages";
 
 type NavigationKey = keyof CopyDictionary["nav"];
 type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy";
@@ -57,7 +66,7 @@ const footerDestinationGroups: readonly {
   },
 ];
 
-const focusableSelector = "a[href], button:not([disabled])";
+const focusableSelector = "a[href], button:not([disabled]), summary";
 
 function navigationLabel(
   copy: CopyDictionary,
@@ -131,7 +140,11 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
     const menu = mobileMenuRef.current;
     const focusableElements = () =>
-      Array.from(menu.querySelectorAll<HTMLElement>(focusableSelector));
+      Array.from(menu.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) =>
+          element.tagName === "SUMMARY" ||
+          !element.closest("details:not([open])"),
+      );
     const [firstFocusable] = focusableElements();
     firstFocusable?.focus();
 
@@ -197,6 +210,28 @@ export function SiteShell({ children }: { children: ReactNode }) {
     setIsMobileMenuOpen(false);
   };
 
+  // Localized public pages own their translated navigation and footer.
+  if (getInternationalRoute(pathname)) return children;
+  if (isAiWorkspacePath(pathname))
+    return <AiWorkspaceShell pathname={pathname}>{children}</AiWorkspaceShell>;
+  const translatedSection = [
+    "/models",
+    "/pricing",
+    "/infrastructure",
+    "/company",
+  ].includes(pathname)
+    ? (pathname.slice(1) as InternationalSection)
+    : "";
+  const publicLanguageRoute = [
+    "/",
+    "/solutions",
+    "/models",
+    "/pricing",
+    "/infrastructure",
+    "/company",
+  ].includes(pathname);
+  const languages = <LanguagePicker />;
+
   return (
     <div className={`site-shell${isPlatform ? " site-shell-platform" : ""}`}>
       <a className="skip-link" href="#main-content">
@@ -204,8 +239,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
       </a>
       <div className="site-header-wrapper">
         <header className="site-header">
-          {/* vinext's Vite runtime does not provide next/link; this remains a root-relative semantic link. */}
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          {/* Native navigation preserves the server-rendered language and account boundary. */}
           <a className="site-brand" href="/">
             <BrandMark />
             <span>Power Champion</span>
@@ -226,32 +260,16 @@ export function SiteShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="site-actions">
+            <a className="site-account-link" href="/account">
+              {locale === "en" ? "Account" : "帳戶"}
+            </a>
             {!isPlatform && (
               <a className="platform-entry-link" href="/platform">
                 {locale === "en" ? "Open platform" : "進入平台"}
                 <span aria-hidden="true">↗</span>
               </a>
             )}
-            <div
-              aria-label={copy.shared.language}
-              className="locale-toggle"
-              role="group"
-            >
-              <button
-                aria-pressed={locale === "en"}
-                onClick={() => setLocale("en")}
-                type="button"
-              >
-                English
-              </button>
-              <button
-                aria-pressed={locale === "zh"}
-                onClick={() => setLocale("zh")}
-                type="button"
-              >
-                繁中
-              </button>
-            </div>
+            {languages}
             <button
               className="token-button"
               onClick={() => dispatchLaunchAccess()}
@@ -309,6 +327,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
             <span>Power Champion</span>
           </p>
           <nav aria-label={copy.nav.mobileLabel}>
+            <a href="/account" onClick={closeMobileMenu}>
+              {locale === "en" ? "My account" : "我的帳戶"}
+              <span aria-hidden="true">↗</span>
+            </a>
             <a href="/platform" onClick={closeMobileMenu}>
               {locale === "en" ? "Open platform" : "進入平台"}
               <span aria-hidden="true">↗</span>
@@ -329,6 +351,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
               </a>
             ))}
           </nav>
+          {languages}
           <button
             className="token-button"
             onClick={openLaunchAccessFromMobileMenu}
@@ -353,7 +376,6 @@ export function SiteShell({ children }: { children: ReactNode }) {
       >
         <div className="footer-brand">
           {/* vinext's Vite runtime uses semantic root-relative links. */}
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a className="site-brand" href="/">
             <BrandMark />
             <span>Power Champion</span>
@@ -403,22 +425,46 @@ export function SiteShell({ children }: { children: ReactNode }) {
         <div
           aria-label={copy.shared.language}
           className="footer-locale-toggle"
+          id="languages"
           role="group"
         >
-          <button
-            aria-pressed={locale === "en"}
-            onClick={() => setLocale("en")}
-            type="button"
-          >
-            English
-          </button>
-          <button
-            aria-pressed={locale === "zh"}
-            onClick={() => setLocale("zh")}
-            type="button"
-          >
-            繁中
-          </button>
+          {publicLanguageRoute ? (
+            <nav
+              className="footer-language-links"
+              aria-label={locale === "en" ? "Website languages" : "網站語言"}
+            >
+              {(["en", ...INTERNATIONAL_LANGUAGES] as const).map((language) => (
+                <a
+                  key={language}
+                  href={internationalPath(language, translatedSection)}
+                  hrefLang={language}
+                  onClick={() =>
+                    setLocale(language === "zh-Hant" ? "zh" : "en")
+                  }
+                >
+                  {LANGUAGE_NAMES[language]}
+                </a>
+              ))}
+            </nav>
+          ) : (
+            <>
+              {languages}
+              <button
+                aria-pressed={locale === "en"}
+                onClick={() => setLocale("en")}
+                type="button"
+              >
+                English
+              </button>
+              <button
+                aria-pressed={locale === "zh"}
+                onClick={() => setLocale("zh")}
+                type="button"
+              >
+                繁中
+              </button>
+            </>
+          )}
         </div>
       </footer>
     </div>

@@ -28,5 +28,9 @@ search: yes
 ai-input: no
 ai-train: no
 
+# Standard crawl rules. Private pages also return noindex; robots is not access control.
+User-agent: *
+Allow: /
+
 # Sitemap
 Sitemap: https://powerchampion.ai/sitemap.xml

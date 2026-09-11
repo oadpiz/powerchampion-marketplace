@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       cache: "no-store",
-      redirect: "error",
+      redirect: "manual",
       signal: controller.signal,
       body: JSON.stringify({
         model, stream: false, max_tokens: maxTokens,

@@ -12,6 +12,7 @@ import { SiteShell } from "../components/site-shell";
 describe("skip navigation", () => {
   it("is localized and targets the main content landmark", async () => {
     const user = userEvent.setup();
+    window.history.replaceState({}, "", "/contact");
     render(
       <LocaleProvider>
         <SiteShell><main id="main-content">Content</main></SiteShell>
@@ -19,7 +20,8 @@ describe("skip navigation", () => {
     );
 
     expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveAttribute("href", "#main-content");
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
+    await user.click(screen.getByRole("button", { name: "繁體中文" }));
     expect(screen.getByRole("link", { name: "跳至主要內容" })).toHaveAttribute("href", "#main-content");
   });
 

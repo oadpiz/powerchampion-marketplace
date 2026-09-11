@@ -1,15 +1,16 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { HomeContent } from "../components/home-content";
+import Home from "../app/page";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
+import { InternationalSite } from "../components/international-site";
 
 function renderHome() {
   return render(
     <LocaleProvider>
       <SiteShell>
-        <HomeContent />
+        <Home />
       </SiteShell>
     </LocaleProvider>,
   );
@@ -111,17 +112,19 @@ describe("model-first Power Champion homepage", () => {
 
   it("localizes model discovery and both services into Traditional Chinese", async () => {
     const user = userEvent.setup();
-    renderHome();
-    await user.click(
-      within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }),
-    );
+    const view = renderHome();
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
+    expect(within(screen.getByRole("navigation", { name: "Website language" })).getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant");
+    view.unmount();
+    window.history.replaceState({}, "", "/zh-Hant");
+    render(<LocaleProvider><SiteShell><InternationalSite language="zh-Hant" section="" /></SiteShell></LocaleProvider>);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "一組 API。無限可能。",
     );
     expect(screen.getByRole("button", { name: "圖像與音訊" })).toBeVisible();
     expect(screen.getByRole("link", { name: "探索算力服務" })).toHaveAttribute(
       "href",
-      "/infrastructure",
+      "/zh-Hant/infrastructure",
     );
     expect(screen.getByText("配置、容量與交付條件依專案確認。")).toBeVisible();
   });

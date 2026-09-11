@@ -1,7 +1,6 @@
 "use client";
 
 /* Vinext uses root-relative anchors for page navigation. */
-/* eslint-disable @next/next/no-html-link-for-pages */
 
 import { useState } from "react";
 import { MODEL_CATALOG, type ModelDefinition } from "../lib/models";

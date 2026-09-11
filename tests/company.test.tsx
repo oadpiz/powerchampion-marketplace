@@ -4,6 +4,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { CompanyContent } from "../components/company-content";
+import { InternationalSite } from "../components/international-site";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 import { COMPANY_CAPACITY_MW, COMPANY_CONTENT, COMPANY_SOURCES } from "../lib/company";
@@ -77,33 +78,31 @@ describe("company data", () => {
       .toBeVisible();
   });
 
-  it("localizes explanatory source kinds after switching to Traditional Chinese", async () => {
+  it("links to the same company section and renders its qualified Traditional Chinese record", async () => {
     const user = userEvent.setup();
-    render(
-      <LocaleProvider>
-        <SiteShell>
-          <CompanyContent />
-        </SiteShell>
-      </LocaleProvider>,
+    window.history.replaceState({}, "", "/company");
+    const english = render(
+      <LocaleProvider><SiteShell><CompanyContent /></SiteShell></LocaleProvider>,
     );
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
+    const languages = within(screen.getByRole("navigation", { name: "Website language" }));
+    expect(languages.getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant/company");
+    expect(languages.getByRole("link", { name: "日本語" })).toHaveAttribute("href", "/ja/company");
+    expect(screen.getByRole("heading", { level: 1, name: /AI models to build with. Infrastructure to grow on/i })).toBeVisible();
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
-
-    expect(screen.getByRole("heading", { level: 1, name: "以模型打造應用，以算力支撐成長。" })).toBeVisible();
-    expect(screen.getByRole("article", { name: "專屬 GPU" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "智慧文件處理" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "閱讀 API 文件" })).toHaveAttribute("href", "/docs");
-    expect(screen.getByRole("link", { name: "Azio AI Holdings，附件 99.1" }))
-      .toBeVisible();
-    expect(screen.getByText("交易對手向 SEC 提交的揭露")).toBeVisible();
-    expect(screen.getByText("第三方公開公司目錄")).toBeVisible();
-    expect(screen.getAllByText("來源類型", { selector: "dt" })).toHaveLength(2);
-    expect(screen.getByText("發布日期", { selector: "dt" })).toBeVisible();
-    expect(screen.getByText("目錄所列登記日期", { selector: "dt" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "i-BVI 公開公司目錄列表" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "檢視基礎設施" })).toHaveAttribute("href", "/infrastructure");
-    expect(screen.getByRole("link", { name: "開始部署審查" })).toHaveAttribute("href", "/contact");
-    expect(screen.queryByText("Counterparty SEC-filed disclosure")).not.toBeInTheDocument();
+    // A dedicated language link loads another document, not an in-place copy swap.
+    english.unmount();
+    window.history.replaceState({}, "", "/zh-Hant/company");
+    render(<LocaleProvider><InternationalSite language="zh-Hant" section="company" /></LocaleProvider>);
+    expect(screen.getByRole("heading", { level: 1, name: "模型服務與算力，連成一條路。" })).toBeVisible();
+    expect(screen.getByText(/Power Champion Investment Limited 的服務涵蓋模型 API 與企業 GPU 規劃/)).toBeVisible();
+    expect(screen.getByText(/2026 年 7 月 9 日.*約 3.1 MW 的預期初期託管容量/)).toBeVisible();
+    expect(screen.getByText(/不代表已完成部署、即時可售容量或 Power Champion 已收到營收/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "閱讀交易對手 SEC 揭露" })).toHaveAttribute(
+      "href", "https://www.sec.gov/Archives/edgar/data/1563568/000143774926023245/ex_986209.htm",
+    );
+    expect(screen.getAllByRole("link", { name: "GPU 算力" }).some((link) => link.getAttribute("href") === "/zh-Hant/infrastructure")).toBe(true);
+    expect(screen.getAllByRole("link", { name: "info@powerchampion.org" })[0]).toHaveAttribute("href", "mailto:info@powerchampion.org");
   });
 
   it("labels source dates by their actual semantics", () => {

@@ -25,7 +25,7 @@ describe("playground request boundary", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://b300.powerchampion.ai/v1/chat/completions");
     expect(init.headers.Authorization).toBe(`Bearer ${key}`);
-    expect(init.redirect).toBe("error");
+    expect(init.redirect).toBe("manual");
     expect(JSON.parse(init.body)).toEqual({ model: "glm-5.2-fp8", stream: false, max_tokens: 512, messages: [
       { role: "system", content: "Be concise." }, { role: "user", content: "Explain a queue." },
     ] });
@@ -59,6 +59,14 @@ describe("playground request boundary", () => {
     const response = await POST(request());
     expect(response.status).toBe(401);
     expect(await response.text()).toBe('{"error":"authentication"}');
+  });
+
+  it("rejects a redirect without forwarding the model credential", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 307, headers: { Location: "https://other.example" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await POST(request())).status).toBe(502);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].redirect).toBe("manual");
   });
 
   it("rejects malformed upstream output and preserves absent usage as unknown", async () => {

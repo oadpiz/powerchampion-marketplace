@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { HomeContent } from "../components/home-content";
+import { InternationalSite } from "../components/international-site";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
@@ -10,7 +11,7 @@ describe("model and infrastructure journeys", () => {
     const user = userEvent.setup();
     const onAccess = vi.fn();
     window.addEventListener("powerchampion:launch-access", onAccess);
-    render(
+    const english = render(
       <LocaleProvider>
         <SiteShell>
           <HomeContent />
@@ -28,12 +29,13 @@ describe("model and infrastructure journeys", () => {
       within(closing).getByRole("link", { name: "Talk to our team" }),
     ).toHaveAttribute("href", "/contact");
     await user.click(
-      within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }),
+      within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }),
     );
-    expect(screen.getByRole("link", { name: "與我們聊聊" })).toHaveAttribute(
-      "href",
-      "/contact",
-    );
+    expect(within(screen.getByRole("navigation", { name: "Website language" })).getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant");
+    english.unmount();
+    window.history.replaceState({}, "", "/zh-Hant");
+    render(<LocaleProvider><InternationalSite language="zh-Hant" section="" /></LocaleProvider>);
+    expect(screen.getByRole("link", { name: "與我們聊聊" })).toHaveAttribute("href", "/contact");
     window.removeEventListener("powerchampion:launch-access", onAccess);
   });
 });

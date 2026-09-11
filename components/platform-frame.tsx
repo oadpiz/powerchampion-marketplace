@@ -4,6 +4,8 @@ import { useState, type ReactNode } from "react";
 import { useLocale } from "./locale-provider";
 
 const destinations = [
+  { href: "/chat", icon: "✳", en: "Model chat", zh: "AI 對話", group: "build" },
+  { href: "/agents", icon: "◈", en: "Agents & services", zh: "智能體與建置", group: "build" },
   {
     href: "/platform",
     icon: "⌂",
@@ -47,6 +49,13 @@ const destinations = [
     group: "build",
   },
   {
+    href: "/account",
+    icon: "◎",
+    en: "My account",
+    zh: "我的帳戶",
+    group: "manage",
+  },
+  {
     href: "/console",
     icon: "◉",
     en: "Balance",
@@ -70,7 +79,7 @@ const destinations = [
 ] as const;
 
 export function isPlatformPath(pathname: string) {
-  return destinations.some(
+  return pathname === "/admin" || pathname.startsWith("/admin/") || destinations.some(
     ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
   );
 }
@@ -86,7 +95,8 @@ export function PlatformFrame({
   const zh = locale === "zh";
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
-  const current =
+  const current = pathname === "/admin" || pathname.startsWith("/admin/")
+    ? { href: "/admin", en: "Administration", zh: "管理後台" } :
     destinations.find(
       ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
     ) ?? destinations[0];
@@ -191,6 +201,7 @@ export function PlatformFrame({
             value={current.href}
             onChange={(event) => window.location.assign(event.target.value)}
           >
+            {current.href === "/admin" && <option value="/admin">{zh ? "管理後台" : "Administration"}</option>}
             {destinations.map((item) => (
               <option key={item.href} value={item.href}>
                 {item[locale]}

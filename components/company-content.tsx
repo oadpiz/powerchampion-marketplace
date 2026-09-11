@@ -93,7 +93,6 @@ export function CompanyContent() {
         <div className="service-section-footnote">
           <p>{service.catalogNote}</p>
           {/* The vinext runtime uses root-relative links for page navigation. */}
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/models">{service.catalogLink}<span aria-hidden="true">↗</span></a>
         </div>
       </section>

@@ -1,7 +1,6 @@
 "use client";
 
 /* Vinext uses root-relative anchors for page navigation. */
-/* eslint-disable @next/next/no-html-link-for-pages */
 
 import { useLocale } from "./locale-provider";
 import { MODEL_CATALOG } from "../lib/models";

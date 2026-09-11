@@ -1,6 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
+
+// Product-page fixtures use the brand homepage shell. Tool tests select
+// their own route before mounting the chat or builder.
+beforeEach(() => window.history.replaceState({}, "", "/"));
 
 // Polyfill matchMedia — jsdom does not implement it
 if (!window.matchMedia) {
@@ -37,5 +41,6 @@ afterEach(() => {
   // LocaleProvider persists the user's locale choice; clear it between tests
   // so a test that switches to zh-Hant does not leak into the next one.
   window.localStorage.clear();
+  window.sessionStorage.clear();
   document.documentElement.removeAttribute("lang");
 });

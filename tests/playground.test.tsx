@@ -1,26 +1,24 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { LocaleProvider, useLocale } from "../components/locale-provider";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LocaleProvider } from "../components/locale-provider";
+import { LanguagePicker } from "../components/language-picker";
 import { PlaygroundContent } from "../components/playground-content";
 
-function LocaleSwitch() {
-  const { setLocale } = useLocale();
-  return <button onClick={() => setLocale("zh")}>Switch language</button>;
-}
-function mount() { return render(<LocaleProvider><LocaleSwitch /><PlaygroundContent /></LocaleProvider>); }
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); window.history.replaceState({}, "", "/"); });
+function mount() { return render(<LocaleProvider><LanguagePicker /><PlaygroundContent /></LocaleProvider>); }
+beforeEach(() => act(() => window.history.replaceState({}, "", "/playground")));
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); act(() => window.history.replaceState({}, "", "/")); });
 
 describe("API playground", () => {
   it("uses a valid catalog link without requesting generation and rejects unsupported model query values", () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
-    window.history.replaceState({}, "", "/playground?model=qwen3-vl-30b");
+    act(() => window.history.replaceState({}, "", "/playground?model=qwen3-vl-30b"));
     const first = mount();
     expect(screen.getByLabelText("Model")).toHaveValue("qwen3-vl-30b");
     expect(screen.getByText(/Requests use your API credits/)).toBeVisible();
     expect(fetchMock).not.toHaveBeenCalled();
     first.unmount();
-    window.history.replaceState({}, "", "/playground?model=flux-schnell");
+    act(() => window.history.replaceState({}, "", "/playground?model=flux-schnell"));
     mount();
     expect(screen.getByLabelText("Model")).toHaveValue("glm-5.2-fp8");
   });
@@ -66,7 +64,8 @@ describe("API playground", () => {
     const user = userEvent.setup();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "authentication", detail: "sk-do-not-display" }, { status: 401 })));
     mount();
-    await user.click(screen.getByText("Switch language"));
+    await user.click(screen.getByRole("button", { name: "Language: English" }));
+    await user.click(screen.getByRole("button", { name: "繁體中文" }));
     await user.type(screen.getByLabelText("API 金鑰"), "sk-invalid-key");
     await user.type(screen.getByLabelText("你的提示詞"), "你好");
     await user.click(screen.getByRole("button", { name: "傳送 API 請求" }));

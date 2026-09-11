@@ -1,0 +1,205 @@
+.language-picker {
+  position: relative;
+  flex-shrink: 0;
+  color: var(--ink, #eeebe5);
+}
+.language-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--ink, #eeebe5);
+  background: #1c1b19;
+  border: 1px solid #514738;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease;
+}
+.language-picker-trigger:hover,
+.language-picker-trigger[aria-expanded="true"] {
+  border-color: var(--focus, #c2aa7d);
+  background: #29251e;
+}
+.language-picker-globe {
+  width: 17px;
+  height: 17px;
+  stroke: var(--focus, #c2aa7d);
+  stroke-width: 1.1;
+  flex-shrink: 0;
+}
+.language-picker-chevron {
+  width: 11px;
+  height: 11px;
+  stroke: var(--muted, #aaa69e);
+  stroke-width: 1.2;
+  flex-shrink: 0;
+  transition: transform 180ms ease;
+}
+.language-picker-trigger[aria-expanded="true"] .language-picker-chevron {
+  transform: rotate(180deg);
+}
+.language-picker-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 120;
+  width: min(250px, calc(100vw - 40px));
+  padding: 10px;
+  border: 1px solid #494136;
+  border-radius: 10px;
+  background: #1c1b1a;
+  color: #eeebe5;
+  box-shadow: 0 16px 50px #0006;
+  text-align: left;
+}
+.language-picker-title {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  color: #b7a98d;
+  line-height: 1.5;
+  margin: 0;
+  padding: 9px 11px 12px;
+}
+.language-picker-popover nav {
+  display: grid;
+  gap: 3px;
+}
+.language-picker-popover nav a,
+.language-picker-popover nav button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 44px;
+  width: 100%;
+  margin: 0;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #ddd8cf;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.language-picker-popover nav a:hover,
+.language-picker-popover nav button:hover {
+  color: #f7f2e9;
+  background: #2a2722;
+}
+.language-picker-popover nav [aria-current="true"],
+.language-picker-popover nav [aria-pressed="true"] {
+  background: #2c271e;
+  color: #ead9b8;
+}
+.language-picker-check {
+  color: #cdb487;
+  font-size: 13px;
+}
+.language-picker-coverage {
+  margin: 10px 10px 5px;
+  padding-top: 12px;
+  border-top: 1px solid #423c31;
+  color: #b9b1a4;
+  font-size: 10px;
+  line-height: 1.75;
+}
+.language-picker button:focus-visible,
+.language-picker a:focus-visible {
+  outline: 2px solid #c2aa7d;
+  outline-offset: 3px;
+}
+.mobile-navigation > .language-picker {
+  width: fit-content;
+  margin-top: 14px;
+}
+.mobile-navigation > .language-picker .language-picker-popover,
+.intl-language-bar .language-picker-popover,
+.footer-locale-toggle > .language-picker .language-picker-popover {
+  right: auto;
+  left: 0;
+}
+.footer-locale-toggle > .language-picker .language-picker-popover {
+  top: auto;
+  bottom: calc(100% + 10px);
+}
+.site-header .language-picker {
+  display: block;
+}
+.footer-language-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 23px;
+}
+.footer-language-links a {
+  color: var(--muted, #aaa69e);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  text-decoration: none;
+}
+.footer-language-links a:hover {
+  color: var(--focus, #c2aa7d);
+}
+@media (max-width: 600px) {
+  .language-picker-trigger {
+    min-height: 44px;
+    padding: 0 10px;
+    gap: 7px;
+    font-size: 12px;
+  }
+  .language-picker-globe {
+    width: 15px;
+    height: 15px;
+  }
+  .language-picker-chevron {
+    width: 9px;
+    height: 9px;
+  }
+  .site-header .site-actions {
+    gap: 8px;
+  }
+}
+@media (max-width: 380px) {
+  .site-header .site-brand {
+    gap: 7px;
+    font-size: 13px;
+  }
+  .site-header .site-brand-mark {
+    width: 26px;
+    height: 26px;
+  }
+  .site-header .language-picker-trigger {
+    padding-inline: 8px;
+    gap: 5px;
+    font-size: 12px;
+  }
+  .site-header .language-picker-globe {
+    display: none;
+  }
+  .site-header .site-actions {
+    gap: 5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .language-picker-trigger,
+  .language-picker-chevron {
+    transition: none;
+  }
+}

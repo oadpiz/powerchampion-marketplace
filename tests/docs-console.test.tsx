@@ -186,13 +186,15 @@ describe("ConsoleView", () => {
 
   it("switches the balance UI to Traditional Chinese", async () => {
     const user = userEvent.setup();
+    window.history.replaceState({}, "", "/console");
     render(
       <LocaleProvider>
         <SiteShell><ConsoleView /></SiteShell>
       </LocaleProvider>,
     );
 
-    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "繁中" }));
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
+    await user.click(screen.getByRole("button", { name: "繁體中文" }));
 
     expect(screen.getByRole("button", { name: "查詢餘額" })).toBeInTheDocument();
     expect(screen.getByText(/貼上你的 API Key/i)).toBeInTheDocument();

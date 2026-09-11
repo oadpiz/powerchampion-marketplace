@@ -7,10 +7,14 @@ export default defineConfig({
   resolve: {
     alias: {
       "next/navigation": resolve(process.cwd(), "node_modules/vinext/dist/shims/navigation.js"),
+      "next/link": resolve(process.cwd(), "node_modules/vinext/dist/shims/link.js"),
     },
   },
   test: {
     environment: "jsdom",
+    // Node 25 exposes process-level storage; tests need jsdom's per-window
+    // implementation. Vitest does not inherit the parent process's execArgv.
+    execArgv: ["--no-experimental-webstorage"],
     globals: true,
     setupFiles: ["./tests/setup.ts"],
     exclude: [...configDefaults.exclude, ".worktrees/**", "tests/rendered-html.test.mjs"],
