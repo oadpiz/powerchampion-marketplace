@@ -16,6 +16,12 @@ services:
       # GATEWAY_ORIGIN in the Dokploy environment (or a .env file) to point a
       # stage or prod deployment at a different gateway without rebuilding.
       GATEWAY_ORIGIN: ${GATEWAY_ORIGIN:-https://b300.powerchampion.ai}
+      # TLS ends at Traefik, so without this vinext rebuilds request.url as
+      # http://. Same-origin checks (/api/playground, /api/chat, /api/portal)
+      # would then reject every browser request, and lib/seo.ts would mark
+      # every page noindex. Safe only because this container publishes no
+      # ports and is reached exclusively through Traefik.
+      VINEXT_TRUST_PROXY: "1"
     networks:
       - dokploy-network
       - default
