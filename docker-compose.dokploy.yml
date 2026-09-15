@@ -25,6 +25,10 @@ services:
       # Customer/admin service below, reachable only on this Compose network.
       # The BFF accepts cleartext solely for a single-label service name.
       PC_PORTAL_ORIGIN: http://powerchampion-portal:3020
+      # Google Search Console token. Paste it into the Dokploy environment to
+      # publish the verification meta tag; empty or malformed values render
+      # nothing, so no code change is needed to verify the domain.
+      SITE_VERIFICATION: ${SITE_VERIFICATION:-}
     networks:
       - dokploy-network
       - default

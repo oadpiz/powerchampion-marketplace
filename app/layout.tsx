@@ -35,14 +35,22 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/** Search Console token, supplied per deployment; never indexable pages' content. */
+function siteVerification() {
+  const token = process.env.SITE_VERIFICATION?.trim();
+  return token && /^[A-Za-z0-9_-]{10,128}$/.test(token) ? token : null;
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const indexable = requestHeaders.get("x-pc-indexable") === "true";
+  const verification = siteVerification();
   return {
     ...metadataForRoute("/"),
     metadataBase: new URL(SITE_ORIGIN),
     robots: { index: indexable, follow: indexable },
     icons: { icon: "/favicon.png", shortcut: "/favicon.png" },
+    ...(verification ? { verification: { google: verification } } : {}),
   };
 }
 

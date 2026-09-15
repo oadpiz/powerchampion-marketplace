@@ -202,6 +202,26 @@ test("server-renders complete model social metadata and breadcrumbs", async () =
   const organization = structured.find((entry) => entry["@type"] === "Organization");
   assert.equal(organization.legalName, "Power Champion Investment Limited");
   assert.equal(organization.email, "info@powerchampion.org");
+  const product = structured.find((entry) => entry["@type"] === "Product");
+  assert.equal(product.url, "https://powerchampion.ai/models/bge-m3");
+  assert.equal(product.offers.priceSpecification.priceCurrency, "USD");
+  assert.equal(product.offers.priceSpecification.unitText, "1M input tokens");
+});
+
+test("describes the questions each page renders, in that page's language", async () => {
+  for (const [path, expected] of [["/", "en"], ["/ja", "ja"], ["/faq", "en"]]) {
+    const html = await (await render(path)).text();
+    const structured = [...html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].flatMap((match) => JSON.parse(match[1]));
+    const faq = structured.find((entry) => entry["@type"] === "FAQPage");
+    assert.ok(faq, `${path} publishes an FAQPage`);
+    assert.ok(faq.mainEntity.length >= 4, `${path} lists its questions`);
+    for (const question of faq.mainEntity) {
+      assert.equal(question["@type"], "Question");
+      assert.ok(question.acceptedAnswer.text.length > 20, `${path} answers ${question.name}`);
+      assert.ok(html.includes(question.name.replace(/&/g, "&amp;")), `${path} renders the question it describes`);
+    }
+    if (expected === "ja") assert.ok(/[ぁ-んァ-ン一-龯]/.test(faq.mainEntity[0].name), "the Japanese page describes Japanese questions");
+  }
 });
 
 test("server-renders localized primary content with reciprocal search annotations", async () => {

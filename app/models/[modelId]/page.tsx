@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ModelDetailContent } from "../../../components/model-detail-content";
 import { MODEL_CATALOG } from "../../../lib/models";
+import { JsonLd } from "../../../components/json-ld";
 import { metadataForPage } from "../../../lib/metadata";
 import { SITE_ORIGIN } from "../../../lib/seo";
+import { modelServiceJsonLd } from "../../../lib/structured-data";
 
 type ModelPageProps = { params: Promise<{ modelId: string }> };
 
@@ -29,7 +31,8 @@ export default async function ModelPage({ params }: ModelPageProps) {
     ],
   };
   return <>
-    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbs).replace(/</g, "\\u003c") }} />
+    <JsonLd data={breadcrumbs} />
+    <JsonLd data={modelServiceJsonLd(model)} />
     <ModelDetailContent model={model} />
   </>;
 }
