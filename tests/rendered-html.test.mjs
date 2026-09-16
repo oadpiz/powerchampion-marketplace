@@ -191,6 +191,29 @@ test("keeps canonical URLs fixed and prevents preview and private-page indexing"
   }
 });
 
+test("measures public pages only, and only when the operator turns it on", async () => {
+  const token = "0123456789abcdef0123456789abcdef";
+  const beacon = /static\.cloudflareinsights\.com\/beacon\.min\.js/;
+  const off = await (await request("/models", "powerchampion.ai", undefined, "https://powerchampion.ai")).text();
+  assert.doesNotMatch(off, beacon, "no beacon without an operator token");
+
+  process.env.WEB_ANALYTICS_TOKEN = token;
+  try {
+    const publicPage = await (await request("/models", "powerchampion.ai", undefined, "https://powerchampion.ai")).text();
+    assert.match(publicPage, beacon);
+    assert.match(publicPage, /data-cf-beacon=/);
+    assert.ok(publicPage.includes(token), "the beacon carries the operator's site token");
+    for (const path of ["/account", "/admin", "/login", "/register"]) {
+      const privatePage = await (await request(path, "powerchampion.ai", undefined, "https://powerchampion.ai")).text();
+      assert.doesNotMatch(privatePage, beacon, `${path} is not measured`);
+    }
+    const preview = await (await request("/models", "preview.example")).text();
+    assert.doesNotMatch(preview, beacon, "preview deployments are not measured");
+  } finally {
+    delete process.env.WEB_ANALYTICS_TOKEN;
+  }
+});
+
 test("server-renders complete model social metadata and breadcrumbs", async () => {
   const html = await (await render("/models/bge-m3")).text();
   assertRouteUrls(html, "/models/bge-m3", "https://powerchampion.ai");

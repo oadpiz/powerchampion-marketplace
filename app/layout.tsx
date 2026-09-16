@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { LocaleProvider } from "../components/locale-provider";
 import { LaunchAccessDialog } from "../components/demo-checkout";
 import { SiteShell } from "../components/site-shell";
+import { BEACON_SRC, webAnalyticsToken } from "../lib/analytics";
 import { metadataForRoute } from "../lib/metadata";
 import { SITE_ORIGIN, isInternationalLocale } from "../lib/seo";
 import { COMPANY_CONTENT } from "../lib/company";
@@ -113,6 +114,8 @@ export default async function RootLayout({
   const requestHeaders = await headers();
   const requestedLanguage = requestHeaders.get("x-pc-language");
   const language = isInternationalLocale(requestedLanguage) ? requestedLanguage : "en";
+  // Public pages only: signed-in workspaces and previews are never measured.
+  const analytics = requestHeaders.get("x-pc-indexable") === "true" ? webAnalyticsToken() : null;
   return (
     <html lang={language}>
       <head>
@@ -125,6 +128,13 @@ export default async function RootLayout({
           <SiteShell>{children}</SiteShell>
           <LaunchAccessDialog />
         </LocaleProvider>
+        {analytics ? (
+          <script
+            defer
+            src={BEACON_SRC}
+            data-cf-beacon={JSON.stringify({ token: analytics })}
+          />
+        ) : null}
       </body>
     </html>
   );

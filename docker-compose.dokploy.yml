@@ -29,6 +29,10 @@ services:
       # publish the verification meta tag; empty or malformed values render
       # nothing, so no code change is needed to verify the domain.
       SITE_VERIFICATION: ${SITE_VERIFICATION:-}
+      # Cloudflare Web Analytics site token. Empty keeps the beacon off; when
+      # set, it loads on public pages only (never on account, admin, sign-in,
+      # registration, or preview origins). No cookie, no cross-site identifier.
+      WEB_ANALYTICS_TOKEN: ${WEB_ANALYTICS_TOKEN:-}
     networks:
       - dokploy-network
       - default

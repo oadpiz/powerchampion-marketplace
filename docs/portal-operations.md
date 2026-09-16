@@ -92,6 +92,8 @@ python -m server.manage create-admin --email you@example.com
 
 結構化資料：首頁與各語言首頁、`/faq` 各自輸出 FAQPage（只描述該頁實際顯示、該語言的問題），模型頁在麵包屑之外再輸出 Product＋Offer（刊登費率與計費單位，可用性取自模型目錄）。
 
+網站流量統計：在 Dokploy 設 `WEB_ANALYTICS_TOKEN` 為 Cloudflare Web Analytics 的 site token（Cloudflare 後台 → Web Analytics → 加入網站取得），只會在公開頁面載入；帳號、管理、登入、註冊與預覽環境不載入。不設 Cookie、不跨站追蹤，隱私頁已載明。值為空或格式不符時完全不輸出。
+
 Google Search Console 驗證：在 Dokploy 為網站服務設 `SITE_VERIFICATION` 為 Search Console 給的 token（HTML 標籤法），重新部署後 `<meta name="google-site-verification">` 就會出現；值為空或格式不符時不輸出任何標籤，不需要改程式。驗證完成後在 Search Console 提交 `https://powerchampion.ai/sitemap.xml`。
 
 sitemap 不放 lastmod：沒有可信的內容修訂時間，全部填同一個部署日期對爬蟲沒有意義，也可能誤導。
