@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .agents import AgentError, Agents, parse_name, parse_version
 from .gateway import GatewayAdapter, GatewayError
 from .chat import TRIAL_COOKIE, TrialChat
 from .security import clean_name, digest_token, normalize_email, password_hash, validate_password, verify_password
@@ -76,6 +77,7 @@ def create_app(settings=None, gateway=None, chat_transport=None):
     application.state.gateway = gateway
     application.state.settings = settings
     trial_chat = TrialChat(settings, store, transport=chat_transport)
+    agents = Agents(store)
     # Equal password-work cost for unknown accounts without storing a real user.
     dummy_password = password_hash(uuid.uuid4().hex)
 
@@ -340,6 +342,70 @@ def create_app(settings=None, gateway=None, chat_transport=None):
             store.audit(con, "credit.requested", user["id"], credit_id)
             row = con.execute("SELECT * FROM credit_requests WHERE id=?", (credit_id,)).fetchone()
         return JSONResponse({"request": credit_json(row)}, status_code=201)
+
+    @application.get(PREFIX + "/agents")
+    async def list_agents(request: Request):
+        user = current_user(request)
+        return {"agents": agents.list(user["id"])}
+
+    @application.post(PREFIX + "/agents")
+    async def create_agent(request: Request):
+        user = current_user(request)
+        body = await body_json(request)
+        try:
+            agent, token = agents.create(user["id"], parse_name(body.get("name")), parse_version(body))
+        except AgentError as error:
+            fail("invalid_input", str(error))
+        # The token is shown once; only its hash is stored.
+        return JSONResponse({"agent": agent, "token": token}, status_code=201)
+
+    @application.get(PREFIX + "/agents/{agent_id}")
+    async def read_agent(request: Request, agent_id: str):
+        user = current_user(request)
+        try:
+            return {"agent": agents.get(user["id"], agent_id)}
+        except LookupError:
+            fail("not_found", "This agent does not exist.", 404)
+
+    @application.post(PREFIX + "/agents/{agent_id}/versions")
+    async def update_agent(request: Request, agent_id: str):
+        user = current_user(request)
+        body = await body_json(request)
+        try:
+            return {"agent": agents.add_version(user["id"], agent_id, parse_name(body.get("name")), parse_version(body))}
+        except AgentError as error:
+            fail("invalid_input", str(error))
+        except LookupError:
+            fail("not_found", "This agent does not exist.", 404)
+
+    @application.post(PREFIX + "/agents/{agent_id}/token")
+    async def rotate_agent_token(request: Request, agent_id: str):
+        user = current_user(request)
+        try:
+            return {"token": agents.rotate_token(user["id"], agent_id)}
+        except LookupError:
+            fail("not_found", "This agent does not exist.", 404)
+
+    @application.delete(PREFIX + "/agents/{agent_id}")
+    async def delete_agent(request: Request, agent_id: str):
+        user = current_user(request)
+        try:
+            agents.archive(user["id"], agent_id)
+        except LookupError:
+            fail("not_found", "This agent does not exist.", 404)
+        return {"ok": True}
+
+    @application.post(PREFIX + "/agents/resolve")
+    async def resolve_agent(request: Request):
+        """Website server only: an agent token becomes a runnable configuration.
+
+        No customer identity, gateway key or conversation passes through here.
+        """
+        body = await body_json(request)
+        resolved = agents.resolve(body.get("token"))
+        if not resolved:
+            fail("not_found", "This agent endpoint is not available.", 404)
+        return {"agent": resolved}
 
     @application.get(PREFIX + "/admin/overview")
     async def admin_overview(request: Request):

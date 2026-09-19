@@ -9,10 +9,12 @@ const RESPONSE_HEADERS = {
   "X-Robots-Tag": "noindex, nofollow",
   Vary: "Cookie",
 };
+// /agents/resolve is deliberately absent: only this site's server may call it.
+const AGENT = "[a-f0-9]{32}";
 const routes: Record<string, readonly RegExp[]> = {
-  GET: [/^\/(session|overview|keys|usage|credits)$/, /^\/admin\/(overview|customers|credits|audit)$/],
-  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits)$/, /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/],
-  DELETE: [/^\/keys\/[a-zA-Z0-9_-]{1,80}$/],
+  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/],
+  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/],
+  DELETE: [/^\/keys\/[a-zA-Z0-9_-]{1,80}$/, new RegExp(`^/agents/${AGENT}$`)],
 };
 function failure(error: string, detail: string, status: number) {
   return Response.json({ error, detail }, { status, headers: RESPONSE_HEADERS });

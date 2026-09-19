@@ -601,3 +601,103 @@
     margin-inline: 20px;
   }
 }
+
+/* Saving an agent to the account, and the endpoint it answers on. */
+.agent-account {
+  margin-top: 1.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--pc-hairline, rgba(255, 255, 255, 0.12));
+  display: grid;
+  gap: 0.75rem;
+}
+.agent-account h3 {
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+.agent-account-lead,
+.agent-account-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  opacity: 0.75;
+}
+.agent-account-actions,
+.agent-account-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.agent-account button {
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--pc-hairline, rgba(255, 255, 255, 0.18));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.agent-account button:hover:not(:disabled) {
+  border-color: var(--pc-champagne, #c8ab7a);
+}
+.agent-account button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.agent-account-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.agent-account-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--pc-hairline, rgba(255, 255, 255, 0.12));
+  border-radius: 0.6rem;
+}
+.agent-account-list li[aria-current="true"] {
+  border-color: var(--pc-champagne, #c8ab7a);
+}
+.agent-account-list strong {
+  display: block;
+  font-size: 0.85rem;
+}
+.agent-account-list span {
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+.agent-account-token code {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 0.6rem 0.75rem;
+  margin: 0.4rem 0;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.78rem;
+}
+.agent-account-token p,
+.agent-account-endpoint p {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.8;
+}
+.agent-account-endpoint pre {
+  margin: 0.4rem 0;
+  padding: 0.75rem;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+.agent-account-message:not(:empty) {
+  font-size: 0.78rem;
+  opacity: 0.85;
+}

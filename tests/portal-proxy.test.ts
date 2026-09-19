@@ -43,6 +43,25 @@ describe("portal service boundary", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("passes agent management through but keeps agent resolution off the browser boundary", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ agents: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const id = "a".repeat(32);
+    expect((await GET(request("/agents"))).status).toBe(200);
+    expect((await GET(request(`/agents/${id}`))).status).toBe(200);
+    expect((await POST(request("/agents", "POST", { name: "Support" }))).status).toBe(200);
+    expect((await POST(request(`/agents/${id}/versions`, "POST", { name: "Support" }))).status).toBe(200);
+    expect((await POST(request(`/agents/${id}/token`, "POST", {}))).status).toBe(200);
+    expect((await DELETE(request(`/agents/${id}`, "DELETE"))).status).toBe(200);
+    const calls = fetchMock.mock.calls.length;
+    for (const blocked of ["/agents/resolve", `/agents/${id}/resolve`, "/agents/../keys", `/agents/${id}/versions/1`]) {
+      expect((await POST(request(blocked, "POST", {}))).status).toBe(404);
+      expect((await GET(request(blocked))).status).toBe(404);
+    }
+    expect(fetchMock.mock.calls.length).toBe(calls);
+  });
+
   it("blocks cross-origin mutations, arbitrary endpoints, invalid months and oversized input", async () => {
     vi.stubGlobal("fetch", vi.fn()); vi.stubEnv("PC_PORTAL_ORIGIN", "");
     expect((await POST(request("/auth/login", "POST", {}, { origin: "https://evil.example" }))).status).toBe(403);

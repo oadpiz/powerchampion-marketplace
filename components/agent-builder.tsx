@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { AgentAccount } from "./agent-account";
 import {
   AGENT_TEMPLATES,
   getAgentTemplate,
@@ -623,6 +624,15 @@ export function AgentBuilder() {
             </a>
             <p>{t.testNotice}</p>
           </div>
+          <AgentAccount
+            draft={draft}
+            valid={valid}
+            onLoad={(loaded) => {
+              edited.current = true;
+              setDraft(loaded);
+              setStep(0);
+            }}
+          />
         </aside>
       </div>
       <p className="agent-builder-message" role="status">

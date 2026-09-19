@@ -56,6 +56,20 @@ CREATE TABLE IF NOT EXISTS trial_requests (
  status TEXT NOT NULL CHECK(status IN ('reserved','succeeded','failed','cancelled')),
  created_at INTEGER NOT NULL, completed_at INTEGER
 );
+CREATE TABLE IF NOT EXISTS agents (
+ id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+ name TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','archived')),
+ current_version INTEGER NOT NULL, token_hash TEXT UNIQUE, token_prefix TEXT NOT NULL,
+ created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS agents_owner ON agents(user_id);
+CREATE TABLE IF NOT EXISTS agent_versions (
+ agent_id TEXT NOT NULL REFERENCES agents(id), version INTEGER NOT NULL,
+ model TEXT NOT NULL, purpose TEXT NOT NULL, instructions TEXT NOT NULL,
+ tone TEXT NOT NULL, knowledge TEXT NOT NULL, sample_prompt TEXT NOT NULL,
+ system_prompt TEXT NOT NULL, max_output_tokens INTEGER NOT NULL, created_at INTEGER NOT NULL,
+ PRIMARY KEY(agent_id, version)
+);
 CREATE INDEX IF NOT EXISTS trial_requests_day ON trial_requests(day);
 CREATE INDEX IF NOT EXISTS trial_requests_session_day ON trial_requests(session_hash,day);
 """

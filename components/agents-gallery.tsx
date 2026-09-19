@@ -8,6 +8,12 @@ import { useLocale } from "./locale-provider";
 
 type Category = AgentCategory | "all";
 
+const ENDPOINT_EXAMPLE = `curl https://powerchampion.ai/api/agents/<agent-id>/chat \\
+  -H "Authorization: Bearer $POWERCHAMPION_API_KEY" \\
+  -H "X-PC-Agent-Token: $PC_AGENT_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"messages":[{"role":"user","content":"Draft a reply to this customer note."}]}'`;
+
 const COPY = {
   en: {
     eyebrow: "POWER CHAMPION / AI ASSISTANTS",
@@ -40,6 +46,32 @@ const COPY = {
     reset: "Clear filters",
     templateNote:
       "These assistants use instructions to guide a model. Company knowledge, web search, and actions in other systems require a separate integration.",
+    capabilityEyebrow: "WHAT AN ASSISTANT CAN DO",
+    capabilityTitle: "Configure it once. Call it from your own application.",
+    capabilityLead:
+      "Shape an assistant in the builder, save it to your account, and it gets its own endpoint. Your application sends the conversation with your API key; the instructions and reference material stay on our server.",
+    capabilityItems: [
+      {
+        title: "Draft from your own material",
+        body: "Give it approved answers, policies or product facts as reference text. It drafts replies that follow them and says when they do not cover the question.",
+      },
+      {
+        title: "Work through supplied documents",
+        body: "Paste a contract, a report or meeting notes into the conversation and get findings, open questions and a next step — the material stays in that request.",
+      },
+      {
+        title: "Keep one voice across a team",
+        body: "The instructions live in one saved agent, so everyone calling the endpoint gets the same behaviour. Update it and the next call uses the new version.",
+      },
+      {
+        title: "Run inside your product",
+        body: "One HTTPS call from your backend returns the answer, the finish reason and token usage. No SDK to adopt, no conversation stored here.",
+      },
+    ],
+    capabilityEndpoint: "Each saved agent answers on its own endpoint:",
+    capabilityLimits:
+      "An assistant configured here has no browsing, no database access and no ability to act in other systems. Connecting those is an integration project — the service below.",
+    capabilityCta: "Build an assistant",
     serviceEyebrow: "BUILT FOR YOUR COMPANY",
     serviceTitle: "From a useful assistant to a working business tool.",
     serviceLead:
@@ -139,6 +171,32 @@ const COPY = {
     reset: "清除篩選",
     templateNote:
       "這些助手透過指示引導模型回應。公司知識、網路搜尋及其他系統的操作，需要另外規劃串接。",
+    capabilityEyebrow: "助手能做什麼",
+    capabilityTitle: "設定一次，之後由你的程式呼叫。",
+    capabilityLead:
+      "在建置器裡調好助手、存進帳號，它就會有自己的端點。你的應用程式帶著自己的 API 金鑰送出對話，指令與參考資料留在我們的伺服器上。",
+    capabilityItems: [
+      {
+        title: "依你的資料草擬回覆",
+        body: "把確認過的答案、政策或產品資訊放進參考資料。助手會照著擬稿，遇到資料沒涵蓋的問題會直說。",
+      },
+      {
+        title: "處理你丟進來的文件",
+        body: "把合約、報告或會議記錄貼進對話，取得重點、待確認事項與下一步；這些內容只留在該次請求裡。",
+      },
+      {
+        title: "讓團隊講同一套話",
+        body: "指令只存在一個智能體裡，所有呼叫端點的人得到同樣的行為。更新後，下一次呼叫就會用新版本。",
+      },
+      {
+        title: "直接跑在你的產品裡",
+        body: "後端一個 HTTPS 呼叫就拿到回覆、結束原因與 Token 用量。不必導入 SDK，對話也不會留在這裡。",
+      },
+    ],
+    capabilityEndpoint: "每個儲存的智能體都有自己的端點：",
+    capabilityLimits:
+      "在這裡設定的助手不會上網、不會連到你的資料庫，也不能在其他系統裡執行動作。要串接那些是一個整合專案，也就是下面這項服務。",
+    capabilityCta: "開始建置助手",
     serviceEyebrow: "為你的公司打造",
     serviceTitle: "從實用的助手，到能融入營運的工具。",
     serviceLead:
@@ -422,13 +480,46 @@ export function AgentsGallery() {
         <p className="agents-boundary">{copy.templateNote}</p>
       </section>
       <section
+        id="agent-capabilities"
+        className="agents-capabilities"
+        aria-labelledby="agents-capability-title"
+      >
+        <div className="agents-section-heading">
+          <div>
+            <p className="agents-eyebrow">02 / {copy.capabilityEyebrow}</p>
+            <h2 id="agents-capability-title">{copy.capabilityTitle}</h2>
+            <p className="agents-lead">{copy.capabilityLead}</p>
+          </div>
+          <a className="agents-button" href="/agents/build">
+            {copy.capabilityCta}
+            <Arrow />
+          </a>
+        </div>
+        <ul className="agents-capability-grid">
+          {copy.capabilityItems.map((item) => (
+            <li key={item.title}>
+              <h3>{item.title}</h3>
+              <p>{item.body}</p>
+            </li>
+          ))}
+        </ul>
+        <div className="agents-capability-endpoint">
+          <p>{copy.capabilityEndpoint}</p>
+          <pre>
+            <code>{ENDPOINT_EXAMPLE}</code>
+          </pre>
+          <p className="agents-capability-note">{copy.capabilityLimits}</p>
+        </div>
+      </section>
+      <section
         id="agent-services"
         className="agents-services"
         aria-labelledby="agents-service-title"
       >
+
         <div className="agents-service-intro">
           <div>
-            <p className="agents-eyebrow">02 / {copy.serviceEyebrow}</p>
+            <p className="agents-eyebrow">03 / {copy.serviceEyebrow}</p>
             <h2 id="agents-service-title">{copy.serviceTitle}</h2>
             <p>{copy.serviceLead}</p>
             <a className="agents-button" href="#agent-project-brief">
@@ -462,7 +553,7 @@ export function AgentsGallery() {
         aria-labelledby="agents-brief-title"
       >
         <div>
-          <p className="agents-eyebrow">03 / POWER CHAMPION</p>
+          <p className="agents-eyebrow">04 / POWER CHAMPION</p>
           <h2 id="agents-brief-title">{copy.briefTitle}</h2>
           <p>{copy.briefLead}</p>
           <a href="mailto:info@powerchampion.org">
