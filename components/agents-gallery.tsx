@@ -72,6 +72,46 @@ const COPY = {
     capabilityLimits:
       "An assistant configured here has no browsing, no database access and no ability to act in other systems. Connecting those is an integration project — the service below.",
     capabilityCta: "Build an assistant",
+    roadmapEyebrow: "WHAT WE ARE BUILDING",
+    roadmapTitle: "Where this is going.",
+    roadmapLead:
+      "These are the capabilities we are building on our own GPUs. We publish them so you can plan, and we label each one honestly: shipped means you can use it today, in development means it exists and is being tested, planned means the design is settled and the work is scoped. We do not commit to dates on this page — ask us and we will tell you where a specific item stands.",
+    roadmapStates: { shipped: "SHIPPED", building: "IN DEVELOPMENT", planned: "PLANNED" },
+    roadmapItems: [
+      {
+        state: "shipped" as const,
+        title: "Configured assistants with their own endpoint",
+        body: "Build an assistant from instructions and reference material, save it to your account with versions, and call it from your application with your own API key.",
+      },
+      {
+        state: "building" as const,
+        title: "Memory that carries across conversations",
+        body: "An assistant that remembers the preferences and corrections a team gives it, instead of starting from zero each time. Built on our own infrastructure and tested internally; individual customer facts stay in the memory store and never enter model weights.",
+      },
+      {
+        state: "planned" as const,
+        title: "Answers grounded in your documents",
+        body: "Upload your material, and answers cite the passage they came from. Chunking, embedding and reranking all run on our own bge-m3 and bge-reranker models — no third-party retrieval service in the path.",
+      },
+      {
+        state: "planned" as const,
+        title: "Tool use with human approval",
+        body: "Let an assistant look things up in your systems and prepare an action, with every consequential step held for a person to approve, and a full trace of what it did.",
+      },
+      {
+        state: "planned" as const,
+        title: "Images and documents as input",
+        body: "Send a scan, a form or a screenshot to the same endpoint, handled by our vision model.",
+      },
+      {
+        state: "planned" as const,
+        title: "Private deployment",
+        body: "The same stack on dedicated nodes, or inside your own facility, for teams whose code or customer data cannot leave a defined boundary.",
+      },
+    ],
+    roadmapNote:
+      "Nothing on this page is a delivery commitment. If one of these decides your project, talk to us first: we will tell you its real state, and scope it with you rather than around you.",
+    roadmapCta: "Discuss a requirement",
     serviceEyebrow: "BUILT FOR YOUR COMPANY",
     serviceTitle: "From a useful assistant to a working business tool.",
     serviceLead:
@@ -197,6 +237,46 @@ const COPY = {
     capabilityLimits:
       "在這裡設定的助手不會上網、不會連到你的資料庫，也不能在其他系統裡執行動作。要串接那些是一個整合專案，也就是下面這項服務。",
     capabilityCta: "開始建置助手",
+    roadmapEyebrow: "我們正在做什麼",
+    roadmapTitle: "接下來會長成什麼樣子。",
+    roadmapLead:
+      "以下是我們在自有 GPU 上建構的能力。公開出來是為了讓你能規劃，每一項都誠實標示狀態：已上線代表現在就能用，開發中代表已經做出來、正在內部測試，規劃中代表設計已定、工作已估。本頁不承諾時程 —— 想知道某一項的實際進度，直接問我們。",
+    roadmapStates: { shipped: "已上線", building: "開發中", planned: "規劃中" },
+    roadmapItems: [
+      {
+        state: "shipped" as const,
+        title: "可設定的助手與專屬端點",
+        body: "用指令與參考資料打造助手，存進帳號並保留版本，由你的應用程式帶著自己的 API 金鑰呼叫。",
+      },
+      {
+        state: "building" as const,
+        title: "跨對話累積的記憶",
+        body: "讓助手記得團隊給過的偏好與糾正，而不是每次從零開始。建在我們自有的基礎設施上，目前於內部測試；個別客戶的事實只留在記憶庫，永遠不會進入模型權重。",
+      },
+      {
+        state: "planned" as const,
+        title: "以你的文件為依據作答",
+        body: "上傳資料後，回答會標示引用的段落。切塊、向量與重排全部使用我們自有的 bge-m3 與 bge-reranker，鏈路上沒有第三方檢索服務。",
+      },
+      {
+        state: "planned" as const,
+        title: "工具呼叫與人工覆核",
+        body: "讓助手查詢你的系統並備妥動作，每一個有後果的步驟都停下來等人核可，並留下完整軌跡。",
+      },
+      {
+        state: "planned" as const,
+        title: "圖片與文件輸入",
+        body: "把掃描件、表單或截圖送到同一個端點，由我們的視覺模型處理。",
+      },
+      {
+        state: "planned" as const,
+        title: "私有部署",
+        body: "同一套系統跑在專屬節點，或直接進到你的機房，適合程式碼與客戶資料不能離開特定邊界的團隊。",
+      },
+    ],
+    roadmapNote:
+      "本頁任何一項都不構成交付承諾。如果其中某一項會決定你的專案，先跟我們談：我們會告訴你它真正的狀態，並與你一起界定範圍。",
+    roadmapCta: "討論需求",
     serviceEyebrow: "為你的公司打造",
     serviceTitle: "從實用的助手，到能融入營運的工具。",
     serviceLead:
@@ -512,6 +592,35 @@ export function AgentsGallery() {
         </div>
       </section>
       <section
+        id="agent-roadmap"
+        className="agents-roadmap"
+        aria-labelledby="agents-roadmap-title"
+      >
+        <div className="agents-section-heading">
+          <div>
+            <p className="agents-eyebrow">03 / {copy.roadmapEyebrow}</p>
+            <h2 id="agents-roadmap-title">{copy.roadmapTitle}</h2>
+            <p className="agents-lead">{copy.roadmapLead}</p>
+          </div>
+          <a className="agents-text-link" href="/contact">
+            {copy.roadmapCta}
+            <Arrow />
+          </a>
+        </div>
+        <ul className="agents-roadmap-list">
+          {copy.roadmapItems.map((item) => (
+            <li key={item.title} data-state={item.state}>
+              <p className="agents-roadmap-state">{copy.roadmapStates[item.state]}</p>
+              <div>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="agents-boundary">{copy.roadmapNote}</p>
+      </section>
+      <section
         id="agent-services"
         className="agents-services"
         aria-labelledby="agents-service-title"
@@ -519,7 +628,7 @@ export function AgentsGallery() {
 
         <div className="agents-service-intro">
           <div>
-            <p className="agents-eyebrow">03 / {copy.serviceEyebrow}</p>
+            <p className="agents-eyebrow">04 / {copy.serviceEyebrow}</p>
             <h2 id="agents-service-title">{copy.serviceTitle}</h2>
             <p>{copy.serviceLead}</p>
             <a className="agents-button" href="#agent-project-brief">
@@ -553,7 +662,7 @@ export function AgentsGallery() {
         aria-labelledby="agents-brief-title"
       >
         <div>
-          <p className="agents-eyebrow">04 / POWER CHAMPION</p>
+          <p className="agents-eyebrow">05 / POWER CHAMPION</p>
           <h2 id="agents-brief-title">{copy.briefTitle}</h2>
           <p>{copy.briefLead}</p>
           <a href="mailto:info@powerchampion.org">

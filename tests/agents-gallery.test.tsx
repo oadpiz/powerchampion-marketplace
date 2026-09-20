@@ -50,6 +50,27 @@ describe("AI assistant gallery", () => {
     );
   });
 
+  it("publishes the roadmap with an honest state on every item and no delivery promise", () => {
+    renderGallery();
+    const roadmap = screen.getByRole("region", { name: "Where this is going." });
+    const items = within(roadmap).getAllByRole("listitem");
+    expect(items.length).toBeGreaterThanOrEqual(5);
+    for (const item of items) {
+      expect(item.dataset.state).toMatch(/^(shipped|building|planned)$/);
+      expect(item).toHaveTextContent(/SHIPPED|IN DEVELOPMENT|PLANNED/);
+    }
+    // Only what a customer can use today may be marked shipped.
+    const shipped = items.filter((item) => item.dataset.state === "shipped");
+    expect(shipped).toHaveLength(1);
+    expect(shipped[0]).toHaveTextContent(/own endpoint/i);
+    expect(roadmap).toHaveTextContent(/Nothing on this page is a delivery commitment/);
+    // No date or quarter may be promised here.
+    expect(roadmap.textContent ?? "").not.toMatch(/\bQ[1-4]\b|\b20\d\d\b|\b(week|month)s?\b/i);
+    expect(
+      within(roadmap).getByRole("link", { name: /Discuss a requirement/ }),
+    ).toHaveAttribute("href", "/contact");
+  });
+
   it("filters assistants by category and search, and recovers from no results", async () => {
     const user = userEvent.setup();
     renderGallery();

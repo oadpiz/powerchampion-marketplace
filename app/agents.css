@@ -714,3 +714,66 @@
 .agents-capability-note {
   opacity: 0.75;
 }
+
+/* Roadmap: every item carries the state it is actually in. */
+.agents-roadmap {
+  display: grid;
+  gap: 1.25rem;
+}
+.agents-roadmap-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+.agents-roadmap-list li {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  gap: 1.25rem;
+  align-items: start;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--pc-hairline, rgba(255, 255, 255, 0.12));
+  border-radius: 0.75rem;
+}
+.agents-roadmap-state {
+  margin: 0.15rem 0 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.35rem;
+  text-align: center;
+  white-space: nowrap;
+}
+.agents-roadmap-list li[data-state="shipped"] .agents-roadmap-state {
+  background: rgba(200, 171, 122, 0.18);
+  color: var(--pc-champagne, #c8ab7a);
+}
+.agents-roadmap-list li[data-state="building"] .agents-roadmap-state {
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+}
+.agents-roadmap-list li[data-state="planned"] .agents-roadmap-state {
+  background: transparent;
+  border: 1px solid var(--pc-hairline, rgba(255, 255, 255, 0.18));
+  opacity: 0.8;
+}
+.agents-roadmap-list h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+.agents-roadmap-list li > div > p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  opacity: 0.8;
+}
+@media (max-width: 640px) {
+  .agents-roadmap-list li {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  .agents-roadmap-state {
+    justify-self: start;
+  }
+}
