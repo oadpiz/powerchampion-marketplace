@@ -13,7 +13,7 @@
 import {
   CHAT_LIMITS, chatError, deadline, isRecord, parseChatResult,
   privateServiceOrigin, readBounded, responseHeaders,
-} from "../../../../lib/chat-protocol";
+} from "../../../../../lib/chat-protocol";
 
 export const dynamic = "force-dynamic";
 
