@@ -158,7 +158,12 @@ export function AgentAccount({
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    // List the account's agents once the component is on the client; every
+    // state update below happens after the request settles.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
+  }, [load]);
 
   async function send(path: string, method: "POST" | "DELETE", body?: unknown) {
     setBusy(true);
