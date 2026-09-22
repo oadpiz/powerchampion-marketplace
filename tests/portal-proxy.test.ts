@@ -44,7 +44,8 @@ describe("portal service boundary", () => {
   });
 
   it("passes agent management through but keeps agent resolution off the browser boundary", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ agents: [] }));
+    // Each network response has its own body stream; a consumed response cannot be reused.
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ agents: [] })));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubEnv("PC_PORTAL_ORIGIN", "");
     const id = "a".repeat(32);
@@ -55,7 +56,9 @@ describe("portal service boundary", () => {
     expect((await POST(request(`/agents/${id}/token`, "POST", {}))).status).toBe(200);
     expect((await DELETE(request(`/agents/${id}`, "DELETE"))).status).toBe(200);
     const calls = fetchMock.mock.calls.length;
-    for (const blocked of ["/agents/resolve", `/agents/${id}/resolve`, "/agents/../keys", `/agents/${id}/versions/1`]) {
+    // A literal /../ is normalized to /keys by Request before reaching the proxy.
+    // Keep the encoded traversal in the actual request path to exercise the allowlist.
+    for (const blocked of ["/agents/resolve", `/agents/${id}/resolve`, "/agents/%2e%2e%2fkeys", `/agents/${id}/versions/1`]) {
       expect((await POST(request(blocked, "POST", {}))).status).toBe(404);
       expect((await GET(request(blocked))).status).toBe(404);
     }

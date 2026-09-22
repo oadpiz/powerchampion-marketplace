@@ -81,7 +81,9 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(stored["current_version"], 1)
         listed = self.client.get(BASE + "/agents").json()["agents"]
         self.assertEqual([agent["id"] for agent in listed], [created["agent"]["id"]])
-        self.assertNotIn("token", str(listed))
+        self.assertNotIn(token, str(listed))
+        self.assertTrue(all("token" not in agent for agent in listed))
+        self.assertEqual(listed[0]["tokenPrefix"], token[:12])
         again = self.client.get(BASE + "/agents/" + created["agent"]["id"]).json()["agent"]
         self.assertEqual(again["configuration"]["instructions"], CONFIGURATION["instructions"])
         self.assertNotIn("token\"", again.get("tokenPrefix", ""))
@@ -161,6 +163,29 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(stored["configuration"]["systemPrompt"], reviewed)
         self.assertEqual(stored["configuration"]["instructions"], CONFIGURATION["instructions"])
         self.assertEqual(self.post(BASE + "/agents", {"name": "Too long", **CONFIGURATION, "systemPrompt": "x" * 40001}).status_code, 400)
+
+    def test_omitted_or_blank_reviewed_prompt_uses_the_configuration(self):
+        for override in ({}, {"systemPrompt": ""}, {"systemPrompt": " \n\t "}):
+            with self.subTest(override=override):
+                created = self.create(**override)
+                resolved = self.post(BASE + "/agents/resolve", {"token": created["token"]})
+                self.assertEqual(resolved.status_code, 200, resolved.text)
+                system = resolved.json()["agent"]["system"]
+                self.assertIn("Purpose:\n" + CONFIGURATION["purpose"], system)
+                self.assertIn("Instructions:\n" + CONFIGURATION["instructions"], system)
+                self.assertIn("Response style:\n" + CONFIGURATION["tone"], system)
+                self.assertIn("<reference>\n" + CONFIGURATION["knowledge"], system)
+                self.assertIn("Do not claim to browse", system)
+
+    def test_invalid_reviewed_prompt_does_not_fall_back_to_the_configuration(self):
+        for invalid in (None, False, 123, [], {}, "invalid\x00instructions", "x" * 40001):
+            with self.subTest(value_type=type(invalid).__name__):
+                response = self.post(BASE + "/agents", {
+                    "name": "Invalid prompt", **CONFIGURATION, "systemPrompt": invalid,
+                })
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertEqual(response.json()["error"], "invalid_input")
+        self.assertEqual(self.db_rows("agents"), [])
 
     def test_rotating_a_token_invalidates_the_previous_one(self):
         created = self.create()

@@ -193,7 +193,6 @@ describe("agent builder", () => {
   });
 
   it("keeps browser storage failure visible and does not proceed to chat", async () => {
-    const user = userEvent.setup();
     render(
       <LocaleProvider>
         <AgentBuilder />
@@ -202,10 +201,12 @@ describe("agent builder", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("Storage blocked");
     });
-    await user.click(screen.getByRole("link", { name: "Test this agent" }));
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Browser storage is unavailable",
-    );
+    const launchClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+    fireEvent(screen.getByRole("link", { name: "Test this agent" }), launchClick);
+    const warning = await screen.findByText(/Browser storage is unavailable/);
+    expect(warning).toHaveAttribute("role", "status");
+    expect(warning).toBeVisible();
+    expect(launchClick.defaultPrevented).toBe(true);
     expect(sessionStorage.getItem(AGENT_TEST_STORAGE_KEY)).toBeNull();
     expect(window.location.pathname).not.toBe("/chat");
   });

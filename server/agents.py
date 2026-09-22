@@ -55,7 +55,7 @@ def parse_version(body):
     }
     # The builder sends the exact text it previews, so the endpoint cannot run a
     # differently assembled prompt from the one the customer reviewed.
-    assembled = _text(body.get("systemPrompt"), "assembled instructions", LIMITS["system"], required=False)
+    assembled = _text(body.get("systemPrompt", ""), "assembled instructions", LIMITS["system"], required=False)
     parsed["system_prompt"] = assembled or assemble(parsed)
     return parsed
 
