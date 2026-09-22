@@ -10,7 +10,7 @@ export const PUBLIC_ROUTES = [
   "/integrations", "/docs", "/infrastructure", "/company", "/contact",
   "/trust", "/status", "/faq", "/terms", "/privacy",
 ] as const;
-const PRIVATE_ROUTES = ["/chat", "/agents/build", "/account", "/admin", "/login", "/register", "/console", "/api"];
+const PRIVATE_ROUTES = ["/chat", "/tasks", "/agents/build", "/account", "/admin", "/login", "/register", "/console", "/api"];
 
 export function isInternationalLocale(value: string | null | undefined): value is InternationalLocale {
   return INTERNATIONAL_LOCALES.some((locale) => locale === value);

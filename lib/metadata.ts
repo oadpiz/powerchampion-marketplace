@@ -7,6 +7,7 @@ import {
 export type RoutePath =
   | "/"
   | "/chat"
+  | "/tasks"
   | "/agents"
   | "/agents/build"
   | "/solutions"
@@ -37,6 +38,10 @@ const HOME_METADATA = {
 };
 
 export const ROUTE_METADATA = {
+  "/tasks": {
+    title: "Agent Tasks | Power Champion",
+    description: "Run multi-step agent tasks, review progress, approve web reads, and download results from your account.",
+  },
   "/chat": {
     title: "AI Chat | Power Champion",
     description: "Chat with supported AI models using your Power Champion API key, or explore clearly labeled example conversations.",

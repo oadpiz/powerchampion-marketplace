@@ -14,6 +14,7 @@ export function AiWorkspaceShell({ children, pathname }: { children: ReactNode; 
   const zh = locale === "zh";
   const [open, setOpen] = useState(false);
   const destinations = [
+    ["/tasks", "↗", zh ? "智能體任務" : "Agent tasks"],
     ["/chat", "✳", zh ? "開始對話" : "New conversation"],
     ["/agents", "◈", zh ? "探索智能體" : "Explore agents"],
     ["/agents/build", "⊞", zh ? "建立智能體" : "Build an agent"],

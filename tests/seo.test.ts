@@ -20,6 +20,7 @@ describe("Search visibility boundaries", () => {
       "https://powerchampion.ai/register", "https://powerchampion.ai/console",
       "https://powerchampion.ai/api/portal/me", "https://powerchampion.ai/chat",
       "https://powerchampion.ai/agents/build", "https://powerchampion.ai/agents/build/export",
+      "https://powerchampion.ai/tasks", "https://powerchampion.ai/tasks?task=private",
     ]) expect(isIndexableRequest(new URL(url)), url).toBe(false);
     expect(isIndexableRequest(new URL("https://powerchampion.ai/platform"))).toBe(true);
     expect(isIndexableRequest(new URL("https://powerchampion.ai/agents"))).toBe(true);
@@ -27,7 +28,7 @@ describe("Search visibility boundaries", () => {
   });
 
   it("marks account and key tools as non-indexable in HTML metadata too", () => {
-    for (const path of ["/account", "/admin", "/login", "/register", "/console", "/chat", "/agents/build"] as const) {
+    for (const path of ["/account", "/admin", "/login", "/register", "/console", "/chat", "/tasks", "/agents/build"] as const) {
       expect(metadataForRoute(path).robots).toEqual({ index: false, follow: false });
     }
     // Preview policy belongs to the request boundary, so public page metadata

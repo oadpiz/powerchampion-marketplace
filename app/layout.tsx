@@ -25,6 +25,7 @@ import "./agents.css";
 import "./agent-builder.css";
 import "./language-picker.css";
 import "./brand-experience.css";
+import "./tasks.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

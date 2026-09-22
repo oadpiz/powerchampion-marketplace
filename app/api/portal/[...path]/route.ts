@@ -12,8 +12,8 @@ const RESPONSE_HEADERS = {
 // /agents/resolve is deliberately absent: only this site's server may call it.
 const AGENT = "[a-f0-9]{32}";
 const routes: Record<string, readonly RegExp[]> = {
-  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/],
-  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/],
+  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`)],
+  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`)],
   DELETE: [/^\/keys\/[a-zA-Z0-9_-]{1,80}$/, new RegExp(`^/agents/${AGENT}$`)],
 };
 function failure(error: string, detail: string, status: number) {
@@ -74,7 +74,7 @@ async function proxy(request: Request) {
   let body: string | undefined;
   if (mutation && request.body) {
     try {
-      const text = await readBounded(request.body, 65536);
+      const text = await readBounded(request.body, path === "/runtime/tasks" ? 196608 : 65536);
       // Workerd represents even a bodyless POST/DELETE as a non-null stream.
       if (text.length) {
         if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return failure("invalid_input", "Send a JSON request.", 415);

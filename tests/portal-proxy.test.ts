@@ -7,6 +7,33 @@ function request(path = "/session", method = "GET", body?: unknown, extra: Recor
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("portal service boundary", () => {
+  it("proxies only authenticated runtime route shapes and preserves exact-origin mutations", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ task: { status: "queued" } })));
+    vi.stubGlobal("fetch", fetchMock);
+    const id = "a".repeat(32);
+    for (const path of ["/runtime/config", "/runtime/tasks", `/runtime/tasks/${id}`, `/runtime/tasks/${id}/artifacts/${id}`]) {
+      expect((await GET(request(path))).status).toBe(200);
+    }
+    for (const path of ["/runtime/tasks", `/runtime/tasks/${id}/control`, `/runtime/tasks/${id}/instructions`, `/runtime/tasks/${id}/approval`]) {
+      expect((await POST(request(path, "POST", {}))).status).toBe(200);
+      expect((await POST(request(path, "POST", {}, { origin: "https://foreign.example" }))).status).toBe(403);
+    }
+    const calls = fetchMock.mock.calls.length;
+    for (const path of ["/runtime/worker", `/runtime/tasks/${id}/credential`, `/runtime/tasks/${id}/artifacts/invalid`, "/runtime/tasks/other-owner-key", `/runtime/tasks/${id}/approval/anything`]) {
+      expect((await GET(request(path))).status).toBe(404);
+      expect((await POST(request(path, "POST", {}))).status).toBe(404);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(calls);
+  });
+
+  it("accepts bounded multilingual runtime references without enlarging other portal requests", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(Response.json({ task: {} }))));
+    expect((await POST(request("/runtime/tasks", "POST", { references: [{ name: "中文資料", content: "中".repeat(32000) }] }))).status).toBe(200);
+    expect((await POST(request("/runtime/tasks", "POST", { padding: "x".repeat(196608) }))).status).toBe(413);
+    expect((await POST(request("/auth/login", "POST", { padding: "中".repeat(32000) }))).status).toBe(413);
+  });
   it("forwards only the session cookie to the fixed local service, preserving authentication status", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", "");
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "auth_required" }, { status: 401 }));

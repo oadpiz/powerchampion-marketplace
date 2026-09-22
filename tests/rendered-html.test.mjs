@@ -509,3 +509,15 @@ test("server-renders the model platform tools and all model detail routes", asyn
   const missing = await render("/models/unpublished-model");
   assert.equal(missing.status, 404);
 });
+
+test("server-renders the private task console with account navigation and noindex", async () => {
+  const response = await render("/tasks");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Agent Tasks \| Power Champion/);
+  assert.match(html, /name="robots" content="noindex, nofollow"/);
+  assert.match(html, /class="tasks-console"/);
+  assert.match(html, /Loading your saved tasks/);
+  assert.match(html, /href="\/account"/);
+  assert.doesNotMatch(html, /data-cf-beacon/);
+});

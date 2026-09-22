@@ -4,6 +4,8 @@ import re
 import sqlite3
 import time
 import uuid
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
@@ -19,6 +21,7 @@ from .chat import TRIAL_COOKIE, TrialChat
 from .security import clean_name, digest_token, normalize_email, password_hash, validate_password, verify_password
 from .settings import Settings
 from .store import Store, credit_json, iso, key_json, user_json
+from .runtime_api import attach_runtime
 
 COOKIE_NAME = "pc_portal_session"
 PREFIX = "/api/portal"
@@ -33,12 +36,12 @@ def fail(code, detail, status=400):
     raise PortalError(code, detail, status)
 
 
-async def body_json(request):
+async def body_json(request, maximum=65536):
     if not request.headers.get("content-type", "").lower().startswith("application/json"):
         fail("invalid_input", "Send a JSON request.", 415)
     body = bytearray()
     async for chunk in request.stream():
-        if len(body) + len(chunk) > 65536:
+        if len(body) + len(chunk) > maximum:
             fail("invalid_input", "Request is too large.", 413)
         body.extend(chunk)
     try:
@@ -68,11 +71,28 @@ def credit_cents(value):
         fail("invalid_input", "Enter a USD amount from 10 to 10,000 with at most two decimal places.")
 
 
-def create_app(settings=None, gateway=None, chat_transport=None):
+def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=None, runtime_tools=None):
     settings = settings or Settings.from_env()
     store = Store(settings.db_path)
     gateway = gateway if gateway is not None else GatewayAdapter(settings)
-    application = FastAPI(title="Power Champion Customer Portal", docs_url=None, redoc_url=None, openapi_url=None)
+    @asynccontextmanager
+    async def lifespan(application):
+        stop = asyncio.Event()
+        workers = []
+        if settings.runtime_available:
+            # Worker leases fence each claim; two loops also let an unrelated
+            # customer's task progress during a slow model response.
+            workers = [asyncio.create_task(application.state.runtime_engine.serve(stop)) for _ in range(2)]
+        try:
+            yield
+        finally:
+            stop.set()
+            for worker in workers:
+                worker.cancel()
+            if workers:
+                await asyncio.gather(*workers, return_exceptions=True)
+
+    application = FastAPI(title="Power Champion Customer Portal", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     application.state.store = store
     application.state.gateway = gateway
     application.state.settings = settings
@@ -460,6 +480,7 @@ def create_app(settings=None, gateway=None, chat_transport=None):
             rows = con.execute("SELECT a.*,u.email FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC,a.rowid DESC LIMIT 200").fetchall()
         return {"events": [{"id": row["id"], "action": row["action"], "actorEmail": row["email"], "targetId": row["target_id"], "createdAt": iso(row["created_at"])} for row in rows]}
 
+    attach_runtime(application, store, settings, agents, current_user, body_json, runtime_model, runtime_tools)
     return application
 
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Tuple
 from urllib.parse import urlsplit
+from cryptography.fernet import Fernet
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,8 @@ class Settings:
     trial_api_key: str = field(default="", repr=False)
     trial_daily_request_limit: int = 0
     trial_session_daily_limit: int = 5
+    runtime_enabled: bool = False
+    runtime_encryption_key: str = field(default="", repr=False)
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -39,6 +42,16 @@ class Settings:
     @property
     def trial_available(self):
         return self.trial_enabled and bool(re.fullmatch(r"[\x21-\x7e]{8,512}", self.trial_api_key)) and self.trial_daily_request_limit > 0
+
+    @property
+    def runtime_available(self):
+        if not self.runtime_enabled or not self.runtime_encryption_key:
+            return False
+        try:
+            Fernet(self.runtime_encryption_key.encode("ascii"))
+            return True
+        except (ValueError, UnicodeError):
+            return False
 
     @classmethod
     def from_env(cls):
@@ -60,4 +73,6 @@ class Settings:
             trial_api_key=os.environ.get("PC_TRIAL_API_KEY", ""),
             trial_daily_request_limit=int(os.environ.get("PC_TRIAL_DAILY_REQUEST_LIMIT", "0")),
             trial_session_daily_limit=int(os.environ.get("PC_TRIAL_SESSION_REQUEST_LIMIT", "5")),
+            runtime_enabled=os.environ.get("PC_RUNTIME_ENABLED", "0") == "1",
+            runtime_encryption_key=os.environ.get("PC_RUNTIME_ENCRYPTION_KEY", ""),
         )

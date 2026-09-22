@@ -68,6 +68,10 @@ services:
       # with no spend cap, so connect it only together with prepaid enforcement.
       # The anonymous chat trial stays off (no PC_TRIAL_API_KEY either).
       PC_TRIAL_ENABLED: "0"
+      # Background tasks are opt-in. This dedicated Fernet key encrypts each
+      # customer's per-task model credential; it is never sent to the website.
+      PC_RUNTIME_ENABLED: ${PC_RUNTIME_ENABLED:-0}
+      PC_RUNTIME_ENCRYPTION_KEY: ${PC_RUNTIME_ENCRYPTION_KEY:-}
     volumes:
       - portal-data:/data
     # No ports, no Traefik labels and not on dokploy-network: only the website

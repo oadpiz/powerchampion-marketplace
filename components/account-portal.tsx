@@ -288,6 +288,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
           </p>
         </div>
         <div className="portal-actions">
+          {user && <Link className="portal-button-secondary" href="/tasks">{zh ? "智能體任務" : "Agent tasks"} ↗</Link>}
           {user?.role === "admin" && (
             <Link className="portal-button-secondary" href="/admin">
               {zh ? "管理後台" : "Administration"} ↗

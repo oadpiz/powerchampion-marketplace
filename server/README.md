@@ -50,6 +50,8 @@ this service. Registration establishes a portal account, not verified identity.
 | `PC_GATEWAY_DAILY_TOKEN_LIMIT` | `1000000`, positive daily token quota on newly issued gateway keys |
 | `PC_GATEWAY_RPM` | `60`, positive request limit on new keys |
 | `PC_GATEWAY_MAX_INFLIGHT` | `2`, positive concurrency limit on new keys |
+| `PC_RUNTIME_ENABLED` | `0`; opt-in background Agent tasks when set to `1` |
+| `PC_RUNTIME_ENCRYPTION_KEY` | Separate Fernet key for per-task model credentials; missing/invalid key leaves tasks unavailable |
 
 There is no direct CORS access. Mutations require a matching Origin. The BFF must
 forward only the validated request origin and the `pc_portal_session` cookie;
@@ -143,3 +145,55 @@ cap. Configure an appropriate limited trial key at the inference gateway too.
 Protect the public chat/config routes with the deployment edge's own rate limits
 to prevent anonymous session churn and denial of service. The service remains
 private behind the BFF and never trusts a browser-supplied client IP header.
+
+## Persistent Agent tasks
+
+The authenticated `/tasks` page uses `/api/portal/runtime/*` through the existing
+BFF. Each task has an explicit customer model key, a fixed supported model,
+references, a step budget and an output-token limit. Starting a task authorizes
+multiple model calls within those limits. Token counts are usage information,
+not a currency spending cap. Keys provisioned elsewhere are not selected or
+charged implicitly.
+
+Enable this service only after testing tool calling with the chosen model at
+the configured gateway. Generate a dedicated encryption key with
+`Fernet.generate_key()` from Python's `cryptography.fernet`, store it in the
+deployment secret manager as `PC_RUNTIME_ENCRYPTION_KEY`, and set
+`PC_RUNTIME_ENABLED=1`. The Compose configuration forwards these only to the
+private portal container. Persist the database and encryption key across
+restarts. Changing or losing that key makes existing unfinished tasks unable
+to resume; cancel those tasks before rotation. Never commit the key.
+
+Two background execution loops use transactional SQLite leases. Closing the
+browser does not stop a task. Pausing and cancellation are cooperative: an
+already-started provider call can finish and consume tokens before the control
+is applied. An expired lease pauses the task for explicit recovery, avoiding an
+automatic repeat of an uncertain paid call. Failed, completed and cancelled
+tasks are terminal; their encrypted credentials are cleared. Paused tasks retain
+their encrypted credential to resume within the original budget.
+
+The implemented tools read supplied text, calculate CSV statistics, update a
+visible plan, read approved public HTTPS pages, and create TXT/Markdown/CSV/JSON/
+DOCX downloads. Every web read needs an approval bound to its exact arguments.
+DNS answers and redirects are checked, and connections pin the verified public
+address while checking TLS for the original hostname. These tools do not execute
+model-generated code or use a general browser/VM. There are no email, CRM or
+other external write connectors in this release.
+
+Task goals, references, assistant/tool messages, progress and generated files
+are stored in the account database. They are sent to the selected model as
+needed. Model credentials are encrypted separately and are never returned by
+the task APIs. Database backups must therefore be access controlled; deleting
+a credential from the current database does not erase historical backups.
+Task retention is bounded to 50 per account, with up to two unfinished tasks.
+Files are capped at 1 MiB each and 8 MiB per task. Task creation accepts up to
+192 KiB of UTF-8 JSON so multilingual references fit the character limit;
+other requests retain the existing 64 KiB limit. Each continuous execution
+segment has a five-minute deadline; approvals and pauses end that segment,
+while the model-step and output budgets persist across resumes.
+No untrusted generated HTML is rendered.
+
+Run `python3 -m unittest discover -s server -t . -p 'test_runtime*.py' -v`
+for the runtime regression suite. Tests use temporary databases, scripted model
+responses and injected web transports; passing tests does not establish the
+live model's tool-calling quality or production throughput.
