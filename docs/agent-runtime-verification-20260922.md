@@ -26,7 +26,7 @@ public analytics and the sitemap.
 - Python: 152 tests passed using temporary databases and injected transports.
 - ESLint and TypeScript passed; production build completed.
 - Server rendering: 20 tests passed, including the private Tasks shell.
-- Three independent scoped reviews passed after fixes: repository/ownership,
+- Final whole-branch integration review approved the implementation with no new blocking findings. Three independent scoped reviews passed after fixes: repository/ownership,
   HTTPS tools, engine and API lifecycle. Regressions cover escaped-key leakage,
   approval preserving pause, IPv6 site-local SSRF, HTTP framing budgets and
   informational responses, late instructions, immutable agent snapshots,
