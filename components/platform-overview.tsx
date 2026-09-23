@@ -69,6 +69,24 @@ export function PlatformOverview({
         : "Choose a model and language. Generate copyable configuration and request examples.",
       action: zh ? "產生串接設定" : "Configure integration",
     },
+    {
+      href: "/agents/build",
+      icon: "✳",
+      title: zh ? "建置你的智能體" : "Build your agent",
+      text: zh
+        ? "設定角色、模型與參考資料，儲存到帳號，再選擇對話 API 或任務執行。"
+        : "Set instructions, model and reference material. Save to your account for the chat API or task execution.",
+      action: zh ? "開啟建置器" : "Open agent builder",
+    },
+    {
+      href: "/tasks",
+      icon: "↗",
+      title: zh ? "執行 Agent 任務" : "Run an Agent task",
+      text: zh
+        ? "設定目標與執行上限，追蹤進度、審核操作並取得成果。是否開放執行，以任務控制台顯示為準。"
+        : "Set a goal and execution limits, review progress and approvals, and collect deliverables. Availability is shown in the task console.",
+      action: zh ? "開啟任務控制台" : "Open task console",
+    },
   ];
 
   return (

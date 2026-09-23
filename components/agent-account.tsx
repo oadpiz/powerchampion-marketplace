@@ -29,7 +29,7 @@ type State =
 const COPY = {
   en: {
     title: "Save to your account",
-    lead: "A saved agent gets its own endpoint. Your application calls it with your API key; the instructions stay on the server.",
+    lead: "Save one configuration for your chat API and Agent tasks. Task execution availability is shown in the task console; opening it does not start a request.",
     signedOut: "Sign in to save this agent to your account.",
     signIn: "Sign in",
     register: "Create an account",
@@ -37,6 +37,10 @@ const COPY = {
     saveNew: "Save as a new agent",
     update: "Save a new version",
     load: "Open",
+    runTask: "Run task",
+    taskTitle: "Continue with this saved agent",
+    taskLead: "Review the goal and execution limits before starting. Unsaved builder changes are not included. The task uses the latest saved version at launch.",
+    taskCta: "Open in Agent tasks",
     rotate: "New token",
     remove: "Delete",
     confirm: "Confirm delete",
@@ -44,7 +48,7 @@ const COPY = {
     versionLabel: "version",
     tokenTitle: "Agent token — shown once",
     tokenNote: "Store it like a password. If you lose it, issue a new one; the old token stops working.",
-    endpointTitle: "Call this agent",
+    endpointTitle: "Chat API endpoint",
     saved: "Saved.",
     updated: "New version saved.",
     loaded: "Loaded into the builder.",
@@ -54,11 +58,11 @@ const COPY = {
     invalid: "Complete the agent before saving it.",
     copy: "Copy",
     copied: "Copied ✓",
-    limits: "Conversations are not stored. Usage is billed to the key you send, at published rates.",
+    limits: "This chat endpoint returns a reply without running task tools or storing conversations. Usage is billed to the key you send, at published rates.",
   },
   zh: {
     title: "儲存到你的帳號",
-    lead: "儲存後的智能體有自己的端點。你的應用程式用自己的 API 金鑰呼叫它，指令留在伺服器上。",
+    lead: "同一份已儲存設定，可用於對話 API 與 Agent 任務。任務執行是否開放，會在任務控制台顯示；開啟頁面不會開始請求。",
     signedOut: "登入後即可把這個智能體存進帳號。",
     signIn: "登入",
     register: "建立帳號",
@@ -66,6 +70,10 @@ const COPY = {
     saveNew: "另存為新的智能體",
     update: "儲存新版本",
     load: "開啟",
+    runTask: "執行任務",
+    taskTitle: "接著使用這個已儲存的智能體",
+    taskLead: "開始前先確認目標與執行上限。尚未儲存的建置器修改不會帶入；任務會使用啟動時最新的已儲存版本。",
+    taskCta: "開啟 Agent 任務",
     rotate: "換新權杖",
     remove: "刪除",
     confirm: "確認刪除",
@@ -73,7 +81,7 @@ const COPY = {
     versionLabel: "版本",
     tokenTitle: "智能體權杖 —— 只顯示這一次",
     tokenNote: "請當成密碼保管。遺失就換一把新的，舊的會立刻失效。",
-    endpointTitle: "呼叫這個智能體",
+    endpointTitle: "對話 API 端點",
     saved: "已儲存。",
     updated: "已儲存新版本。",
     loaded: "已載入建置器。",
@@ -83,7 +91,7 @@ const COPY = {
     invalid: "請先把智能體填寫完整再儲存。",
     copy: "複製",
     copied: "已複製 ✓",
-    limits: "對話不會被儲存。用量依刊登費率計入你送出的那把金鑰。",
+    limits: "這個對話端點只回傳回覆，不會執行任務工具或儲存對話。用量依刊登費率計入你送出的那把金鑰。",
   },
 };
 
@@ -254,6 +262,8 @@ export function AgentAccount({
 
   const origin = typeof window === "undefined" ? "https://powerchampion.ai" : window.location.origin;
   const endpointFor = selected ?? token?.agentId ?? null;
+  const selectedAgent = state.kind === "ready" ? state.agents.find((agent) => agent.id === selected) : null;
+  const builderReturn = encodeURIComponent(`/agents/build?template=${draft.templateId}`);
 
   return (
     <section className="agent-account" aria-labelledby="agent-account-title">
@@ -265,7 +275,7 @@ export function AgentAccount({
       {state.kind === "signedOut" && (
         <p className="agent-account-note">
           {t.signedOut}{" "}
-          <a href="/login">{t.signIn}</a> · <a href="/register">{t.register}</a>
+          <a href={`/login?next=${builderReturn}`}>{t.signIn}</a> · <a href={`/register?next=${builderReturn}`}>{t.register}</a>
         </p>
       )}
 
@@ -291,6 +301,9 @@ export function AgentAccount({
                     <span>{t.versionLabel} {agent.version} · {agent.tokenPrefix}…</span>
                   </div>
                   <div className="agent-account-row-actions">
+                    <a className="agent-account-run" href={`/tasks?agent=${encodeURIComponent(agent.id)}`} aria-label={`${t.runTask} — ${agent.name}`}>
+                      {t.runTask}<span aria-hidden="true">↗</span>
+                    </a>
                     <button type="button" onClick={() => open(agent.id)} disabled={busy}>{t.load}</button>
                     <button type="button" onClick={() => rotate(agent.id)} disabled={busy}>{t.rotate}</button>
                     <button type="button" onClick={() => remove(agent.id)} disabled={busy}>
@@ -300,6 +313,17 @@ export function AgentAccount({
                 </li>
               ))}
             </ul>
+          )}
+
+          {selectedAgent && (
+            <section className="agent-account-task" aria-labelledby="agent-account-task-title">
+              <h4 id="agent-account-task-title">{t.taskTitle}</h4>
+              <p className="agent-account-task-version">{selectedAgent.name} · {t.versionLabel} {selectedAgent.version}</p>
+              <p>{t.taskLead}</p>
+              <a className="agent-account-run" href={`/tasks?agent=${encodeURIComponent(selectedAgent.id)}`}>
+                {t.taskCta}<span aria-hidden="true">↗</span>
+              </a>
+            </section>
           )}
 
           {token && (

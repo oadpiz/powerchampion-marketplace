@@ -23,6 +23,13 @@ const COPY = {
     lead: "Start with a focused assistant. Shape its instructions, try a conversation, and build toward an agent that fits your company's workflow.",
     primary: "Find an assistant",
     secondary: "Build with our team",
+    tasksLink: "Agent tasks",
+    tasksEyebrow: "AGENT TASKS",
+    tasksTitle: "From a prompt to a deliverable.",
+    tasksLead: "Choose a saved agent, set a goal and execution limits, then review progress, approvals and files in the task console. The console shows whether task execution is enabled.",
+    tasksCta: "Open task console",
+    tasksBuild: "Create an agent",
+    tasksSteps: ["Define the work", "Review each step", "Collect the result"],
     illustration: "From a task to a useful response",
     task: "Your task",
     instructions: "Clear instructions",
@@ -72,7 +79,7 @@ const COPY = {
     ],
     capabilityEndpoint: "Each saved agent answers on its own endpoint:",
     capabilityLimits:
-      "An assistant configured here has no browsing, no database access and no ability to act in other systems. Connecting those is an integration project — the service below.",
+      "This chat endpoint returns a response without running tools. For tool-backed work, open Agent tasks. Connections to company databases and external business systems require a separate integration.",
     capabilityCta: "Build an assistant",
     roadmapEyebrow: "WHAT WE ARE BUILDING",
     roadmapTitle: "Where this is going.",
@@ -96,9 +103,9 @@ const COPY = {
         body: "Upload your material, and answers cite the passage they came from. Chunking, embedding and reranking all run on our own bge-m3 and bge-reranker models — no third-party retrieval service in the path.",
       },
       {
-        state: "planned" as const,
-        title: "Tool use with human approval",
-        body: "Let an assistant look things up in your systems and prepare an action, with every consequential step held for a person to approve, and a full trace of what it did.",
+        state: "building" as const,
+        title: "Task execution with tools and human approval",
+        body: "The task console brings together built-in tools, approvals, progress and deliverables. Execution depends on the deployment's runtime configuration; check availability in the console. External business-system connectors are scoped separately.",
       },
       {
         state: "planned" as const,
@@ -188,6 +195,13 @@ const COPY = {
     lead: "從有明確任務的助手開始。調整指示、實際對話，再逐步打造符合公司流程的 AI 代理。",
     primary: "探索 AI 助手",
     secondary: "與我們打造專屬代理",
+    tasksLink: "Agent 任務",
+    tasksEyebrow: "AGENT 任務",
+    tasksTitle: "從一句需求，到一份成果。",
+    tasksLead: "選擇已儲存的智能體、設定目標與執行上限，再到任務控制台追蹤進度、審核操作及取得檔案。是否開放任務執行，以控制台顯示為準。",
+    tasksCta: "開啟任務控制台",
+    tasksBuild: "建立智能體",
+    tasksSteps: ["定義工作", "逐步審閱", "取得成果"],
     illustration: "從任務到可使用的回應",
     task: "你的任務",
     instructions: "清楚的指示",
@@ -237,7 +251,7 @@ const COPY = {
     ],
     capabilityEndpoint: "每個儲存的智能體都有自己的端點：",
     capabilityLimits:
-      "在這裡設定的助手不會上網、不會連到你的資料庫，也不能在其他系統裡執行動作。要串接那些是一個整合專案，也就是下面這項服務。",
+      "對話端點只回傳回應，不會執行工具。需要工具協助的工作，請開啟 Agent 任務；公司資料庫與外部業務系統仍需另外規劃串接。",
     capabilityCta: "開始建置助手",
     roadmapEyebrow: "我們正在做什麼",
     roadmapTitle: "接下來會長成什麼樣子。",
@@ -261,9 +275,9 @@ const COPY = {
         body: "上傳資料後，回答會標示引用的段落。切塊、向量與重排全部使用我們自有的 bge-m3 與 bge-reranker，鏈路上沒有第三方檢索服務。",
       },
       {
-        state: "planned" as const,
-        title: "工具呼叫與人工覆核",
-        body: "讓助手查詢你的系統並備妥動作，每一個有後果的步驟都停下來等人核可，並留下完整軌跡。",
+        state: "building" as const,
+        title: "具備工具與人工覆核的任務執行",
+        body: "任務控制台整合內建工具、操作審核、執行進度與成果。是否可執行取決於部署環境的設定，請在控制台查看；外部業務系統的連接另行規劃。",
       },
       {
         state: "planned" as const,
@@ -428,6 +442,10 @@ export function AgentsGallery() {
               {copy.secondary}
               <Arrow />
             </a>
+            <a className="agents-text-link" href="/tasks">
+              {copy.tasksLink}
+              <Arrow />
+            </a>
           </div>
         </div>
         <div className="agents-flow" role="img" aria-label={copy.illustration}>
@@ -451,6 +469,20 @@ export function AgentsGallery() {
             {copy.response}
           </div>
         </div>
+      </section>
+      <section className="agents-task-entry" aria-labelledby="agents-task-title">
+        <div>
+          <p className="agents-eyebrow">{copy.tasksEyebrow}</p>
+          <h2 id="agents-task-title">{copy.tasksTitle}</h2>
+          <p className="agents-task-lead">{copy.tasksLead}</p>
+          <div className="agents-actions">
+            <a className="agents-button" href="/tasks">{copy.tasksCta}<Arrow /></a>
+            <a className="agents-text-link" href="/agents/build">{copy.tasksBuild}<Arrow /></a>
+          </div>
+        </div>
+        <ol className="agents-task-steps">
+          {copy.tasksSteps.map((step, index) => <li key={step}><span aria-hidden="true">0{index + 1}</span>{step}</li>)}
+        </ol>
       </section>
       <AgentShowcase language={locale === "zh" ? "zh-Hant" : "en"} />
       <section

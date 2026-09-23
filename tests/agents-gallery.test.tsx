@@ -22,6 +22,16 @@ function renderGallery() {
 }
 
 describe("AI assistant gallery", () => {
+  it("provides task execution discovery separately from chat without starting a request", () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    renderGallery();
+    const tasks = screen.getByRole("region", { name: "From a prompt to a deliverable." });
+    expect(within(tasks).getByRole("link", { name: "Open task console" })).toHaveAttribute("href", "/tasks");
+    expect(within(tasks).getByRole("link", { name: "Create an agent" })).toHaveAttribute("href", "/agents/build");
+    expect(tasks).toHaveTextContent(/shows whether task execution is enabled/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("connects each template to chat and the builder, with honest capability boundaries", () => {
     renderGallery();
     for (const template of AGENT_TEMPLATES) {
@@ -162,6 +172,7 @@ describe("AI assistant gallery", () => {
       "找到適合你工作方式的 AI 助手。",
     );
     expect(screen.getByRole("article", { name: "客服回覆助手" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "開啟任務控制台" })).toHaveAttribute("href", "/tasks");
     await user.type(
       screen.getByRole("textbox", { name: "你的姓名" }),
       "測試使用者",

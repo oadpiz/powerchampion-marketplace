@@ -96,7 +96,7 @@ export function portalErrorText(error: unknown, locale: "en" | "zh") {
 }
 
 export function safeAccountReturn(value: string | null): string {
-  return value && /^(?:\/account(?:\/(?:keys|usage|credits))?|\/tasks)$/.test(value)
+  return value && /^(?:\/account(?:\/(?:keys|usage|credits))?|\/tasks(?:\?agent=[a-f0-9]{32})?|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)
     ? value
     : "/account";
 }

@@ -223,7 +223,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
                 : zh
                   ? "第一次來？"
                   : "New to PowerChampion?"}{" "}
-              <Link href={register ? "/login" : "/register"}>
+              <Link href={`${register ? "/login" : "/register"}${returnPath === "/account" ? "" : `?next=${encodeURIComponent(returnPath)}`}`}>
                 {register
                   ? zh
                     ? "登入"

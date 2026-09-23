@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { motion } from "motion/react";
 import { useLocale } from "./locale-provider";
+import { useMotionAvailability } from "./promo-motion";
+import { TASK_STARTERS, taskEntry } from "../lib/task-starters";
 import { PortalError } from "../lib/portal-client";
 import {
   downloadTaskArtifact, isTaskTerminal, runtimeClient, runtimeErrorText,
@@ -43,6 +46,7 @@ function readTextFile(file: File): Promise<string> {
 export function TaskConsole() {
   const { locale } = useLocale();
   const zh = locale === "zh";
+  const canAnimate = useMotionAvailability();
   const text = (en: string, chinese: string) => zh ? chinese : en;
   const [phase, setPhase] = useState<"loading" | "ready" | "signedOut" | "error">("loading");
   const [revision, setRevision] = useState(0);
@@ -62,6 +66,9 @@ export function TaskConsole() {
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [agentId, setAgentId] = useState("");
+  const [missingAgent, setMissingAgent] = useState(false);
+  const [returnPath, setReturnPath] = useState("/tasks");
+  const [starterId, setStarterId] = useState<string | null>(null);
   const [maxSteps, setMaxSteps] = useState("12");
   const [maxOutputTokens, setMaxOutputTokens] = useState("1024");
   const [references, setReferences] = useState<TaskReference[]>([]);
@@ -74,6 +81,7 @@ export function TaskConsole() {
   const operation = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const busyRef = useRef(false);
+  const referenceEditor = useRef<HTMLDetailsElement | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -83,6 +91,7 @@ export function TaskConsole() {
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
+      const entry = taskEntry(window.location.search);
       try {
         const settings = await runtimeClient.config(controller.signal);
         const [listing, saved] = await Promise.allSettled([runtimeClient.list(controller.signal), runtimeClient.agents(controller.signal)]);
@@ -94,13 +103,19 @@ export function TaskConsole() {
         setMaxSteps(String(Math.min(12, settings.limits.maxSteps)));
         setMaxOutputTokens(String(Math.min(1024, settings.limits.maxOutputTokens)));
         setTasks(listing.value.tasks);
-        setAgents(saved.status === "fulfilled" ? saved.value.agents : []);
+        const savedAgents = saved.status === "fulfilled" ? saved.value.agents : [];
+        const linkedAgent = savedAgents.find((agent) => agent.id === entry.agent);
+        setAgents(savedAgents);
+        setAgentId(linkedAgent?.id ?? "");
+        setMissingAgent(entry.agent !== null && !linkedAgent);
+        setReturnPath(entry.returnPath);
         setAgentsUnavailable(saved.status === "rejected");
         setSelectedId(listing.value.tasks[0]?.id ?? null);
-        setCreating(listing.value.tasks.length === 0);
+        setCreating(entry.agent !== null || listing.value.tasks.length === 0);
         setPhase("ready");
       } catch (error) {
         if (controller.signal.aborted) return;
+        setReturnPath(entry.returnPath);
         setLoadError(error);
         setPhase(error instanceof PortalError && error.status === 401 ? "signedOut" : "error");
       }
@@ -173,7 +188,14 @@ export function TaskConsole() {
   const available = Boolean(config?.enabled && config.available && config.models.length);
   const valid = goal.trim().length > 0 && goal.trim().length <= 6000 && /^[\x21-\x7e]{8,512}$/.test(apiKey)
     && Boolean(config?.models.includes(model)) && Number.isInteger(Number(maxSteps)) && Number(maxSteps) >= 1 && Number(maxSteps) <= stepLimit
-    && Number.isInteger(Number(maxOutputTokens)) && Number(maxOutputTokens) >= 128 && Number(maxOutputTokens) <= outputLimit && !pendingReference;
+    && Number.isInteger(Number(maxOutputTokens)) && Number(maxOutputTokens) >= 128 && Number(maxOutputTokens) <= outputLimit && !pendingReference && !missingAgent;
+
+  const selectedAgent = agents.find((agent) => agent.id === agentId);
+  const starter = TASK_STARTERS.find((item) => item.id === starterId);
+  function applyStarter(item: typeof TASK_STARTERS[number]) {
+    setGoal(item[locale].goal); setStarterId(item.id);
+    if (referenceEditor.current) referenceEditor.current.open = true;
+  }
 
   function addReference() {
     if (!referenceName.trim() || !referenceText.trim() || referenceText.includes("\0") || references.length >= referenceLimit || referenceCharacters + referenceText.length > characterLimit) {
@@ -203,7 +225,7 @@ export function TaskConsole() {
       const response = await runtimeClient.create(body, signal);
       if (signal.aborted) return;
       updateTask(response.task); setSelectedId(response.task.id); setCreating(false);
-      setGoal(""); setReferences([]); setReferenceName(""); setReferenceText("");
+      setGoal(""); setStarterId(null); setReferences([]); setReferenceName(""); setReferenceText("");
     });
   }
   function control(action: TaskControl) {
@@ -244,11 +266,12 @@ export function TaskConsole() {
     <main id="main-content" className="tasks-console">
       <header className="tasks-header">
         <div>
-          <p className="tasks-eyebrow">{text("YOUR WORKSPACE / AGENT TASKS", "你的工作空間 / 智能體任務")}</p>
+          <p className="tasks-eyebrow">POWER CHAMPION / AGENTS</p>
           <h1>{text("Agent tasks", "智能體任務")}</h1>
           <p className="tasks-lead">{text("Set the outcome. Follow the work. Keep the deliverables.", "設定目標，掌握進度，保留每一份成果。")}</p>
         </div>
         <div className="tasks-header-actions">
+          <Link href="/agents/build">{text("Build an agent", "建立智能體")} ↗</Link>
           <Link href="/account">{text("Account", "帳號")} ↗</Link>
           {phase === "ready" && available && <button type="button" className="tasks-button" onClick={newTask} disabled={busy}>{text("New task", "新增任務")} <span aria-hidden="true">＋</span></button>}
         </div>
@@ -259,12 +282,17 @@ export function TaskConsole() {
         <span className="tasks-empty-symbol" aria-hidden="true">↗</span>
         <h2>{text("Your work, in one private workspace.", "讓工作成果，留在自己的空間。")}</h2>
         <p>{text("Sign in to start a task and return to its progress, approvals and files.", "登入後即可建立任務，隨時回來查看進度、核准要求與檔案。")}</p>
-        <Link className="tasks-button" href="/login?next=%2Ftasks">{text("Sign in", "登入")}</Link>
+        <div className="tasks-capability-strip">
+          <div><span>01</span><strong>{text("Bring your sources", "提供資料")}</strong><p>{text("Text, CSV and approved web pages.", "文字、CSV 與經核准的網頁。")}</p></div>
+          <div><span>02</span><strong>{text("Guide the work", "掌握執行")}</strong><p>{text("Follow progress. Pause or add direction.", "查看進度、暫停與補充方向。")}</p></div>
+          <div><span>03</span><strong>{text("Keep the result", "取得成果")}</strong><p>{text("Download reports and structured files.", "下載報告與結構化檔案。")}</p></div>
+        </div>
+        <div className="tasks-actions"><Link className="tasks-button" href={`/login?next=${encodeURIComponent(returnPath)}`}>{text("Sign in", "登入")}</Link><Link className="tasks-button-secondary" href={`/register?next=${encodeURIComponent(returnPath)}`}>{text("Create an account", "建立帳號")}</Link></div>
       </section>}
       {phase === "error" && <section className="tasks-panel tasks-empty"><h2>{text("We could not load your workspace.", "目前無法載入工作空間。")}</h2><p role="alert">{runtimeErrorText(loadError, locale)}</p><button type="button" className="tasks-button-secondary" onClick={() => { setPhase("loading"); setRevision((value) => value + 1); }}>{text("Try again", "再試一次")}</button></section>}
 
       {phase === "ready" && <>
-        {!available && <p className="tasks-note" role="status">{text("Task execution is not available. The service is disabled or still needs configuration. Saved task history remains available; contact support to enable execution.", "任務執行目前無法使用。服務尚未啟用或設定尚未完成。仍可查看已儲存的紀錄，請聯繫支援啟用執行服務。")}</p>}
+        {!available && <p className="tasks-note" role="status">{text("Task execution is not available. Saved history remains accessible. You can build an agent now or contact us for access.", "任務執行目前無法使用，仍可查看已儲存的紀錄。你可以先建立智能體，或聯繫我們開通服務。")} <Link href="/contact">{text("Contact us", "聯繫我們")} ↗</Link></p>}
         {pollError && <p className="tasks-error" role="status">{text("Live updates are temporarily unavailable. Showing the last saved view; reconnecting automatically. This does not confirm the task has stopped.", "暫時無法取得即時更新，目前顯示上次取得的紀錄，正在自動重新連線。這不代表任務已停止。")}</p>}
         <div className="tasks-workspace">
           <aside className="tasks-sidebar" aria-label={text("Task history", "任務紀錄")}>
@@ -284,12 +312,19 @@ export function TaskConsole() {
             {creating && available && <section className="tasks-panel">
               <div className="tasks-panel-heading"><div><p className="tasks-kicker">{text("A NEW OUTCOME", "開始新的成果")}</p><h2>{text("What are we working on?", "這次要完成什麼？")}</h2></div><span className="tasks-empty-symbol" aria-hidden="true">✦</span></div>
               <p className="tasks-hint">{text("Give the agent a clear goal and source material. It can read references, analyze CSV data, read approved web pages and create files.", "提供明確的目標與參考資料。智能體可以閱讀資料、分析 CSV、讀取你核准的網頁，並製作檔案。")}</p>
+              <div className="tasks-starters" role="group" aria-label={text("Task starting points", "任務起點")}>
+                {TASK_STARTERS.map((item) => <motion.button key={item.id} type="button" className="tasks-starter" disabled={busy} aria-pressed={starterId === item.id} onClick={() => applyStarter(item)} whileHover={canAnimate ? { y: -3 } : { y: 0 }} whileTap={canAnimate ? { scale: 0.985 } : { scale: 1 }} transition={{ duration: canAnimate ? 0.18 : 0 }}>
+                  <span className="tasks-starter-top" aria-hidden="true"><span>{item.mark}</span><span>↗</span></span><strong>{item[locale].title}</strong><span>{item[locale].detail}</span><small>{item.format}</small>
+                </motion.button>)}
+              </div>
               <form className="tasks-form" onSubmit={createTask}>
                 <label className="tasks-field">{text("What should the agent accomplish?", "希望智能體完成什麼？")}<textarea value={goal} onChange={(event) => setGoal(event.target.value)} required maxLength={6000} rows={5} disabled={busy} placeholder={text("Compare the attached supplier proposals, identify trade-offs and create a decision brief as a Word document.", "比較供應商提案、整理各方案的取捨，並製作 Word 決策報告。")} /></label>
                 <div className="tasks-form-grid">
                   <label className="tasks-field">{text("Model", "模型")}<select value={model} onChange={(event) => setModel(event.target.value)} disabled={busy}>{config?.models.map((id) => <option key={id} value={id}>{id}</option>)}</select></label>
-                  <label className="tasks-field">{text("Saved agent (optional)", "已儲存的智能體（選填）")}<select value={agentId} onChange={(event) => setAgentId(event.target.value)} disabled={busy || agentsUnavailable}><option value="">{text("General task agent", "通用任務智能體")}</option>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.name} · v{agent.version}</option>)}</select></label>
+                  <label className="tasks-field">{text("Saved agent (optional)", "已儲存的智能體（選填）")}<select value={missingAgent ? "missing" : agentId} onChange={(event) => { setAgentId(event.target.value); setMissingAgent(false); }} disabled={busy}>{missingAgent && <option value="missing" disabled>{text("Choose an available agent", "請選擇可用的智能體")}</option>}<option value="">{text("General task agent", "通用任務智能體")}</option>{agents.map((agent) => <option value={agent.id} key={agent.id}>{agent.name} · v{agent.version}</option>)}</select></label>
                 </div>
+                {missingAgent && <p className="tasks-error" role="alert">{text("The linked agent is not available in this account. Choose an available agent or explicitly select the general task agent.", "此帳號無法取得連結中的智能體。請選擇可用的智能體，或自行改用通用任務智能體。")}</p>}
+                {selectedAgent && <p className="tasks-agent-context"><span aria-hidden="true">◈</span><span><strong>{selectedAgent.name} · v{selectedAgent.version}</strong><br />{text("Its saved instructions and reference knowledge will guide this task. The version is captured when you start; future edits do not change a running task.", "此任務會沿用已儲存的指令與參考知識。開始時會保留當下版本，之後的編輯不會改變執行中的任務。")}</span></p>}
                 {agentsUnavailable && <p className="tasks-hint">{text("Saved agents could not be loaded. You can still use the general task agent.", "無法載入已儲存的智能體，仍可使用通用任務智能體。")}</p>}
                 <label className="tasks-field">{text("Your API key", "你的 API 金鑰")}<input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} minLength={8} maxLength={512} autoComplete="off" autoCapitalize="none" spellCheck={false} required disabled={busy} aria-describedby="task-key-note" /></label>
                 <p className="tasks-hint" id="task-key-note">{text("Starting a task uses this key’s model credits. The key is encrypted for this task, cleared when it ends, and never saved in your browser.", "開始任務會使用這把金鑰的模型額度。金鑰會加密供此任務使用，任務結束即清除，不會儲存在瀏覽器。")}</p>
@@ -298,9 +333,10 @@ export function TaskConsole() {
                   <label className="tasks-field">{text("Output tokens per step", "每步輸出 Token 上限")}<input type="number" min={128} max={outputLimit} step={1} value={maxOutputTokens} onChange={(event) => setMaxOutputTokens(event.target.value)} disabled={busy} required /></label>
                 </div>
                 <p className="tasks-hint">{text("These limits bound model calls and each reply; they are not a fixed price. Input tokens also consume credits.", "上述限制控制模型呼叫次數與每次回覆長度，不代表固定費用；輸入 Token 也會消耗額度。")}</p>
-                <details className="tasks-reference-editor">
+                <details className="tasks-reference-editor" ref={referenceEditor}>
                   <summary>{text("References (optional)", "參考資料（選填）")}<span className="tasks-reference-count">{references.length}/{referenceLimit}</span></summary>
                   <div className="tasks-reference-fields">
+                    {starter && <p className="tasks-note">{starter[locale].source}</p>}
                     <label className="tasks-field">{text("Reference name", "資料名稱")}<input value={referenceName} maxLength={160} onChange={(event) => setReferenceName(event.target.value)} disabled={busy || uploading} placeholder={text("Project brief or sales.csv", "專案需求或 sales.csv")} /></label>
                     <label className="tasks-field">{text("Reference text", "資料內容")}<textarea value={referenceText} maxLength={characterLimit} rows={4} onChange={(event) => setReferenceText(event.target.value)} disabled={busy || uploading} /></label>
                     <div className="tasks-actions"><button type="button" className="tasks-button-secondary" onClick={addReference} disabled={busy || uploading || !referenceName.trim() || !referenceText.trim() || references.length >= referenceLimit}>{text("Add reference", "加入資料")}</button><label className="tasks-upload">{text("Choose text files", "選擇文字檔案")}<input type="file" accept=".txt,.csv,.md,text/plain,text/csv,text/markdown" multiple disabled={busy || uploading || references.length >= referenceLimit} onChange={(event) => { void uploadFiles(event.target.files); event.target.value = ""; }} /></label></div>

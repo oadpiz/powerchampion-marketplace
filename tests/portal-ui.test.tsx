@@ -57,10 +57,22 @@ describe("account portal", () => {
     expect(safeAccountReturn("//bad.example")).toBe("/account");
     expect(safeAccountReturn("/account/keys")).toBe("/account/keys");
     expect(safeAccountReturn("/tasks")).toBe("/tasks");
+    expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}`)).toBe(`/tasks?agent=${"d".repeat(32)}`);
+    expect(safeAccountReturn("/agents/build")).toBe("/agents/build");
+    expect(safeAccountReturn("/agents/build?template=research")).toBe("/agents/build?template=research");
+    expect(safeAccountReturn("/agents/build?template=unknown")).toBe("/account");
+    expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}&next=https://bad.example`)).toBe("/account");
     expect(safeAccountReturn("/tasks//evil.example")).toBe("/account");
     expect(safeAccountReturn("/tasks?next=https://evil.example")).toBe("/account");
     expect(safeAccountReturn("/admin")).toBe("/account");
     expect(portalErrorText(new PortalError(503, "usage_pricing_incomplete", "Internal details"), "en")).toContain("Pricing data is incomplete");
+  });
+
+  it("preserves the saved-agent destination when switching from login to registration", async () => {
+    const destination = `/tasks?agent=${"d".repeat(32)}`;
+    window.history.replaceState({}, "", `/login?next=${encodeURIComponent(destination)}`);
+    wrap(<AuthForm mode="login" />);
+    expect(await screen.findByRole("link", { name: "Create account" })).toHaveAttribute("href", `/register?next=${encodeURIComponent(destination)}`);
   });
 
   it("shows a sign-in requirement without fake account statistics", async () => {

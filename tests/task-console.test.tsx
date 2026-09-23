@@ -59,6 +59,52 @@ beforeEach(() => window.history.replaceState({}, "", "/tasks"));
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("persistent task console", () => {
+  it("opens a saved agent from the builder without starting a task or discarding history", async () => {
+    const id = "d".repeat(32);
+    window.history.replaceState({}, "", `/tasks?agent=${id}`);
+    const fetcher = api([task()]);
+    mount();
+    expect(await screen.findByLabelText("Saved agent (optional)")).toHaveValue(id);
+    expect(screen.getByLabelText("What should the agent accomplish?")).toHaveValue("");
+    expect(screen.getByText("Analyze the monthly sales")).toBeVisible();
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("keeps the agent selection through the sign-in entry point", async () => {
+    const destination = `/tasks?agent=${"d".repeat(32)}`;
+    window.history.replaceState({}, "", destination);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "auth_required" }, { status: 401 })));
+    mount();
+    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", `/login?next=${encodeURIComponent(destination)}`);
+    expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", `/register?next=${encodeURIComponent(destination)}`);
+  });
+
+  it("requires an explicit choice when the linked agent is no longer in the account", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", `/tasks?agent=${"f".repeat(32)}`);
+    api();
+    mount();
+    expect(await screen.findByText(/The linked agent is not available in this account/)).toBeVisible();
+    await user.type(screen.getByLabelText("What should the agent accomplish?"), "Create a brief");
+    await user.type(screen.getByLabelText("Your API key"), "sk-user-key-123");
+    expect(screen.getByRole("button", { name: "Start task" })).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText("Saved agent (optional)"), "");
+    expect(screen.getByRole("button", { name: "Start task" })).toBeEnabled();
+  });
+
+  it("fills a task starter without submitting, inventing references or changing execution settings", async () => {
+    const user = userEvent.setup();
+    const fetcher = api();
+    mount();
+    await user.click(await screen.findByRole("button", { name: /Analyze a CSV/ }));
+    expect((screen.getByLabelText("What should the agent accomplish?") as HTMLTextAreaElement).value).toContain("CSV");
+    expect(screen.getByLabelText("Your API key")).toHaveValue("");
+    expect(screen.getByLabelText("Maximum model steps")).toHaveValue(12);
+    expect(screen.getByLabelText("Reference text")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Start task" })).toBeDisabled();
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
   it("requires sign-in and offers a return to tasks without starting work", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ error: "auth_required" }, { status: 401 }));
     vi.stubGlobal("fetch", fetcher);

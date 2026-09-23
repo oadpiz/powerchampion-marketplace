@@ -701,3 +701,51 @@
   font-size: 0.78rem;
   opacity: 0.85;
 }
+.agent-account-run {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 38px;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--focus, #c8ab7a);
+  border-radius: 999px;
+  background: rgba(200, 171, 122, 0.1);
+  color: var(--ink, #f2eee6);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-decoration: none;
+}
+.agent-account-run:hover {
+  background: rgba(200, 171, 122, 0.2);
+}
+.agent-account-run:focus-visible {
+  outline: 2px solid var(--focus, #c8ab7a);
+  outline-offset: 3px;
+}
+.agent-account-task {
+  display: grid;
+  justify-items: start;
+  gap: 0.65rem;
+  padding: 1.1rem;
+  border: 1px solid rgba(200, 171, 122, 0.35);
+  border-radius: 0.6rem;
+  background: linear-gradient(120deg, rgba(200, 171, 122, 0.08), transparent);
+}
+.agent-account-task h4,
+.agent-account-task p {
+  margin: 0;
+}
+.agent-account-task h4 {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.agent-account-task p {
+  color: var(--muted, #aaa69e);
+  font-size: 0.78rem;
+  line-height: 1.7;
+}
+.agent-account-task .agent-account-task-version {
+  color: var(--focus, #c8ab7a);
+  overflow-wrap: anywhere;
+}

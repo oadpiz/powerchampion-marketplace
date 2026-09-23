@@ -151,6 +151,50 @@
   font-size: 20px;
   margin-left: 12px;
 }
+.agents-task-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.7fr);
+  align-items: center;
+  gap: 64px;
+  padding: 36px;
+  margin-block: 36px;
+  border: 1px solid var(--line);
+  background: linear-gradient(115deg, rgba(194, 170, 125, 0.06), transparent 70%);
+}
+.agents-task-entry .agents-eyebrow {
+  margin-bottom: 15px;
+}
+.agents-task-entry h2 {
+  font-size: clamp(1.7rem, 2.5vw, 2.5rem);
+}
+.agents-task-entry .agents-task-lead {
+  margin-top: 18px;
+  font-size: 13px;
+  max-width: 620px;
+}
+.agents-task-steps {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agents-task-steps li {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-block: 18px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+}
+.agents-task-steps li:first-child {
+  border-top: 1px solid var(--line);
+}
+.agents-task-steps span {
+  color: var(--focus);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+}
 .agents-gallery-section {
   padding-block: 65px;
   border-bottom: 1px solid var(--line);
@@ -533,6 +577,11 @@
   }
 }
 @media (max-width: 800px) {
+  .agents-task-entry {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+    padding: 26px;
+  }
   .agents-hero {
     grid-template-columns: 1fr;
     gap: 40px;
@@ -584,6 +633,10 @@
   }
 }
 @media (max-width: 550px) {
+  .agents-task-entry {
+    padding: 22px;
+    margin-block: 24px;
+  }
   .agents-page {
     width: calc(100% - 36px);
     padding-bottom: 60px;

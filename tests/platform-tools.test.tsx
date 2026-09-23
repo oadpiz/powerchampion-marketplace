@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModelComparison } from "../components/model-comparison";
 import { IntegrationBuilder } from "../components/integration-builder";
 import { PlatformOverview } from "../components/platform-overview";
@@ -9,9 +9,19 @@ import { MODEL_CATALOG } from "../lib/models";
 import { estimateModelCost } from "../lib/model-comparison";
 import { buildIntegrationExample } from "../lib/integration-examples";
 
-afterEach(() => window.history.replaceState({}, "", "/"));
+afterEach(() => { vi.restoreAllMocks(); window.history.replaceState({}, "", "/"); });
 
 describe("working model platform", () => {
+  it("connects configuration and task execution without assuming runtime availability", () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    render(<LocaleProvider><PlatformOverview gateway={null} /></LocaleProvider>);
+    expect(screen.getByRole("link", { name: /Build your agent/ })).toHaveAttribute("href", "/agents/build");
+    const tasks = screen.getByRole("link", { name: /Run an Agent task/ });
+    expect(tasks).toHaveAttribute("href", "/tasks");
+    expect(tasks).toHaveTextContent(/Availability is shown in the task console/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("compares token and audio workloads using their actual units", async () => {
     const user = userEvent.setup();
     render(<LocaleProvider><ModelComparison /></LocaleProvider>);
