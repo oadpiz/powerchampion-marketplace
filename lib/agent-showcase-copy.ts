@@ -42,7 +42,7 @@ export const agentShowcaseCopy: Record<HomeLanguage, ShowcaseCopy> = {
     scenariosLabel: "Explore an agent use case", stagesLabel: "Explore the workflow", stageNames: ["Brief", "Sources", "Review", "Deliver"],
     example: "Capability walkthrough", briefLabel: "The brief", sourcesLabel: "Reference material", documentLabel: "Sample deliverable", reviewLabel: "Human review", reviewNote: "You decide what moves forward.", draft: "Illustrative draft", pause: "Pause walkthrough", play: "Play walkthrough", static: "Manual exploration",
     footnote: "Illustrative examples. Tools, connected sources, and delivery are configured for each project.",
-    build: "Design your agent", contact: "Discuss a project", tasks: "Open Tasks", taskNote: "A configured runtime connection is required to run tasks.",
+    build: "Design your agent", contact: "Discuss a project", tasks: "Open Tasks", taskNote: "Sign in and use your own model API key. Check task availability in Tasks.",
     scenarios: [
       {
         label: "Research", title: "A clearer path to a decision.", brief: "Compare a model API shortlist for our next product.", sources: ["Product criteria", "Model documentation", "Pricing notes"], document: "Model selection brief",
@@ -64,7 +64,7 @@ export const agentShowcaseCopy: Record<HomeLanguage, ShowcaseCopy> = {
   "zh-Hant": {
     eyebrow: "讓智能體，圍繞真正的工作", title: ["從你的想法，", "走向具體成果。"], lead: "給工作明確的方向，帶入合適的資訊，讓成果值得進一步審閱。",
     scenariosLabel: "探索智能體應用情境", stagesLabel: "探索工作流程", stageNames: ["需求", "資料", "審核", "交付"], example: "流程示意", briefLabel: "任務需求", sourcesLabel: "參考資料", documentLabel: "交付內容示例", reviewLabel: "人工審核", reviewNote: "由你決定，什麼可以往下走。", draft: "示意草稿", pause: "暫停流程示意", play: "播放流程示意", static: "手動探索",
-    footnote: "本區為能力與流程示意。工具、資料來源串接及交付方式，皆依專案設定。", build: "設計你的智能體", contact: "討論專案需求", tasks: "開啟任務工作台", taskNote: "執行任務前，需完成執行環境連線設定。",
+    footnote: "本區為能力與流程示意。工具、資料來源串接及交付方式，皆依專案設定。", build: "設計你的智能體", contact: "討論專案需求", tasks: "開啟任務工作台", taskNote: "登入後使用自己的模型 API 金鑰，任務開放狀態請見任務頁面。",
     scenarios: [
       { label: "研究分析", title: "讓決策，有更清楚的依據。", brief: "比較下一個產品適合採用的模型 API。", sources: ["產品需求", "模型文件", "費率筆記"], document: "模型選型簡報",
         sections: [["需求", "支援文字與圖像輸入，採用熟悉的 API。"], ["取捨", "比較模型能力、用量及資料處理方式。"], ["下一步", "用自己的實際案例驗證候選模型。"]],
@@ -80,7 +80,7 @@ export const agentShowcaseCopy: Record<HomeLanguage, ShowcaseCopy> = {
   "zh-Hans": {
     eyebrow: "让智能体，围绕真正的工作", title: ["从你的想法，", "走向具体成果。"], lead: "给工作明确的方向，带入合适的信息，让成果值得进一步审阅。",
     scenariosLabel: "探索智能体应用场景", stagesLabel: "探索工作流程", stageNames: ["需求", "资料", "审核", "交付"], example: "流程示意", briefLabel: "任务需求", sourcesLabel: "参考资料", documentLabel: "交付内容示例", reviewLabel: "人工审核", reviewNote: "由你决定，什么可以继续推进。", draft: "示意草稿", pause: "暂停流程示意", play: "播放流程示意", static: "手动探索",
-    footnote: "本区域为能力与流程示意。工具、数据来源集成及交付方式，均按项目配置。", build: "设计你的智能体", contact: "讨论项目需求", tasks: "打开任务工作台", taskNote: "执行任务前，需要完成运行环境连接配置。",
+    footnote: "本区域为能力与流程示意。工具、数据来源集成及交付方式，均按项目配置。", build: "设计你的智能体", contact: "讨论项目需求", tasks: "打开任务工作台", taskNote: "登录后使用自己的模型 API 密钥，任务开放状态请见任务页面。",
     scenarios: [
       { label: "研究分析", title: "让决策，有更清晰的依据。", brief: "比较下一个产品适合采用的模型 API。", sources: ["产品需求", "模型文档", "费率笔记"], document: "模型选型简报",
         sections: [["需求", "支持文字与图像输入，采用熟悉的 API。"], ["取舍", "比较模型能力、用量及数据处理方式。"], ["下一步", "用自己的实际案例验证候选模型。"]],
@@ -96,7 +96,7 @@ export const agentShowcaseCopy: Record<HomeLanguage, ShowcaseCopy> = {
   ja: {
     eyebrow: "仕事に、目的のあるエージェントを", title: ["アイデアから、", "具体的な成果へ。"], lead: "仕事の方向を定め、必要な情報を集め、検討に値する成果へと整える。",
     scenariosLabel: "活用シーンを選ぶ", stagesLabel: "ワークフローを探索", stageNames: ["要件", "資料", "確認", "成果物"], example: "機能と流れのイメージ", briefLabel: "タスクの要件", sourcesLabel: "参考資料", documentLabel: "成果物の例", reviewLabel: "人による確認", reviewNote: "次に進めるかは、あなたが決める。", draft: "サンプル草稿", pause: "デモを一時停止", play: "デモを再生", static: "手動で探索",
-    footnote: "内容は説明用の例です。ツール、情報源との接続、納品方法はプロジェクトごとに設定します。", build: "エージェントを設計", contact: "プロジェクトを相談", tasks: "タスク画面を開く", taskNote: "実行にはランタイムへの接続設定が必要です。",
+    footnote: "内容は説明用の例です。ツール、情報源との接続、納品方法はプロジェクトごとに設定します。", build: "エージェントを設計", contact: "プロジェクトを相談", tasks: "タスク画面を開く", taskNote: "ログインして、ご自身のモデル API キーを使用してください。利用状況はタスク画面で確認できます。",
     scenarios: [
       { label: "リサーチ", title: "判断の根拠を、より明確に。", brief: "次の製品に適したモデル API の候補を比較する。", sources: ["製品要件", "モデルの資料", "料金のメモ"], document: "モデル選定レポート",
         sections: [["要件", "テキストと画像入力、使い慣れた API。"], ["比較", "機能、利用量、データの扱いを検討。"], ["次のステップ", "実際の事例で候補モデルを検証する。"]],
@@ -112,7 +112,7 @@ export const agentShowcaseCopy: Record<HomeLanguage, ShowcaseCopy> = {
   ko: {
     eyebrow: "실제 업무를 위한 에이전트", title: ["의도에서 시작해,", "결과로 이어집니다."], lead: "업무의 방향을 정하고, 필요한 맥락을 모아, 검토할 가치가 있는 결과를 만드세요.",
     scenariosLabel: "에이전트 활용 사례 선택", stagesLabel: "워크플로 살펴보기", stageNames: ["요구사항", "자료", "검토", "산출물"], example: "기능과 흐름 예시", briefLabel: "작업 요구사항", sourcesLabel: "참고 자료", documentLabel: "산출물 예시", reviewLabel: "사람의 검토", reviewNote: "다음으로 진행할지는 직접 결정합니다.", draft: "예시 초안", pause: "데모 일시 정지", play: "데모 재생", static: "직접 살펴보기",
-    footnote: "설명을 위한 예시입니다. 도구, 자료 연결, 제공 방식은 프로젝트별로 구성합니다.", build: "에이전트 설계하기", contact: "프로젝트 상담", tasks: "작업 화면 열기", taskNote: "작업을 실행하려면 런타임 연결 설정이 필요합니다.",
+    footnote: "설명을 위한 예시입니다. 도구, 자료 연결, 제공 방식은 프로젝트별로 구성합니다.", build: "에이전트 설계하기", contact: "프로젝트 상담", tasks: "작업 화면 열기", taskNote: "로그인 후 자신의 모델 API 키를 사용하세요. 이용 가능 여부는 작업 화면에서 확인할 수 있습니다.",
     scenarios: [
       { label: "리서치", title: "결정의 근거를 더 명확하게.", brief: "다음 제품에 적합한 모델 API 후보를 비교합니다.", sources: ["제품 요구사항", "모델 문서", "요금 메모"], document: "모델 선정 보고서",
         sections: [["요구사항", "텍스트와 이미지 입력, 익숙한 API."], ["비교", "기능, 사용량, 데이터 처리 방식을 검토합니다."], ["다음 단계", "실제 사례로 후보 모델을 검증합니다."]],

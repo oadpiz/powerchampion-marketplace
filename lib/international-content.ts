@@ -99,6 +99,7 @@ export const INTERNATIONAL_CONTENT: Record<
 > = {
   "zh-Hant": {
     nav: {
+      "agent-platform": "智能體",
       "": "首頁",
       models: "模型目錄",
       pricing: "價格",
@@ -109,6 +110,7 @@ export const INTERNATIONAL_CONTENT: Record<
     languages: "網站語言",
     skip: "跳至主要內容",
     pages: {
+      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AI 智能體：從需求到可交付成果", description: "讓智能體分析資料、執行任務並交付實用檔案。追蹤進度、核准網頁讀取，也能為企業規劃專屬 Agent。" },
       "": {
         eyebrow: "模型 API · 專屬 GPU",
         title: "讓好模型，成為好產品。",
@@ -347,6 +349,7 @@ export const INTERNATIONAL_CONTENT: Record<
   },
   "zh-Hans": {
     nav: {
+      "agent-platform": "智能体",
       "": "首页",
       models: "模型目录",
       pricing: "价格",
@@ -357,6 +360,7 @@ export const INTERNATIONAL_CONTENT: Record<
     languages: "网站语言",
     skip: "跳至主要内容",
     pages: {
+      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AI 智能体：从需求到可交付成果", description: "让智能体分析资料、执行任务并交付实用文件。追踪进度、批准网页读取，也能为企业规划专属 Agent。" },
       "": {
         eyebrow: "模型 API · 专属 GPU",
         title: "让好模型，成为好产品。",
@@ -595,6 +599,7 @@ export const INTERNATIONAL_CONTENT: Record<
   },
   ja: {
     nav: {
+      "agent-platform": "エージェント",
       "": "ホーム",
       models: "モデル一覧",
       pricing: "料金",
@@ -605,6 +610,7 @@ export const INTERNATIONAL_CONTENT: Record<
     languages: "表示言語",
     skip: "本文へ移動",
     pages: {
+      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AIエージェント：依頼から成果物まで", description: "資料を分析し、タスクを進め、実用的なファイルを作成するAIエージェント。進捗の確認、Webページの読み取り承認、企業向けエージェントの構築に対応。" },
       "": {
         eyebrow: "モデル API · 専用 GPU",
         title: "優れたモデルを、使える製品へ。",
@@ -855,6 +861,7 @@ export const INTERNATIONAL_CONTENT: Record<
   },
   ko: {
     nav: {
+      "agent-platform": "에이전트",
       "": "홈",
       models: "모델 카탈로그",
       pricing: "요금",
@@ -865,6 +872,7 @@ export const INTERNATIONAL_CONTENT: Record<
     languages: "언어 선택",
     skip: "본문으로 이동",
     pages: {
+      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AI 에이전트: 요청에서 결과물까지", description: "자료를 분석하고 작업을 진행해 활용할 수 있는 파일을 만드는 AI 에이전트. 진행 상황 확인, 웹 읽기 승인, 기업 맞춤 에이전트 구축을 지원합니다." },
       "": {
         eyebrow: "모델 API · 전용 GPU",
         title: "좋은 모델을, 쓸모 있는 제품으로.",

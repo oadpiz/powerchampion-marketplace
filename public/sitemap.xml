@@ -2,6 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://powerchampion.ai/</loc></url>
   <url><loc>https://powerchampion.ai/agents</loc></url>
+  <url><loc>https://powerchampion.ai/agent-platform</loc></url>
   <url><loc>https://powerchampion.ai/platform</loc></url>
   <url><loc>https://powerchampion.ai/models</loc></url>
   <url><loc>https://powerchampion.ai/compare</loc></url>
@@ -30,19 +31,23 @@
   <url><loc>https://powerchampion.ai/zh-Hant/pricing</loc></url>
   <url><loc>https://powerchampion.ai/zh-Hant/infrastructure</loc></url>
   <url><loc>https://powerchampion.ai/zh-Hant/company</loc></url>
+  <url><loc>https://powerchampion.ai/zh-Hant/agent-platform</loc></url>
   <url><loc>https://powerchampion.ai/zh-Hans</loc></url>
   <url><loc>https://powerchampion.ai/zh-Hans/models</loc></url>
   <url><loc>https://powerchampion.ai/zh-Hans/pricing</loc></url>
   <url><loc>https://powerchampion.ai/zh-Hans/infrastructure</loc></url>
   <url><loc>https://powerchampion.ai/zh-Hans/company</loc></url>
+  <url><loc>https://powerchampion.ai/zh-Hans/agent-platform</loc></url>
   <url><loc>https://powerchampion.ai/ja</loc></url>
   <url><loc>https://powerchampion.ai/ja/models</loc></url>
   <url><loc>https://powerchampion.ai/ja/pricing</loc></url>
   <url><loc>https://powerchampion.ai/ja/infrastructure</loc></url>
   <url><loc>https://powerchampion.ai/ja/company</loc></url>
+  <url><loc>https://powerchampion.ai/ja/agent-platform</loc></url>
   <url><loc>https://powerchampion.ai/ko</loc></url>
   <url><loc>https://powerchampion.ai/ko/models</loc></url>
   <url><loc>https://powerchampion.ai/ko/pricing</loc></url>
   <url><loc>https://powerchampion.ai/ko/infrastructure</loc></url>
   <url><loc>https://powerchampion.ai/ko/company</loc></url>
+  <url><loc>https://powerchampion.ai/ko/agent-platform</loc></url>
 </urlset>

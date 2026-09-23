@@ -42,7 +42,7 @@ export function BrandCapabilities({ language }: { language: Language }) {
     if (next === null) return;
     event.preventDefault(); setSelected(next); list.current?.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
   }
-  const destination = selected === 1 ? "/agents#agent-services" : internationalPath(language, selected === 0 ? "models" : "infrastructure");
+  const destination = internationalPath(language, selected === 1 ? "agent-platform" : selected === 0 ? "models" : "infrastructure");
   return <section className="brand-capabilities pc-frame" aria-labelledby="brand-capabilities-title">
     <div className="brand-capabilities-intro"><p className="brand-eyebrow"><span className="brand-line" aria-hidden="true"/>{copy.eyebrow}</p><h2 id="brand-capabilities-title">{copy.title}<br/><em>{copy.accent}</em></h2><p>{copy.lead}</p></div>
     <div className="brand-capabilities-layout">

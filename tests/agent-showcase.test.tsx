@@ -31,7 +31,7 @@ describe("Agent capability walkthrough", () => {
     expect(screen.getByRole("link", { name: "Design your agent" })).toHaveAttribute("href", "/agents/build");
     expect(screen.getByRole("link", { name: "Discuss a project" })).toHaveAttribute("href", "/contact");
     expect(screen.getByRole("link", { name: "Open Tasks" })).toHaveAttribute("href", "/tasks");
-    expect(screen.getByText("A configured runtime connection is required to run tasks.")).toBeVisible();
+    expect(screen.getByText("Sign in and use your own model API key. Check task availability in Tasks.")).toBeVisible();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 

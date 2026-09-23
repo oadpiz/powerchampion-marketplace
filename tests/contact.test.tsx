@@ -66,10 +66,30 @@ describe("EnterpriseEnquiry", () => {
     await user.click(screen.getByRole("button", { name: "開啟 email 草稿" }));
     expect(screen.getByRole("alert")).toHaveTextContent("請先選擇主題。");
 
-    await user.selectOptions(screen.getByLabelText("我想洽詢"), "partnership");
+    expect(screen.getByRole("option", { name: "智能體客製開發" })).toHaveValue("agent-development");
+    await user.selectOptions(screen.getByLabelText("我想洽詢"), "agent-development");
     await user.click(screen.getByRole("button", { name: "開啟 email 草稿" }));
     expect(screen.getByRole("status")).toHaveTextContent("email 草稿正在開啟");
     expect(locationSpy).toHaveBeenCalledWith(expect.stringMatching(/^mailto:info@powerchampion\.org\?/));
+    expect(decodeURIComponent(locationSpy.mock.calls[0][0] as string)).toContain("智能體客製開發");
+  });
+
+  it("prepares a custom agent enquiry only when the visitor opens the email draft", async () => {
+    const user = userEvent.setup();
+    const locationSpy = captureEmailDraftNavigation();
+    render(<LocaleProvider><EnterpriseEnquiry /></LocaleProvider>);
+
+    expect(screen.getByRole("option", { name: "Custom agent development" })).toHaveValue("agent-development");
+    await user.selectOptions(screen.getByLabelText("I am interested in"), "agent-development");
+    await user.type(screen.getByLabelText(/Context/), "Help our team prepare research briefs.");
+    expect(locationSpy).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Open email draft" }));
+    expect(locationSpy).toHaveBeenCalledTimes(1);
+    const draft = new URL(locationSpy.mock.calls[0][0] as string);
+    expect(draft.protocol).toBe("mailto:");
+    expect(draft.pathname).toBe("info@powerchampion.org");
+    expect(draft.searchParams.get("body")).toBe("Custom agent development\n\nHelp our team prepare research briefs.");
   });
 
   it("offers an optional context field", () => {

@@ -3,7 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useLocale } from "./locale-provider";
 
-type Interest = "" | "launch-access" | "infrastructure" | "partnership";
+type Interest = "" | "launch-access" | "agent-development" | "infrastructure" | "partnership";
 
 type EnquiryState = {
   interest: Interest;
@@ -29,6 +29,7 @@ export function EnterpriseEnquiry() {
     interestLabel: "I am interested in",
     interestPlaceholder: "Choose a topic",
     launchAccess: "API access",
+    agentDevelopment: "Custom agent development",
     infrastructure: "Infrastructure planning",
     partnership: "Model partnership",
     messageLabel: "Context (optional)",
@@ -40,6 +41,7 @@ export function EnterpriseEnquiry() {
     interestLabel: "我想洽詢",
     interestPlaceholder: "選擇主題",
     launchAccess: "API 存取",
+    agentDevelopment: "智能體客製開發",
     infrastructure: "基礎設施規劃",
     partnership: "模型合作",
     messageLabel: "補充說明（選填）",
@@ -61,9 +63,12 @@ export function EnterpriseEnquiry() {
     setValidationError(false);
     setEnquiry((current) => ({ ...current, submitted: true }));
 
-    const interestCopy: Record<Exclude<Interest, "">, string> = locale === "en"
-      ? { "launch-access": text.launchAccess, "infrastructure": text.infrastructure, "partnership": text.partnership }
-      : { "launch-access": text.launchAccess, "infrastructure": text.infrastructure, "partnership": text.partnership };
+    const interestCopy: Record<Exclude<Interest, "">, string> = {
+      "launch-access": text.launchAccess,
+      "agent-development": text.agentDevelopment,
+      "infrastructure": text.infrastructure,
+      "partnership": text.partnership,
+    };
     const body = `${interestCopy[enquiry.interest]}\n\n${enquiry.message}`.trim();
     const href = `mailto:${ENQUIRY_EMAIL}?subject=${encodeURIComponent(text.mailtoSubject)}&body=${encodeURIComponent(body)}`;
     window.location.href = href;
@@ -103,6 +108,7 @@ export function EnterpriseEnquiry() {
         >
           <option value="">{text.interestPlaceholder}</option>
           <option value="launch-access">{text.launchAccess}</option>
+          <option value="agent-development">{text.agentDevelopment}</option>
           <option value="infrastructure">{text.infrastructure}</option>
           <option value="partnership">{text.partnership}</option>
         </select>

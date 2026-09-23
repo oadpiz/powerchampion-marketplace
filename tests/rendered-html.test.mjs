@@ -315,6 +315,32 @@ test("server-renders the full premium homepage and usable controls in all five l
   }
 });
 
+test("publishes a five-language Agent introduction with actual FAQs and reciprocal metadata", async () => {
+  for (const language of ["en", "zh-Hant", "zh-Hans", "ja", "ko"]) {
+    const path = `${language === "en" ? "" : `/${language}`}/agent-platform`;
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+    const html = await response.text();
+    assert.match(html, new RegExp(`<html lang="${language}"`), path);
+    assert.equal((html.match(/<h1[ >]/g) ?? []).length, 1, path);
+    assert.equal((html.match(/<main[ >]/g) ?? []).length, 1, path);
+    assert.match(html, /class="ap-page"/, path);
+    assert.match(html, /href="\/tasks"/, path);
+    assert.match(html, /href="\/agents\/build"/, path);
+    assert.match(html, /https:\/\/powerchampion.ai\/og-agents.png/, path);
+    assert.match(html, new RegExp(`<link rel="canonical" href="https://powerchampion.ai${path}"`), path);
+    const schemas = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>(.*?)<\/script>/gs)].flatMap((match) => JSON.parse(match[1]));
+    const faq = schemas.find((item) => item["@type"] === "FAQPage");
+    assert.ok(faq?.mainEntity.length >= 3, path);
+    assert.equal(faq.url, `https://powerchampion.ai${path}`);
+    for (const question of faq.mainEntity) assert.ok(html.includes(question.name.replaceAll("&", "&amp;").replaceAll("'", "&#x27;").replaceAll('"', "&quot;")), path);
+    for (const alternate of ["en", "zh-Hant", "zh-Hans", "ja", "ko", "x-default"]) {
+      const target = `${alternate === "en" || alternate === "x-default" ? "" : `/${alternate}`}/agent-platform`;
+      assert.match(html, new RegExp(`<link rel="alternate" href="${escaped(`https://powerchampion.ai${target}`)}" hreflang="${alternate}"`), path);
+    }
+  }
+});
+
 test("server-renders an accessible composer in the standalone chat tool", async () => {
   for (const path of ["/chat"]) {
     const response = await render(path);

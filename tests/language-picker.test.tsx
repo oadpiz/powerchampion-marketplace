@@ -17,6 +17,14 @@ const mount = (picker = <LanguagePicker />) =>
   );
 
 describe("LanguagePicker", () => {
+  it("keeps the Agent introduction when changing the public language", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/agent-platform");
+    mount();
+    await user.click(screen.getByRole("button", { name: "Language: English" }));
+    expect(screen.getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant/agent-platform");
+    expect(screen.getByRole("link", { name: "日本語" })).toHaveAttribute("href", "/ja/agent-platform");
+  });
   it("shows the current language text and all five dedicated homepage links", async () => {
     const user = userEvent.setup();
     mount();

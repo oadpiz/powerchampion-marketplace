@@ -22,6 +22,7 @@ type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy";
 
 const primaryDestinations: readonly [NavigationKey, string][] = [
   ["models", "/models"],
+  ["agents", "/agent-platform"],
   ["pricing", "/pricing"],
   ["infrastructure", "/infrastructure"],
   ["docs", "/docs"],
@@ -41,6 +42,7 @@ const footerDestinationGroups: readonly {
     label: "product",
     destinations: [
       ["models", "/models"],
+      ["agents", "/agent-platform"],
       ["pricing", "/pricing"],
       ["docs", "/docs"],
       ["console", "/console"],
@@ -219,6 +221,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
     "/pricing",
     "/infrastructure",
     "/company",
+    "/agent-platform",
   ].includes(pathname)
     ? (pathname.slice(1) as InternationalSection)
     : "";
@@ -229,6 +232,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
     "/pricing",
     "/infrastructure",
     "/company",
+    "/agent-platform",
   ].includes(pathname);
   const languages = <LanguagePicker />;
 

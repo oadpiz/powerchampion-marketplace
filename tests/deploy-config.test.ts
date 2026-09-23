@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const compose = readFileSync(`${process.cwd()}/docker-compose.dokploy.yml`, "utf8").replace(/^\s*#.*$/gm, "");
+const dockerIgnore = readFileSync(`${process.cwd()}/.dockerignore`, "utf8")
+  .split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
 
 /** Text of one top-level service, up to the next service or top-level key. */
 function service(name: string): string {
@@ -16,6 +18,23 @@ function service(name: string): string {
 describe("Dokploy deployment behind Traefik", () => {
   const website = service("powerchampion-marketplace");
   const portal = service("powerchampion-portal");
+
+  it.each([".env", ".env.*", ".dev.vars*", ".local", ".worktrees", "outputs", "work"])(
+    "excludes %s from the shared Docker build context before COPY . .",
+    (pattern) => {
+      expect(dockerIgnore).toContain(pattern);
+      expect(dockerIgnore).not.toContain(`!${pattern}`);
+    },
+  );
+
+  it("keeps website and portal source directories in the shared build context", () => {
+    for (const source of ["app", "components", "lib", "public", "server", "package.json", "package-lock.json"]) {
+      expect(dockerIgnore).not.toContain(source);
+      expect(dockerIgnore).not.toContain(`${source}/`);
+    }
+    expect(dockerIgnore).not.toContain("*");
+    expect(dockerIgnore).not.toContain("**");
+  });
 
   it("trusts the forwarded protocol so production requests resolve to https://powerchampion.ai", () => {
     expect(website).toMatch(/^\s+VINEXT_TRUST_PROXY:\s*"1"\s*$/m);

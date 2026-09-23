@@ -8,6 +8,7 @@ export type InternationalLanguage = (typeof INTERNATIONAL_LANGUAGES)[number];
 export const INTERNATIONAL_SECTIONS = [
   "",
   "models",
+  "agent-platform",
   "pricing",
   "infrastructure",
   "company",

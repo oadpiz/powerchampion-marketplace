@@ -9,6 +9,7 @@ export type RoutePath =
   | "/chat"
   | "/tasks"
   | "/agents"
+  | "/agent-platform"
   | "/agents/build"
   | "/solutions"
   | "/account"
@@ -38,6 +39,10 @@ const HOME_METADATA = {
 };
 
 export const ROUTE_METADATA = {
+  "/agent-platform": {
+    title: "AI Agents — From Brief to Deliverable | Power Champion",
+    description: "Build AI agents that analyze your sources, work through a task and deliver useful files. Review progress, approve web reads and plan a custom agent for your business.",
+  },
   "/tasks": {
     title: "Agent Tasks | Power Champion",
     description: "Run multi-step agent tasks, review progress, approve web reads, and download results from your account.",
@@ -123,6 +128,9 @@ export function metadataForPage(
 ): Metadata {
   const canonical = new URL(pathname === "/solutions" ? "/" : pathname, SITE_ORIGIN).href;
   const ogLocale = { en: "en_US", "zh-Hant": "zh_TW", "zh-Hans": "zh_CN", ja: "ja_JP", ko: "ko_KR" }[language];
+  const agentPage = pathname.endsWith("/agent-platform");
+  const image = agentPage ? `${SITE_ORIGIN}/og-agents.png` : SOCIAL_IMAGE;
+  const imageAlt = agentPage ? "Power Champion Agents — From brief to deliverable" : "Power Champion — model APIs and dedicated GPU infrastructure";
   return {
     title,
     description,
@@ -135,13 +143,13 @@ export function metadataForPage(
       description,
       url: canonical,
       locale: ogLocale,
-      images: [{ url: SOCIAL_IMAGE, width: 1200, height: 630, alt: "Power Champion — model APIs and dedicated GPU infrastructure" }],
+      images: [{ url: image, width: 1200, height: 630, alt: imageAlt }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [{ url: SOCIAL_IMAGE, alt: "Power Champion model platform" }],
+      images: [{ url: image, alt: imageAlt }],
     },
   };
 }

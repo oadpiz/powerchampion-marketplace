@@ -3,6 +3,14 @@
 .next
 .openai
 .wrangler
+# Deployment secrets and local account data must never enter COPY . . builds.
+.env
+.env.*
+.dev.vars*
+.local
+.worktrees
+outputs
+work
 dist
 node_modules
 tests

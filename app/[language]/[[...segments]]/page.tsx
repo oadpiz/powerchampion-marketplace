@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { InternationalSite } from "../../../components/international-site";
 import { JsonLd } from "../../../components/json-ld";
 import { HOME_COPY } from "../../../lib/home-copy";
+import { agentPlatformCopy } from "../../../lib/agent-platform-copy";
 import { faqPageJsonLd } from "../../../lib/structured-data";
 import { INTERNATIONAL_CONTENT } from "../../../lib/international-content";
 import {
@@ -49,6 +50,8 @@ export default async function InternationalPage({ params }: PageProps) {
   const route = await resolvePage(params);
   const faq = route.section === ""
     ? faqPageJsonLd(`/${route.language}`, HOME_COPY[route.language].faqs.map(([question, answer]) => ({ question, answer })))
+    : route.section === "agent-platform"
+      ? faqPageJsonLd(`/${route.language}/agent-platform`, agentPlatformCopy[route.language].faqs)
     : null;
   return (
     <>

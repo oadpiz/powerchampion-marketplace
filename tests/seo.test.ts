@@ -38,6 +38,14 @@ describe("Search visibility boundaries", () => {
 });
 
 describe("Localized search metadata", () => {
+  it("shares the Agent introduction with its own social image and five public translations", () => {
+    const metadata = metadataForRoute("/agent-platform");
+    expect(metadata.alternates?.canonical).toBe(`${SITE_ORIGIN}/agent-platform`);
+    expect(metadata.alternates?.languages).toEqual(languageAlternates("/agent-platform"));
+    expect(metadata.openGraph).toMatchObject({ images: [{ url: `${SITE_ORIGIN}/og-agents.png`, width: 1200, height: 630 }] });
+    expect(metadata.twitter).toMatchObject({ images: [{ url: `${SITE_ORIGIN}/og-agents.png` }] });
+    expect(readFileSync(`${process.cwd()}/public/og-agents.png`).subarray(0, 8)).toEqual(Buffer.from([137,80,78,71,13,10,26,10]));
+  });
   it("gives every complete translation reciprocal same-section alternates", () => {
     for (const section of LOCALIZED_SECTIONS) {
       const alternates = languageAlternates(section);
@@ -91,7 +99,7 @@ describe("Public sitemap", () => {
     const expected = publicSitemapPaths(MODEL_CATALOG.map((model) => model.id)).map((path) => new URL(path, SITE_ORIGIN).href);
     expect(urls).toEqual(expected);
     expect(new Set(urls).size).toBe(urls.length);
-    expect(urls).toHaveLength(45);
+    expect(urls).toHaveLength(50);
     expect(urls).not.toContain(`${SITE_ORIGIN}/solutions`);
     expect(urls).toContain(`${SITE_ORIGIN}/agents`);
     expect(urls).not.toContain(`${SITE_ORIGIN}/chat`);

@@ -66,6 +66,7 @@ describe("SiteShell", () => {
       .map((link) => [link.textContent, link.getAttribute("href")]);
     expect(englishPrimary).toEqual([
       ["Models", "/models"],
+      ["Agents", "/agent-platform"],
       ["Pricing", "/pricing"],
       ["GPU Cloud", "/infrastructure"],
       ["Developers", "/docs"],
@@ -98,6 +99,7 @@ describe("SiteShell", () => {
       .map((link) => [link.textContent, link.getAttribute("href")]);
     expect(chinesePrimary).toEqual([
       ["模型", "/models"],
+      ["智能體", "/agent-platform"],
       ["價格", "/pricing"],
       ["算力服務", "/infrastructure"],
       ["開發文件", "/docs"],

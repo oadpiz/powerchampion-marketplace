@@ -44,6 +44,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     "/pricing",
     "/infrastructure",
     "/company",
+    "/agent-platform",
   ].includes(pathname);
   // English is the first-visit default, including for Chinese browsers.
   // Restore an explicit saved choice after hydration to keep SSR consistent.

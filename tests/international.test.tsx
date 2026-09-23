@@ -53,11 +53,11 @@ describe("indexable international marketing", () => {
       "/models",
     ])
       expect(getInternationalRoute(path)).toBeNull();
-    expect(generateStaticParams()).toHaveLength(20);
+    expect(generateStaticParams()).toHaveLength(24);
   });
 
   for (const language of INTERNATIONAL_LANGUAGES) {
-    it(`renders all five ${language} pages with localized SSR content and full shared homepage`, () => {
+    it(`renders every ${language} page with localized SSR content and full shared homepage`, () => {
       const copy = INTERNATIONAL_CONTENT[language];
       const home = HOME_COPY[language];
       for (const section of INTERNATIONAL_SECTIONS) {
@@ -92,6 +92,10 @@ describe("indexable international marketing", () => {
           expect(doc.querySelector("main")?.textContent).not.toMatch(
             /THE MODEL COLLECTION|MADE FOR DEVELOPERS|Get API access/,
           );
+        } else if (section === "agent-platform") {
+          expect(doc.querySelector('a[href="/tasks"]')).toBeTruthy();
+          expect(doc.querySelector('a[href="/agents/build"]')).toBeTruthy();
+          expect(doc.querySelectorAll("details").length).toBeGreaterThan(2);
         } else {
           expect(doc.querySelector("h1")?.textContent).toBe(
             copy.pages[section].title,

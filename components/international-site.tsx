@@ -1,6 +1,7 @@
 /* Regional links load a new document so SSR language and locale metadata stay aligned. */
 import { INTERNATIONAL_CONTENT } from "../lib/international-content";
 import { HomeContent } from "./home-content";
+import { AgentPlatformContent } from "./agent-platform-content";
 import { LanguagePicker } from "./language-picker";
 import {
   INTERNATIONAL_SECTIONS,
@@ -394,7 +395,7 @@ export function InternationalSite({ language, section }: Props) {
     <div className="international-site" lang={language}>
       <a
         className="intl-skip"
-        href={section === "" ? "#main-content" : "#intl-main"}
+        href={section === "" || section === "agent-platform" ? "#main-content" : "#intl-main"}
       >
         {copy.skip}
       </a>
@@ -432,6 +433,8 @@ export function InternationalSite({ language, section }: Props) {
       </header>
       {section === "" ? (
         <HomeContent language={language} />
+      ) : section === "agent-platform" ? (
+        <AgentPlatformContent language={language} />
       ) : (
         <main id="intl-main" className="intl-frame" lang={language}>
           <section className="intl-hero" aria-labelledby="intl-title">

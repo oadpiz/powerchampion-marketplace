@@ -25,7 +25,7 @@ describe("interactive brand presentation", () => {
     await user.keyboard("{End}");
     expect(screen.getByRole("link", { name: "探索基礎設施" })).toHaveAttribute("href", "/zh-Hant/infrastructure");
     await user.keyboard("{ArrowUp}");
-    expect(screen.getByRole("link", { name: "了解智能體服務" })).toHaveAttribute("href", "/agents#agent-services");
+    expect(screen.getByRole("link", { name: "了解智能體服務" })).toHaveAttribute("href", "/zh-Hant/agent-platform");
     expect(screen.getByText("外部工具與企業系統的連接，需要另行確認專案範圍與實作。")).toBeVisible();
   });
 });
