@@ -504,6 +504,15 @@ test("server-renders the model platform tools and all model detail routes", asyn
     assert.match(html, new RegExp(`<h1[^>]*>${escaped(heading)}</h1>`), path);
     assert.equal((html.match(/<main[ >]/g) ?? []).length, 1, path);
     assert.match(html, /aria-label="Platform navigation"/);
+    if (path === "/playground") {
+      assert.match(html, /Extract structured data/);
+      assert.match(html, /Loads a prompt\. Nothing is sent\./);
+      assert.match(html, /<details class="playground-advanced">/);
+      assert.match(html, /id="playground-code-curl"[^>]*aria-selected="true"/);
+      assert.match(html, /id="playground-code-python"/);
+      assert.match(html, /id="playground-code-javascript"/);
+      assert.match(html, /Ready when you are/);
+    }
   }
   for (const id of ["glm-5.2-fp8", "qwen3-vl-30b", "flux-schnell", "chroma1-hd", "whisper-large-v3", "indextts2", "bge-m3", "bge-reranker-v2-m3"]) {
     const response = await render(`/models/${id}`);
