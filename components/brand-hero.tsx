@@ -1,6 +1,8 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { motion, stagger, useAnimate, useInView, useSpring } from "motion/react";
+import { usePromoMotion } from "./promo-motion";
 import type { InternationalLanguage } from "../lib/languages";
 
 type Language = InternationalLanguage | "en";
@@ -18,21 +20,95 @@ const models = [
   { id: "flux-schnell", name: "Flux Schnell", symbol: "✧", code: "FLUX" },
 ];
 
+const layerDepths = [
+  [-62, -21, 31, 81, 124],
+  [-66, -24, 32, 87, 137],
+  [-58, -12, 39, 90, 133],
+];
+const spring = { stiffness: 90, damping: 24, mass: 1.1 };
+const ease = [0.22, 1, 0.36, 1] as const;
+type AmbientPlayback = { play: () => void; pause: () => void };
+
 export function BrandHero({ language, motionPaused, onToggleMotion }: Props) {
   const copy = words[language];
   const [selected, setSelected] = useState(0);
+  const [scope, animate] = useAnimate<HTMLElement>();
   const scene = useRef<HTMLDivElement>(null);
   const controls = useRef<HTMLDivElement>(null);
+  const entered = useRef(false);
+  const previousModel = useRef(selected);
+  const ambient = useRef<AmbientPlayback[]>([]);
+  const heroInView = useInView(scope, { amount: 0.08 });
+  const sceneInView = useInView(scene, { amount: 0.15 });
+  const { canAnimate } = usePromoMotion();
+  const heroActive = canAnimate && !motionPaused && heroInView;
+  const sceneActive = canAnimate && !motionPaused && sceneInView;
+  const rotateX = useSpring(57, spring);
+  const rotateZ = useSpring(-34, spring);
   const model = models[selected];
+
+  // Everything is visible in server HTML. Enhance only after the hero is in view.
+  useEffect(() => {
+    if (!heroActive || entered.current) return;
+    entered.current = true;
+    const entrance = animate([
+      [".brand-hero-copy > *", { opacity: [0.65, 1], y: [18, 0] }, { duration: 0.85, delay: stagger(0.075), ease }],
+      [".brand-scene-reveal", { opacity: [0.6, 1], y: [20, 0], scale: [0.96, 1] }, { at: 0.12, duration: 1.25, ease }],
+      [".brand-model-controls, .brand-model-panel", { opacity: [0.65, 1], y: [9, 0] }, { at: 0.35, duration: 0.75, ease }],
+    ]);
+    // A pause during the introduction leaves every action fully readable.
+    return () => entrance.complete();
+  }, [animate, heroActive]);
+
+  useEffect(() => {
+    if (sceneActive && ambient.current.length === 0) {
+      ambient.current = [
+        animate(".brand-core-float", { y: [0, -10, 0] }, { duration: 9, repeat: Infinity, ease: "easeInOut" }),
+        animate(".brand-orbit-one", { rotate: [-25, -16, -25] }, { duration: 18, repeat: Infinity, ease: "easeInOut" }),
+        animate(".brand-orbit-two", { rotate: [25, 385] }, { duration: 90, repeat: Infinity, ease: "linear" }),
+        animate(".brand-core-light", { opacity: [0.07, 0.18, 0.07] }, { duration: 7, repeat: Infinity, ease: "easeInOut" }),
+        animate(".brand-core-glint", { x: ["-120%", "160%"], opacity: [0, 0.32, 0] }, { duration: 4, repeat: Infinity, repeatDelay: 5, ease: "easeInOut" }),
+        animate(".brand-scene-halo", { opacity: [0.45, 0.7, 0.45], scale: [1, 1.07, 1] }, { duration: 11, repeat: Infinity, ease: "easeInOut" }),
+      ];
+    }
+    // Keep the same timelines so returning to the hero resumes its current pose.
+    for (const animation of ambient.current) {
+      if (sceneActive) animation.play();
+      else animation.pause();
+    }
+    if (!sceneActive) {
+      rotateX.stop();
+      rotateZ.stop();
+    }
+    return () => { for (const animation of ambient.current) animation.pause(); };
+  }, [animate, rotateX, rotateZ, sceneActive]);
+
+  useEffect(() => {
+    const previous = previousModel.current;
+    previousModel.current = selected;
+    if (previous === selected) return;
+    const selection = layerDepths[selected].map((z, index) => animate(
+      `.brand-core-layer-${index}`,
+      { z: sceneActive ? [layerDepths[previous][index], z] : z },
+      { type: "spring", duration: sceneActive ? 0.65 : 0, bounce: 0.12 },
+    ));
+    if (sceneActive) selection.push(
+      animate(".brand-core-face", { opacity: [0.45, 1], y: [5, 0] }, { duration: 0.4, ease }),
+      animate(".brand-model-panel-copy", { opacity: [0.6, 1], y: [6, 0] }, { duration: 0.4, ease }),
+    );
+    return () => { for (const animation of selection) animation.complete(); };
+  }, [animate, sceneActive, selected]);
+
   function tilt(event: PointerEvent<HTMLDivElement>) {
-    if (event.pointerType !== "mouse" || motionPaused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (event.pointerType !== "mouse" || !sceneActive) return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    scene.current?.style.setProperty("--pointer-x", `${((event.clientX - bounds.left) / bounds.width - .5) * 10}deg`);
-    scene.current?.style.setProperty("--pointer-y", `${((event.clientY - bounds.top) / bounds.height - .5) * -8}deg`);
+    rotateX.set(57 - ((event.clientY - bounds.top) / bounds.height - 0.5) * 9);
+    rotateZ.set(-34 + ((event.clientX - bounds.left) / bounds.width - 0.5) * 12);
   }
   function resetTilt() {
-    scene.current?.style.setProperty("--pointer-x", "0deg");
-    scene.current?.style.setProperty("--pointer-y", "0deg");
+    if (!sceneActive) return;
+    rotateX.set(57);
+    rotateZ.set(-34);
   }
   function navigate(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     const next = event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : event.key === "Home" ? 0 : event.key === "End" ? 2 : null;
@@ -40,7 +116,7 @@ export function BrandHero({ language, motionPaused, onToggleMotion }: Props) {
     event.preventDefault(); setSelected(next);
     controls.current?.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
   }
-  return <section className="pc-hero brand-hero" aria-labelledby="home-title" data-language={language}>
+  return <section className="pc-hero brand-hero" aria-labelledby="home-title" data-language={language} data-hero-motion={sceneActive ? "active" : "still"} ref={scope}>
     <div className="brand-hero-grid pc-frame">
       <div className="brand-hero-copy">
         <p className="brand-eyebrow"><span aria-hidden="true" className="brand-line"/>{copy.eyebrow}</p>
@@ -52,20 +128,32 @@ export function BrandHero({ language, motionPaused, onToggleMotion }: Props) {
       <div className="brand-intelligence">
         <div className="brand-scene" ref={scene} onPointerMove={tilt} onPointerLeave={resetTilt} role="img" aria-label={copy.note}>
           <div className="brand-scene-grid" aria-hidden="true"/>
-          <div className="brand-orbit brand-orbit-one" aria-hidden="true"/><div className="brand-orbit brand-orbit-two" aria-hidden="true"/>
-          <div className="brand-core-float" aria-hidden="true">
-            <div className={`brand-core brand-core-mode-${selected}`}>
-              {[0, 1, 2, 3, 4].map((layer) => <div className={`brand-core-layer brand-core-layer-${layer}`} key={layer}><span className="brand-core-etch"/>{layer === 4 && <div className="brand-core-face"><span>{model.symbol}</span><strong>{model.code}</strong><small>POWER CHAMPION</small></div>}</div>)}
-              <div className="brand-core-light"/>
+          <div className="brand-scene-halo" aria-hidden="true"/>
+          <div className="brand-scene-reveal" aria-hidden="true">
+            <motion.div className="brand-orbit brand-orbit-one" initial={false} style={{ rotate: -25 }}/>
+            <motion.div className="brand-orbit brand-orbit-two" initial={false} style={{ rotate: 25 }}/>
+            <div className="brand-core-float">
+              <motion.div className={`brand-core brand-core-mode-${selected}`} initial={false} style={{ rotateX, rotateZ }}>
+                {layerDepths[selected].map((z, layer) => <motion.div className={`brand-core-layer brand-core-layer-${layer}`} key={layer} initial={false} style={{ z }}>
+                  <span className="brand-core-etch"/>
+                  {layer === 4 && <>
+                    <div className="brand-core-sheen"><div className="brand-core-glint"/></div>
+                    <div className="brand-core-face"><span>{model.symbol}</span><strong>{model.code}</strong><small>POWER CHAMPION</small></div>
+                    <span className="brand-core-corner brand-core-corner-one"/><span className="brand-core-corner brand-core-corner-two"/>
+                  </>}
+                </motion.div>)}
+                <div className="brand-core-light"/>
+              </motion.div>
             </div>
           </div>
           <div className="brand-scene-label brand-scene-label-top" aria-hidden="true"><span className="brand-cross">+</span><span>{copy.core}<small>PC / 0{selected + 1}</small></span></div>
+          <div className="brand-scene-measure" aria-hidden="true"><span>01</span><i/><i/><i/><i/><i/><span>03</span></div>
           <div className="brand-scene-label brand-scene-label-bottom" aria-hidden="true"><span>{copy.move}</span><span>↗</span></div>
         </div>
         <div className="brand-model-controls" role="tablist" aria-label={copy.models} ref={controls}>
           {models.map((item, index) => <button key={item.id} id={`hero-model-${index}`} role="tab" type="button" aria-selected={selected === index} aria-controls="hero-model-panel" tabIndex={selected === index ? 0 : -1} onClick={() => setSelected(index)} onKeyDown={(e) => navigate(e, index)}><span>0{index + 1}</span>{copy.type[index]}<i aria-hidden="true"/></button>)}
         </div>
-        <div className="brand-model-panel" id="hero-model-panel" role="tabpanel" aria-labelledby={`hero-model-${selected}`}><div><strong>{model.name}</strong><p>{copy.description[selected]}</p></div><a href={`/models/${model.id}`} aria-label={`${copy.detail} — ${model.name}`}><span aria-hidden="true">↗</span></a></div>
+        <div className="brand-model-panel" id="hero-model-panel" role="tabpanel" aria-labelledby={`hero-model-${selected}`}><div className="brand-model-panel-copy"><strong>{model.name}</strong><p>{copy.description[selected]}</p></div><a href={`/models/${model.id}`} aria-label={`${copy.detail} — ${model.name}`}><span aria-hidden="true">↗</span></a></div>
       </div>
     </div>
     <div className="brand-hero-bottom pc-frame"><a href="#models">{copy.scroll}<span aria-hidden="true">↓</span></a><span className="brand-bottom-rule" aria-hidden="true"/><span className="brand-origin">TAIPEI · TAIWAN</span><button className="brand-motion-toggle" type="button" aria-pressed={motionPaused} onClick={onToggleMotion}><span aria-hidden="true">{motionPaused ? "▷" : "Ⅱ"}</span>{motionPaused ? copy.resume : copy.pause}</button></div>

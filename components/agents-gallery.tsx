@@ -5,6 +5,8 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { AGENT_TEMPLATES, type AgentCategory } from "../lib/agents";
 import { useLocale } from "./locale-provider";
+import { PromoMotionRoot } from "./promo-motion";
+import { AgentShowcase } from "./agent-showcase";
 
 type Category = AgentCategory | "all";
 
@@ -410,6 +412,7 @@ export function AgentsGallery() {
   }
 
   return (
+    <PromoMotionRoot>
     <main id="main-content" className="agents-page">
       <section className="agents-hero" aria-labelledby="agents-title">
         <div>
@@ -449,6 +452,7 @@ export function AgentsGallery() {
           </div>
         </div>
       </section>
+      <AgentShowcase language={locale === "zh" ? "zh-Hant" : "en"} />
       <section
         id="assistant-gallery"
         className="agents-gallery-section"
@@ -778,5 +782,6 @@ export function AgentsGallery() {
         </div>
       </section>
     </main>
+    </PromoMotionRoot>
   );
 }

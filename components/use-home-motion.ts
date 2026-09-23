@@ -1,28 +1,44 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { animate } from "motion";
+import { useMotionAvailability } from "./promo-motion";
 
 /** Enhance the existing brand page; content is visible before JavaScript runs. */
 export function useHomeMotion(paused: boolean) {
   const rootRef = useRef<HTMLElement>(null);
+  const canAnimate = useMotionAvailability(paused);
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
     const sections = Array.from(root.querySelectorAll<HTMLElement>(
-      ":scope > section:not(.pc-hero), .pc-model-families, .pc-platform-paths",
+      ":scope > section:not(.pc-hero):not([data-promo-scene]), .pc-model-families, .pc-platform-paths",
     ));
     const hero = root.querySelector(".pc-hero");
     let observer: IntersectionObserver | undefined;
+    const animations = new Map<HTMLElement, ReturnType<typeof animate>>();
+
+    function reveal(section: HTMLElement, immediately = false) {
+      animations.get(section)?.stop();
+      section.dataset.homeReveal = "visible";
+      if (!canAnimate || immediately) {
+        section.style.opacity = "1";
+        section.style.transform = "none";
+        return;
+      }
+      animations.set(section, animate(section, { opacity: [0, 1], y: [28, 0] }, {
+        duration: 0.85, ease: [0.22, 1, 0.36, 1],
+      }));
+    }
 
     function configure() {
       observer?.disconnect();
       if (!root) return;
-      const enabled = !paused && !preference.matches;
+      const enabled = canAnimate;
       root.dataset.homeMotion = enabled ? "on" : "off";
       if (!enabled || typeof IntersectionObserver === "undefined") {
-        sections.forEach((section) => { section.dataset.homeReveal = "visible"; });
+        sections.forEach((section) => reveal(section, true));
         return;
       }
       observer = new IntersectionObserver((entries) => {
@@ -30,7 +46,8 @@ export function useHomeMotion(paused: boolean) {
           if (entry.target === hero) {
             root.dataset.heroVisible = String(entry.isIntersecting);
           } else if (entry.isIntersecting) {
-            (entry.target as HTMLElement).dataset.homeReveal = "visible";
+            const section = entry.target as HTMLElement;
+            if (section.dataset.homeReveal !== "visible") reveal(section);
             observer?.unobserve(entry.target);
           }
         }
@@ -45,7 +62,10 @@ export function useHomeMotion(paused: boolean) {
     function revealFocused(event: FocusEvent) {
       if (event.target instanceof Element) {
         const section = event.target.closest<HTMLElement>("[data-home-reveal]");
-        if (section) section.dataset.homeReveal = "visible";
+        if (section) {
+          observer?.unobserve(section);
+          reveal(section, true);
+        }
       }
     }
     function visibility() {
@@ -54,17 +74,20 @@ export function useHomeMotion(paused: boolean) {
 
     configure();
     visibility();
-    preference.addEventListener("change", configure);
     root.addEventListener("focusin", revealFocused);
     document.addEventListener("visibilitychange", visibility);
     return () => {
       observer?.disconnect();
-      preference.removeEventListener("change", configure);
       root.removeEventListener("focusin", revealFocused);
       document.removeEventListener("visibilitychange", visibility);
-      sections.forEach((section) => { delete section.dataset.homeReveal; });
+      animations.forEach((animation) => animation.stop());
+      sections.forEach((section) => {
+        delete section.dataset.homeReveal;
+        section.style.removeProperty("opacity");
+        section.style.removeProperty("transform");
+      });
     };
-  }, [paused]);
+  }, [canAnimate]);
 
   return rootRef;
 }

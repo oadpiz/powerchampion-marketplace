@@ -16,6 +16,8 @@ import { ApplicationExplorer, ModelServiceDetails } from "./platform-story";
 import { useHomeMotion } from "./use-home-motion";
 import { BrandHero } from "./brand-hero";
 import { BrandCapabilities } from "./brand-capabilities";
+import { PromoMotionRoot } from "./promo-motion";
+import { AgentShowcase } from "./agent-showcase";
 
 type CodeLanguage = "Python" | "cURL";
 function codeSamples(prompt: string): Record<CodeLanguage, string> {
@@ -160,6 +162,7 @@ export function HomeContent({ language }: { language?: HomeLanguage } = {}) {
     }
   }
   return (
+    <PromoMotionRoot paused={motionPaused}>
     <main
       id="main-content"
       className="unified-home"
@@ -191,6 +194,7 @@ export function HomeContent({ language }: { language?: HomeLanguage } = {}) {
         </div>
       </div>
       <BrandCapabilities language={activeLanguage} />
+      <AgentShowcase language={activeLanguage} />
       <div
         className="pc-frame pc-platform-paths"
         aria-label={copy.platformTools}
@@ -506,5 +510,6 @@ export function HomeContent({ language }: { language?: HomeLanguage } = {}) {
         </div>
       </section>
     </main>
+    </PromoMotionRoot>
   );
 }

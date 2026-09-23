@@ -293,6 +293,12 @@ test("server-renders the full premium homepage and usable controls in all five l
     assert.match(html, /id="hero-model-0"[^>]*role="tab"[^>]*aria-selected="true"/, homepage.path);
     assert.match(html, /id="hero-model-panel"[^>]*role="tabpanel"/, homepage.path);
     assert.match(html, /id="brand-service-panel"[^>]*role="tabpanel"/, homepage.path);
+    const showcase = html.match(/<section class="agent-showcase"[\s\S]*?<\/section>/)?.[0];
+    assert.ok(showcase, `${homepage.path} includes the agent capability walkthrough`);
+    assert.match(showcase, /data-showcase-playing="false"/, `${homepage.path} starts with a readable still`);
+    assert.match(showcase, /class="agent-showcase-document"/, `${homepage.path} renders the sample deliverable without JavaScript`);
+    assert.match(showcase, /href="\/agents\/build"/, `${homepage.path} provides a real agent entry point`);
+    assert.doesNotMatch(showcase, /(?:opacity:0;|visibility:hidden)/, `${homepage.path} does not hide its first scene`);
     assert.match(html, new RegExp(`role="group" aria-label="${escaped(homepage.filter)}"`), homepage.path);
     assert.match(html, new RegExp(`role="group" aria-label="${escaped(homepage.code)}"`), homepage.path);
     assert.match(html, /<button[^>]*aria-pressed="true"[^>]*>Python<\/button>/, homepage.path);

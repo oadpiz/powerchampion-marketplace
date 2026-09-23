@@ -672,6 +672,8 @@
 /* What a saved assistant can do, and the endpoint it answers on. */
 .agents-capabilities {
   display: grid;
+  /* Keep endpoint code within the section; its pre scrolls independently. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
 }
 .agents-capability-grid {
@@ -680,7 +682,7 @@
   padding: 0;
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
 }
 .agents-capability-grid li {
   padding: 1.1rem 1.2rem;
