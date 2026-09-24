@@ -331,7 +331,7 @@ test("publishes a five-language Agent introduction with actual FAQs and reciproc
     }
     assert.match(html, /href="\/tasks"/, path);
     assert.match(html, /href="\/agents\/build"/, path);
-    assert.match(html, /https:\/\/powerchampion.ai\/og-agents.png/, path);
+    assert.match(html, /https:\/\/powerchampion.ai\/og-agents.png\?v=[a-f0-9]{8}/, path);
     assert.match(html, new RegExp(`<link rel="canonical" href="https://powerchampion.ai${path}"`), path);
     const schemas = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>(.*?)<\/script>/gs)].flatMap((match) => JSON.parse(match[1]));
     const faq = schemas.find((item) => item["@type"] === "FAQPage");

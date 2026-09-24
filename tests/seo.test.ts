@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { metadataForRoute, metadataForPage, metadataForLocalizedPage } from "../lib/metadata";
 import { MODEL_CATALOG } from "../lib/models";
 import { internationalPath } from "../lib/languages";
@@ -40,11 +41,14 @@ describe("Search visibility boundaries", () => {
 describe("Localized search metadata", () => {
   it("shares the Agent introduction with its own social image and five public translations", () => {
     const metadata = metadataForRoute("/agent-platform");
+    const image = readFileSync(`${process.cwd()}/public/og-agents.png`);
+    const version = createHash("sha256").update(image).digest("hex").slice(0, 8);
+    const imageUrl = `${SITE_ORIGIN}/og-agents.png?v=${version}`;
     expect(metadata.alternates?.canonical).toBe(`${SITE_ORIGIN}/agent-platform`);
     expect(metadata.alternates?.languages).toEqual(languageAlternates("/agent-platform"));
-    expect(metadata.openGraph).toMatchObject({ images: [{ url: `${SITE_ORIGIN}/og-agents.png`, width: 1200, height: 630 }] });
-    expect(metadata.twitter).toMatchObject({ images: [{ url: `${SITE_ORIGIN}/og-agents.png` }] });
-    expect(readFileSync(`${process.cwd()}/public/og-agents.png`).subarray(0, 8)).toEqual(Buffer.from([137,80,78,71,13,10,26,10]));
+    expect(metadata.openGraph).toMatchObject({ images: [{ url: imageUrl, width: 1200, height: 630 }] });
+    expect(metadata.twitter).toMatchObject({ images: [{ url: imageUrl }] });
+    expect(image.subarray(0, 8)).toEqual(Buffer.from([137,80,78,71,13,10,26,10]));
   });
   it("gives every complete translation reciprocal same-section alternates", () => {
     for (const section of LOCALIZED_SECTIONS) {
