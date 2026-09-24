@@ -82,6 +82,10 @@ export function TaskConsole() {
   const generation = useRef(0);
   const busyRef = useRef(false);
   const referenceEditor = useRef<HTMLDetailsElement | null>(null);
+  const entryInitialized = useRef(false);
+  const currentLocale = useRef(locale);
+
+  useEffect(() => { currentLocale.current = locale; }, [locale]);
 
   useEffect(() => {
     mounted.current = true;
@@ -111,7 +115,18 @@ export function TaskConsole() {
         setReturnPath(entry.returnPath);
         setAgentsUnavailable(saved.status === "rejected");
         setSelectedId(listing.value.tasks[0]?.id ?? null);
-        setCreating(entry.agent !== null || listing.value.tasks.length === 0);
+        setCreating(entry.agent !== null || entry.starterId !== null || listing.value.tasks.length === 0);
+        // Apply a linked starter only after the first successful load. Retrying
+        // or changing language must not replace an edited (or cleared) goal.
+        if (!entryInitialized.current) {
+          entryInitialized.current = true;
+          const linkedStarter = TASK_STARTERS.find((item) => item.id === entry.starterId);
+          if (linkedStarter) {
+            const initialGoal = linkedStarter[currentLocale.current].goal;
+            setGoal((current) => current || initialGoal);
+            setStarterId(linkedStarter.id);
+          }
+        }
         setPhase("ready");
       } catch (error) {
         if (controller.signal.aborted) return;

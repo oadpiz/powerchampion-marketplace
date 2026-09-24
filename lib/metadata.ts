@@ -40,8 +40,8 @@ const HOME_METADATA = {
 
 export const ROUTE_METADATA = {
   "/agent-platform": {
-    title: "AI Agents — From Brief to Deliverable | Power Champion",
-    description: "Build AI agents that analyze your sources, work through a task and deliver useful files. Review progress, approve web reads and plan a custom agent for your business.",
+    title: "AI Agents for Reports, Analysis & Action Lists | Power Champion",
+    description: "Turn CSV data, proposals and meeting notes into editable Word reports, decision briefs and action lists. Start with a task template or discuss a custom business agent.",
   },
   "/tasks": {
     title: "Agent Tasks | Power Champion",
@@ -130,7 +130,7 @@ export function metadataForPage(
   const ogLocale = { en: "en_US", "zh-Hant": "zh_TW", "zh-Hans": "zh_CN", ja: "ja_JP", ko: "ko_KR" }[language];
   const agentPage = pathname.endsWith("/agent-platform");
   const image = agentPage ? `${SITE_ORIGIN}/og-agents.png` : SOCIAL_IMAGE;
-  const imageAlt = agentPage ? "Power Champion Agents — From brief to deliverable" : "Power Champion — model APIs and dedicated GPU infrastructure";
+  const imageAlt = agentPage ? "Power Champion Agents — Reports, analysis and action lists" : "Power Champion — model APIs and dedicated GPU infrastructure";
   return {
     title,
     description,

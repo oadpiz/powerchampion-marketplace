@@ -45,5 +45,10 @@ export function taskEntry(search: string) {
   const params = new URLSearchParams(search);
   const agent = params.get("agent");
   const validAgent = agent && /^[a-f0-9]{32}$/.test(agent) ? agent : null;
-  return { agent, returnPath: validAgent ? `/tasks?agent=${validAgent}` : "/tasks" };
+  const starterId = TASK_STARTERS.find((starter) => starter.id === params.get("starter"))?.id ?? null;
+  const safeParams = new URLSearchParams();
+  if (validAgent) safeParams.set("agent", validAgent);
+  if (starterId) safeParams.set("starter", starterId);
+  const query = safeParams.toString();
+  return { agent, starterId, returnPath: query ? `/tasks?${query}` : "/tasks" };
 }

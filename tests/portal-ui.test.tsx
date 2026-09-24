@@ -58,6 +58,15 @@ describe("account portal", () => {
     expect(safeAccountReturn("/account/keys")).toBe("/account/keys");
     expect(safeAccountReturn("/tasks")).toBe("/tasks");
     expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}`)).toBe(`/tasks?agent=${"d".repeat(32)}`);
+    expect(safeAccountReturn("/tasks?starter=analysis")).toBe("/tasks?starter=analysis");
+    expect(safeAccountReturn("/tasks?starter=comparison")).toBe("/tasks?starter=comparison");
+    expect(safeAccountReturn("/tasks?starter=handover")).toBe("/tasks?starter=handover");
+    expect(safeAccountReturn(`/tasks?starter=analysis&agent=${"d".repeat(32)}`)).toBe(`/tasks?agent=${"d".repeat(32)}&starter=analysis`);
+    expect(safeAccountReturn("/tasks?starter=unknown")).toBe("/tasks");
+    expect(safeAccountReturn("/tasks?starter=https%3A%2F%2Fevil.example")).toBe("/tasks");
+    expect(safeAccountReturn("/tasks?starter=analysis&next=https://evil.example")).toBe("/account");
+    expect(safeAccountReturn("/tasks?starter=analysis&starter=handover")).toBe("/account");
+    expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}&agent=${"f".repeat(32)}`)).toBe("/account");
     expect(safeAccountReturn("/agents/build")).toBe("/agents/build");
     expect(safeAccountReturn("/agents/build?template=research")).toBe("/agents/build?template=research");
     expect(safeAccountReturn("/agents/build?template=unknown")).toBe("/account");
@@ -73,6 +82,21 @@ describe("account portal", () => {
     window.history.replaceState({}, "", `/login?next=${encodeURIComponent(destination)}`);
     wrap(<AuthForm mode="login" />);
     expect(await screen.findByRole("link", { name: "Create account" })).toHaveAttribute("href", `/register?next=${encodeURIComponent(destination)}`);
+  });
+
+  it.each(["login", "register"] as const)("keeps the task starter through %s and the authentication mode switch", async (mode) => {
+    const user = userEvent.setup();
+    const destination = `/tasks?agent=${"d".repeat(32)}&starter=comparison`;
+    window.history.replaceState({}, "", `/${mode}?next=${encodeURIComponent(destination)}`);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ user: customer })));
+    wrap(<AuthForm mode={mode} />);
+    const otherMode = mode === "login" ? "register" : "login";
+    expect(await screen.findByRole("link", { name: mode === "login" ? "Create account" : "Sign in" })).toHaveAttribute("href", `/${otherMode}?next=${encodeURIComponent(destination)}`);
+    if (mode === "register") await user.type(screen.getByLabelText("Name"), "Person");
+    await user.type(screen.getByLabelText("Email"), "person@example.com");
+    await user.type(screen.getByLabelText("Password"), "a-long-password-test");
+    await user.click(screen.getByRole("button", { name: mode === "login" ? "Sign in" : "Create account" }));
+    expect(await screen.findByRole("link", { name: "Open workspace ↗" })).toHaveAttribute("href", destination);
   });
 
   it("shows a sign-in requirement without fake account statistics", async () => {

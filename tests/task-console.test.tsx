@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../components/locale-provider";
 import { TaskConsole } from "../components/task-console";
+import { LanguagePicker } from "../components/language-picker";
 import type { TaskDetail } from "../lib/runtime-client";
 
 const taskId = "a".repeat(32);
@@ -59,6 +60,89 @@ beforeEach(() => window.history.replaceState({}, "", "/tasks"));
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("persistent task console", () => {
+  it.each([
+    ["analysis", "Analyze the CSV I provide.", "Analyze a CSV"],
+    ["comparison", "Compare the proposals I supply.", "Compare proposals"],
+    ["handover", "Turn the meeting notes I provide", "Turn notes into action"],
+  ])("prefills the %s deep link without executing, changing limits or losing task history", async (starter, goalPrefix, label) => {
+    window.history.replaceState({}, "", `/tasks?starter=${starter}`);
+    const fetcher = api([task()]);
+    mount();
+    const goal = await screen.findByLabelText("What should the agent accomplish?");
+    expect((goal as HTMLTextAreaElement).value).toContain(goalPrefix);
+    expect(screen.getByRole("button", { name: new RegExp(label) })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Analyze the monthly sales")).toBeVisible();
+    expect(screen.getByLabelText("Your API key")).toHaveValue("");
+    expect(screen.getByLabelText("Maximum model steps")).toHaveValue(12);
+    expect(screen.getByLabelText("Output tokens per step")).toHaveValue(1024);
+    expect(screen.getByLabelText("Reference text")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Start task" })).toBeDisabled();
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it.each(["/tasks?starter=analysis", `/tasks?agent=${"d".repeat(32)}&starter=handover`])("preserves %s through sign-in and registration", async (destination) => {
+    window.history.replaceState({}, "", destination);
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ error: "auth_required" }, { status: 401 }));
+    vi.stubGlobal("fetch", fetcher);
+    mount();
+    expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute("href", `/login?next=${encodeURIComponent(destination)}`);
+    expect(screen.getByRole("link", { name: "Create an account" })).toHaveAttribute("href", `/register?next=${encodeURIComponent(destination)}`);
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("prefills Traditional Chinese once and preserves edited or cleared goals across language changes", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("pc-locale", "zh");
+    window.history.replaceState({}, "", "/tasks?starter=comparison");
+    const fetcher = api();
+    render(<LocaleProvider><LanguagePicker /><TaskConsole /></LocaleProvider>);
+    const goal = await screen.findByLabelText("希望智能體完成什麼？");
+    expect((goal as HTMLTextAreaElement).value).toContain("比較我提供的提案");
+    fireEvent.change(goal, { target: { value: "Compare the supplied proposals, focusing on migration." } });
+    await user.click(screen.getByRole("button", { name: "語言：繁體中文" }));
+    await user.click(screen.getByRole("button", { name: "English" }));
+    expect(screen.getByLabelText("What should the agent accomplish?")).toHaveValue("Compare the supplied proposals, focusing on migration.");
+    fireEvent.change(screen.getByLabelText("What should the agent accomplish?"), { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: "Language: English" }));
+    await user.click(screen.getByRole("button", { name: "繁體中文" }));
+    expect(screen.getByLabelText("希望智能體完成什麼？")).toHaveValue("");
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("applies a linked starter after a failed first load is retried", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/tasks?starter=handover");
+    const fetcher = api();
+    fetcher.mockRejectedValueOnce(new Error("Temporary connection failure"));
+    mount();
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+    expect((await screen.findByLabelText("What should the agent accomplish?") as HTMLTextAreaElement).value).toContain("Turn the meeting notes I provide");
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("keeps a missing linked agent blocking submission while prefilling the starter", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", `/tasks?agent=${"f".repeat(32)}&starter=analysis`);
+    const fetcher = api();
+    mount();
+    expect(await screen.findByText(/The linked agent is not available in this account/)).toBeVisible();
+    expect((screen.getByLabelText("What should the agent accomplish?") as HTMLTextAreaElement).value).toContain("Analyze the CSV I provide.");
+    await user.type(screen.getByLabelText("Your API key"), "sk-user-key-123");
+    expect(screen.getByRole("button", { name: "Start task" })).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText("Saved agent (optional)"), "");
+    expect(screen.getByRole("button", { name: "Start task" })).toBeEnabled();
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
+  it("ignores invalid starters without prefilled text or automatic work", async () => {
+    window.history.replaceState({}, "", "/tasks?starter=unknown&goal=untrusted&key=must-not-fill");
+    const fetcher = api();
+    mount();
+    expect(await screen.findByLabelText("What should the agent accomplish?")).toHaveValue("");
+    expect(screen.getByLabelText("Your API key")).toHaveValue("");
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+  });
+
   it("opens a saved agent from the builder without starting a task or discarding history", async () => {
     const id = "d".repeat(32);
     window.history.replaceState({}, "", `/tasks?agent=${id}`);

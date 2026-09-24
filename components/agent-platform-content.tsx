@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAnimate, useInView } from "motion/react";
 import { agentPlatformCopy } from "../lib/agent-platform-copy";
 import type { HomeLanguage } from "../lib/home-copy";
+import { TASK_STARTERS } from "../lib/task-starters";
 import { AgentShowcase } from "./agent-showcase";
 import { PromoMotionRoot, usePromoMotion } from "./promo-motion";
 
@@ -67,7 +68,7 @@ function AgentIllustration({ language }: { language: HomeLanguage }) {
       <div className="ap-hero-grid" aria-hidden="true" />
       <svg className="ap-hero-wire" viewBox="0 0 500 460" fill="none" aria-hidden="true"><path d="M86 110v182q0 22 22 22h253q20 0 20-20V182" /><path className="ap-hero-wire-flow" d="M86 110v182q0 22 22 22h253q20 0 20-20V182" /></svg>
       <div className="ap-hero-source-float"><div className="ap-hero-source"><span aria-hidden="true">01 /</span><strong>{copy.material}</strong><div className="ap-source-lines" aria-hidden="true"><i /><i /><i /></div><span className="ap-source-formats" aria-hidden="true">Aa · 01 · ↗</span></div></div>
-      <div className="ap-hero-paper-float"><div className="ap-hero-paper-back" aria-hidden="true" /><div className="ap-hero-paper"><div className="ap-paper-masthead"><span>POWER CHAMPION</span><span aria-hidden="true">↗</span></div><strong>{copy.deliverable}</strong><div className="ap-paper-rule" aria-hidden="true" /><div className="ap-paper-lines" aria-hidden="true"><i /><i /><i /><i /></div><div className="ap-paper-foot"><span>{copy.review}</span><span aria-hidden="true">.DOCX</span></div></div></div>
+      <div className="ap-hero-paper-float"><div className="ap-hero-paper-back" aria-hidden="true" /><div className="ap-hero-paper"><div className="ap-paper-masthead"><span>POWER CHAMPION</span><span aria-hidden="true">↗</span></div><strong>{copy.deliverable}</strong><div className="ap-paper-rule" aria-hidden="true" /><ol className="ap-paper-sections">{copy.sections.map((section, index) => <li key={section.title}><span aria-hidden="true">0{index + 1}</span><div><b>{section.title}</b><p>{section.body}</p></div></li>)}</ol><div className="ap-paper-foot"><span>{copy.review}</span><span>{copy.filename}</span></div></div></div>
       <div className="ap-hero-glyph" aria-hidden="true"><Glyph /></div>
       <div className="ap-hero-intent"><span aria-hidden="true">↗</span><p>{copy.brief}</p></div>
       <div className="ap-hero-plan"><span aria-hidden="true">+</span>{copy.plan}<span aria-hidden="true">—</span></div>
@@ -84,15 +85,33 @@ function PlatformPage({ language, paused, onToggle }: { language: HomeLanguage; 
         <p className="ap-eyebrow"><span aria-hidden="true" />{copy.eyebrow}</p>
         <h1 id="agent-platform-title">{copy.title[0]}<br /><em>{copy.title[1]}</em></h1>
         <p className="ap-hero-lead">{copy.lead}</p>
-        <div className="ap-actions"><a className="ap-button" href="/tasks">{copy.taskCta}<Arrow /></a><a className="ap-text-link" href="/agents/build">{copy.buildCta}<Arrow /></a></div>
+        <ul className="ap-hero-benefits">{copy.heroBenefits.map((benefit) => <li key={benefit}><span aria-hidden="true">✓</span>{benefit}</li>)}</ul>
+        <div className="ap-actions"><a className="ap-button" href="#agent-deliverables">{copy.previewCta}<Arrow /></a><a className="ap-text-link" href="/tasks">{copy.taskCta}<Arrow /></a></div>
         <p className="ap-requirement">{copy.requirement}</p>
       </div>
       <AgentIllustration language={language} />
-      <div className="ap-hero-bottom"><a className="ap-text-link" href="/agents">{copy.galleryCta}<Arrow /></a><span className="ap-hero-bottom-rule" aria-hidden="true" /><button type="button" className="ap-motion-toggle" aria-pressed={paused} onClick={onToggle}><span aria-hidden="true">{paused ? "▷" : "Ⅱ"}</span>{paused ? copy.resume : copy.pause}</button></div>
+      <div className="ap-hero-bottom"><a className="ap-text-link" href="/contact">{copy.contactCta}<Arrow /></a><span className="ap-hero-bottom-rule" aria-hidden="true" /><button type="button" className="ap-motion-toggle" aria-pressed={paused} onClick={onToggle}><span aria-hidden="true">{paused ? "▷" : "Ⅱ"}</span>{paused ? copy.resume : copy.pause}</button></div>
+    </EditorialSection>
+
+    <EditorialSection className="ap-outcomes ap-frame ap-section" id="agent-deliverables" titleId="agent-outcomes-title">
+      <div className="ap-section-heading"><div><p className="ap-eyebrow">01 / {copy.outcomesEyebrow}</p><h2 id="agent-outcomes-title">{copy.outcomesTitle}</h2></div><p>{copy.outcomesLead}</p></div>
+      <div className="ap-outcome-grid">{copy.outcomes.map((item, index) => <article className="ap-outcome" key={item.title}>
+        <div className="ap-outcome-top"><span>{item.audience}</span><span aria-hidden="true">0{index + 1}</span></div>
+        <h3>{item.title}</h3>
+        <dl><div className="ap-outcome-input"><dt>{copy.inputLabel}</dt><dd>{item.input}</dd></div><div className="ap-outcome-output"><dt><span aria-hidden="true">↳</span>{copy.outputLabel}</dt><dd>{item.output}</dd></div></dl>
+        <p>{item.benefit}</p>
+        <div className="ap-outcome-formats" aria-label={copy.fileLabel}>{TASK_STARTERS[index].format.split(" + ").map((format) => <span key={format}>{format}</span>)}</div>
+        <a className="ap-text-link" href={`/tasks?starter=${TASK_STARTERS[index].id}`}>{copy.outcomeCta}<Arrow /></a>
+      </article>)}</div>
+      <a className="ap-text-link ap-more-scenarios" href="/agents">{copy.galleryCta}<Arrow /></a>
+    </EditorialSection>
+
+    <EditorialSection className="ap-value" titleId="agent-value-title">
+      <div className="ap-frame ap-section"><div className="ap-section-heading"><div><p className="ap-eyebrow">02 / {copy.valueEyebrow}</p><h2 id="agent-value-title">{copy.valueTitle}</h2></div><p>{copy.valueLead}</p></div><ol className="ap-value-grid">{copy.values.map((item, index) => <li key={item.title}><span aria-hidden="true">0{index + 1} /</span><h3>{item.title}</h3><p>{item.body}</p></li>)}</ol></div>
     </EditorialSection>
 
     <EditorialSection className="ap-capabilities ap-frame ap-section" titleId="agent-capabilities-title">
-      <div className="ap-section-heading"><div><p className="ap-eyebrow">01 / {copy.capabilitiesEyebrow}</p><h2 id="agent-capabilities-title">{copy.capabilitiesTitle}</h2></div><p>{copy.capabilitiesLead}</p></div>
+      <div className="ap-section-heading"><div><p className="ap-eyebrow">03 / {copy.capabilitiesEyebrow}</p><h2 id="agent-capabilities-title">{copy.capabilitiesTitle}</h2></div><p>{copy.capabilitiesLead}</p></div>
       <ul className="ap-capability-grid">{copy.capabilities.map((item, index) => <li key={item.title}><div className="ap-capability-top"><svg viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.1" aria-hidden="true"><path d={capabilityPaths[index]} /></svg><span aria-hidden="true">0{index + 1}</span></div><h3>{item.title}</h3><p>{item.body}</p></li>)}</ul>
       <div className="ap-files"><div><h3>{copy.fileLabel}</h3><p>{copy.fileNote}</p></div><ul aria-label={copy.fileLabel}>{fileTypes.map((type) => <li key={type}><svg viewBox="0 0 20 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M3 1h9l5 5v17H3zM12 1v6h5M6 12h8M6 16h6" /></svg><span>{type}</span></li>)}</ul></div>
     </EditorialSection>
@@ -100,15 +119,15 @@ function PlatformPage({ language, paused, onToggle }: { language: HomeLanguage; 
     <AgentShowcase language={language} />
 
     <EditorialSection className="ap-workflow ap-frame ap-section" titleId="agent-workflow-title">
-      <div className="ap-section-heading"><div><p className="ap-eyebrow">02 / {copy.workflowEyebrow}</p><h2 id="agent-workflow-title">{copy.workflowTitle}</h2></div><a className="ap-text-link" href="/agents/build">{copy.buildCta}<Arrow /></a></div>
+      <div className="ap-section-heading"><div><p className="ap-eyebrow">04 / {copy.workflowEyebrow}</p><h2 id="agent-workflow-title">{copy.workflowTitle}</h2></div><a className="ap-text-link" href="/agents/build">{copy.buildCta}<Arrow /></a></div>
       <ol className="ap-workflow-list">{copy.workflow.map((item, index) => <li key={item.title}><div className="ap-workflow-number" aria-hidden="true">0{index + 1}<span>↗</span></div><h3>{item.title}</h3><p>{item.body}</p></li>)}</ol>
     </EditorialSection>
 
-    <EditorialSection className="ap-service" titleId="agent-service-title">
-      <div className="ap-frame ap-service-inner"><div className="ap-service-copy"><p className="ap-eyebrow">03 / {copy.serviceEyebrow}</p><h2 id="agent-service-title">{copy.serviceTitle}</h2><p>{copy.serviceLead}</p><a className="ap-button" href="/contact">{copy.contactCta}<Arrow /></a></div><div className="ap-service-scope"><Glyph className="ap-service-glyph" /><ul>{copy.serviceItems.map((item, index) => <li key={item}><span aria-hidden="true">0{index + 1}</span>{item}</li>)}</ul><p>{copy.serviceNote}</p></div></div>
+    <EditorialSection className="ap-service" id="agent-service" titleId="agent-service-title">
+      <div className="ap-frame ap-service-inner"><div className="ap-service-copy"><p className="ap-eyebrow">05 / {copy.serviceEyebrow}</p><h2 id="agent-service-title">{copy.serviceTitle}</h2><p>{copy.serviceLead}</p><a className="ap-button" href="/contact">{copy.contactCta}<Arrow /></a></div><div className="ap-service-scope"><Glyph className="ap-service-glyph" /><ul>{copy.serviceItems.map((item, index) => <li key={item}><span aria-hidden="true">0{index + 1}</span>{item}</li>)}</ul><p>{copy.serviceNote}</p></div></div>
     </EditorialSection>
 
-    <EditorialSection className="ap-faq ap-frame ap-section" titleId="agent-faq-title"><div><p className="ap-eyebrow">04 / {copy.faqEyebrow}</p><h2 id="agent-faq-title">{copy.faqTitle}</h2></div><div className="ap-faq-list">{copy.faqs.map((item) => <details key={item.question}><summary>{item.question}<span aria-hidden="true">+</span></summary><p>{item.answer}</p></details>)}</div></EditorialSection>
+    <EditorialSection className="ap-faq ap-frame ap-section" titleId="agent-faq-title"><div><p className="ap-eyebrow">06 / {copy.faqEyebrow}</p><h2 id="agent-faq-title">{copy.faqTitle}</h2></div><div className="ap-faq-list">{copy.faqs.map((item) => <details key={item.question}><summary>{item.question}<span aria-hidden="true">+</span></summary><p>{item.answer}</p></details>)}</div></EditorialSection>
 
     <EditorialSection className="ap-closing ap-frame" titleId="agent-closing-title"><p className="ap-eyebrow">POWER CHAMPION / AGENTS</p><h2 id="agent-closing-title">{copy.closingTitle}</h2><p>{copy.closingLead}</p><div className="ap-actions"><a className="ap-button" href="/tasks">{copy.taskCta}<Arrow /></a><a className="ap-text-link" href="/contact">{copy.contactCta}<Arrow /></a></div><p className="ap-requirement">{copy.requirement}</p></EditorialSection>
   </main>;

@@ -12,9 +12,9 @@
   <g font-family="Arial, Helvetica, sans-serif">
     <text x="117" y="77" font-size="23" font-weight="600" fill="#eeebe5">Power Champion</text>
     <text x="64" y="179" fill="#c2aa7d" font-size="13" letter-spacing="4">AGENTS, BUILT AROUND YOUR WORK.</text>
-    <text x="60" y="283" fill="#eeebe5" font-size="72" font-weight="600" letter-spacing="-3">From brief</text>
-    <text x="60" y="366" fill="url(#gold)" font-size="72" font-weight="600" letter-spacing="-3">to deliverable.</text>
-    <text x="65" y="426" fill="#aaa69e" font-size="21">Your sources. Your direction. Useful results.</text>
+    <text x="60" y="283" fill="#eeebe5" font-size="64" font-weight="600" letter-spacing="-3">Reports. Analysis.</text>
+    <text x="60" y="366" fill="url(#gold)" font-size="64" font-weight="600" letter-spacing="-3">Clear next steps.</text>
+    <text x="65" y="426" fill="#aaa69e" font-size="20">Word reports · CSV summaries · Action lists</text>
     <text x="65" y="579" fill="#aaa69e" font-size="15">MODEL APIs  /  AGENT TASKS  /  CUSTOM AGENT SERVICES</text>
     <text x="1135" y="579" text-anchor="end" fill="#c2aa7d" font-size="15">powerchampion.ai</text>
   </g>

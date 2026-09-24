@@ -110,7 +110,7 @@ export const INTERNATIONAL_CONTENT: Record<
     languages: "網站語言",
     skip: "跳至主要內容",
     pages: {
-      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AI 智能體：從需求到可交付成果", description: "讓智能體分析資料、執行任務並交付實用檔案。追蹤進度、核准網頁讀取，也能為企業規劃專屬 Agent。" },
+      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AI 智能體：報告、分析與行動清單", description: "把 CSV、提案與會議紀錄交給 Agent，取得可編輯的 Word 報告、決策摘要與待辦清單。從任務範本開始，也能洽詢企業專屬智能體。" },
       "": {
         eyebrow: "模型 API · 專屬 GPU",
         title: "讓好模型，成為好產品。",
@@ -360,7 +360,7 @@ export const INTERNATIONAL_CONTENT: Record<
     languages: "网站语言",
     skip: "跳至主要内容",
     pages: {
-      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AI 智能体：从需求到可交付成果", description: "让智能体分析资料、执行任务并交付实用文件。追踪进度、批准网页读取，也能为企业规划专属 Agent。" },
+      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AI 智能体：报告、分析与行动清单", description: "把 CSV、提案与会议记录交给 Agent，获得可编辑的 Word 报告、决策摘要与待办清单。从任务模板开始，也可咨询企业专属智能体。" },
       "": {
         eyebrow: "模型 API · 专属 GPU",
         title: "让好模型，成为好产品。",
@@ -610,7 +610,7 @@ export const INTERNATIONAL_CONTENT: Record<
     languages: "表示言語",
     skip: "本文へ移動",
     pages: {
-      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AIエージェント：依頼から成果物まで", description: "資料を分析し、タスクを進め、実用的なファイルを作成するAIエージェント。進捗の確認、Webページの読み取り承認、企業向けエージェントの構築に対応。" },
+      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AIエージェントでレポート・分析・タスク一覧を作成", description: "CSV、提案資料、議事録から、編集できるWordレポート、比較資料、タスク一覧を作成。テンプレートで始めるほか、企業向け専用エージェントの開発もご相談いただけます。" },
       "": {
         eyebrow: "モデル API · 専用 GPU",
         title: "優れたモデルを、使える製品へ。",
@@ -872,7 +872,7 @@ export const INTERNATIONAL_CONTENT: Record<
     languages: "언어 선택",
     skip: "본문으로 이동",
     pages: {
-      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "AI 에이전트: 요청에서 결과물까지", description: "자료를 분석하고 작업을 진행해 활용할 수 있는 파일을 만드는 AI 에이전트. 진행 상황 확인, 웹 읽기 승인, 기업 맞춤 에이전트 구축을 지원합니다." },
+      "agent-platform": { eyebrow: "POWER CHAMPION / AGENTS", title: "보고서·분석·실행 목록을 만드는 AI 에이전트", description: "CSV, 제안서, 회의록을 편집 가능한 Word 보고서, 의사결정 요약, 실행 목록으로 정리하세요. 작업 템플릿으로 시작하거나 기업 전용 에이전트 개발을 상담할 수 있습니다." },
       "": {
         eyebrow: "모델 API · 전용 GPU",
         title: "좋은 모델을, 쓸모 있는 제품으로.",

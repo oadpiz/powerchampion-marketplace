@@ -325,6 +325,10 @@ test("publishes a five-language Agent introduction with actual FAQs and reciproc
     assert.equal((html.match(/<h1[ >]/g) ?? []).length, 1, path);
     assert.equal((html.match(/<main[ >]/g) ?? []).length, 1, path);
     assert.match(html, /class="ap-page"/, path);
+    assert.match(html, /href="#agent-deliverables"/, path);
+    for (const starter of ["analysis", "comparison", "handover"]) {
+      assert.match(html, new RegExp(`href="/tasks\\?starter=${starter}"`), path);
+    }
     assert.match(html, /href="\/tasks"/, path);
     assert.match(html, /href="\/agents\/build"/, path);
     assert.match(html, /https:\/\/powerchampion.ai\/og-agents.png/, path);

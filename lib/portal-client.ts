@@ -1,3 +1,5 @@
+import { taskEntry } from "./task-starters";
+
 export type PortalUser = {
   id: string;
   email: string;
@@ -96,7 +98,14 @@ export function portalErrorText(error: unknown, locale: "en" | "zh") {
 }
 
 export function safeAccountReturn(value: string | null): string {
-  return value && /^(?:\/account(?:\/(?:keys|usage|credits))?|\/tasks(?:\?agent=[a-f0-9]{32})?|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)
-    ? value
-    : "/account";
+  if (!value) return "/account";
+  if (/^(?:\/account(?:\/(?:keys|usage|credits))?|\/tasks|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)) return value;
+  if (value.startsWith("/tasks?")) {
+    const search = value.slice("/tasks".length);
+    const params = new URLSearchParams(search);
+    if ([...params.keys()].some((key) => !["agent", "starter"].includes(key) || params.getAll(key).length !== 1)) return "/account";
+    if (params.has("agent") && !/^[a-f0-9]{32}$/.test(params.get("agent") ?? "")) return "/account";
+    return taskEntry(search).returnPath;
+  }
+  return "/account";
 }
