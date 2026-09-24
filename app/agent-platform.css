@@ -148,7 +148,7 @@
 .ap-hero-paper-float { top:15%; right:0; width:65%; }
 .ap-hero-paper-back { transform:rotate(-3deg) translate(-5px,5px); }
 .ap-hero-paper { padding:24px; min-height:340px; }
-.ap-hero-paper strong { margin-top:23px; font-size:30px; }
+.ap-hero-paper strong { max-width:none; margin-top:23px; font-size:30px; }
 .ap-paper-sections { display:grid; gap:15px; margin-top:20px!important; }
 .ap-paper-sections li { display:grid; grid-template-columns:15px minmax(0,1fr); gap:10px; }
 .ap-paper-sections li>span { font-size:8px; color:#8a7d5c; font-family:var(--font-geist-mono),monospace; padding-top:2px; }
