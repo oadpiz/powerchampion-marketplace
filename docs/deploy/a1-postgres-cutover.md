@@ -53,11 +53,17 @@ If the portal container is restarting in a loop, the DSN is wrong or Postgres is
 ## 5. Verify
 - Dokploy → Docker → `powerchampion-portal` shows Healthy, and a login succeeds. (The public `https://powerchampion.ai/api/portal/health` returns 404: the BFF allowlist does not expose it, and the portal health endpoint does not touch the database anyway. The login test is what proves Postgres works.)
 - Log in with an existing customer account (old password). Keys, credits, agents listed as before.
-- In the db container terminal: `psql -U portal -d portal -c "select count(*) from users;"` equals the `users` line from step 3. The admin customers page now lists admin accounts too (with a role column), so its count should equal this number.
+- In the db container terminal: `psql -U portal -d portal -c "select count(*) from users;"` equals the `users` line from step 3, and also equals the number of rows on the Customers page (administrators included).
 
 ## 6. Rollback (any time)
 Remove `PC_PORTAL_DATABASE_URL` from Dokploy env, deploy. The portal reads `/data/portal.sqlite3` again; that file is unchanged since step 2.
 Writes made while on Postgres are lost; that is the accepted trade-off (spec §5.2).
+
+If you are also reverting to an image from before A2a, first downgrade the schema **with the new image**, from the portal container terminal (Bash), before switching images:
+```sh
+python -c "from alembic import command; from server.migrate import _config; from server.db import Database; from server.settings import Settings; command.downgrade(_config(Database(Settings.from_env().resolved_database_url).url), '0001_baseline')"
+```
+The old image's `Store()` raises `Can't locate revision '0002_users_disabled_at'` and restart-loops if this is skipped. The downgrade drops `users.disabled_at`, which re-enables every disabled account (see "回滾（schema）" in `docs/portal-operations.md`).
 
 ## 7. Backups going forward
 A file copy of a live Postgres data directory is not a valid backup, so do not rely on Volume Backup of `portal-pg-data`. Use logical dumps:

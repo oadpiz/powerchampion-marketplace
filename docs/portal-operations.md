@@ -79,7 +79,7 @@ python3 -m server.manage reset-password --email you@example.com
 
 管理員在 `/admin/customers` 管理所有帳號（清單包含管理員，並顯示角色與狀態）：
 
-- **停用／啟用**：停用的帳號無法登入（回 403 `account_disabled`），既有工作階段立即登出，其智能體權杖也停止生效；啟用後可再登入。
+- **停用／啟用**：停用的帳號無法登入（回 403 `account_disabled`），既有工作階段立即登出，其智能體權杖也停止生效；啟用後可再登入。**停用不會撤銷 sell-panel 簽發的 API 金鑰**（金鑰由閘道管理），需要時請另到閘道撤銷。
 - **改角色**：`customer` ↔ `admin`。
 - **重設密碼**：管理員設定新密碼並自行交給帳號擁有者；該帳號所有工作階段登出，登入失敗計數清除。先確認帳號擁有者再做。
 - 不能對自己的帳號執行以上三項（顯示為「You」，伺服器回 409 `self_target`）。自己的密碼走下面的自助頁。
@@ -87,7 +87,7 @@ python3 -m server.manage reset-password --email you@example.com
 
 所有已登入使用者（客戶與管理員）可在 `/account/security` 自行改密碼，需輸入目前密碼；成功後保留目前工作階段、登出其他裝置，稽核事件為 `account.password_changed`。每位使用者 15 分鐘內最多 5 次嘗試，超過回 429。
 
-命令列（`python -m server.manage`）只用於建立第一個管理員與沒有管理員可用時的緊急復原。**Dokploy 網頁終端裡 Python `getpass` 收到的是空輸入**，互動式密碼提示不能用，要改以環境變數帶入，並用 bash `read -s` 輸入，密碼不會進歷史紀錄或程序列表：
+命令列（`python -m server.manage`）只用於建立第一個管理員與沒有管理員可用時的緊急復原。**Dokploy 網頁終端裡 Python `getpass` 收到的是空輸入**，互動式密碼提示不能用，要改以環境變數帶入，並用 bash `read -s` 輸入，密碼不會進歷史紀錄或程序列表。終端必須以 **Bash** 開啟（`/bin/sh` 選項是 dash，沒有 `read -s`），或把整行包成 `bash -c '…'`：
 
 ```sh
 read -s PW; PC_PORTAL_ADMIN_PASSWORD="$PW" python -m server.manage create-admin --email you@example.com; unset PW
@@ -109,11 +109,21 @@ read -s PW; PC_PORTAL_NEW_PASSWORD="$PW" python -m server.manage reset-password 
 - **刻意未設定** `PC_GATEWAY_ADMIN_TOKEN`：sell-panel 以此 API 建立的金鑰不帶預付餘額，閘道會視為後付且無花費上限。客戶按「建立金鑰」會看到尚未開通；金鑰仍由營運者在 sell-panel 手動發放。要開放自助發放，需先讓閘道對新金鑰強制預付。
 - 匿名試用關閉（`PC_TRIAL_ENABLED=0`、無 `PC_TRIAL_API_KEY`）。
 
-建立第一個管理員：在 Dokploy 開啟 `powerchampion-portal` 容器的 Terminal。網頁終端的 `getpass` 收不到輸入，必須用環境變數帶密碼：
+建立第一個管理員：在 Dokploy 開啟 `powerchampion-portal` 容器的 Terminal（選 **Bash**，不要選 `/bin/sh`）。網頁終端的 `getpass` 收不到輸入，必須用環境變數帶密碼：
 
 ```sh
 read -s PW; PC_PORTAL_ADMIN_PASSWORD="$PW" python -m server.manage create-admin --email you@example.com; unset PW
 ```
+
+### 回滾（schema）
+
+資料庫結構由 Alembic 管理，目前 head 為 `0002_users_disabled_at`（新增 `users.disabled_at`）。**在退回 A2a 之前的舊映像前，必須先用新映像把結構降回基線**：在 `powerchampion-portal` 容器的 Terminal（Bash）執行：
+
+```sh
+python -c "from alembic import command; from server.migrate import _config; from server.db import Database; from server.settings import Settings; command.downgrade(_config(Database(Settings.from_env().resolved_database_url).url), '0001_baseline')"
+```
+
+沒做的話，舊映像的 `Store()` 啟動時會拋出 `Can't locate revision '0002_users_disabled_at'` 並不斷重啟。降級會刪除 `users.disabled_at` 欄位，**所有被停用的帳號會因此恢復為啟用**；回滾後如需維持停用，要自行處理（例如重設密碼）。再次升級到新映像時，啟動會自動回到 head。
 
 登入限制目前只有帳號層級（每帳號 15 分鐘 5 次失敗、註冊每帳號每小時 10 次）。建議另在邊緣（Cloudflare 或 Traefik）對 `/api/portal/auth/*` 設定以來源 IP 計的速率限制。
 

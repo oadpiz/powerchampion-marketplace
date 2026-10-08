@@ -28,7 +28,8 @@ An existing customer is not automatically promoted by this command.
 In the Dokploy web terminal Python's `getpass` receives empty input, so the
 hidden prompt cannot be used there. Drive the command through the environment
 variable instead, entering the password with bash `read -s` so it never appears
-in history or the process list:
+in history or the process list. Open the Dokploy terminal with **Bash** (the
+`/bin/sh` option is dash and has no `read -s`), or wrap the line as `bash -c '…'`:
 
 ```sh
 read -s PW; PC_PORTAL_ADMIN_PASSWORD="$PW" python -m server.manage create-admin --email you@example.com; unset PW
@@ -57,6 +58,9 @@ target is the calling admin (use `/password` for your own account), 404
 `customer_not_found` for an unknown id, and 400 `invalid_input` for a bad body.
 Repeating a status or role change that is already in effect is a no-op and
 writes no audit event.
+
+Disabling an account does not revoke API keys issued through sell-panel: those
+are managed by the gateway, so revoke them there if needed.
 
 Audit actions written by these routes (actor = caller, target = affected
 account; never any password material): `account.password_changed`,
