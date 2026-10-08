@@ -1,51 +1,71 @@
 # A1 cutover: portal SQLite -> Postgres (Dokploy)
 
-All commands run in the Dokploy UI: compose "Power Champion Marketplace" -> **Open Terminal** on the
-named container. Nothing here needs SSH.
+Most steps use the Dokploy UI (compose "Power Champion Marketplace" -> **Open Terminal** on the named
+container). **Steps 2 and 3 are the exception:** the portal container has to be stopped, so they run as
+one-off `docker run` commands in a **host shell on the Dokploy server** (Dokploy -> Web Server / Terminal
+page, or SSH). That is the only place this runbook needs a host shell.
 
 ## 0. Preconditions
 - Set `PC_PORTAL_DB_PASSWORD` in the Dokploy compose env **before merging the PR**. A missing value fails the entire compose, website included, and this compose autodeploys on merge.
+- Confirm in Dokploy that the compose **Autodeploy** toggle is on (merge = deploy), so the merge is a deliberate act.
 - The password must be URL-safe: letters and digits only (e.g. `openssl rand -hex 24`), because `/ @ :` would break the DSN.
 - The Dokploy env has **no** `PC_PORTAL_DATABASE_URL` yet.
 - `a1/portal-postgres` merged to `main`, CI (portal-backend: sqlite + postgres) green.
 
 ## 1. Deploy the compose (adds `powerchampion-db`, portal still on SQLite)
 Deploy. Verify: `powerchampion-db` container healthy; portal `/api/portal/health` still 200; a customer can log in.
+The portal has no `depends_on` on the database: with `PC_PORTAL_DATABASE_URL` unset it never touches Postgres, and once it is set a portal that cannot reach Postgres exits and `restart: unless-stopped` retries.
 
-## 2. Freeze and back up SQLite (portal container terminal)
-```sh
-cp /data/portal.sqlite3 /data/portal.sqlite3.pre-pg-$(date +%Y%m%d)
-chmod 400 /data/portal.sqlite3.pre-pg-*
-```
-Keep the backup for 90 days. The portal keeps serving SQLite until step 4, so any write made between this step and step 4 is lost on the Postgres side: announce a short maintenance window and make no customer-facing changes until step 5.
-Run steps 2-4 in one sitting. If step 3 runs on a later day, replace `$(date +%Y%m%d)` in the `--source` path with the backup's actual date suffix (`ls /data/portal.sqlite3.pre-pg-*`).
+## 2. Freeze and back up SQLite (host shell on the Dokploy server)
+Run steps 2-4 in one sitting. The portal must not write while the copy is taken, so stop it first.
 
-## 3. Import (portal container terminal)
-The variable `PC_PORTAL_DB_PASSWORD` is available inside the portal container (passed through by compose). Import from the frozen `.pre-pg-` copy, not the live file:
+1. Dokploy -> Docker -> Containers -> `powerchampion-portal` -> **Stop**. The website stays up; portal routes (login, account, admin) return 502 for the maintenance window.
+2. Find the real volume and network names (Dokploy prefixes them with the compose project name):
 ```sh
-python -m server.import_sqlite --source /data/portal.sqlite3.pre-pg-$(date +%Y%m%d) --target "postgresql://portal:${PC_PORTAL_DB_PASSWORD}@powerchampion-db:5432/portal"
+docker volume ls | grep portal-data
+docker network ls | grep powerchampion
 ```
-Every table line must read `source=N target=N` with no MISMATCH; `sessions` and `login_attempts` are skipped on purpose (everyone re-logs in).
-If it exits 2 ("target table is not empty"), the import already ran: do not run it twice.
+Below, `powerchampion-marketplace_portal-data` stands for the volume name you found.
+3. Take the backup with the SQLite backup API (not `cp`: it is consistent even if the file is in WAL mode). `--user 10001` is the portal's uid, so the copy is owned and readable by it:
+```sh
+docker run --rm --user 10001 -v powerchampion-marketplace_portal-data:/data python:3.12-slim python -c "import sqlite3,os; s=sqlite3.connect('/data/portal.sqlite3'); d=sqlite3.connect('/data/portal.sqlite3.pre-pg-$(date +%Y%m%d)'); s.backup(d); d.close(); s.close(); os.chmod('/data/portal.sqlite3.pre-pg-$(date +%Y%m%d)', 0o400); print('backup done')"
+```
+4. Verify the copy; it must print `ok`:
+```sh
+docker run --rm --user 10001 -v powerchampion-marketplace_portal-data:/data python:3.12-slim python -c "import sqlite3; print(sqlite3.connect('file:/data/portal.sqlite3.pre-pg-$(date +%Y%m%d)?mode=ro', uri=True).execute('PRAGMA integrity_check').fetchone()[0])"
+```
+Keep the backup for 90 days. With the portal stopped nothing can write, so there is no drift between the backup and the import. If step 3 runs on a later day, replace `$(date +%Y%m%d)` with the backup's actual date suffix (`docker run --rm -v <volume>:/data python:3.12-slim ls /data`).
+
+## 3. Import (host shell, portal still stopped)
+The import runs outside the portal container, so the password is **pasted literally** into the command (replace `<password>` with the value of `PC_PORTAL_DB_PASSWORD`). Afterwards remove the line from the shell history (`history -d <line number>`, or `history -c` on a throwaway shell). Import from the frozen `.pre-pg-` copy, not the live file:
+```sh
+docker run --rm --network <compose network name from step 2> -v powerchampion-marketplace_portal-data:/data powerchampion-portal:latest python -m server.import_sqlite --source /data/portal.sqlite3.pre-pg-<date> --target "postgresql://portal:<password>@powerchampion-db:5432/portal"
+```
+Every table line must read `source=N target=N` with no MISMATCH; `sessions` and `login_attempts` are skipped on purpose (everyone re-logs in). Note the `users` line for step 5.
+- A traceback leaves Postgres empty (the import is one transaction): fix the cause and re-run.
+- Exit 2 "target table is not empty" means the import already ran: do not run it twice.
+- Re-cutting over after a rollback needs a clean target first: in the db container terminal run `psql -U portal -d portal -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"`, then redo step 3.
 
 ## 4. Switch
-Dokploy env: add `PC_PORTAL_DATABASE_URL=postgresql://portal:<same password>@powerchampion-db:5432/portal`. Deploy.
+Dokploy env: add `PC_PORTAL_DATABASE_URL=postgresql://portal:<same password>@powerchampion-db:5432/portal`. Deploy (this also starts the stopped portal container again).
+If the portal container is restarting in a loop, the DSN is wrong or Postgres is unreachable: check its logs, then go to section 6.
 
 ## 5. Verify
-- `/api/portal/health` 200.
+- `/api/portal/health` 200. This endpoint does **not** touch the database: a 200 does not prove Postgres works. The login test below does.
 - Log in with an existing customer account (old password). Keys, credits, agents listed as before.
-- Admin: customers count equals the `users` line from step 3.
-- In the db container terminal: `psql -U portal -d portal -c "select count(*) from users;"` equals the same number.
-- Optional hygiene: once the import is done, the portal no longer needs `PC_PORTAL_DB_PASSWORD`; remove that line from the portal service's `environment` in the compose (follow-up change). Do not delete the variable from the Dokploy env: the db service and the `PC_PORTAL_DATABASE_URL` DSN still need it.
+- In the db container terminal: `psql -U portal -d portal -c "select count(*) from users;"` equals the `users` line from step 3. The admin page lists customers only (role=customer), so its count is lower by the number of admin accounts.
 
 ## 6. Rollback (any time)
-Remove `PC_PORTAL_DATABASE_URL` from Dokploy env, deploy. The portal reads `/data/portal.sqlite3` again.
+Remove `PC_PORTAL_DATABASE_URL` from Dokploy env, deploy. The portal reads `/data/portal.sqlite3` again; that file is unchanged since step 2.
 Writes made while on Postgres are lost; that is the accepted trade-off (spec §5.2).
-Because the portal has `depends_on: service_healthy`, it will not start if the db container is unhealthy, even on this SQLite rollback path. If the db container is unhealthy and you need the SQLite rollback, edit the compose in Dokploy to remove BOTH the `powerchampion-db` service block AND the portal's `depends_on:` block, check with `docker compose -f docker-compose.dokploy.yml config`, then deploy. Restore both blocks once the database is fixed.
 
 ## 7. Backups going forward
-Dokploy -> compose -> Volume Backups: add `portal-pg-data` (daily). Manual dump from the db container:
+A file copy of a live Postgres data directory is not a valid backup, so do not rely on Volume Backup of `portal-pg-data`. Use logical dumps:
+- The db service has a second named volume `portal-pg-dumps` mounted at `/var/lib/postgresql/dumps`.
+- Dokploy -> compose -> Schedules: add a daily job on the `powerchampion-db` container:
 ```sh
-pg_dump -U portal -d portal -Fc -f /tmp/portal-$(date +%Y%m%d).dump
+docker exec powerchampion-db pg_dump -U portal -d portal -Fc -f /var/lib/postgresql/dumps/portal-$(date +%Y%m%d).dump
 ```
-Copy the dump out of the container via Dokploy "Browse Files" (it lives in `/tmp`, deliberately not inside the Postgres data directory). The `/tmp` dump disappears when the container is recreated, so copy it out immediately.
+- Dokploy -> compose -> Volume Backups: point it at `portal-pg-dumps` (a file copy of a finished dump is safe). Prune old dumps from that volume periodically.
+- Restore: `pg_restore -U portal -d portal --clean --if-exists /var/lib/postgresql/dumps/portal-<date>.dump` in the db container.
+- `POSTGRES_PASSWORD` is applied only when the `portal-pg-data` volume is first created. Rotating `PC_PORTAL_DB_PASSWORD` later requires `ALTER USER portal PASSWORD '...'` in psql **and** updating the password in `PC_PORTAL_DATABASE_URL`.

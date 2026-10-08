@@ -40,7 +40,7 @@ this service. Registration establishes a portal account, not verified identity.
 
 | Environment variable | Default / purpose |
 | --- | --- |
-| `PC_PORTAL_DATABASE_URL` | Postgres DSN, e.g. `postgresql://portal:<password>@powerchampion-db:5432/portal`; takes precedence over `PC_PORTAL_DB`. Schema is managed by Alembic (`server/migrations/`) and applied automatically at startup |
+| `PC_PORTAL_DATABASE_URL` | Postgres DSN, e.g. `postgresql://portal:<password>@powerchampion-db:5432/portal`; takes precedence over `PC_PORTAL_DB`. Schema is managed by Alembic (`server/migrations/`) and applied automatically at startup. Postgres connections use `connect_timeout=5` and `lock_timeout=15s` |
 | `PC_PORTAL_DB` | SQLite fallback when `PC_PORTAL_DATABASE_URL` is unset: `.local/portal.sqlite3`; mount a durable volume and back it up |
 | `PC_PORTAL_TEST_DATABASE_URL` | Tests only: run the suite against this Postgres instead of temporary SQLite files (see `scripts/test_backend_postgres.sh`) |
 | `PC_PORTAL_ALLOWED_ORIGINS` | `http://localhost:3010,https://powerchampion.ai`; exact origins for mutations |
