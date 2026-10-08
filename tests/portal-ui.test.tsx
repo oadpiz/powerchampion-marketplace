@@ -278,6 +278,24 @@ describe("account portal", () => {
     expect(screen.queryByText("Customer accounts")).not.toBeInTheDocument();
   });
 
+  it("renders the section title as the page h1", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({ user: { ...customer, role: "admin" } }),
+        )
+        .mockResolvedValue(
+          Response.json({ error: "unavailable" }, { status: 503 }),
+        ),
+    );
+    wrap(<AdminPortal section="customers" />);
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
+      "Customers",
+    );
+  });
+
   it("does not render zero admin statistics when the backend is unavailable", async () => {
     vi.stubGlobal(
       "fetch",

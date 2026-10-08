@@ -803,6 +803,13 @@ export function AdminPortal({
   const authorized = session.data?.user.role === "admin";
   return (
     <div className="admin-content">
+      <h1 className="admin-content-title">
+        {
+          navigation.find((item) => item.section === section)?.[
+            zh ? "zh" : "en"
+          ]
+        }
+      </h1>
       {session.loading ? (
         <div className="portal-panel" role="status">
           <p>{zh ? "正在確認管理員權限…" : "Checking administrator access…"}</p>

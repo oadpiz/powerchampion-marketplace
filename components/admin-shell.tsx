@@ -35,7 +35,7 @@ export function AdminShell({
   }
   return (
     <div className="admin-shell">
-      <a className="sr-only" href="#main-content">{zh ? "跳到主要內容" : "Skip to content"}</a>
+      <a className="skip-link" href="#main-content">{zh ? "跳到主要內容" : "Skip to content"}</a>
       <aside className="admin-shell-sidebar">
         <p className="admin-shell-brand">Power Champion<span>{zh ? "管理後台" : "Administration"}</span></p>
         <nav aria-label={zh ? "管理後台導覽" : "Administration navigation"}>

@@ -11,6 +11,7 @@
 .admin-shell-topbar a, .admin-shell-topbar button { color: var(--ink); background: none; border: 1px solid transparent; padding: 6px 10px; border-radius: 6px; cursor: pointer; font: inherit; text-decoration: none; }
 .admin-shell-topbar button:hover, .admin-shell-topbar a:hover { border-color: var(--line); }
 .admin-shell-topbar-actions { display: flex; gap: 8px; }
+.admin-content-title { margin: 0 0 16px; font-size: 1.5rem; font-weight: 600; }
 .admin-shell-content { padding: 24px; max-width: 1200px; width: 100%; }
 @media (max-width: 800px) {
   .admin-shell { grid-template-columns: 1fr; }
