@@ -42,6 +42,15 @@ class MigrationTests(unittest.TestCase):
             names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'")}
         self.assertEqual(len(names), 13, names)
 
+    def test_percent_in_url_does_not_break_config(self):
+        if self.db.backend != "sqlite":
+            self.skipTest("path-based check")
+        from server.store import Store
+        from pathlib import Path
+        target = str(Path(self.directory.name) / "pct%20dir" / "p.sqlite")
+        Store(target)  # must not raise
+        self.assertTrue(Path(target).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

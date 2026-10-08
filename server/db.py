@@ -13,6 +13,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any, Sequence
 
 ADVISORY_LOCK_KEY = 7300001
@@ -126,7 +127,7 @@ class Database:
             self.backend = "sqlite"
             self.path = path
             self._dsn = path
-            self.url = "sqlite:///" + path
+            self.url = "sqlite:///" + quote(path, safe="/")
             self.IntegrityError = sqlite3.IntegrityError
             Path(path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 

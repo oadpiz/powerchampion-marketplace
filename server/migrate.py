@@ -10,7 +10,7 @@ MIGRATIONS = Path(__file__).resolve().parent / "migrations"
 def _config(url: str) -> Config:
     cfg = Config(str(MIGRATIONS / "alembic.ini"))
     cfg.set_main_option("script_location", str(MIGRATIONS))
-    cfg.set_main_option("sqlalchemy.url", url)
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     return cfg
 
 
