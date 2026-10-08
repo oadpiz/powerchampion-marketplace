@@ -448,6 +448,121 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
+### Task 4b: 行銷站補 `/data-retention` 頁（部署閘道前的前置）
+
+**背景（2026-10-08 執行中發現）**：生產閘道目前還自己服務 `/privacy`、`/terms`、`/data-retention`（200），
+表示生產跑的是 glm53-gateway 合併 site-info **之前**的版本。合併後的 `app.py:781` `_MARKETING_REDIRECTS`
+會把 `/data-retention` 301 到 `https://powerchampion.ai/data-retention`，而行銷站 `main` 沒有這頁（404）。
+`/privacy`、`/terms`、`/status`、`/pricing`、`/about→/company` 的目標都存在。使用者決定：先把頁面移植到
+行銷站 `main`，行銷站先部署、閘道後部署（原本記憶裡的順序）。
+
+**Files（marketplace repo，worktree `.worktrees/data-retention-page`，分支 `phase0/data-retention-page` 從 `main` 開）：**
+- Create: `app/data-retention/page.tsx`（8 行，與 `app/privacy/page.tsx` 同形，`policy="dataRetention"`，`metadataForRoute("/data-retention")`）
+- Modify: `components/editorial-page.tsx:6`（`PolicyPage` 加 `"dataRetention"`）
+- Modify: `lib/trust.ts`（`PolicyLocaleContent` 型別加 `dataRetention`；`POLICY_CONTENT.en` 與 `.zh` 各加 `dataRetention` 區塊；「API usage data」段落的 `b300.powerchampion.ai/data-retention` 改成本站 `/data-retention`）
+- Modify: `lib/metadata.ts`（route union 加 `"/data-retention"`，entries 加 title／description）
+- Modify: `lib/content.ts:12,26,38`（footer 型別與兩語系加 `dataRetention` 標籤）
+- Modify: `components/site-shell.tsx:12,65-66,84`（footer policies 加 `["dataRetention", "/data-retention"]`）
+- Modify: `tests/rendered-html.test.mjs:78-100`（expected metadata 加 `/data-retention`；`routes` 與 `shellDestinations` 加 `/data-retention`）
+- Modify: `tests/trust-pages.test.tsx`（加一個 data-retention 頁的渲染測試）
+- Modify: `public/sitemap.xml`（加 `/data-retention`；若 `npm run seo:sitemap` 會產生，就用它產生）
+
+**內容來源**：分支 `fix/site-info-2026-09-09` 已有完整實作，用 `git show fix/site-info-2026-09-09:<檔>` 讀取
+`lib/trust.ts`（`dataRetention` 區塊 en／zh）、`lib/metadata.ts`（`/data-retention` 的 title／description）、
+`tests/legal-pages.test.tsx`（可參考的測試）。**只搬 data-retention 相關的部分**，不要把該分支的其他改動
+（related-links nav、metadata 重構）帶進來；該分支與 main 已分叉 19 個 commit。
+
+**Interfaces:**
+- Produces: `https://powerchampion.ai/data-retention` 部署後 200，title 含 `Data retention`（en）；footer Policies 群組有連結；
+  `/trust` 頁的「API usage data」段落連到 `/data-retention`。
+
+- [ ] **Step 1: 建 worktree**
+
+```bash
+cd /Users/optyne/repository/b300/sell-panel/powerchampion-marketplace
+git status --short | head -3
+git worktree add -b phase0/data-retention-page .worktrees/data-retention-page main
+cd .worktrees/data-retention-page && npm ci --silent 2>&1 | tail -2
+```
+Expected: worktree 建立；`npm ci` 無錯誤（Node ≥ 22.13）。
+
+- [ ] **Step 2: 先寫失敗的測試**
+
+(a) `tests/rendered-html.test.mjs`：在 `expected` 物件（L78-90 附近）加：
+```js
+  "/data-retention": {
+    title: "Data retention | Power Champion",
+    description: "<從 git show fix/site-info-2026-09-09:lib/metadata.ts 取 /data-retention 的 description，原文照抄>",
+  },
+```
+並在 `routes` 與 `shellDestinations` 兩個陣列各加 `"/data-retention"`。
+
+(b) `tests/trust-pages.test.tsx`：仿照該檔既有的 privacy／terms 渲染測試，加：
+```tsx
+it("renders the data retention policy", () => {
+  render(<EditorialPage policy="dataRetention" />);
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/data retention/i);
+});
+```
+（import 與 render 工具照該檔既有寫法。若該檔沒有 privacy 的同形測試，就照 `tests/components.test.tsx` 的渲染慣例。）
+
+```bash
+cd /Users/optyne/repository/b300/sell-panel/powerchampion-marketplace/.worktrees/data-retention-page
+npx vitest run tests/trust-pages.test.tsx 2>&1 | tail -8
+```
+Expected: FAIL，型別或執行期錯誤指出 `dataRetention` 不存在。
+
+- [ ] **Step 3: 實作**
+
+依上方 Files 清單逐檔改。`lib/trust.ts` 的 `dataRetention` 內容：
+
+```bash
+git show fix/site-info-2026-09-09:lib/trust.ts | grep -n 'dataRetention' 
+```
+找到 en 與 zh 兩個區塊，整塊複製進 main 版 `POLICY_CONTENT` 對應語系的 `terms:` 之後。若該區塊引用了 main 沒有的欄位
+（例如 `meta`、`related`），刪掉那些欄位，只保留 `title`、`intro`／`sections` 等 main 的 `PolicyLocaleContent` 已有的欄位。
+
+- [ ] **Step 4: 驗證**
+
+```bash
+cd /Users/optyne/repository/b300/sell-panel/powerchampion-marketplace/.worktrees/data-retention-page
+npx tsc --noEmit 2>&1 | tail -5
+npm run lint 2>&1 | tail -5
+npm test 2>&1 | tail -15
+```
+Expected: tsc 無錯誤；lint 無錯誤；`npm test`（vitest ＋ build ＋ rendered-html）全綠，rendered-html 的輸出含 `/data-retention`。
+
+- [ ] **Step 5: 本地實跑確認 200**
+
+```bash
+cd /Users/optyne/repository/b300/sell-panel/powerchampion-marketplace/.worktrees/data-retention-page
+(PORT=3977 npm run start >/tmp/dr-start.log 2>&1 &) ; sleep 8
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3977/data-retention
+curl -s http://localhost:3977/data-retention | grep -o '<title>[^<]*</title>'
+curl -s http://localhost:3977/trust | grep -o 'href="/data-retention"' | head -1
+pkill -f "vinext[ ]start" || true
+```
+Expected: `200`；`<title>Data retention | Power Champion</title>`；`href="/data-retention"`。
+（若 `vinext start` 不吃 `PORT`，看 `package.json` 的 start 與 `/tmp/dr-start.log` 找正確的埠或旗標。）
+
+- [ ] **Step 6: commit**
+
+```bash
+cd /Users/optyne/repository/b300/sell-panel/powerchampion-marketplace/.worktrees/data-retention-page
+git add app/data-retention/page.tsx components/editorial-page.tsx lib/trust.ts lib/metadata.ts lib/content.ts components/site-shell.tsx tests/rendered-html.test.mjs tests/trust-pages.test.tsx public/sitemap.xml
+git commit -m "feat(legal): add /data-retention page so the gateway 301 lands on content
+
+The gateway (phase 0 merge) redirects b300.powerchampion.ai/data-retention here.
+Content ported from fix/site-info-2026-09-09; footer and /trust now link locally.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+```
+
+**【使用者執行】** push 分支、開 PR 到 marketplace `main`、merge → Dokploy 自動部署行銷站。agent 驗證：
+`curl -s -o /dev/null -w '%{http_code}' https://powerchampion.ai/data-retention` 回 `200` 之後，Task 7 才能部署閘道。
+
+---
+
 ### Task 5: 【使用者執行】push、PR、merge 進 main
 
 **Files:** 無（遠端操作）。
@@ -556,7 +671,7 @@ cd /Users/optyne/repository/b300/sell-panel/.wt-merge
 python3 scripts/capture_public_anchors.py capture --base https://b300.powerchampion.ai --out docs/deploy/anchors-phase0-after.json
 python3 scripts/capture_public_anchors.py compare docs/deploy/anchors-phase0-before.json docs/deploy/anchors-phase0-after.json; echo "exit=$?"
 ```
-Expected: 理想是 `0 difference(s)`、`exit=0`。若有差異，**每一條**都要能歸因到 `origin/main` 比 `glm53-gateway` 多的 4 個 commit 之一（762f5a9、53d02fb、8c017ea、70f7103）；用 `git -C /Users/optyne/repository/b300/sell-panel show <sha> --stat` 與 `git show <sha> -- config.yaml` 找證據。歸因不了的差異 = 倒退，進 Step 7 回滾。
+Expected: **會有差異**，因為生產目前跑的是 glm53-gateway 合併 site-info 之前的版本（2026-10-08 實測：`/catalog.json` 401、`/privacy` 200）。至少預期 `catalog` 從 `{"_http_status": 401}` 變成完整目錄。**每一條**差異都要能歸因到 (a) `origin/main` 比 `glm53-gateway` 多的 4 個 commit 之一（762f5a9、53d02fb、8c017ea、70f7103），或 (b) glm53-gateway 上尚未部署的 commit（`git log --oneline 5ffe4b0^..0c406cf`，17 個）；用 `git -C /Users/optyne/repository/b300/sell-panel show <sha> --stat` 與 `git show <sha> -- config.yaml` 找證據。歸因不了的差異 = 倒退，進 Step 7 回滾。
 
 - [ ] **Step 5: 確認 GLM-5.3 仍 ready 且節點操作鏈仍通**
 
