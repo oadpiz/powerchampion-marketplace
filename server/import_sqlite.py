@@ -8,6 +8,8 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
+from pathlib import Path
+from urllib.parse import quote
 
 from server.db import Database
 from server.store import Store
@@ -24,35 +26,46 @@ SEQUENCE_COLUMNS = {"runtime_events": "sequence", "runtime_instructions": "seque
 
 
 def import_database(source_path: str, target: str, skip: set[str]) -> dict[str, tuple[int, int]]:
+    if not Path(source_path).is_file():
+        print("source database not found: " + source_path, file=sys.stderr)
+        raise SystemExit(2)
     Store(target)  # creates / upgrades the schema
     db = Database(target)
-    src = sqlite3.connect(source_path)
-    src.row_factory = sqlite3.Row
-    tables = [t for t in ORDER if t not in skip]
-    with db.connect() as con:
-        for table in tables:
-            if con.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]:
-                print("target table is not empty: " + table, file=sys.stderr)
-                raise SystemExit(2)
-    counts: dict[str, tuple[int, int]] = {}
-    with db.connect() as con:
+    src = sqlite3.connect("file:" + quote(source_path, safe="/") + "?mode=ro", uri=True)
+    try:
+        src.row_factory = sqlite3.Row
+        tables = [t for t in ORDER if t not in skip]
+        source_columns: dict[str, list[str]] = {}
         for table in tables:
             columns = [r["name"] for r in src.execute("PRAGMA table_info(" + table + ")")]
-            placeholders = ",".join("?" for _ in columns)
-            sql = "INSERT INTO " + table + " (" + ",".join(columns) + ") VALUES (" + placeholders + ")"
-            n = 0
-            for row in src.execute("SELECT * FROM " + table):
-                con.execute(sql, tuple(row))
-                n += 1
-            got = con.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
-            counts[table] = (n, got)
-        if db.backend == "postgres":
-            for table, column in SEQUENCE_COLUMNS.items():
-                if table in tables:
-                    con.execute("SELECT setval(pg_get_serial_sequence(?, ?), COALESCE((SELECT MAX(" + column + ") FROM " + table + "), 1))",
-                                (table, column))
-    src.close()
-    return counts
+            if not columns:
+                raise SystemExit("source has no table " + table + " (wrong --source file?)")
+            source_columns[table] = columns
+        with db.connect() as con:
+            for table in tables:
+                if con.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]:
+                    print("target table is not empty: " + table, file=sys.stderr)
+                    raise SystemExit(2)
+        counts: dict[str, tuple[int, int]] = {}
+        with db.connect() as con:
+            for table in tables:
+                columns = source_columns[table]
+                placeholders = ",".join("?" for _ in columns)
+                sql = "INSERT INTO " + table + " (" + ",".join(columns) + ") VALUES (" + placeholders + ")"
+                n = 0
+                for row in src.execute("SELECT * FROM " + table):
+                    con.execute(sql, tuple(row))
+                    n += 1
+                got = con.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+                counts[table] = (n, got)
+            if db.backend == "postgres":
+                for table, column in SEQUENCE_COLUMNS.items():
+                    if table in tables:
+                        con.execute("SELECT setval(pg_get_serial_sequence(?, ?), COALESCE((SELECT MAX(" + column + ") FROM " + table + "), 1))",
+                                    (table, column))
+        return counts
+    finally:
+        src.close()
 
 
 def main(argv=None) -> int:
