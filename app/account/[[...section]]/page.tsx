@@ -11,13 +11,15 @@ export default async function AccountPage({
   const section = route[0] ?? "overview";
   if (
     route.length > 1 ||
-    !["overview", "keys", "usage", "credits"].includes(section)
+    !["overview", "keys", "usage", "credits", "security"].includes(section)
   )
     notFound();
   return (
     <AccountPortal
       key={section}
-      section={section as "overview" | "keys" | "usage" | "credits"}
+      section={
+        section as "overview" | "keys" | "usage" | "credits" | "security"
+      }
     />
   );
 }

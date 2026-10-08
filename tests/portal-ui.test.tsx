@@ -441,6 +441,25 @@ describe("account portal", () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ newPassword: "brand-new-password-987!" });
     expect(await screen.findByText(/password was reset/i)).toBeVisible();
   });
+
+  it("changes the password from the security section", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.endsWith("/session")) return Promise.resolve(Response.json({ user: customer }));
+      if (u.endsWith("/password") && init?.method === "POST") return Promise.resolve(Response.json({ ok: true }));
+      return Promise.resolve(Response.json({ error: "unexpected" }, { status: 500 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<AccountPortal section="security" />);
+    await user.type(await screen.findByLabelText(/current password/i), "customer-test-password-123!");
+    await user.type(screen.getByLabelText(/^new password/i), "brand-new-password-987!");
+    await user.type(screen.getByLabelText(/confirm/i), "brand-new-password-987!");
+    await user.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/password updated/i)).toBeVisible();
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ currentPassword: "customer-test-password-123!", newPassword: "brand-new-password-987!" });
+  });
 });
 
 describe("AdminShell", () => {

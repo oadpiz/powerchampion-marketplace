@@ -11,7 +11,7 @@ import {
 } from "../lib/portal-client";
 import { useLocale } from "./locale-provider";
 
-type Section = "overview" | "keys" | "usage" | "credits";
+type Section = "overview" | "keys" | "usage" | "credits" | "security";
 type Key = {
   id: string;
   label: string;
@@ -58,6 +58,7 @@ const NAV: { section: Section; href: string; en: string; zh: string }[] = [
     en: "Credit requests",
     zh: "儲值申請",
   },
+  { section: "security", href: "/account/security", en: "Security", zh: "安全性" },
 ];
 const number = (value: number) => value.toLocaleString("en-US");
 const money = (value: number) =>
@@ -111,6 +112,11 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
   const [amount, setAmount] = useState("50");
   const [reference, setReference] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordCheck, setPasswordCheck] = useState<string | null>(null);
+  const [passwordChanged, setPasswordChanged] = useState(false);
   const dialog = useRef<HTMLDialogElement | null>(null);
   const mutationController = useRef<AbortController | null>(null);
   const mutationBusy = useRef(false);
@@ -131,6 +137,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
         });
         if (controller.signal.aborted) return;
         setUser(session.user);
+        if (section === "security") return;
         const path =
           section === "overview"
             ? "/overview"
@@ -243,6 +250,36 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
       setSubmitted(true);
       setReference("");
       setRefresh((value) => value + 1);
+    }
+  }
+
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    setPasswordChanged(false);
+    setMutationError(null);
+    if (newPassword !== confirmPassword) {
+      setPasswordCheck(
+        zh ? "兩次輸入的密碼不一致。" : "The passwords do not match.",
+      );
+      return;
+    }
+    if (newPassword.length < 12) {
+      setPasswordCheck(
+        zh ? "密碼至少 12 個字元。" : "Use at least 12 characters.",
+      );
+      return;
+    }
+    setPasswordCheck(null);
+    const result = await mutate<{ ok: boolean }>("/password", "POST", {
+      currentPassword,
+      newPassword,
+    });
+    if (result) {
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordChanged(true);
     }
   }
 
@@ -772,6 +809,80 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
             </section>
           </>
         )}
+
+      {!loading && !error && user && section === "security" && (
+        <section className="portal-panel">
+          <h2>{zh ? "變更密碼" : "Change password"}</h2>
+          <p className="portal-muted">
+            {zh
+              ? "變更後，其他裝置上的登入會被登出。"
+              : "Changing your password signs out your other devices."}
+          </p>
+          <form className="portal-credit-form" onSubmit={changePassword}>
+            <label className="portal-field">
+              {zh ? "目前密碼" : "Current password"}
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                required
+                disabled={busy}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+              />
+            </label>
+            <label className="portal-field">
+              {zh ? "新密碼" : "New password"}
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                required
+                disabled={busy}
+                onChange={(event) => setNewPassword(event.target.value)}
+              />
+            </label>
+            <label className="portal-field">
+              {zh ? "確認新密碼" : "Confirm new password"}
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                required
+                disabled={busy}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+              />
+            </label>
+            {passwordCheck && (
+              <p className="portal-error" role="alert">
+                {passwordCheck}
+              </p>
+            )}
+            {passwordChanged && (
+              <p className="portal-note" role="status">
+                {zh
+                  ? "密碼已更新。其他裝置的登入已登出。"
+                  : "Password updated. Other devices were signed out."}
+              </p>
+            )}
+            <div className="portal-actions">
+              <button
+                className="portal-button"
+                disabled={
+                  busy || !currentPassword || !newPassword || !confirmPassword
+                }
+              >
+                {busy
+                  ? zh
+                    ? "處理中…"
+                    : "Please wait…"
+                  : zh
+                    ? "更新密碼"
+                    : "Update password"}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
       {revokeKey && (
         <dialog
