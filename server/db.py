@@ -160,7 +160,7 @@ class Database:
             if self.backend == "postgres":
                 rows = con.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename").fetchall()
                 return [r[0] for r in rows]
-            rows = con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
+            rows = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()
             return [r[0] for r in rows]
 
     def reset_for_tests(self):

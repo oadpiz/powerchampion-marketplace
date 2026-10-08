@@ -107,7 +107,7 @@ class TrialChatTests(unittest.TestCase):
         self.reply["choices"][0]["message"]["content"] = "Never repeat " + TEST_KEY
         response = self.chat()
         self.assertEqual(response.json()["content"], "Never repeat [redacted]")
-        with self.app.state.store.connect() as con:
+        with sqlite3.connect(self.app.state.store.path) as con:
             dump = "\n".join(con.iterdump())
         self.assertNotIn(TEST_KEY, dump)
         self.assertNotIn("Explain solar energy.", dump)

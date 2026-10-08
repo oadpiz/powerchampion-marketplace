@@ -24,57 +24,6 @@ MAX_ARTIFACT_BYTES = 1024 * 1024
 MAX_TOTAL_ARTIFACT_BYTES = 8 * MAX_ARTIFACT_BYTES
 ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS runtime_tasks (
- id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id),
- goal TEXT NOT NULL, model TEXT NOT NULL, agent_id TEXT, agent_version INTEGER,
- agent_snapshot TEXT, encrypted_key TEXT,
- status TEXT NOT NULL CHECK(status IN ('queued','running','paused','awaiting_approval','completed','failed','cancelled')),
- created_at REAL NOT NULL, updated_at REAL NOT NULL,
- step_count INTEGER NOT NULL DEFAULT 0, max_steps INTEGER NOT NULL,
- max_output_tokens INTEGER NOT NULL, requested_control TEXT,
- input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
- summary TEXT NOT NULL DEFAULT '', error TEXT,
- messages TEXT NOT NULL DEFAULT '[]', plan TEXT NOT NULL DEFAULT '[]',
- worker_id TEXT, lease_expires_at REAL
-);
-CREATE INDEX IF NOT EXISTS runtime_tasks_owner ON runtime_tasks(owner_id,created_at);
-CREATE INDEX IF NOT EXISTS runtime_tasks_queue ON runtime_tasks(status,created_at);
-CREATE TABLE IF NOT EXISTS runtime_references (
- id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES runtime_tasks(id) ON DELETE CASCADE,
- position INTEGER NOT NULL, name TEXT NOT NULL, content TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS runtime_events (
- sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
- task_id TEXT NOT NULL REFERENCES runtime_tasks(id) ON DELETE CASCADE,
- kind TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, created_at REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS runtime_events_task ON runtime_events(task_id,sequence);
-CREATE TABLE IF NOT EXISTS runtime_instructions (
- sequence INTEGER PRIMARY KEY AUTOINCREMENT,
- task_id TEXT NOT NULL REFERENCES runtime_tasks(id) ON DELETE CASCADE,
- content TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS runtime_instructions_task ON runtime_instructions(task_id,sequence);
-CREATE TABLE IF NOT EXISTS runtime_approvals (
- sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
- task_id TEXT NOT NULL REFERENCES runtime_tasks(id) ON DELETE CASCADE,
- tool TEXT NOT NULL, args TEXT NOT NULL, call_id TEXT NOT NULL,
- reason TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')),
- created_at REAL NOT NULL, decided_at REAL,
- UNIQUE(task_id,call_id)
-);
-CREATE INDEX IF NOT EXISTS runtime_approvals_task ON runtime_approvals(task_id,sequence);
-CREATE TABLE IF NOT EXISTS runtime_artifacts (
- sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
- task_id TEXT NOT NULL REFERENCES runtime_tasks(id) ON DELETE CASCADE,
- call_id TEXT NOT NULL, name TEXT NOT NULL, mime_type TEXT NOT NULL,
- size INTEGER NOT NULL, content BLOB NOT NULL, created_at REAL NOT NULL,
- UNIQUE(task_id,call_id)
-);
-CREATE INDEX IF NOT EXISTS runtime_artifacts_task ON runtime_artifacts(task_id,sequence);
-"""
-
 
 class RuntimeErrorDetail(ValueError):
     def __init__(self, code, detail, status=400):
@@ -162,8 +111,6 @@ def _artifact(row):
 class RuntimeStore:
     def __init__(self, store):
         self.store = store
-        with store.connect() as con:
-            con.executescript(SCHEMA)
 
     @staticmethod
     def _owned(con, owner_id, task_id):
