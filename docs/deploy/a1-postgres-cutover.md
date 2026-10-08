@@ -62,10 +62,16 @@ Writes made while on Postgres are lost; that is the accepted trade-off (spec §5
 ## 7. Backups going forward
 A file copy of a live Postgres data directory is not a valid backup, so do not rely on Volume Backup of `portal-pg-data`. Use logical dumps:
 - The db service has a second named volume `portal-pg-dumps` mounted at `/var/lib/postgresql/dumps`.
-- Dokploy -> compose -> Schedules: add a daily job on the `powerchampion-db` container:
+- Dokploy -> compose -> Schedules: add a daily job. A Compose-type schedule runs *inside* the selected service's container, and the postgres image has no `docker` CLI, so use one of these two forms (each also deletes dumps older than 30 days):
+  - Compose-type schedule on service `powerchampion-db` (preferred), command:
 ```sh
-docker exec powerchampion-db pg_dump -U portal -d portal -Fc -f /var/lib/postgresql/dumps/portal-$(date +%Y%m%d).dump
+pg_dump -U portal -d portal -Fc -f /var/lib/postgresql/dumps/portal-$(date +%Y%m%d).dump && find /var/lib/postgresql/dumps -name 'portal-*.dump' -mtime +30 -delete
 ```
-- Dokploy -> compose -> Volume Backups: point it at `portal-pg-dumps` (a file copy of a finished dump is safe). Prune old dumps from that volume periodically.
+  - Server-type schedule (runs on the Dokploy host), command:
+```sh
+docker exec powerchampion-db sh -c "pg_dump -U portal -d portal -Fc -f /var/lib/postgresql/dumps/portal-\$(date +%Y%m%d).dump && find /var/lib/postgresql/dumps -name 'portal-*.dump' -mtime +30 -delete"
+```
+- Verify: trigger the schedule once, then in the db container terminal run `ls -l /var/lib/postgresql/dumps` and `pg_restore -l /var/lib/postgresql/dumps/<file> | head`.
+- Dokploy -> compose -> Volume Backups: point it at `portal-pg-dumps` (a file copy of a finished dump is safe). The `find ... -mtime +30 -delete` in the schedule keeps 30 days of dumps.
 - Restore: `pg_restore -U portal -d portal --clean --if-exists /var/lib/postgresql/dumps/portal-<date>.dump` in the db container.
 - `POSTGRES_PASSWORD` is applied only when the `portal-pg-data` volume is first created. Rotating `PC_PORTAL_DB_PASSWORD` later requires `ALTER USER portal PASSWORD '...'` in psql **and** updating the password in `PC_PORTAL_DATABASE_URL`.
