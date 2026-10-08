@@ -109,7 +109,7 @@ scripts/test_backend_postgres.sh
 
 `npm run test:backend` runs the suite on temporary SQLite files.
 `scripts/test_backend_postgres.sh` runs the same suite on a throwaway
-`postgres:16` started from `server/docker-compose.test.yml`. Tests use temporary databases, fake gateway collaborators and mocked HTTP
+`postgres:16-alpine` started from `server/docker-compose.test.yml`. Tests use temporary databases, fake gateway collaborators and mocked HTTP
 transports. They never contact production or create actual customer keys.
 
 ## Anonymous chat trial
