@@ -13,7 +13,7 @@ page, or SSH). That is the only place this runbook needs a host shell.
 - `a1/portal-postgres` merged to `main`, CI (portal-backend: sqlite + postgres) green.
 
 ## 1. Deploy the compose (adds `powerchampion-db`, portal still on SQLite)
-Deploy. Verify: `powerchampion-db` container healthy; portal `/api/portal/health` still 200; a customer can log in.
+Deploy. Verify: `powerchampion-db` container healthy; portal container still Healthy in Dokploy (the public `/api/portal/health` is 404 by design); a customer can log in.
 The portal has no `depends_on` on the database: with `PC_PORTAL_DATABASE_URL` unset it never touches Postgres, and once it is set a portal that cannot reach Postgres exits and `restart: unless-stopped` retries.
 
 ## 2. Freeze and back up SQLite (host shell on the Dokploy server)
@@ -51,9 +51,9 @@ Dokploy env: add `PC_PORTAL_DATABASE_URL=postgresql://portal:<same password>@pow
 If the portal container is restarting in a loop, the DSN is wrong or Postgres is unreachable: check its logs, then go to section 6.
 
 ## 5. Verify
-- `/api/portal/health` 200. This endpoint does **not** touch the database: a 200 does not prove Postgres works. The login test below does.
+- Dokploy → Docker → `powerchampion-portal` shows Healthy, and a login succeeds. (The public `https://powerchampion.ai/api/portal/health` returns 404: the BFF allowlist does not expose it, and the portal health endpoint does not touch the database anyway. The login test is what proves Postgres works.)
 - Log in with an existing customer account (old password). Keys, credits, agents listed as before.
-- In the db container terminal: `psql -U portal -d portal -c "select count(*) from users;"` equals the `users` line from step 3. The admin page lists customers only (role=customer), so its count is lower by the number of admin accounts.
+- In the db container terminal: `psql -U portal -d portal -c "select count(*) from users;"` equals the `users` line from step 3. The admin customers page now lists admin accounts too (with a role column), so its count should equal this number.
 
 ## 6. Rollback (any time)
 Remove `PC_PORTAL_DATABASE_URL` from Dokploy env, deploy. The portal reads `/data/portal.sqlite3` again; that file is unchanged since step 2.
