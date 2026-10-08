@@ -16,6 +16,9 @@ class PlaceholderTests(unittest.TestCase):
     def test_escaped_quote_inside_literal(self):
         self.assertEqual(translate_placeholders("SELECT 'it''s ?' FROM t WHERE a=?"), "SELECT 'it''s ?' FROM t WHERE a=%s")
 
+    def test_percent_is_escaped_for_psycopg(self):
+        self.assertEqual(translate_placeholders("SELECT 'a%b' FROM t WHERE x LIKE ?"), "SELECT 'a%%b' FROM t WHERE x LIKE %s")
+
 
 def _target(tmp):
     url = os.environ.get("PC_PORTAL_TEST_DATABASE_URL")
@@ -89,8 +92,32 @@ class DatabaseTests(unittest.TestCase):
             con.execute("UPDATE items SET note=CASE WHEN CAST(? AS TEXT)='clear' THEN NULL ELSE note END WHERE id=?", ("clear", "a"))
             self.assertIsNone(con.execute("SELECT note FROM items WHERE id=?", ("a",)).fetchone()["note"])
 
+    def test_cursor_is_iterable(self):
+        with self.db.connect() as con:
+            con.execute("INSERT INTO items VALUES (?,?,?)", ("a", 1, None))
+            con.execute("INSERT INTO items VALUES (?,?,?)", ("b", 2, None))
+            ids = [row["id"] for row in con.execute("SELECT id FROM items ORDER BY id")]
+        self.assertEqual(ids, ["a", "b"])
+
+    def test_duplicate_column_names_keep_positions(self):
+        with self.db.connect() as con:
+            row = con.execute("SELECT 1 AS a, 2 AS a").fetchone()
+        self.assertEqual(row[1], 2)
+        self.assertEqual(list(row), [1, 2])
+
     def test_table_names(self):
         self.assertIn("items", self.db.table_names())
+
+
+class UrlSchemeTests(unittest.TestCase):
+    def test_postgres_short_scheme_is_accepted(self):
+        db = Database("postgres://u:p@h:5432/d")
+        self.assertEqual(db.backend, "postgres")
+        self.assertEqual(db.url, "postgresql+psycopg://u:p@h:5432/d")
+
+    def test_unknown_scheme_rejected(self):
+        with self.assertRaises(ValueError):
+            Database("mysql://u:p@h/d")
 
 
 if __name__ == "__main__":

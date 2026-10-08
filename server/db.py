@@ -26,6 +26,8 @@ def translate_placeholders(sql: str) -> str:
         if ch == "'":
             in_literal = not in_literal
             out.append(ch)
+        elif ch == "%":
+            out.append("%%")
         elif ch == "?" and not in_literal:
             out.append("%s")
         else:
@@ -35,12 +37,20 @@ def translate_placeholders(sql: str) -> str:
 
 
 class Row(dict):
-    """dict with positional access, matching what sqlite3.Row offered."""
+    """dict with positional access and value iteration, matching what sqlite3.Row offered."""
+
+    def __init__(self, pairs):
+        pairs = list(pairs)
+        super().__init__(pairs)
+        self._values = tuple(value for _, value in pairs)
 
     def __getitem__(self, key):
         if isinstance(key, int):
-            return list(self.values())[key]
+            return self._values[key]
         return super().__getitem__(key)
+
+    def __iter__(self):
+        return iter(self._values)
 
 
 def _pg_row_factory(cursor):
@@ -69,6 +79,9 @@ class _Cursor:
             return rows
         return [Row(zip(r.keys(), tuple(r))) for r in rows]
 
+    def __iter__(self):
+        return iter(self.fetchall())
+
     @property
     def rowcount(self):
         return self._cursor.rowcount
@@ -95,6 +108,10 @@ class Connection:
 class Database:
     def __init__(self, target: str):
         target = str(target)
+        if target.startswith("postgres://"):
+            target = "postgresql://" + target[len("postgres://"):]
+        if "://" in target and not target.startswith(("sqlite:///", "postgresql://", "postgresql+psycopg://")):
+            raise ValueError("unsupported database URL scheme: " + target.split("://", 1)[0])
         if target.startswith(("postgresql://", "postgresql+psycopg://")):
             import psycopg  # noqa: F401  (import error surfaces here, not at first request)
             from psycopg import errors as pg_errors
