@@ -92,6 +92,21 @@ describe("portal service boundary", () => {
     expect(fetchMock.mock.calls.length).toBe(calls);
   });
 
+  it("allows the account-management and password routes and nothing adjacent", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "https://portal.internal.example");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    const id = "a".repeat(32);
+    for (const allowed of ["/password", `/admin/customers/${id}/status`, `/admin/customers/${id}/role`, `/admin/customers/${id}/reset-password`]) {
+      expect((await POST(request(allowed, "POST", {}))).status).toBe(200);
+    }
+    expect(fetchMock.mock.calls.length).toBe(4);
+    for (const blocked of [`/admin/customers/${id}/delete`, "/admin/customers/not-hex/status", `/admin/customers/${id}`, "/password/reset"]) {
+      expect((await POST(request(blocked, "POST", {}))).status).toBe(404);
+    }
+    expect(fetchMock.mock.calls.length).toBe(4);
+  });
+
   it("blocks cross-origin mutations, arbitrary endpoints, invalid months and oversized input", async () => {
     vi.stubGlobal("fetch", vi.fn()); vi.stubEnv("PC_PORTAL_ORIGIN", "");
     expect((await POST(request("/auth/login", "POST", {}, { origin: "https://evil.example" }))).status).toBe(403);

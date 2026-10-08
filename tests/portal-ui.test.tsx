@@ -73,7 +73,9 @@ describe("account portal", () => {
     expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}&next=https://bad.example`)).toBe("/account");
     expect(safeAccountReturn("/tasks//evil.example")).toBe("/account");
     expect(safeAccountReturn("/tasks?next=https://evil.example")).toBe("/account");
-    expect(safeAccountReturn("/admin")).toBe("/account");
+    expect(safeAccountReturn("/admin")).toBe("/admin");
+    expect(safeAccountReturn("/admin/customers")).toBe("/admin/customers");
+    expect(safeAccountReturn("/admin/anything")).toBe("/account");
     expect(portalErrorText(new PortalError(503, "usage_pricing_incomplete", "Internal details"), "en")).toContain("Pricing data is incomplete");
   });
 
