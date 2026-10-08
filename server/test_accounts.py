@@ -173,6 +173,16 @@ class SelfServicePasswordTests(_PortalCase):
     def test_change_password_requires_session(self):
         self.assertEqual(self.post(self.client(), "/password", {"currentPassword": PASSWORD, "newPassword": "x" * 12}).status_code, 401)
 
+    def test_wrong_current_password_is_throttled(self):
+        me = self.client()
+        self.register(me, "a@example.test")
+        for _ in range(5):
+            r = self.post(me, "/password", {"currentPassword": "not-the-password-1", "newPassword": "brand-new-password-987!"})
+            self.assertEqual(r.status_code, 400)
+        sixth = self.post(me, "/password", {"currentPassword": PASSWORD, "newPassword": "brand-new-password-987!"})
+        self.assertEqual(sixth.status_code, 429, "even the right password is refused while throttled")
+        self.assertEqual(sixth.json()["error"], "rate_limited")
+
 
 if __name__ == "__main__":
     unittest.main()

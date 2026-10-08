@@ -234,10 +234,14 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             password = validate_password(body.get("newPassword"))
         except ValueError as error:
             fail("invalid_input", str(error))
+        scope = "password:" + digest_token(user["id"])
+        if not store.consume_attempt(scope):
+            fail("rate_limited", "Too many attempts. Please try again in 15 minutes.", 429)
         row = store.find_user(user["email"])
         valid = await run_in_threadpool(verify_password, current, row["password_hash"])
         if not valid:
             fail("invalid_current_password", "The current password is incorrect.")
+        store.clear_attempts(scope)
         encoded = await run_in_threadpool(password_hash, password)
         keep = digest_token(request.cookies.get(COOKIE_NAME, ""))
         with store.connect() as con:
