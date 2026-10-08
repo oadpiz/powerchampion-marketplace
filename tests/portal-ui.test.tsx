@@ -395,9 +395,25 @@ describe("account portal", () => {
     await user.click(await screen.findByRole("button", { name: /disable/i }));
     await user.click(screen.getByRole("button", { name: /confirm/i }));
     expect(await screen.findByText("disabled", { exact: false })).toBeVisible();
+    expect(screen.getByLabelText(/search by name/i)).toHaveFocus();
     const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     expect(String(call?.[0])).toMatch(/\/admin\/customers\/b{32}\/status$/);
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ action: "disable" });
+  });
+
+  it("offers no account actions on the signed-in admin's own row", async () => {
+    const customers = [
+      { id: "cust-1", email: "person@example.com", name: "Person", role: "admin", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 0 },
+      { id: "b".repeat(32), email: "roy@example.test", name: "Roy", role: "customer", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 0 },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((url) => {
+      if (String(url).endsWith("/session")) return Promise.resolve(Response.json({ user: { ...customer, role: "admin" } }));
+      return Promise.resolve(Response.json({ customers }));
+    }));
+    wrap(<AdminPortal section="customers" />);
+    expect(await screen.findByRole("button", { name: "Disable roy@example.test" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /person@example.com/ })).not.toBeInTheDocument();
+    expect(screen.getByText("You")).toBeVisible();
   });
 
   it("resets a customer password only when both entries match", async () => {

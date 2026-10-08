@@ -286,7 +286,7 @@ function OverviewSection() {
   );
 }
 
-function CustomersSection() {
+function CustomersSection({ currentUserId }: { currentUserId?: string }) {
   const zh = useLocale().locale === "zh";
   const resource = usePortalResource<{ customers: Customer[] }>(
     "/admin/customers",
@@ -294,6 +294,14 @@ function CustomersSection() {
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<AccountSelection | null>(null);
   const [done, setDone] = useState<AccountAction | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const restoreFocusRef = useRef(false);
+  useEffect(() => {
+    if (restoreFocusRef.current && !resource.loading && resource.data) {
+      restoreFocusRef.current = false;
+      searchRef.current?.focus();
+    }
+  }, [resource.loading, resource.data]);
   const customers =
     resource.data?.customers.filter((customer) =>
       `${customer.email} ${customer.name} ${customer.id}`
@@ -334,6 +342,7 @@ function CustomersSection() {
               ? "搜尋姓名、電子郵件或客戶 ID"
               : "Search by name, email, or customer ID"}
             <input
+              ref={searchRef}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -393,48 +402,54 @@ function CustomersSection() {
                       </td>
                       <td>{dateLabel(customer.createdAt, zh)}</td>
                       <td>
-                        <div className="portal-actions">
-                          {(
-                            [
-                              customer.status === "active"
-                                ? "disable"
-                                : "enable",
-                              "role",
-                              "reset-password",
-                            ] as const
-                          ).map((action) => {
-                            const label =
-                              action === "disable"
-                                ? zh
-                                  ? "停用"
-                                  : "Disable"
-                                : action === "enable"
+                        {customer.id === currentUserId ? (
+                          <span className="portal-badge">
+                            {zh ? "本人" : "You"}
+                          </span>
+                        ) : (
+                          <div className="portal-actions">
+                            {(
+                              [
+                                customer.status === "active"
+                                  ? "disable"
+                                  : "enable",
+                                "role",
+                                "reset-password",
+                              ] as const
+                            ).map((action) => {
+                              const label =
+                                action === "disable"
                                   ? zh
-                                    ? "啟用"
-                                    : "Enable"
-                                  : action === "role"
+                                    ? "停用"
+                                    : "Disable"
+                                  : action === "enable"
                                     ? zh
-                                      ? "改角色"
-                                      : "Change role"
-                                    : zh
-                                      ? "重設密碼"
-                                      : "Reset password";
-                            return (
-                              <button
-                                key={action}
-                                type="button"
-                                className="portal-button-secondary"
-                                aria-label={`${label} ${customer.email}`}
-                                onClick={() => {
-                                  setDone(null);
-                                  setSelection({ action, customer });
-                                }}
-                              >
-                                {label}
-                              </button>
-                            );
-                          })}
-                        </div>
+                                      ? "啟用"
+                                      : "Enable"
+                                    : action === "role"
+                                      ? zh
+                                        ? "改角色"
+                                        : "Change role"
+                                      : zh
+                                        ? "重設密碼"
+                                        : "Reset password";
+                              return (
+                                <button
+                                  key={action}
+                                  type="button"
+                                  className="portal-button-secondary"
+                                  aria-label={`${label} ${customer.email}`}
+                                  onClick={() => {
+                                    setDone(null);
+                                    setSelection({ action, customer });
+                                  }}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -462,6 +477,7 @@ function CustomersSection() {
           onDone={() => {
             setDone(selection.action);
             setSelection(null);
+            restoreFocusRef.current = true;
             resource.refresh();
           }}
         />
@@ -1180,7 +1196,9 @@ export function AdminPortal({
       ) : authorized ? (
         <>
           {section === "overview" && <OverviewSection />}
-          {section === "customers" && <CustomersSection />}
+          {section === "customers" && (
+            <CustomersSection currentUserId={session.data?.user.id} />
+          )}
           {section === "credits" && <CreditsSection />}
           {section === "audit" && <AuditSection />}
         </>
