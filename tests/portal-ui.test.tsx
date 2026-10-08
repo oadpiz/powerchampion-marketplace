@@ -377,6 +377,54 @@ describe("account portal", () => {
       note: "Matched bank reference",
     });
   });
+  it("disables a customer after confirmation and reflects the new status", async () => {
+    const user = userEvent.setup();
+    const customers = [{ id: "b".repeat(32), email: "roy@example.test", name: "Roy", role: "customer", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 0 }];
+    const fetchMock = vi.fn().mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.endsWith("/session")) return Promise.resolve(Response.json({ user: { ...customer, role: "admin" } }));
+      if (u.endsWith("/admin/customers") && !init?.method) return Promise.resolve(Response.json({ customers }));
+      if (u.endsWith("/status") && init?.method === "POST") {
+        customers[0].status = "disabled";
+        return Promise.resolve(Response.json({ customer: customers[0] }));
+      }
+      return Promise.resolve(Response.json({ error: "unexpected" }, { status: 500 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<AdminPortal section="customers" />);
+    await user.click(await screen.findByRole("button", { name: /disable/i }));
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    expect(await screen.findByText("disabled", { exact: false })).toBeVisible();
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(String(call?.[0])).toMatch(/\/admin\/customers\/b{32}\/status$/);
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ action: "disable" });
+  });
+
+  it("resets a customer password only when both entries match", async () => {
+    const user = userEvent.setup();
+    const customers = [{ id: "b".repeat(32), email: "roy@example.test", name: "Roy", role: "customer", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 0 }];
+    const fetchMock = vi.fn().mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.endsWith("/session")) return Promise.resolve(Response.json({ user: { ...customer, role: "admin" } }));
+      if (u.endsWith("/admin/customers") && !init?.method) return Promise.resolve(Response.json({ customers }));
+      if (u.endsWith("/reset-password")) return Promise.resolve(Response.json({ ok: true }));
+      return Promise.resolve(Response.json({ error: "unexpected" }, { status: 500 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<AdminPortal section="customers" />);
+    await user.click(await screen.findByRole("button", { name: /reset password/i }));
+    await user.type(screen.getByLabelText(/new password/i), "brand-new-password-987!");
+    await user.type(screen.getByLabelText(/confirm/i), "different-password-000!");
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    expect(screen.getByText(/do not match/i)).toBeVisible();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    await user.clear(screen.getByLabelText(/confirm/i));
+    await user.type(screen.getByLabelText(/confirm/i), "brand-new-password-987!");
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ newPassword: "brand-new-password-987!" });
+    expect(await screen.findByText(/password was reset/i)).toBeVisible();
+  });
 });
 
 describe("AdminShell", () => {
