@@ -1,7 +1,6 @@
 """Customer/admin API, isolated from the existing production control plane."""
 import json
 import re
-import sqlite3
 import time
 import uuid
 import asyncio
@@ -73,7 +72,7 @@ def credit_cents(value):
 
 def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=None, runtime_tools=None):
     settings = settings or Settings.from_env()
-    store = Store(settings.db_path)
+    store = Store(settings.resolved_database_url)
     gateway = gateway if gateway is not None else GatewayAdapter(settings)
     @asynccontextmanager
     async def lifespan(application):
@@ -180,7 +179,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             user = await run_in_threadpool(store.create_user, email, name, password)
         except ValueError as error:
             fail("invalid_input", str(error))
-        except sqlite3.IntegrityError:
+        except store.IntegrityError:
             fail("duplicate_email", "An account already exists for this email. Sign in instead.", 409)
         return set_session(user, request, 201)
 
@@ -228,7 +227,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         with store.connect() as con:
             keys = con.execute("SELECT COUNT(*) FROM gateway_keys WHERE user_id=? AND status='active'", (user["id"],)).fetchone()[0]
             pending = con.execute("SELECT COUNT(*) FROM credit_requests WHERE user_id=? AND status='pending'", (user["id"],)).fetchone()[0]
-            approved = con.execute("SELECT COALESCE(SUM(amount_cents),0) FROM credit_requests WHERE user_id=? AND status='approved'", (user["id"],)).fetchone()[0]
+            approved = int(con.execute("SELECT COALESCE(SUM(amount_cents),0) FROM credit_requests WHERE user_id=? AND status='approved'", (user["id"],)).fetchone()[0] or 0)
         return {"user": user, "keyCount": keys, "pendingCreditCount": pending, "approvedCreditUsd": approved / 100, "gatewayConfigured": bool(gateway.configured)}
 
     @application.get(PREFIX + "/keys")
@@ -477,7 +476,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
     async def audit(request: Request):
         current_user(request, admin=True)
         with store.connect() as con:
-            rows = con.execute("SELECT a.*,u.email FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC,a.rowid DESC LIMIT 200").fetchall()
+            rows = con.execute("SELECT a.*,u.email FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC,a.id DESC LIMIT 200").fetchall()
         return {"events": [{"id": row["id"], "action": row["action"], "actorEmail": row["email"], "targetId": row["target_id"], "createdAt": iso(row["created_at"])} for row in rows]}
 
     attach_runtime(application, store, settings, agents, current_user, body_json, runtime_model, runtime_tools)

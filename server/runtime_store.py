@@ -288,7 +288,7 @@ class RuntimeStore:
                 requested = "cancel" if requested == "cancel" or action == "cancel" else "pause"
             else:
                 status, requested = ("cancelled" if action == "cancel" else "paused"), None
-            con.execute("UPDATE runtime_tasks SET status=?,requested_control=?,updated_at=?,error=CASE WHEN ?='resume' THEN NULL ELSE error END,encrypted_key=CASE WHEN ?='cancelled' THEN NULL ELSE encrypted_key END WHERE id=?",
+            con.execute("UPDATE runtime_tasks SET status=?,requested_control=?,updated_at=?,error=CASE WHEN CAST(? AS TEXT)='resume' THEN NULL ELSE error END,encrypted_key=CASE WHEN CAST(? AS TEXT)='cancelled' THEN NULL ELSE encrypted_key END WHERE id=?",
                         (status, requested, time.time(), action, status, task_id))
             self._event(con, task_id, "control", "Control requested", action)
             return self._public(con, self._owned(con, user_id, task_id))
@@ -341,7 +341,7 @@ class RuntimeStore:
             stale = con.execute("SELECT * FROM runtime_tasks WHERE status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=?)", (now,)).fetchall()
             for row in stale:
                 status = "cancelled" if row["requested_control"] == "cancel" else "paused"
-                con.execute("UPDATE runtime_tasks SET status=?,requested_control=NULL,worker_id=NULL,lease_expires_at=NULL,updated_at=?,error=?,encrypted_key=CASE WHEN ?='cancelled' THEN NULL ELSE encrypted_key END WHERE id=?",
+                con.execute("UPDATE runtime_tasks SET status=?,requested_control=NULL,worker_id=NULL,lease_expires_at=NULL,updated_at=?,error=?,encrypted_key=CASE WHEN CAST(? AS TEXT)='cancelled' THEN NULL ELSE encrypted_key END WHERE id=?",
                             (status, now, "Worker interrupted. Review the task before resuming; the last model call may have incurred usage.", status, row["id"]))
                 self._event(con, row["id"], "control", "Interrupted task recovered", "Cancelled." if status == "cancelled" else "Paused for explicit recovery; no model call was repeated.")
             row = con.execute("SELECT * FROM runtime_tasks WHERE status='queued' ORDER BY created_at,id LIMIT 1").fetchone()
@@ -436,7 +436,7 @@ class RuntimeStore:
                 error = "A new instruction arrived during completion. Resume to apply it to the saved result."
             summary = _text(summary, "task summary", 16000, empty=True, strip=False)
             error = _text(error, "task error", 4000, empty=True) if error is not None else None
-            con.execute("UPDATE runtime_tasks SET status=?,summary=?,error=?,requested_control=NULL,worker_id=NULL,lease_expires_at=NULL,updated_at=?,encrypted_key=CASE WHEN ?='paused' THEN encrypted_key ELSE NULL END WHERE id=?",
+            con.execute("UPDATE runtime_tasks SET status=?,summary=?,error=?,requested_control=NULL,worker_id=NULL,lease_expires_at=NULL,updated_at=?,encrypted_key=CASE WHEN CAST(? AS TEXT)='paused' THEN encrypted_key ELSE NULL END WHERE id=?",
                         (status, summary, error, time.time(), status, task_id))
             self._event(con, task_id, "completed" if status == "completed" else "error" if status == "failed" else "control",
                         "Task " + status, error or summary)
