@@ -216,6 +216,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
   // Localized public pages own their translated navigation and footer.
   if (getInternationalRoute(pathname)) return children;
+  // The administration area renders its own standalone shell (app/admin/layout.tsx).
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) return children;
   if (isAiWorkspacePath(pathname))
     return <AiWorkspaceShell pathname={pathname}>{children}</AiWorkspaceShell>;
   const translatedSection = [

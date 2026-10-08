@@ -80,7 +80,7 @@ const destinations = [
 ] as const;
 
 export function isPlatformPath(pathname: string) {
-  return pathname === "/admin" || pathname.startsWith("/admin/") || destinations.some(
+  return destinations.some(
     ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
   );
 }
@@ -96,8 +96,7 @@ export function PlatformFrame({
   const zh = locale === "zh";
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
-  const current = pathname === "/admin" || pathname.startsWith("/admin/")
-    ? { href: "/admin", en: "Administration", zh: "管理後台" } :
+  const current =
     destinations.find(
       ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
     ) ?? destinations[0];
@@ -202,7 +201,6 @@ export function PlatformFrame({
             value={current.href}
             onChange={(event) => window.location.assign(event.target.value)}
           >
-            {current.href === "/admin" && <option value="/admin">{zh ? "管理後台" : "Administration"}</option>}
             {destinations.map((item) => (
               <option key={item.href} value={item.href}>
                 {item[locale]}

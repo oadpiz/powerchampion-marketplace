@@ -1,0 +1,19 @@
+.admin-shell { min-height: 100vh; display: grid; grid-template-columns: 240px 1fr; background: var(--ground); color: var(--ink); }
+.admin-shell-sidebar { border-right: 1px solid var(--line); padding: 24px 16px; display: flex; flex-direction: column; gap: 24px; background: var(--surface); }
+.admin-shell-brand { margin: 0; font-weight: 600; letter-spacing: 0.04em; }
+.admin-shell-brand span { display: block; font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+.admin-shell-sidebar nav { display: flex; flex-direction: column; gap: 4px; }
+.admin-shell-sidebar nav a { padding: 10px 12px; border-radius: 8px; color: var(--ink); text-decoration: none; }
+.admin-shell-sidebar nav a:hover { background: var(--surface-raised); }
+.admin-shell-sidebar nav a[aria-current="page"] { background: var(--surface-raised); font-weight: 600; box-shadow: inset 3px 0 0 var(--cyan); }
+.admin-shell-main { display: flex; flex-direction: column; min-width: 0; }
+.admin-shell-topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px; border-bottom: 1px solid var(--line); }
+.admin-shell-topbar a, .admin-shell-topbar button { color: var(--ink); background: none; border: 1px solid transparent; padding: 6px 10px; border-radius: 6px; cursor: pointer; font: inherit; text-decoration: none; }
+.admin-shell-topbar button:hover, .admin-shell-topbar a:hover { border-color: var(--line); }
+.admin-shell-topbar-actions { display: flex; gap: 8px; }
+.admin-shell-content { padding: 24px; max-width: 1200px; width: 100%; }
+@media (max-width: 800px) {
+  .admin-shell { grid-template-columns: 1fr; }
+  .admin-shell-sidebar { border-right: 0; border-bottom: 1px solid var(--line); flex-direction: row; align-items: center; justify-content: space-between; }
+  .admin-shell-sidebar nav { flex-direction: row; flex-wrap: wrap; }
+}

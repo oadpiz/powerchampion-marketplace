@@ -802,24 +802,7 @@ export function AdminPortal({
     (session.data !== null && session.data.user.role !== "admin");
   const authorized = session.data?.user.role === "admin";
   return (
-    <main id="main-content" className="platform-page portal-page">
-      <header className="portal-header">
-        <p className="portal-kicker">
-          POWER CHAMPION / {zh ? "管理後台" : "ADMINISTRATION"}
-        </p>
-        <h1>
-          {
-            navigation.find((item) => item.section === section)?.[
-              zh ? "zh" : "en"
-            ]
-          }
-        </h1>
-        <p>
-          {zh
-            ? "管理客戶、審核儲值申請，並追蹤平台操作。"
-            : "Manage customers, review credit requests, and trace platform activity."}
-        </p>
-      </header>
+    <div className="admin-content">
       {session.loading ? (
         <div className="portal-panel" role="status">
           <p>{zh ? "正在確認管理員權限…" : "Checking administrator access…"}</p>
@@ -861,27 +844,12 @@ export function AdminPortal({
         <ResourceState {...session}>{null}</ResourceState>
       ) : authorized ? (
         <>
-          <nav
-            className="portal-nav"
-            aria-label={zh ? "管理後台導覽" : "Administration navigation"}
-          >
-            {navigation.map((item) => (
-              <Link
-                href={item.href}
-                key={item.section}
-                aria-current={section === item.section ? "page" : undefined}
-              >
-                {zh ? item.zh : item.en}
-              </Link>
-            ))}
-            <Link href="/account">{zh ? "我的帳戶" : "My account"} ↗</Link>
-          </nav>
           {section === "overview" && <OverviewSection />}
           {section === "customers" && <CustomersSection />}
           {section === "credits" && <CreditsSection />}
           {section === "audit" && <AuditSection />}
         </>
       ) : null}
-    </main>
+    </div>
   );
 }

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthForm } from "../components/auth-form";
 import { AccountPortal } from "../components/account-portal";
 import { AdminPortal } from "../components/admin-portal";
+import { AdminShell } from "../components/admin-shell";
 import { LocaleProvider } from "../components/locale-provider";
 import { PortalError, portalErrorText, safeAccountReturn } from "../lib/portal-client";
 
@@ -357,5 +358,29 @@ describe("account portal", () => {
       decision: "approve",
       note: "Matched bank reference",
     });
+  });
+});
+
+describe("AdminShell", () => {
+  it("renders the admin navigation with the current section marked", () => {
+    wrap(<AdminShell pathname="/admin/customers"><p>content</p></AdminShell>);
+    const nav = screen.getByRole("navigation", { name: /administration/i });
+    expect(nav).toBeVisible();
+    expect(screen.getByRole("link", { name: "Customers" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: /back to site/i })).toHaveAttribute("href", "/");
+    expect(screen.getByText("content")).toBeVisible();
+  });
+
+  it("signs out through the portal and leaves for the login page", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    wrap(<AdminShell pathname="/admin"><p>content</p></AdminShell>);
+    await user.click(screen.getByRole("button", { name: /sign out/i }));
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/portal\/auth\/logout$/);
+    expect(assign).toHaveBeenCalledWith("/login");
   });
 });
