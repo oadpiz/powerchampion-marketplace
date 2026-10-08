@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import FaqPage from "../app/faq/page";
+import DataRetentionPage from "../app/data-retention/page";
 import PrivacyPage from "../app/privacy/page";
 import TermsPage from "../app/terms/page";
 import { InfrastructureContent } from "../components/infrastructure-content";
@@ -67,6 +68,13 @@ describe("public trust pages", () => {
       expect(screen.getByText(boundary)).toBeVisible();
     },
   );
+
+  it("renders the data retention policy with its no-persistence boundary", () => {
+    localized(<DataRetentionPage />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/data retention/i);
+    expect(screen.getByRole("heading", { level: 2, name: "Usage metadata" })).toBeVisible();
+    expect(screen.getByText(/not written to persistent storage/i)).toBeVisible();
+  });
 
   it("renders the published infrastructure stages without unverified live claims", async () => {
     const user = userEvent.setup();

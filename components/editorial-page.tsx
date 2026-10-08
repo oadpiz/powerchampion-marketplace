@@ -3,7 +3,7 @@
 import { useLocale } from "./locale-provider";
 import { POLICY_CONTENT } from "../lib/trust";
 
-type PolicyPage = "privacy" | "terms";
+type PolicyPage = "privacy" | "terms" | "dataRetention";
 
 export function EditorialPage({ policy }: { policy: PolicyPage }) {
   const { locale } = useLocale();

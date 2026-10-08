@@ -86,6 +86,7 @@ export type FaqEntry = {
 export type PolicyLocaleContent = {
   privacy: { kicker: string; title: string; lead: string; sections: EditorialSection[] };
   terms: { kicker: string; title: string; lead: string; sections: EditorialSection[] };
+  dataRetention: { kicker: string; title: string; lead: string; sections: EditorialSection[] };
   faq: FaqEntry[];
 };
 
@@ -192,7 +193,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
         { id: "account-data", title: "Account and session data", body: ["When you register, the account service stores your name, email address, account role, and a salted scrypt password hash. It does not store your password in plain text. An essential HttpOnly cookie keeps you signed in, with a default lifetime of 12 hours; the server stores a hash of its session token, the account association, and creation and expiry times. Signing out invalidates that session. Account activity and authentication-protection records are retained by the account service."] },
         { id: "account-records", title: "Key ownership and credit requests", body: ["The account service stores the ownership, label, visible prefix, status, and timestamps of API keys managed through the workspace. It also stores credit-request amounts, reference text, review decisions and notes, reviewer identifiers, timestamps, and audit events. A credit request is a record for manual review: submitting or approving it does not process a payment or automatically add funds to the inference gateway."] },
         { id: "account-recovery", title: "Account support", body: ["For account recovery or questions about account records, contact info@powerchampion.org. Recovery is handled by an operator after checking the request; there is no self-service password-reset email flow. An operator password reset revokes existing account sessions. Do not send your password or a complete API key by email."] },
-        { id: "api-usage-data", title: "API usage data", body: ["Requests to the API itself are metered by the b300 gateway for billing (tokens, timestamps, model). This is operational billing data for the service you call — see the data-retention policy at b300.powerchampion.ai/data-retention."] },
+        { id: "api-usage-data", title: "API usage data", body: ["Requests to the API itself are metered by the b300 gateway for billing (tokens, timestamps, model). This is operational billing data for the service you call — see the data-retention policy at powerchampion.ai/data-retention."] },
         { id: "agent-tasks", title: "Background Agent tasks", body: ["When enabled, Agent tasks are a separate signed-in service. Starting a task saves its goal, references, selected agent configuration, instructions, progress, model and tool messages, and generated files to your account. Relevant content is sent to the selected model through the fixed Power Champion gateway. Task history is retained across page reloads and bounded to 50 tasks per account. Your explicitly supplied model API key is encrypted on the server so the task can continue after you close the page. The current encrypted key is cleared when the task completes, fails, or is cancelled; paused tasks retain it to resume. Access-controlled backups may retain earlier records. Keys are not saved in browser storage. Public web reads require approval of the exact URL and send no account cookies or model credentials to that website. Contact support for account data removal requests."] },
         { id: "future-changes", title: "Future changes", body: ["If a future release changes data handling, the public privacy notice and the relevant service controls will be updated before that release."] },
       ],
@@ -205,6 +206,19 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
         { id: "informational-site", title: "Site scope", body: ["The website provides interactive tools and public service information. Requests sent to the API gateway at b300.powerchampion.ai depend on current model availability and are subject to measured usage billing. An interface or a pre-written example does not establish that a live request has succeeded."] },
         { id: "api-access", title: "API access", body: ["The workspace supports account registration and credit requests for manual review. API key provisioning and usage retrieval require a configured gateway connection; contact info@powerchampion.org when these services are unavailable. Published catalog rates and estimates describe the listed pricing, not a live reading of the gateway meter. Credit-request approval does not process payment or automatically fund gateway usage."] },
         { id: "external-sources", title: "External sources", body: ["Company and capacity context is qualified by the cited external sources and does not create a promise of deployment, capacity, or service."] },
+      ],
+    },
+    dataRetention: {
+      kicker: "Data retention",
+      title: "Data Retention Policy",
+      lead: "Prompt content is not persisted. The usage metadata that billing needs is retained only as long as necessary, and this policy explains its purpose and scope.",
+      sections: [
+        { id: "scope", title: "Scope", body: ["This policy supplements our Privacy Policy and describes how data is retained for the inference API at b300.powerchampion.ai."] },
+        { id: "prompt-content", title: "Prompt and output content", body: ["Prompt content and model output are processed only to complete the inference request. They are released when request processing finishes and are not written to persistent storage. Conversation content is not kept in billing records or operational usage logs."] },
+        { id: "usage-metadata", title: "Usage metadata", body: ["We retain metering metadata such as timestamps, API-key identifiers, model identifiers, measured token or media usage, a billing record identifier, and an operational status note when needed, only as long as needed for billing and reconciliation purposes. These records do not contain prompt or output content."] },
+        { id: "no-training", title: "No training use", body: ["Prompt content and model output are not used to train, fine-tune, or evaluate machine-learning models."] },
+        { id: "deletion", title: "Deletion and legal obligations", body: ["When records are no longer needed for their stated billing, accounting, security, or legal purpose, they are deleted or de-identified. If applicable law requires a record to be preserved, we keep only the minimum required scope for the required period."] },
+        { id: "contact", title: "Contact", body: ["Power Champion Investment Limited — info@powerchampion.org"] },
       ],
     },
     faq: [
@@ -233,7 +247,7 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
         { id: "account-data", title: "帳號與登入工作階段資料", body: ["註冊時，帳號服務會儲存姓名、電子郵件、帳號角色，以及使用隨機鹽值的 scrypt 密碼雜湊，不會以明文儲存密碼。必要的 HttpOnly Cookie 用來維持登入，預設有效期限為 12 小時；伺服器會儲存登入憑證的雜湊、所屬帳號、建立與到期時間。登出會使該次登入失效。帳號服務也會保留帳號操作及登入防護紀錄。"] },
         { id: "account-records", title: "金鑰歸屬與儲值申請", body: ["帳號服務會儲存工作區所管理 API 金鑰的歸屬、標籤、可見前綴、狀態與時間紀錄，也會儲存儲值申請金額、參考資訊、審核決定與備註、審核者識別碼、時間及稽核事件。儲值申請是供人工審核的紀錄；送出或核准申請，不會處理付款，也不會自動增加推論閘道的餘額。"] },
         { id: "account-recovery", title: "帳號協助", body: ["如需帳號復原或詢問帳號資料，請聯絡 info@powerchampion.org。復原由管理人員確認申請後處理，目前沒有自助寄送密碼重設信的流程。管理人員重設密碼後，既有登入工作階段會全部失效。請勿透過電子郵件傳送密碼或完整 API 金鑰。"] },
-        { id: "api-usage-data", title: "API 用量資料", body: ["對 API 本身的請求會由 b300 閘道計量以供計費（Token 數、時間、模型）。這是你所呼叫服務的營運計費資料 — 詳見 b300.powerchampion.ai/data-retention。"] },
+        { id: "api-usage-data", title: "API 用量資料", body: ["對 API 本身的請求會由 b300 閘道計量以供計費（Token 數、時間、模型）。這是你所呼叫服務的營運計費資料 — 詳見 powerchampion.ai/data-retention。"] },
         { id: "future-changes", title: "未來變更", body: ["若未來版本變更資料處理方式，會在發布前更新公開隱私權聲明與相關服務控制。"] },
       ],
     },
@@ -245,6 +259,19 @@ export const POLICY_CONTENT: Record<Locale, PolicyLocaleContent> = {
         { id: "informational-site", title: "網站範圍", body: ["網站提供互動工具與公開服務資訊。送往 b300.powerchampion.ai API 閘道的請求，依模型當前供應狀態處理，並適用按用量計費。介面或預寫範例不代表已成功完成即時請求。"] },
         { id: "api-access", title: "API 存取", body: ["工作區提供帳號註冊及人工審核的儲值申請。API 金鑰發放與用量查詢需要已設定的閘道連線；服務無法使用時，請聯絡 info@powerchampion.org。目錄費率與試算依刊登價格呈現，不是即時讀取閘道計費設定。核准儲值申請不會處理付款，也不會自動增加閘道的可用餘額。"] },
         { id: "external-sources", title: "外部來源", body: ["公司與容量脈絡受引用外部來源的限定，並不構成部署、容量或服務的承諾。"] },
+      ],
+    },
+    dataRetention: {
+      kicker: "資料保存",
+      title: "資料保存政策",
+      lead: "提示內容不落地保存；計費所需的使用中繼資料則僅於必要期間內保存，本政策說明其目的與範圍。",
+      sections: [
+        { id: "scope", title: "政策範圍", body: ["本政策為《隱私權政策》之補充，說明推理 API（b300.powerchampion.ai）之資料保存方式。"] },
+        { id: "prompt-content", title: "提示內容與模型輸出", body: ["提示內容與模型輸出僅為完成該次推理請求而處理，請求處理完畢後即釋放，不寫入持久化儲存。對話內容不會保留於計費紀錄或營運用量日誌中。"] },
+        { id: "usage-metadata", title: "使用中繼資料", body: ["我們保存計量中繼資料，例如時間戳記、API 金鑰識別碼、模型識別碼、實測 Token 或媒體用量、計費紀錄識別碼，以及必要時的營運狀態註記，且僅於計費與對帳所需期間內保存。這些紀錄不含提示或輸出內容。"] },
+        { id: "no-training", title: "不用於訓練", body: ["提示內容與模型輸出不會被用於訓練、微調或評估任何機器學習模型。"] },
+        { id: "deletion", title: "刪除與法定義務", body: ["當紀錄已無計費、會計、資安或法律目的之必要時，即予刪除或去識別化。若適用法律要求保存特定紀錄，我們僅於法定最小範圍與期間內保存。"] },
+        { id: "contact", title: "聯絡我們", body: ["Power Champion Investment Limited — info@powerchampion.org"] },
       ],
     },
     faq: [
