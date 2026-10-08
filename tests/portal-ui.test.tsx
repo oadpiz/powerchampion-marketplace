@@ -57,6 +57,7 @@ describe("account portal", () => {
     expect(safeAccountReturn("https://bad.example")).toBe("/account");
     expect(safeAccountReturn("//bad.example")).toBe("/account");
     expect(safeAccountReturn("/account/keys")).toBe("/account/keys");
+    expect(safeAccountReturn("/account/security")).toBe("/account/security");
     expect(safeAccountReturn("/tasks")).toBe("/tasks");
     expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}`)).toBe(`/tasks?agent=${"d".repeat(32)}`);
     expect(safeAccountReturn("/tasks?starter=analysis")).toBe("/tasks?starter=analysis");
