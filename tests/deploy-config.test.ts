@@ -58,6 +58,16 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(compose).toMatch(/^volumes:\s*\n\s+portal-data:/m);
   });
 
+  it("keeps the Postgres service internal, healthchecked and on its own volume", () => {
+    const db = service("powerchampion-db");
+    expect(db).not.toMatch(/^\s+ports:|traefik|dokploy-network/m);
+    expect(db).toMatch(/^\s+- default\s*$/m);
+    expect(db).toMatch(/^\s+- portal-pg-data:\/var\/lib\/postgresql\/data\s*$/m);
+    expect(db).toMatch(/^\s+healthcheck:/m);
+    expect(portal).toMatch(/powerchampion-db:\s*\n\s+condition:\s*service_healthy/);
+    expect(compose).toMatch(/^volumes:\s*\n(?:\s+[a-z-]+:\s*\n)*\s+portal-pg-data:/m);
+  });
+
   it("leaves gateway key self-service and the anonymous trial disconnected", () => {
     expect(compose).not.toMatch(/^\s+PC_GATEWAY_ADMIN_TOKEN\s*:/m);
     expect(compose).not.toMatch(/^\s+PC_TRIAL_API_KEY\s*:/m);

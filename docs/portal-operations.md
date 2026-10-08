@@ -19,7 +19,7 @@ npm run dev -- --port 3010
 - 管理後台：`http://localhost:3010/admin`
 - 繁中／簡中／日文／韓文公開頁：`/zh-Hant`、`/zh-Hans`、`/ja`、`/ko`
 
-帳號資料保存在被版本控制排除的 `.local/portal.sqlite3`。正式環境必須配置持久磁碟與備份。服務初次啟動不會自動建立管理員，也不會將第一個註冊的人變成管理員。
+帳號資料存在 Postgres（Dokploy 內網服務 `powerchampion-db`，volume `portal-pg-data`）；本機開發預設仍用 `.local/portal.sqlite3`，設 `PC_PORTAL_DATABASE_URL` 可切換。正式環境必須配置持久磁碟與備份。服務初次啟動不會自動建立管理員，也不會將第一個註冊的人變成管理員。
 
 ## 品牌官網與模型工具
 
@@ -80,7 +80,7 @@ python3 -m server.manage reset-password --email you@example.com
 `docker-compose.dokploy.yml` 同時啟動網站與帳號服務（`server/Dockerfile`）：
 
 - 帳號服務容器 `powerchampion-portal` 只在 Compose 內部網路，沒有對外 port、沒有 Traefik 路由，也不在 `dokploy-network`；網站以 `PC_PORTAL_ORIGIN=http://powerchampion-portal:3020` 連線。BFF 只允許單段主機名（Compose 服務名）使用 http，其他明文位址一律拒絕。
-- 資料庫在具名 volume `portal-data`（容器內 `/data/portal.sqlite3`），重新部署不會清除。備份需另外在 Dokploy 設定 Volume Backup。
+- 資料庫在具名 volume `portal-data`（容器內 `/data/portal.sqlite3`），重新部署不會清除。備份需另外在 Dokploy 設定 Volume Backup；Postgres 的 volume `portal-pg-data` 也要加進 Volume Backup（見 `docs/deploy/a1-postgres-cutover.md`）。
 - 已設定 `PC_PORTAL_ENV=production`、`PC_PORTAL_SECURE_COOKIES=1`、`PC_PORTAL_ALLOWED_ORIGINS=https://powerchampion.ai`。網站需 `VINEXT_TRUST_PROXY=1`，否則 TLS 在 Traefik 終止後同源檢查會失敗、全站會被標為 noindex。
 - **刻意未設定** `PC_GATEWAY_ADMIN_TOKEN`：sell-panel 以此 API 建立的金鑰不帶預付餘額，閘道會視為後付且無花費上限。客戶按「建立金鑰」會看到尚未開通；金鑰仍由營運者在 sell-panel 手動發放。要開放自助發放，需先讓閘道對新金鑰強制預付。
 - 匿名試用關閉（`PC_TRIAL_ENABLED=0`、無 `PC_TRIAL_API_KEY`）。
@@ -133,4 +133,4 @@ npm run build
 node --test tests/rendered-html.test.mjs
 ```
 
-後台自動化測試使用臨時資料庫及模擬閘道。瀏覽器驗證使用清楚標記的臨時測試帳號與人工查核紀錄，驗證後會移除；沒有執行付費模型請求或真實付款。
+後台自動化測試使用臨時資料庫及模擬閘道。`scripts/test_backend_postgres.sh` 可在 Postgres 上跑同一套測試。瀏覽器驗證使用清楚標記的臨時測試帳號與人工查核紀錄，驗證後會移除；沒有執行付費模型請求或真實付款。
