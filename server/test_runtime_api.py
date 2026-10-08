@@ -3,13 +3,13 @@ import asyncio
 import json
 import tempfile
 import unittest
-from pathlib import Path
 
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from server.app import create_app
 from server.settings import Settings
+from server.testsupport import database_text, fresh_database
 
 ORIGIN = "http://localhost:3010"
 BASE = "/api/portal/runtime"
@@ -27,7 +27,7 @@ class RuntimeApiTests(unittest.TestCase):
             return {"choices": [{"message": {"role": "assistant", "content": "Finished the requested analysis."}}],
                     "usage": {"prompt_tokens": 30, "completion_tokens": 10}}
 
-        self.app = create_app(Settings(db_path=str(Path(self.directory.name) / "portal.sqlite"),
+        self.app = create_app(Settings(db_path=fresh_database(self.directory.name),
                                        allowed_origins=(ORIGIN,), runtime_enabled=True,
                                        runtime_encryption_key=self.encryption_key), runtime_model=model)
         self.client = TestClient(self.app, base_url=ORIGIN)
@@ -70,8 +70,7 @@ class RuntimeApiTests(unittest.TestCase):
         self.assertNotIn(TEST_KEY, response.text)
         self.assertNotIn(self.encryption_key, response.text)
         self.assertNotIn("encrypted_key", response.text)
-        stored = Path(self.app.state.settings.db_path).read_bytes()
-        self.assertNotIn(TEST_KEY.encode(), stored)
+        self.assertNotIn(TEST_KEY, database_text(self.app.state.store))
         for suffix in ("", "/artifacts/" + "a" * 32):
             self.assertEqual(self.other.get(BASE + "/tasks/" + task["id"] + suffix).status_code, 404)
         self.assertEqual(self.post("/tasks/" + task["id"] + "/control", {"action": "cancel"}, self.other).status_code, 404)
@@ -120,7 +119,7 @@ class RuntimeApiTests(unittest.TestCase):
                 response = self.create(apiKey=key, **field)
                 self.assertEqual(response.status_code, 400, response.text)
                 self.assertNotIn(key, response.text)
-                self.assertNotIn(key.encode(), Path(self.app.state.settings.db_path).read_bytes())
+                self.assertNotIn(key, database_text(self.app.state.store))
 
     def test_reference_character_limit_accepts_full_multibyte_text(self):
         response = self.client.post(BASE + "/tasks", content=json.dumps({"goal": "分析資料", "model": "glm-5.2-fp8",
@@ -131,7 +130,7 @@ class RuntimeApiTests(unittest.TestCase):
 
     def test_disabled_runtime_accepts_no_billable_work(self):
         for configured_key in ("", "invalid"):
-            settings = Settings(db_path=str(Path(self.directory.name) / ("off-" + str(len(configured_key)) + ".sqlite")),
+            settings = Settings(db_path=fresh_database(self.directory.name + "/off-" + str(len(configured_key))),
                                 allowed_origins=(ORIGIN,), runtime_enabled=True, runtime_encryption_key=configured_key)
             app = create_app(settings)
             with TestClient(app, base_url=ORIGIN) as client:

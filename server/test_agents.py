@@ -4,15 +4,14 @@ Temporary SQLite, no gateway call, no customer key. An agent here is a stored
 prompt configuration; nothing in these tests contacts a model.
 """
 
-import sqlite3
 import tempfile
 import unittest
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from server.app import create_app
 from server.settings import Settings
+from server.testsupport import fresh_database, rows
 
 
 ORIGIN = "http://localhost:3010"
@@ -32,7 +31,7 @@ CONFIGURATION = {
 class AgentTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.database = str(Path(self.directory.name) / "portal.sqlite")
+        self.database = fresh_database(self.directory.name)
         self.app = create_app(Settings(db_path=self.database, allowed_origins=(ORIGIN,)))
         self.client = self.new_client()
         self.clients = [self.client]
@@ -67,9 +66,7 @@ class AgentTests(unittest.TestCase):
         return response.json()
 
     def db_rows(self, table):
-        with sqlite3.connect(self.database) as database:
-            database.row_factory = sqlite3.Row
-            return [dict(row) for row in database.execute("SELECT * FROM " + table)]
+        return rows(self.app.state.store, table)
 
     def test_created_agent_returns_its_token_once_and_stores_only_a_hash(self):
         created = self.create()

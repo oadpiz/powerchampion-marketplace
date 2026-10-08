@@ -1,0 +1,32 @@
+name: portal-backend
+on:
+  push:
+    paths: ["server/**", "scripts/test_backend_postgres.sh", ".github/workflows/portal-backend.yml"]
+  pull_request:
+    paths: ["server/**", "scripts/test_backend_postgres.sh", ".github/workflows/portal-backend.yml"]
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r server/requirements.txt
+      - run: python -m unittest discover -s server -t . -p 'test_*.py'
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: portal, POSTGRES_PASSWORD: portal-test, POSTGRES_DB: portal_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U portal -d portal_test" --health-interval 2s --health-timeout 2s --health-retries 30
+    env:
+      PC_PORTAL_TEST_DATABASE_URL: postgresql://portal:portal-test@127.0.0.1:5432/portal_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r server/requirements.txt
+      - run: python -m unittest discover -s server -t . -p 'test_*.py'

@@ -1,13 +1,11 @@
 """No-paid-call tests for anonymous trial isolation, bounds and budget control."""
 import asyncio
 import json
-import sqlite3
 import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -18,6 +16,7 @@ from server.app import create_app
 from server.chat import TrialChat, validate_chat, ChatError
 from server.settings import Settings
 from server.store import Store
+from server.testsupport import database_text, fresh_database
 
 
 ORIGIN = "http://localhost:3010"
@@ -33,7 +32,7 @@ def payload(**overrides):
 class TrialChatTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.settings = Settings(db_path=str(Path(self.directory.name) / "trial.sqlite"), allowed_origins=(ORIGIN,), trial_enabled=True, trial_api_key=TEST_KEY, trial_daily_request_limit=100)
+        self.settings = Settings(db_path=fresh_database(self.directory.name), allowed_origins=(ORIGIN,), trial_enabled=True, trial_api_key=TEST_KEY, trial_daily_request_limit=100)
         self.requests = []
         self.lock = threading.Lock()
         self.status = 200
@@ -107,8 +106,7 @@ class TrialChatTests(unittest.TestCase):
         self.reply["choices"][0]["message"]["content"] = "Never repeat " + TEST_KEY
         response = self.chat()
         self.assertEqual(response.json()["content"], "Never repeat [redacted]")
-        with sqlite3.connect(self.app.state.store.path) as con:
-            dump = "\n".join(con.iterdump())
+        dump = database_text(self.app.state.store)
         self.assertNotIn(TEST_KEY, dump)
         self.assertNotIn("Explain solar energy.", dump)
         self.assertNotIn("Solar energy comes from sunlight.", dump)

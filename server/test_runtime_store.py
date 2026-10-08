@@ -2,19 +2,20 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import json
-from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from server.runtime_store import RuntimeErrorDetail, RuntimeStore
 from server.store import Store
+from server.testsupport import fresh_database
 
 
 class RuntimeStoreTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.store = Store(Path(self.directory.name) / "portal.sqlite")
+        self.database = fresh_database(self.directory.name)
+        self.store = Store(self.database)
         # Password hashing is irrelevant to repository authorization tests.
         with self.store.connect() as con:
             for owner in ("alice", "bob"):
@@ -46,7 +47,7 @@ class RuntimeStoreTests(unittest.TestCase):
     def test_owner_reads_are_durable_and_never_expose_internal_data(self):
         task = self.create()
         self.assertRegex(task["id"], r"^[a-f0-9]{32}$")
-        reopened = RuntimeStore(Store(self.store.path))
+        reopened = RuntimeStore(Store(self.database))
         self.assertEqual(reopened.get("alice", task["id"])["references"][0]["content"], "x,y\n1,2")
         public = json.dumps(reopened.get("alice", task["id"])) + json.dumps(reopened.list("alice"))
         for private in ("encrypted-test-credential", "customer-test-secret", "encrypted_key", "messages", "owner_id"):
@@ -133,7 +134,7 @@ class RuntimeStoreTests(unittest.TestCase):
             task = self.claim()
             self.assertTrue(self.repo.reserve_step(task["id"], "worker-a"))
         with patch("server.runtime_store.time.time", return_value=1121):
-            reopened = RuntimeStore(Store(self.store.path))
+            reopened = RuntimeStore(Store(self.database))
             self.assertIsNone(reopened.claim("worker-b"))
             paused = reopened.get("alice", task["id"])
             self.assertEqual(paused["status"], "paused")

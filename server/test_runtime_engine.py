@@ -6,7 +6,6 @@ import json
 import tempfile
 import unittest
 import zipfile
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -18,6 +17,7 @@ from server.runtime_engine import RuntimeEngine
 from server.runtime_store import RuntimeStore
 from server.runtime_tools import RuntimeTools
 from server.store import Store
+from server.testsupport import fresh_database
 
 
 KEY = "test-customer-secret-12345"
@@ -56,7 +56,7 @@ class ScriptedModel:
 class RuntimeEngineTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.store = Store(Path(self.directory.name) / "runtime.sqlite")
+        self.store = Store(fresh_database(self.directory.name))
         self.user = self.store.create_user("engine@example.test", "Engine", "runtime-test-password!")["id"]
         self.repository = RuntimeStore(self.store)
         self.encryption = Fernet.generate_key()
@@ -77,11 +77,11 @@ class RuntimeEngineTests(unittest.IsolatedAsyncioTestCase):
 
     def assert_secret_absent(self, task):
         self.assertNotIn(KEY, json.dumps(self.get(task)))
-        with self.store.connect() as connection:
-            for table in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
-                if table["name"].startswith("runtime_"):
-                    rows = [dict(row) for row in connection.execute('SELECT * FROM "' + table["name"] + '"').fetchall()]
-                    self.assertNotIn(KEY, str(rows))
+        for table in self.store.db.table_names():
+            if table.startswith("runtime_"):
+                with self.store.connect() as connection:
+                    rows_ = [dict(row) for row in connection.execute('SELECT * FROM "' + table + '"').fetchall()]
+                self.assertNotIn(KEY, str(rows_))
 
     async def test_reference_csv_plan_docx_flow_persists_real_deliverable(self):
         task = self.create(references=[{"name": "sales.csv", "content": "team,amount\nA,10\nA,20\nB,5\n"}])

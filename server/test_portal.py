@@ -7,12 +7,10 @@ shape so ownership filtering is exercised through HTTP rather than bypassed.
 
 import asyncio
 import json
-import sqlite3
 import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -22,6 +20,7 @@ from server.app import create_app
 from server.gateway import GatewayAdapter, GatewayError
 from server.manage import reset_password
 from server.settings import Settings
+from server.testsupport import database_text, fresh_database, rows
 
 
 ORIGIN = "http://localhost:3010"
@@ -71,7 +70,7 @@ class FakeGateway:
 class PortalTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
-        self.database = str(Path(self.directory.name) / "portal.sqlite")
+        self.database = fresh_database(self.directory.name)
         self.settings = Settings(
             db_path=self.database,
             allowed_origins=(ORIGIN,),
@@ -96,9 +95,7 @@ class PortalTests(unittest.TestCase):
         )
 
     def db_rows(self, table):
-        with sqlite3.connect(self.database) as database:
-            database.row_factory = sqlite3.Row
-            return [dict(row) for row in database.execute("SELECT * FROM " + table)]
+        return rows(self.app.state.store, table)
 
     def register(self, email="alice@example.test", client=None):
         response = self.post(BASE + "/auth/register", {
@@ -330,8 +327,7 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(len(response.json()["keys"]), 1)
         self.assertNotIn(created["secret"], response.text)
         self.assertNotIn("secret", response.json()["keys"][0])
-        with sqlite3.connect(self.database) as database:
-            dump = "\n".join(database.iterdump())
+        dump = database_text(self.app.state.store)
         self.assertNotIn(created["secret"], dump)
 
     def test_customer_key_ownership_prevents_listing_and_revoking_other_users(self):
