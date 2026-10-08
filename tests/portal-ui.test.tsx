@@ -394,6 +394,7 @@ describe("account portal", () => {
     vi.stubGlobal("fetch", fetchMock);
     wrap(<AdminPortal section="customers" />);
     await user.click(await screen.findByRole("button", { name: /disable/i }));
+    expect(screen.getByText(/API keys issued in sell-panel are not affected; revoke them in the gateway/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: /confirm/i }));
     expect(await screen.findByText("disabled", { exact: false })).toBeVisible();
     expect(screen.getByLabelText(/search by name/i)).toHaveFocus();

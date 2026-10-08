@@ -98,6 +98,24 @@ class AdminAccountTests(_PortalCase):
         self.assertIn("admin.account_disabled", actions)
         self.assertIn("admin.account_enabled", actions)
 
+    def test_admin_demoted_between_auth_and_write_is_refused(self):
+        admin = self.admin()
+        victim = self.register(self.client(), "a@example.test")
+        stale = self.store.session_user(admin.cookies.get("pc_portal_session"))
+        self.assertEqual(stale["role"], "admin")
+        with self.store.connect() as con:
+            con.execute("UPDATE users SET disabled_at=? WHERE id=?", (1700000000, stale["id"]))
+        original = self.store.session_user
+        self.store.session_user = lambda token: stale  # simulates losing the race after current_user() passed
+        try:
+            response = self.post(admin, f"/admin/customers/{victim['id']}/status", {"action": "disable"})
+        finally:
+            self.store.session_user = original
+        self.assertEqual(response.status_code, 403, response.text)
+        self.assertEqual(response.json()["error"], "admin_required")
+        with self.store.connect() as con:
+            self.assertIsNone(con.execute("SELECT disabled_at FROM users WHERE id=?", (victim["id"],)).fetchone()[0])
+
     def test_admin_cannot_target_self(self):
         admin = self.admin()
         me = admin.get(BASE + "/session").json()["user"]
