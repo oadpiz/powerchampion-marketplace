@@ -17,7 +17,10 @@ def iso(value):
 
 
 def user_json(row):
-    return {"id": row["id"], "email": row["email"], "name": row["name"], "role": row["role"], "createdAt": iso(row["created_at"])}
+    disabled_at = row["disabled_at"] if "disabled_at" in row.keys() else None
+    return {"id": row["id"], "email": row["email"], "name": row["name"], "role": row["role"],
+            "createdAt": iso(row["created_at"]), "status": "disabled" if disabled_at else "active",
+            "disabledAt": iso(disabled_at)}
 
 
 def key_json(row):
@@ -55,7 +58,7 @@ class Store:
         user_id = uuid.uuid4().hex
         encoded = password_hash(password)
         with self.connect() as con:
-            con.execute("INSERT INTO users VALUES (?,?,?,?,?,?)", (user_id, email, name, encoded, role, int(time.time())))
+            con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)", (user_id, email, name, encoded, role, int(time.time())))
             self.audit(con, "admin.created" if role == "admin" else "account.registered", user_id, user_id)
             return user_json(con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone())
 
@@ -76,7 +79,7 @@ class Store:
         if not token or len(token) > 100:
             return None
         with self.connect() as con:
-            row = con.execute("SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=? AND s.expires_at>?", (digest_token(token), int(time.time()))).fetchone()
+            row = con.execute("SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=? AND s.expires_at>? AND u.disabled_at IS NULL", (digest_token(token), int(time.time()))).fetchone()
             return user_json(row) if row else None
 
     def logout(self, token):

@@ -200,6 +200,8 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         valid = await run_in_threadpool(verify_password, password, row["password_hash"] if row else dummy_password)
         if not row or not valid:
             fail("invalid_credentials", "Email or password is incorrect.", 401)
+        if row["disabled_at"]:
+            fail("account_disabled", "This account has been disabled. Contact support.", 403)
         store.clear_attempts(scope)
         with store.connect() as con:
             store.audit(con, "account.signed_in", row["id"], row["id"])

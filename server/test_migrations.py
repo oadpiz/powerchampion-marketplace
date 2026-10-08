@@ -61,7 +61,7 @@ class MigrationTests(unittest.TestCase):
             store = Store(path)
             with store.connect() as con:
                 self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "u1@example.test")
-                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], ["0001_baseline"])
+                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], ["0002_users_disabled_at"])
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":
