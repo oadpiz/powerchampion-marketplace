@@ -13,7 +13,7 @@ const RESPONSE_HEADERS = {
 const AGENT = "[a-f0-9]{32}";
 const routes: Record<string, readonly RegExp[]> = {
   GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`)],
-  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`)],
+  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/password$/, new RegExp(`^/admin/customers/${AGENT}/(status|role|reset-password)$`), /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`)],
   DELETE: [/^\/keys\/[a-zA-Z0-9_-]{1,80}$/, new RegExp(`^/agents/${AGENT}$`)],
 };
 function failure(error: string, detail: string, status: number) {

@@ -64,6 +64,12 @@ export function portalErrorText(error: unknown, locale: "en" | "zh") {
     return locale === "zh"
       ? "電子郵件或密碼不正確，請確認後再試。"
       : "The email or password is incorrect. Check your details and try again.";
+  if (code === "account_disabled")
+    return locale === "zh" ? "此帳號已被停用，請聯繫支援。" : "This account has been disabled. Contact support.";
+  if (code === "invalid_current_password")
+    return locale === "zh" ? "目前的密碼不正確。" : "The current password is incorrect.";
+  if (code === "self_target")
+    return locale === "zh" ? "請到「我的帳戶」管理自己的帳號。" : "Manage your own account from the account page.";
   if (code === "duplicate_email")
     return locale === "zh"
       ? "此電子郵件已註冊，請登入或聯繫支援。"
@@ -99,7 +105,7 @@ export function portalErrorText(error: unknown, locale: "en" | "zh") {
 
 export function safeAccountReturn(value: string | null): string {
   if (!value) return "/account";
-  if (/^(?:\/account(?:\/(?:keys|usage|credits))?|\/tasks|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)) return value;
+  if (/^(?:\/account(?:\/(?:keys|usage|credits|security))?|\/admin(?:\/(?:customers|credits|audit))?|\/tasks|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)) return value;
   if (value.startsWith("/tasks?")) {
     const search = value.slice("/tasks".length);
     const params = new URLSearchParams(search);

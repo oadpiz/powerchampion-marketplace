@@ -25,6 +25,48 @@ For unattended local provisioning, supply `PC_PORTAL_ADMIN_PASSWORD` through a
 secret manager or secure environment, never a CLI argument or committed file.
 An existing customer is not automatically promoted by this command.
 
+In the Dokploy web terminal Python's `getpass` receives empty input, so the
+hidden prompt cannot be used there. Drive the command through the environment
+variable instead, entering the password with bash `read -s` so it never appears
+in history or the process list. Open the Dokploy terminal with **Bash** (the
+`/bin/sh` option is dash and has no `read -s`), or wrap the line as `bash -c '…'`:
+
+```sh
+read -s PW; PC_PORTAL_ADMIN_PASSWORD="$PW" python -m server.manage create-admin --email you@example.com; unset PW
+```
+
+`reset-password` works the same way with `PC_PORTAL_NEW_PASSWORD`. Once an
+administrator exists, prefer the admin UI (below) over the CLI for day-to-day
+account management; the CLI remains for the first administrator and emergency
+recovery.
+
+## Account and admin routes
+
+All under `/api/portal`; mutations require a matching Origin. Errors use
+`{"error": "<code>", "detail": "<message>"}`.
+
+| Route | Who | Purpose |
+| --- | --- | --- |
+| `POST /password` | signed-in user | `{currentPassword, newPassword}`. Keeps the current session, deletes the user's other sessions. Throttled per user (`password:` scope, 5 attempts per 15 minutes, then 429 `rate_limited`); a wrong current password is 400 `invalid_current_password` |
+| `GET /admin/customers` | admin | Accounts including admins, each with `role` and `status` (`active` or `disabled`) |
+| `POST /admin/customers/{id}/status` | admin | `{action: "disable" \| "enable"}`. Disabling deletes the account's sessions; disabled accounts cannot sign in (403 `account_disabled`) and their agent tokens stop resolving |
+| `POST /admin/customers/{id}/role` | admin | `{role: "customer" \| "admin"}` |
+| `POST /admin/customers/{id}/reset-password` | admin | `{newPassword}`. Deletes all of the target's sessions and clears their login throttle |
+
+The three `/admin/customers/{id}/*` writes fail with 409 `self_target` when the
+target is the calling admin (use `/password` for your own account), 404
+`customer_not_found` for an unknown id, and 400 `invalid_input` for a bad body.
+Repeating a status or role change that is already in effect is a no-op and
+writes no audit event.
+
+Disabling an account does not revoke API keys issued through sell-panel: those
+are managed by the gateway, so revoke them there if needed.
+
+Audit actions written by these routes (actor = caller, target = affected
+account; never any password material): `account.password_changed`,
+`admin.account_disabled`, `admin.account_enabled`, `admin.role_changed`,
+`admin.password_reset`. The CLI writes `account.password_reset_by_operator`.
+
 Operator-assisted recovery, after independently verifying the account owner:
 
 ```sh

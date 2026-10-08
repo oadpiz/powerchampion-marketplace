@@ -19,7 +19,7 @@ class RuntimeStoreTests(unittest.TestCase):
         # Password hashing is irrelevant to repository authorization tests.
         with self.store.connect() as con:
             for owner in ("alice", "bob"):
-                con.execute("INSERT INTO users VALUES (?,?,?,?,?,?)",
+                con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
                             (owner, owner + "@example.test", owner, "unused", "customer", 1))
         self.repo = RuntimeStore(self.store)
 

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthForm } from "../components/auth-form";
 import { AccountPortal } from "../components/account-portal";
 import { AdminPortal } from "../components/admin-portal";
+import { AdminShell } from "../components/admin-shell";
 import { LocaleProvider } from "../components/locale-provider";
 import { PortalError, portalErrorText, safeAccountReturn } from "../lib/portal-client";
 
@@ -56,6 +57,7 @@ describe("account portal", () => {
     expect(safeAccountReturn("https://bad.example")).toBe("/account");
     expect(safeAccountReturn("//bad.example")).toBe("/account");
     expect(safeAccountReturn("/account/keys")).toBe("/account/keys");
+    expect(safeAccountReturn("/account/security")).toBe("/account/security");
     expect(safeAccountReturn("/tasks")).toBe("/tasks");
     expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}`)).toBe(`/tasks?agent=${"d".repeat(32)}`);
     expect(safeAccountReturn("/tasks?starter=analysis")).toBe("/tasks?starter=analysis");
@@ -73,7 +75,9 @@ describe("account portal", () => {
     expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}&next=https://bad.example`)).toBe("/account");
     expect(safeAccountReturn("/tasks//evil.example")).toBe("/account");
     expect(safeAccountReturn("/tasks?next=https://evil.example")).toBe("/account");
-    expect(safeAccountReturn("/admin")).toBe("/account");
+    expect(safeAccountReturn("/admin")).toBe("/admin");
+    expect(safeAccountReturn("/admin/customers")).toBe("/admin/customers");
+    expect(safeAccountReturn("/admin/anything")).toBe("/account");
     expect(portalErrorText(new PortalError(503, "usage_pricing_incomplete", "Internal details"), "en")).toContain("Pricing data is incomplete");
   });
 
@@ -275,6 +279,24 @@ describe("account portal", () => {
     expect(screen.queryByText("Customer accounts")).not.toBeInTheDocument();
   });
 
+  it("renders the section title as the page h1", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({ user: { ...customer, role: "admin" } }),
+        )
+        .mockResolvedValue(
+          Response.json({ error: "unavailable" }, { status: 503 }),
+        ),
+    );
+    wrap(<AdminPortal section="customers" />);
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(
+      "Customers",
+    );
+  });
+
   it("does not render zero admin statistics when the backend is unavailable", async () => {
     vi.stubGlobal(
       "fetch",
@@ -355,5 +377,113 @@ describe("account portal", () => {
       decision: "approve",
       note: "Matched bank reference",
     });
+  });
+  it("disables a customer after confirmation and reflects the new status", async () => {
+    const user = userEvent.setup();
+    const customers = [{ id: "b".repeat(32), email: "roy@example.test", name: "Roy", role: "customer", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 0 }];
+    const fetchMock = vi.fn().mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.endsWith("/session")) return Promise.resolve(Response.json({ user: { ...customer, role: "admin" } }));
+      if (u.endsWith("/admin/customers") && !init?.method) return Promise.resolve(Response.json({ customers }));
+      if (u.endsWith("/status") && init?.method === "POST") {
+        customers[0].status = "disabled";
+        return Promise.resolve(Response.json({ customer: customers[0] }));
+      }
+      return Promise.resolve(Response.json({ error: "unexpected" }, { status: 500 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<AdminPortal section="customers" />);
+    await user.click(await screen.findByRole("button", { name: /disable/i }));
+    expect(screen.getByText(/API keys issued in sell-panel are not affected; revoke them in the gateway/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    expect(await screen.findByText("disabled", { exact: false })).toBeVisible();
+    expect(screen.getByLabelText(/search by name/i)).toHaveFocus();
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(String(call?.[0])).toMatch(/\/admin\/customers\/b{32}\/status$/);
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ action: "disable" });
+  });
+
+  it("offers no account actions on the signed-in admin's own row", async () => {
+    const customers = [
+      { id: "cust-1", email: "person@example.com", name: "Person", role: "admin", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 0 },
+      { id: "b".repeat(32), email: "roy@example.test", name: "Roy", role: "customer", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 0 },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((url) => {
+      if (String(url).endsWith("/session")) return Promise.resolve(Response.json({ user: { ...customer, role: "admin" } }));
+      return Promise.resolve(Response.json({ customers }));
+    }));
+    wrap(<AdminPortal section="customers" />);
+    expect(await screen.findByRole("button", { name: "Disable roy@example.test" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /person@example.com/ })).not.toBeInTheDocument();
+    expect(screen.getByText("You")).toBeVisible();
+  });
+
+  it("resets a customer password only when both entries match", async () => {
+    const user = userEvent.setup();
+    const customers = [{ id: "b".repeat(32), email: "roy@example.test", name: "Roy", role: "customer", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 0 }];
+    const fetchMock = vi.fn().mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.endsWith("/session")) return Promise.resolve(Response.json({ user: { ...customer, role: "admin" } }));
+      if (u.endsWith("/admin/customers") && !init?.method) return Promise.resolve(Response.json({ customers }));
+      if (u.endsWith("/reset-password")) return Promise.resolve(Response.json({ ok: true }));
+      return Promise.resolve(Response.json({ error: "unexpected" }, { status: 500 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<AdminPortal section="customers" />);
+    await user.click(await screen.findByRole("button", { name: /reset password/i }));
+    await user.type(screen.getByLabelText(/new password/i), "brand-new-password-987!");
+    await user.type(screen.getByLabelText(/confirm/i), "different-password-000!");
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    expect(screen.getByText(/do not match/i)).toBeVisible();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    await user.clear(screen.getByLabelText(/confirm/i));
+    await user.type(screen.getByLabelText(/confirm/i), "brand-new-password-987!");
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ newPassword: "brand-new-password-987!" });
+    expect(await screen.findByText(/password was reset/i)).toBeVisible();
+  });
+
+  it("changes the password from the security section", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.endsWith("/session")) return Promise.resolve(Response.json({ user: customer }));
+      if (u.endsWith("/password") && init?.method === "POST") return Promise.resolve(Response.json({ ok: true }));
+      return Promise.resolve(Response.json({ error: "unexpected" }, { status: 500 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<AccountPortal section="security" />);
+    await user.type(await screen.findByLabelText(/current password/i), "customer-test-password-123!");
+    await user.type(screen.getByLabelText(/^new password/i), "brand-new-password-987!");
+    await user.type(screen.getByLabelText(/confirm/i), "brand-new-password-987!");
+    await user.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/password updated/i)).toBeVisible();
+    const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ currentPassword: "customer-test-password-123!", newPassword: "brand-new-password-987!" });
+  });
+});
+
+describe("AdminShell", () => {
+  it("renders the admin navigation with the current section marked", () => {
+    wrap(<AdminShell pathname="/admin/customers"><p>content</p></AdminShell>);
+    const nav = screen.getByRole("navigation", { name: /administration/i });
+    expect(nav).toBeVisible();
+    expect(screen.getByRole("link", { name: "Customers" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: /back to site/i })).toHaveAttribute("href", "/");
+    expect(screen.getByText("content")).toBeVisible();
+  });
+
+  it("signs out through the portal and leaves for the login page", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    wrap(<AdminShell pathname="/admin"><p>content</p></AdminShell>);
+    await user.click(screen.getByRole("button", { name: /sign out/i }));
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/portal\/auth\/logout$/);
+    expect(assign).toHaveBeenCalledWith("/login");
   });
 });

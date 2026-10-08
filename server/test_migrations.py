@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from server.db import Database
-from server.migrate import upgrade_to_head
+from server.migrate import downgrade_to, upgrade_to_head
 
 EXPECTED_TABLES = {
     "users", "sessions", "gateway_keys", "key_reservations", "credit_requests", "audit_events",
@@ -61,7 +61,37 @@ class MigrationTests(unittest.TestCase):
             store = Store(path)
             with store.connect() as con:
                 self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "u1@example.test")
-                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], ["0001_baseline"])
+                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], ["0002_users_disabled_at"])
+
+    def _columns(self, store, table):
+        with store.connect() as con:
+            if self.db.backend == "sqlite":
+                return {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+            return {r[0] for r in con.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (table,)).fetchall()}
+
+    def _versions(self, store):
+        with store.connect() as con:
+            return [r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()]
+
+    def test_downgrade_to_baseline_round_trips(self):
+        from server.store import Store
+        store = Store(self.db.url)
+        self.assertEqual(self._versions(store), ["0002_users_disabled_at"])
+        self.assertIn("disabled_at", self._columns(store, "users"))
+        with store.connect() as con:
+            con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at,disabled_at) VALUES (?,?,?,?,?,?,?)",
+                        ("u1", "u1@example.test", "u1", "unused", "customer", 1, 1700000000))
+        downgrade_to(self.db.url, "0001_baseline")
+        self.assertEqual(self._versions(store), ["0001_baseline"])
+        self.assertNotIn("disabled_at", self._columns(store, "users"))
+        with store.connect() as con:
+            self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "u1@example.test")
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), ["0002_users_disabled_at"])
+        self.assertIn("disabled_at", self._columns(store, "users"))
+        with store.connect() as con:
+            self.assertIsNone(con.execute("SELECT disabled_at FROM users WHERE id='u1'").fetchone()[0])
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":
