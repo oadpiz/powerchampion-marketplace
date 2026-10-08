@@ -44,3 +44,4 @@ yarn-error.log*
 __pycache__/
 *.pyc
 .dev.vars*
+/.venv-portal/
