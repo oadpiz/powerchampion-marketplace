@@ -19,7 +19,7 @@ npm run dev -- --port 3010
 - 管理後台：`http://localhost:3010/admin`
 - 繁中／簡中／日文／韓文公開頁：`/zh-Hant`、`/zh-Hans`、`/ja`、`/ko`
 
-帳號資料保存在被版本控制排除的 `.local/portal.sqlite3`。正式環境必須配置持久磁碟與備份。服務初次啟動不會自動建立管理員，也不會將第一個註冊的人變成管理員。
+帳號資料存在 Postgres（Dokploy 內網服務 `powerchampion-db`，volume `portal-pg-data`）；連線逾時 5 秒、鎖等待逾時 15 秒（`connect_timeout`／`lock_timeout`）；本機開發預設仍用 `.local/portal.sqlite3`，設 `PC_PORTAL_DATABASE_URL` 可切換。正式環境必須配置持久磁碟與備份。服務初次啟動不會自動建立管理員，也不會將第一個註冊的人變成管理員。
 
 ## 品牌官網與模型工具
 
@@ -39,7 +39,7 @@ npm run dev -- --port 3010
 
 帳號服務必須同時設定 `PC_TRIAL_ENABLED=1`、專用 `PC_TRIAL_API_KEY` 與正數 `PC_TRIAL_DAILY_REQUEST_LIMIT`。預設關閉；金鑰不得放入前端公開變數。完整設定見 [server/README.md](../server/README.md#anonymous-chat-trial)。
 
-每次試用先在 SQLite 保留全站與該瀏覽器當日名額，失敗／逾時／取消也占名額；重設 Cookie 無法重設全站上限。每次輸出上限 512 tokens，對話歷史上限 8,000 字元，最多 24 則訊息。這是次數與單次內容限制，不是美元花費上限，仍須替專用閘道金鑰設定適合的額度。公開入口另需可信任的邊緣請求限制。
+每次試用先在資料庫保留全站與該瀏覽器當日名額，失敗／逾時／取消也占名額；重設 Cookie 無法重設全站上限。每次輸出上限 512 tokens，對話歷史上限 8,000 字元，最多 24 則訊息。這是次數與單次內容限制，不是美元花費上限，仍須替專用閘道金鑰設定適合的額度。公開入口另需可信任的邊緣請求限制。
 
 ## 智能體端點
 
@@ -80,7 +80,7 @@ python3 -m server.manage reset-password --email you@example.com
 `docker-compose.dokploy.yml` 同時啟動網站與帳號服務（`server/Dockerfile`）：
 
 - 帳號服務容器 `powerchampion-portal` 只在 Compose 內部網路，沒有對外 port、沒有 Traefik 路由，也不在 `dokploy-network`；網站以 `PC_PORTAL_ORIGIN=http://powerchampion-portal:3020` 連線。BFF 只允許單段主機名（Compose 服務名）使用 http，其他明文位址一律拒絕。
-- 資料庫在具名 volume `portal-data`（容器內 `/data/portal.sqlite3`），重新部署不會清除。備份需另外在 Dokploy 設定 Volume Backup。
+- SQLite 資料庫在具名 volume `portal-data`（容器內 `/data/portal.sqlite3`），重新部署不會清除；切換到 Postgres 後它是 SQLite 後備與回滾來源。備份需另外在 Dokploy 設定 Volume Backup；Postgres 以每日 `pg_dump` 寫入 volume `portal-pg-dumps`，Volume Backup 指向該 volume，不要直接備份 `portal-pg-data`（見 `docs/deploy/a1-postgres-cutover.md`）。
 - 已設定 `PC_PORTAL_ENV=production`、`PC_PORTAL_SECURE_COOKIES=1`、`PC_PORTAL_ALLOWED_ORIGINS=https://powerchampion.ai`。網站需 `VINEXT_TRUST_PROXY=1`，否則 TLS 在 Traefik 終止後同源檢查會失敗、全站會被標為 noindex。
 - **刻意未設定** `PC_GATEWAY_ADMIN_TOKEN`：sell-panel 以此 API 建立的金鑰不帶預付餘額，閘道會視為後付且無花費上限。客戶按「建立金鑰」會看到尚未開通；金鑰仍由營運者在 sell-panel 手動發放。要開放自助發放，需先讓閘道對新金鑰強制預付。
 - 匿名試用關閉（`PC_TRIAL_ENABLED=0`、無 `PC_TRIAL_API_KEY`）。
@@ -133,4 +133,4 @@ npm run build
 node --test tests/rendered-html.test.mjs
 ```
 
-後台自動化測試使用臨時資料庫及模擬閘道。瀏覽器驗證使用清楚標記的臨時測試帳號與人工查核紀錄，驗證後會移除；沒有執行付費模型請求或真實付款。
+後台自動化測試使用臨時資料庫及模擬閘道。`scripts/test_backend_postgres.sh` 可在 Postgres 上跑同一套測試。瀏覽器驗證使用清楚標記的臨時測試帳號與人工查核紀錄，驗證後會移除；沒有執行付費模型請求或真實付款。

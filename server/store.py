@@ -1,78 +1,13 @@
 """Durable portal data. The gateway remains the authority for inference usage."""
 import os
 import secrets
-import sqlite3
 import time
 import uuid
-from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 
+from .db import Database
+from .migrate import upgrade_to_head
 from .security import clean_name, digest_token, normalize_email, password_hash, validate_password
-
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
- id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
- password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('customer','admin')),
- created_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS sessions (
- token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
- created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
-CREATE TABLE IF NOT EXISTS gateway_keys (
- id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
- gateway_key_id TEXT NOT NULL UNIQUE, label TEXT NOT NULL, prefix TEXT NOT NULL,
- status TEXT NOT NULL CHECK(status IN ('active','revoked')), created_at INTEGER NOT NULL,
- revoked_at INTEGER
-);
-CREATE INDEX IF NOT EXISTS keys_owner ON gateway_keys(user_id);
-CREATE TABLE IF NOT EXISTS key_reservations (
- id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS key_reservations_owner ON key_reservations(user_id);
-CREATE TABLE IF NOT EXISTS credit_requests (
- id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
- amount_cents INTEGER NOT NULL CHECK(amount_cents BETWEEN 1000 AND 1000000),
- status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')),
- reference TEXT NOT NULL, created_at INTEGER NOT NULL, reviewed_at INTEGER,
- reviewer_id TEXT REFERENCES users(id), review_note TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS credits_owner ON credit_requests(user_id);
-CREATE TABLE IF NOT EXISTS audit_events (
- id TEXT PRIMARY KEY, actor_id TEXT REFERENCES users(id), action TEXT NOT NULL,
- target_id TEXT, created_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS login_attempts (
- scope TEXT PRIMARY KEY, attempts INTEGER NOT NULL, first_attempt INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS trial_sessions (
- token_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS trial_requests (
- id TEXT PRIMARY KEY, session_hash TEXT NOT NULL, day TEXT NOT NULL,
- status TEXT NOT NULL CHECK(status IN ('reserved','succeeded','failed','cancelled')),
- created_at INTEGER NOT NULL, completed_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS agents (
- id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
- name TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','archived')),
- current_version INTEGER NOT NULL, token_hash TEXT UNIQUE, token_prefix TEXT NOT NULL,
- created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS agents_owner ON agents(user_id);
-CREATE TABLE IF NOT EXISTS agent_versions (
- agent_id TEXT NOT NULL REFERENCES agents(id), version INTEGER NOT NULL,
- model TEXT NOT NULL, purpose TEXT NOT NULL, instructions TEXT NOT NULL,
- tone TEXT NOT NULL, knowledge TEXT NOT NULL, sample_prompt TEXT NOT NULL,
- system_prompt TEXT NOT NULL, max_output_tokens INTEGER NOT NULL, created_at INTEGER NOT NULL,
- PRIMARY KEY(agent_id, version)
-);
-CREATE INDEX IF NOT EXISTS trial_requests_day ON trial_requests(day);
-CREATE INDEX IF NOT EXISTS trial_requests_session_day ON trial_requests(session_hash,day);
-"""
 
 
 def iso(value):
@@ -97,24 +32,16 @@ def credit_json(row):
 
 
 class Store:
-    def __init__(self, path):
-        self.path = str(path)
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with self.connect() as con:
-            con.executescript(SCHEMA)
-        os.chmod(self.path, 0o600)
+    def __init__(self, target):
+        self.db = Database(target)
+        self.path = self.db.path
+        self.IntegrityError = self.db.IntegrityError
+        upgrade_to_head(self.db.url)
+        if self.db.backend == "sqlite" and self.path:
+            os.chmod(self.path, 0o600)
 
-    @contextmanager
     def connect(self):
-        con = sqlite3.connect(self.path, timeout=15)
-        con.row_factory = sqlite3.Row
-        con.execute("PRAGMA foreign_keys = ON")
-        con.execute("PRAGMA busy_timeout = 15000")
-        try:
-            with con:
-                yield con
-        finally:
-            con.close()
+        return self.db.connect()
 
     @staticmethod
     def audit(con, action, actor_id, target_id=None):

@@ -1,0 +1,14 @@
+services:
+  portal-test-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: portal
+      POSTGRES_PASSWORD: portal-test
+      POSTGRES_DB: portal_test
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portal -d portal_test -h 127.0.0.1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

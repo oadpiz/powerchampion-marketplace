@@ -6,7 +6,6 @@ they must never be supplied as command-line arguments or printed.
 import argparse
 import getpass
 import os
-import sqlite3
 import sys
 
 from .security import digest_token, normalize_email, password_hash, validate_password
@@ -48,7 +47,11 @@ def main(argv=None):
     reset.add_argument("--email", required=True)
     args = parser.parse_args(argv)
     try:
-        store = Store(Settings.from_env().db_path)
+        store = Store(Settings.from_env().resolved_database_url)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 1
+    try:
         if args.command == "create-admin":
             store.create_user(args.email, args.name, read_password("PC_PORTAL_ADMIN_PASSWORD"), role="admin")
             print("Administrator created. Sign in through the portal.")
@@ -56,7 +59,7 @@ def main(argv=None):
             reset_password(store, args.email, read_password("PC_PORTAL_NEW_PASSWORD"))
             print("Password reset. All existing sessions for this account were revoked.")
         return 0
-    except sqlite3.IntegrityError:
+    except store.IntegrityError:
         print("An account already exists for this email. No role was changed.", file=sys.stderr)
     except ValueError as error:
         print(str(error), file=sys.stderr)

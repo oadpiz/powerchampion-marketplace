@@ -3,7 +3,7 @@
 This is an isolated customer/admin backend for the new website. It does not
 import, deploy, reconfigure, or write the existing Python/Go inference gateway.
 Accounts, sessions, key ownership, credit verification requests and audit events
-persist in SQLite. There are no default users or passwords.
+persist in Postgres (production) or SQLite (development, tests). There are no default users or passwords.
 
 From the marketplace directory:
 
@@ -40,7 +40,9 @@ this service. Registration establishes a portal account, not verified identity.
 
 | Environment variable | Default / purpose |
 | --- | --- |
-| `PC_PORTAL_DB` | `.local/portal.sqlite3`; mount a durable volume and back it up |
+| `PC_PORTAL_DATABASE_URL` | Postgres DSN, e.g. `postgresql://portal:<password>@powerchampion-db:5432/portal`; takes precedence over `PC_PORTAL_DB`. Schema is managed by Alembic (`server/migrations/`) and applied automatically at startup. Postgres connections use `connect_timeout=5` and `lock_timeout=15s` |
+| `PC_PORTAL_DB` | SQLite fallback when `PC_PORTAL_DATABASE_URL` is unset: `.local/portal.sqlite3`; mount a durable volume and back it up |
+| `PC_PORTAL_TEST_DATABASE_URL` | Tests only: run the suite against this Postgres instead of temporary SQLite files (see `scripts/test_backend_postgres.sh`) |
 | `PC_PORTAL_ALLOWED_ORIGINS` | `http://localhost:3010,https://powerchampion.ai`; exact origins for mutations |
 | `PC_PORTAL_SESSION_TTL` | `43200` seconds |
 | `PC_PORTAL_SECURE_COOKIES` | `0` locally; **set `1` for HTTPS deployment** |
@@ -57,7 +59,7 @@ There is no direct CORS access. Mutations require a matching Origin. The BFF mus
 forward only the validated request origin and the `pc_portal_session` cookie;
 session cookies are HttpOnly and SameSite=Lax. Passwords use scrypt; opaque
 sessions store SHA-256 hashes and enforce expiry server-side. Sessions are
-rotated at login. Database files are owner-readable/writable only.
+rotated at login. SQLite database files are owner-readable/writable only; the Postgres database is reachable only on the private Compose network.
 
 Login throttles are persisted per normalized account (5 failed attempts per
 15 minutes). Registration is throttled per account. The service never trusts
@@ -77,7 +79,7 @@ The adapter implements the **Python** gateway's actual routes:
   only the current customer's persisted owned key IDs, including revoked keys.
 
 The upstream admin credential is never accepted from a browser, logged, stored
-in SQLite, or returned by any portal endpoint. Upstream redirects are disabled;
+in the database, or returned by any portal endpoint. Upstream redirects are disabled;
 responses are size-limited and validated. Legacy keys must be explicitly mapped
 before their usage could appear in a customer's account; the portal does not
 guess ownership from email or labels.
@@ -101,10 +103,13 @@ Gateway usage is aggregated per model and contains no prompts or raw responses.
 ## Validation
 
 ```sh
-python3 -m unittest discover -s server -p 'test_*.py' -v
+npm run test:backend
+scripts/test_backend_postgres.sh
 ```
 
-Tests use temporary databases, fake gateway collaborators and mocked HTTP
+`npm run test:backend` runs the suite on temporary SQLite files.
+`scripts/test_backend_postgres.sh` runs the same suite on a throwaway
+`postgres:16-alpine` started from `server/docker-compose.test.yml`. Tests use temporary databases, fake gateway collaborators and mocked HTTP
 transports. They never contact production or create actual customer keys.
 
 ## Anonymous chat trial
@@ -132,7 +137,7 @@ instruction characters. BYO-key chat permits 32,000 history characters and
 Both paths reject redirects and use a 45-second deadline including response
 reading; client cancellation aborts upstream work where the connection permits.
 
-Before contacting the model, one SQLite transaction reserves both a global and
+Before contacting the model, one database transaction reserves both a global and
 session daily request slot. Failed, timed-out and cancelled calls still consume
 the slot. The UTC daily cap persists across process restarts. Resetting the
 `pc_trial_session` browser cookie may reset a session allowance, but cannot reset
@@ -164,7 +169,7 @@ private portal container. Persist the database and encryption key across
 restarts. Changing or losing that key makes existing unfinished tasks unable
 to resume; cancel those tasks before rotation. Never commit the key.
 
-Two background execution loops use transactional SQLite leases. Closing the
+Two background execution loops use transactional database leases (Postgres in production, SQLite in development). Closing the
 browser does not stop a task. Pausing and cancellation are cooperative: an
 already-started provider call can finish and consume tokens before the control
 is applied. An expired lease pauses the task for explicit recovery, avoiding an
@@ -185,6 +190,7 @@ are stored in the account database. They are sent to the selected model as
 needed. Model credentials are encrypted separately and are never returned by
 the task APIs. Database backups must therefore be access controlled; deleting
 a credential from the current database does not erase historical backups.
+Postgres backups: see the `pg_dump` command in `docs/deploy/a1-postgres-cutover.md`.
 Task retention is bounded to 50 per account, with up to two unfinished tasks.
 Files are capped at 1 MiB each and 8 MiB per task. Task creation accepts up to
 192 KiB of UTF-8 JSON so multilingual references fit the character limit;
