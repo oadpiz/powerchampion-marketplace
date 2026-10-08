@@ -223,6 +223,30 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         response.delete_cookie(COOKIE_NAME, path="/", secure=settings.secure_cookies, httponly=True, samesite="lax")
         return response
 
+    @application.post(PREFIX + "/password")
+    async def change_password(request: Request):
+        user = current_user(request)
+        body = await body_json(request)
+        current = body.get("currentPassword")
+        if not isinstance(current, str) or not 1 <= len(current) <= 128:
+            fail("invalid_current_password", "The current password is incorrect.")
+        try:
+            password = validate_password(body.get("newPassword"))
+        except ValueError as error:
+            fail("invalid_input", str(error))
+        row = store.find_user(user["email"])
+        valid = await run_in_threadpool(verify_password, current, row["password_hash"])
+        if not valid:
+            fail("invalid_current_password", "The current password is incorrect.")
+        encoded = await run_in_threadpool(password_hash, password)
+        keep = digest_token(request.cookies.get(COOKIE_NAME, ""))
+        with store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            con.execute("UPDATE users SET password_hash=? WHERE id=?", (encoded, user["id"]))
+            con.execute("DELETE FROM sessions WHERE user_id=? AND token_hash<>?", (user["id"], keep))
+            store.audit(con, "account.password_changed", user["id"], user["id"])
+        return {"ok": True}
+
     @application.get(PREFIX + "/overview")
     async def overview(request: Request):
         user = current_user(request)

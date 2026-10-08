@@ -152,6 +152,27 @@ class AdminAccountTests(_PortalCase):
         self.assertEqual(self.post(self.client(), "/agents/resolve", {"token": token}).status_code, 200)
 
 
+class SelfServicePasswordTests(_PortalCase):
+    def test_change_password_keeps_current_session_and_drops_others(self):
+        me = self.client()
+        self.register(me, "a@example.test")
+        other = self.client()
+        self.assertEqual(self.post(other, "/auth/login", {"email": "a@example.test", "password": PASSWORD}).status_code, 200)
+        bad = self.post(me, "/password", {"currentPassword": "not-the-password-1", "newPassword": "brand-new-password-987!"})
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(bad.json()["error"], "invalid_current_password")
+        weak = self.post(me, "/password", {"currentPassword": PASSWORD, "newPassword": "short"})
+        self.assertEqual(weak.json()["error"], "invalid_input")
+        ok = self.post(me, "/password", {"currentPassword": PASSWORD, "newPassword": "brand-new-password-987!"})
+        self.assertEqual(ok.status_code, 200, ok.text)
+        self.assertEqual(me.get(BASE + "/session").status_code, 200, "current session survives")
+        self.assertEqual(other.get(BASE + "/session").status_code, 401, "other sessions are revoked")
+        self.assertEqual(self.post(self.client(), "/auth/login", {"email": "a@example.test", "password": "brand-new-password-987!"}).status_code, 200)
+        self.assertIn("account.password_changed", [e["action"] for e in rows(self.store, "audit_events")])
+
+    def test_change_password_requires_session(self):
+        self.assertEqual(self.post(self.client(), "/password", {"currentPassword": PASSWORD, "newPassword": "x" * 12}).status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()
