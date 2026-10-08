@@ -136,12 +136,15 @@ class Database:
         if self.backend == "postgres":
             import psycopg
 
-            con = psycopg.connect(self._dsn, row_factory=_pg_row_factory)
+            con = psycopg.connect(self._dsn, row_factory=_pg_row_factory, connect_timeout=5, options="-c lock_timeout=15000")
             try:
                 yield Connection(con, self.backend)
                 con.commit()
             except BaseException:
-                con.rollback()
+                try:
+                    con.rollback()
+                except Exception:
+                    pass
                 raise
             finally:
                 con.close()

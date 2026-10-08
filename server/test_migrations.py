@@ -42,6 +42,27 @@ class MigrationTests(unittest.TestCase):
             names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'")}
         self.assertEqual(len(names), 13, names)
 
+    def test_store_on_pre_alembic_sqlite_keeps_data(self):
+        if self.db.backend != "sqlite":
+            self.skipTest("pre-Alembic files only exist on SQLite")
+        import importlib
+        from server.store import Store
+        baseline = importlib.import_module("server.migrations.versions.0001_baseline")
+        path = str(Path(self.directory.name) / "legacy.sqlite")
+        # The baseline strings are a verbatim copy of the pre-Alembic schema.
+        legacy = sqlite3.connect(path)
+        legacy.executescript(baseline.STORE_SCHEMA)
+        legacy.executescript(baseline.RUNTIME_SCHEMA)
+        legacy.execute("INSERT INTO users VALUES (?,?,?,?,?,?)",
+                       ("u1", "u1@example.test", "u1", "unused", "customer", 1))
+        legacy.commit()
+        legacy.close()
+        for _ in range(2):  # the second open must be a no-op
+            store = Store(path)
+            with store.connect() as con:
+                self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "u1@example.test")
+                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], ["0001_baseline"])
+
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":
             self.skipTest("path-based check")

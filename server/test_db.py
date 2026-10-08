@@ -1,6 +1,9 @@
 import os
 import tempfile
+import time
 import unittest
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from server.db import Database, translate_placeholders
@@ -71,6 +74,21 @@ class DatabaseTests(unittest.TestCase):
                 raise RuntimeError("boom")
         with self.db.connect() as con:
             self.assertEqual(con.execute("SELECT COUNT(*) FROM items").fetchone()[0], 0)
+
+    def test_begin_immediate_serializes_writers(self):
+        # Without serialization several threads would see n < 3 at once and insert more than 3 rows.
+        def writer(_):
+            with self.db.connect() as con:
+                con.execute("BEGIN IMMEDIATE")
+                n = con.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+                if n < 3:
+                    time.sleep(0.02)
+                    con.execute("INSERT INTO items VALUES (?,?,?)", (uuid.uuid4().hex, n, None))
+
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            list(pool.map(writer, range(10)))
+        with self.db.connect() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM items").fetchone()[0], 3)
 
     def test_integrity_error_is_unified(self):
         with self.db.connect() as con:

@@ -11,7 +11,7 @@ from cryptography.fernet import Fernet
 @dataclass(frozen=True)
 class Settings:
     db_path: str = ".local/portal.sqlite3"
-    database_url: str = ""
+    database_url: str = field(default="", repr=False)
     allowed_origins: Tuple[str, ...] = ("http://localhost:3010", "https://powerchampion.ai")
     session_ttl_seconds: int = 43200
     gateway_origin: str = "https://b300.powerchampion.ai"
@@ -39,14 +39,14 @@ class Settings:
             raise ValueError("Gateway key limits must be positive")
         if self.trial_daily_request_limit < 0 or self.trial_session_daily_limit < 1:
             raise ValueError("Trial request limits must be nonnegative globally and positive per session")
-        if self.database_url and not self.database_url.startswith(("sqlite:///", "postgresql://", "postgresql+psycopg://")):
-            raise ValueError("PC_PORTAL_DATABASE_URL must be a sqlite:/// or postgresql:// URL")
+        if self.database_url and not self.database_url.startswith(("sqlite:///", "postgres://", "postgresql://", "postgresql+psycopg://")):
+            raise ValueError("PC_PORTAL_DATABASE_URL must be a sqlite:/// or postgresql:// (or postgres://) URL")
 
     @property
     def resolved_database_url(self):
         if self.database_url:
             return self.database_url
-        if self.db_path.startswith(("sqlite:///", "postgresql://", "postgresql+psycopg://")):
+        if self.db_path.startswith(("sqlite:///", "postgres://", "postgresql://", "postgresql+psycopg://")):
             return self.db_path
         return "sqlite:///" + self.db_path
 
