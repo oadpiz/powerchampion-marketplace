@@ -16,3 +16,7 @@ def _config(url: str) -> Config:
 
 def upgrade_to_head(url: str) -> None:
     command.upgrade(_config(url), "head")
+
+
+def downgrade_to(url: str, revision: str) -> None:
+    command.downgrade(_config(url), revision)

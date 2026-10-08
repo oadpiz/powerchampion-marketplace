@@ -503,6 +503,11 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         return {"request": credit_json(row)}
 
     def admin_target(con, user_id, admin):
+        # Re-check the caller inside the write lock: current_user() ran before BEGIN IMMEDIATE,
+        # so another admin may have demoted or disabled this one in between.
+        me = con.execute("SELECT role, disabled_at FROM users WHERE id=?", (admin["id"],)).fetchone()
+        if not me or me["role"] != "admin" or me["disabled_at"] is not None:
+            fail("admin_required", "Administrator access is required.", 403)
         if user_id == admin["id"]:
             fail("self_target", "Use your own account page for your own account.", 409)
         row = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()

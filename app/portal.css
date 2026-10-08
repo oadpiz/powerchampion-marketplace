@@ -137,6 +137,11 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
 }
+.portal-stat > small {
+  color: var(--muted, #aaa69e);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .portal-stat a,
 .portal-stat > span:last-child {
   color: var(--focus, #c2aa7d);

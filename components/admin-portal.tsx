@@ -208,6 +208,9 @@ function OverviewSection() {
   const stats = [
     {
       label: zh ? "客戶帳號" : "Customer accounts",
+      note: zh
+        ? "只計算客戶帳號；客戶名單同時列出管理員。"
+        : "Counts customer accounts only; the Customers list also shows administrators.",
       value: resource.data?.customerCount,
       href: "/admin/customers",
     },
@@ -239,6 +242,7 @@ function OverviewSection() {
                   ? "尚未取得"
                   : "Unavailable"}
             </strong>
+            {"note" in stat && stat.note ? <small>{stat.note}</small> : null}
           </Link>
         ))}
       </div>
@@ -510,6 +514,8 @@ function AccountActionDialog({
   const inFlightRef = useRef(false);
   const reset = action === "reset-password";
   const nextRole = customer.role === "admin" ? "customer" : "admin";
+  const roleLabel = (role: Customer["role"]) =>
+    role === "admin" ? "管理員" : "客戶";
   const who = customer.name
     ? `${customer.name} (${customer.email})`
     : customer.email;
@@ -617,15 +623,15 @@ function AccountActionDialog({
   const impact =
     action === "disable"
       ? zh
-        ? `${who} 將無法登入，既有登入與 API 金鑰也會失效。`
-        : `${who} will not be able to sign in, and existing sessions and API keys stop working.`
+        ? `${who}：登入、既有工作階段與 agent token 會立即失效。sell-panel 簽發的 API 金鑰不受影響，請到閘道撤銷。`
+        : `${who}: Sign-in, active sessions and agent tokens stop working immediately. API keys issued in sell-panel are not affected; revoke them in the gateway.`
       : action === "enable"
         ? zh
           ? `${who} 將可以重新登入。`
           : `${who} will be able to sign in again.`
         : action === "role"
           ? zh
-            ? `將 ${who} 的角色從 ${customer.role} 改為 ${nextRole}。`
+            ? `將 ${who} 的角色從${roleLabel(customer.role)}改為${roleLabel(nextRole)}。`
             : `Change the role of ${who} from ${customer.role} to ${nextRole}.`
           : zh
             ? `為 ${who} 設定新密碼。該使用者所有裝置上的登入都會被登出。`
