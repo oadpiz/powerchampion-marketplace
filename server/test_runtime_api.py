@@ -121,6 +121,12 @@ class RuntimeApiTests(unittest.TestCase):
                 self.assertNotIn(key, response.text)
                 self.assertNotIn(key, database_text(self.app.state.store))
 
+    def test_database_text_compares_raw_stored_values(self):
+        secret = 'test-secret\\backslash"quote'
+        with self.app.state.store.connect() as con:
+            con.execute("UPDATE users SET name=? WHERE email=?", (secret, "alice@example.test"))
+        self.assertIn(secret, database_text(self.app.state.store))
+
     def test_reference_character_limit_accepts_full_multibyte_text(self):
         response = self.client.post(BASE + "/tasks", content=json.dumps({"goal": "分析資料", "model": "glm-5.2-fp8",
             "apiKey": TEST_KEY, "references": [{"name": "中文資料", "content": "中" * 32000}]}, ensure_ascii=False).encode(),

@@ -20,5 +20,13 @@ def rows(store, table: str) -> list[dict]:
 
 
 def database_text(store) -> str:
-    """Every row of every table as one string, for 'this secret was never stored' assertions."""
-    return "\n".join(str(rows(store, table)) for table in store.db.table_names())
+    """Raw stored values of every table as one string, for 'this secret was never stored' assertions.
+    Values are not repr()-ed, so a backslash or quote in a secret is compared as-is."""
+    parts = []
+    for table in store.db.table_names():
+        for row in rows(store, table):
+            for value in row.values():
+                if isinstance(value, (bytes, bytearray, memoryview)):
+                    value = bytes(value).decode("utf-8", "replace")
+                parts.append(str(value))
+    return "\n".join(parts)
