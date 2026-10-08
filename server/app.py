@@ -441,7 +441,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
     async def admin_customers(request: Request):
         current_user(request, admin=True)
         with store.connect() as con:
-            rows = con.execute("SELECT u.*, (SELECT COUNT(*) FROM gateway_keys k WHERE k.user_id=u.id AND status='active') AS key_count FROM users u WHERE role='customer' ORDER BY created_at DESC,id LIMIT 1000").fetchall()
+            rows = con.execute("SELECT u.*, (SELECT COUNT(*) FROM gateway_keys k WHERE k.user_id=u.id AND status='active') AS key_count FROM users u ORDER BY created_at DESC,id LIMIT 1000").fetchall()
         return {"customers": [dict(user_json(row), keyCount=row["key_count"]) for row in rows]}
 
     @application.get(PREFIX + "/admin/credits")
@@ -473,6 +473,68 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             store.audit(con, "credit." + desired, user["id"], credit_id)
             row = con.execute("SELECT * FROM credit_requests WHERE id=?", (credit_id,)).fetchone()
         return {"request": credit_json(row)}
+
+    def admin_target(con, user_id, admin):
+        if user_id == admin["id"]:
+            fail("self_target", "Use your own account page for your own account.", 409)
+        row = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        if not row:
+            fail("customer_not_found", "Account not found.", 404)
+        return row
+
+    @application.post(PREFIX + "/admin/customers/{user_id}/status")
+    async def admin_set_status(user_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        body = await body_json(request)
+        action = body.get("action")
+        if action not in ("disable", "enable"):
+            fail("invalid_input", "Choose disable or enable.")
+        with store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = admin_target(con, user_id, admin)
+            if action == "disable" and row["disabled_at"] is None:
+                con.execute("UPDATE users SET disabled_at=? WHERE id=?", (int(time.time()), user_id))
+                con.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+                store.audit(con, "admin.account_disabled", admin["id"], user_id)
+            elif action == "enable" and row["disabled_at"] is not None:
+                con.execute("UPDATE users SET disabled_at=NULL WHERE id=?", (user_id,))
+                store.audit(con, "admin.account_enabled", admin["id"], user_id)
+            row = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        return {"customer": user_json(row)}
+
+    @application.post(PREFIX + "/admin/customers/{user_id}/role")
+    async def admin_set_role(user_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        body = await body_json(request)
+        role = body.get("role")
+        if role not in ("customer", "admin"):
+            fail("invalid_input", "Choose customer or admin.")
+        with store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = admin_target(con, user_id, admin)
+            if row["role"] != role:
+                con.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
+                store.audit(con, "admin.role_changed", admin["id"], user_id)
+            row = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        return {"customer": user_json(row)}
+
+    @application.post(PREFIX + "/admin/customers/{user_id}/reset-password")
+    async def admin_reset_password(user_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        body = await body_json(request)
+        try:
+            password = validate_password(body.get("newPassword"))
+        except ValueError as error:
+            fail("invalid_input", str(error))
+        encoded = await run_in_threadpool(password_hash, password)
+        with store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = admin_target(con, user_id, admin)
+            con.execute("UPDATE users SET password_hash=? WHERE id=?", (encoded, user_id))
+            con.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+            con.execute("DELETE FROM login_attempts WHERE scope=?", ("login:" + digest_token(row["email"]),))
+            store.audit(con, "admin.password_reset", admin["id"], user_id)
+        return {"ok": True}
 
     @application.get(PREFIX + "/admin/audit")
     async def audit(request: Request):

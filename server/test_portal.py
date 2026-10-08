@@ -286,6 +286,10 @@ class PortalTests(unittest.TestCase):
             "decision": "approve", "note": "Unauthorized",
         })
         self.assertEqual(review.status_code, 403)
+        for path, body in (("/status", {"action": "disable"}), ("/role", {"role": "admin"}),
+                           ("/reset-password", {"newPassword": "x" * 12})):
+            with self.subTest(path=path):
+                self.assertEqual(self.post(BASE + "/admin/customers/anyone" + path, body).status_code, 403)
 
     def test_mutations_reject_missing_or_foreign_origin(self):
         payload = {"email": "alice@example.test", "name": "Alice", "password": PASSWORD}
@@ -575,8 +579,9 @@ class PortalTests(unittest.TestCase):
         customers = admin.get(BASE + "/admin/customers")
         self.assertEqual(customers.status_code, 200)
         rows = customers.json()["customers"]
-        self.assertEqual([row["id"] for row in rows], [user["id"]])
-        self.assertEqual(rows[0]["keyCount"], 1)
+        self.assertIn(user["id"], [row["id"] for row in rows])
+        self.assertEqual({row["role"] for row in rows}, {"customer", "admin"}, "the list now includes admins")
+        self.assertEqual([row["keyCount"] for row in rows if row["id"] == user["id"]], [1])
         audit = admin.get(BASE + "/admin/audit")
         self.assertEqual(audit.status_code, 200)
         self.assertTrue(audit.json()["events"])

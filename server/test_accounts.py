@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from server.app import create_app
 from server.settings import Settings
+from server.test_agents import CONFIGURATION
 from server.testsupport import fresh_database, rows
 
 ORIGIN = "http://localhost:3010"
@@ -64,6 +65,92 @@ class AccountStatusTests(_PortalCase):
         self.assertEqual(login.json()["error"], "account_disabled")
         wrong = self.post(self.client(), "/auth/login", {"email": "a@example.test", "password": "definitely-wrong-password"})
         self.assertEqual(wrong.status_code, 401, "a wrong password must not reveal the disabled state")
+
+
+class AdminAccountTests(_PortalCase):
+    def admin(self, email="admin@example.test"):
+        self.store.create_user(email, "Admin", PASSWORD, role="admin")
+        client = self.client()
+        self.assertEqual(self.post(client, "/auth/login", {"email": email, "password": PASSWORD}).status_code, 200)
+        return client
+
+    def test_customer_list_includes_admins_with_role_and_status(self):
+        admin = self.admin()
+        self.register(self.client(), "a@example.test")
+        listing = admin.get(BASE + "/admin/customers").json()["customers"]
+        self.assertEqual({(u["email"], u["role"], u["status"]) for u in listing},
+                         {("admin@example.test", "admin", "active"), ("a@example.test", "customer", "active")})
+
+    def test_disable_kicks_sessions_and_enable_restores(self):
+        admin = self.admin()
+        victim = self.client()
+        user = self.register(victim, "a@example.test")
+        r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["customer"]["status"], "disabled")
+        self.assertEqual(victim.get(BASE + "/session").status_code, 401)
+        again = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"})
+        self.assertEqual(again.status_code, 200, "idempotent")
+        r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "enable"})
+        self.assertEqual(r.json()["customer"]["status"], "active")
+        self.assertEqual(self.post(self.client(), "/auth/login", {"email": "a@example.test", "password": PASSWORD}).status_code, 200)
+        actions = [e["action"] for e in rows(self.store, "audit_events")]
+        self.assertIn("admin.account_disabled", actions)
+        self.assertIn("admin.account_enabled", actions)
+
+    def test_admin_cannot_target_self(self):
+        admin = self.admin()
+        me = admin.get(BASE + "/session").json()["user"]
+        for path, body in ((f"/admin/customers/{me['id']}/status", {"action": "disable"}),
+                           (f"/admin/customers/{me['id']}/role", {"role": "customer"}),
+                           (f"/admin/customers/{me['id']}/reset-password", {"newPassword": "x" * 12})):
+            response = self.post(admin, path, body)
+            self.assertEqual(response.status_code, 409, path)
+            self.assertEqual(response.json()["error"], "self_target")
+        self.assertEqual(admin.get(BASE + "/session").status_code, 200, "the admin is untouched")
+
+    def test_role_change_and_unknown_user(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        r = self.post(admin, f"/admin/customers/{user['id']}/role", {"role": "admin"})
+        self.assertEqual(r.json()["customer"]["role"], "admin")
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/role", {"role": "owner"}).status_code, 400)
+        self.assertEqual(self.post(admin, "/admin/customers/" + "0" * 32 + "/role", {"role": "admin"}).status_code, 404)
+        self.assertIn("admin.role_changed", [e["action"] for e in rows(self.store, "audit_events")])
+
+    def test_admin_password_reset_revokes_sessions(self):
+        admin = self.admin()
+        victim = self.client()
+        user = self.register(victim, "a@example.test")
+        r = self.post(admin, f"/admin/customers/{user['id']}/reset-password", {"newPassword": "brand-new-password-987!"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(victim.get(BASE + "/session").status_code, 401)
+        self.assertEqual(self.post(self.client(), "/auth/login", {"email": "a@example.test", "password": PASSWORD}).status_code, 401)
+        self.assertEqual(self.post(self.client(), "/auth/login", {"email": "a@example.test", "password": "brand-new-password-987!"}).status_code, 200)
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/reset-password", {"newPassword": "short"}).status_code, 400)
+        self.assertIn("admin.password_reset", [e["action"] for e in rows(self.store, "audit_events")])
+
+    def test_customer_is_forbidden(self):
+        client = self.client()
+        user = self.register(client, "a@example.test")
+        for path, body in ((f"/admin/customers/{user['id']}/status", {"action": "disable"}),
+                           (f"/admin/customers/{user['id']}/role", {"role": "admin"}),
+                           (f"/admin/customers/{user['id']}/reset-password", {"newPassword": "x" * 12})):
+            self.assertEqual(self.post(client, path, body).status_code, 403, path)
+
+    def test_disabled_users_agent_token_stops_resolving(self):
+        admin = self.admin()
+        client = self.client()
+        user = self.register(client, "a@example.test")
+        created = self.post(client, "/agents", {"name": "Drafter", **CONFIGURATION})
+        self.assertEqual(created.status_code, 201, created.text)
+        token = created.json()["token"]
+        self.assertEqual(self.post(self.client(), "/agents/resolve", {"token": token}).status_code, 200)
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"}).status_code, 200)
+        self.assertEqual(self.post(self.client(), "/agents/resolve", {"token": token}).status_code, 404)
+        self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "enable"})
+        self.assertEqual(self.post(self.client(), "/agents/resolve", {"token": token}).status_code, 200)
+
 
 
 if __name__ == "__main__":

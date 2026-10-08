@@ -184,7 +184,11 @@ class Agents:
         if not isinstance(token, str) or not token.startswith(TOKEN_PREFIX) or len(token) > 200:
             return None
         with self.store.connect() as con:
-            row = con.execute("SELECT * FROM agents WHERE token_hash=? AND status='active'", (digest_token(token),)).fetchone()
+            row = con.execute(
+                "SELECT a.* FROM agents a JOIN users u ON u.id=a.user_id"
+                " WHERE a.token_hash=? AND a.status='active' AND u.disabled_at IS NULL",
+                (digest_token(token),),
+            ).fetchone()
             if not row:
                 return None
             version = self._version(con, row["id"], row["current_version"])
