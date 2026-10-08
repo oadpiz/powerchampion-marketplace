@@ -18,7 +18,7 @@ import {
 } from "../lib/languages";
 
 type NavigationKey = keyof CopyDictionary["nav"];
-type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy";
+type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy" | "dataRetention";
 
 const primaryDestinations: readonly [NavigationKey, string][] = [
   ["models", "/models"],
@@ -64,6 +64,7 @@ const footerDestinationGroups: readonly {
       ["faq", "/faq"],
       ["terms", "/terms"],
       ["privacy", "/privacy"],
+      ["dataRetention", "/data-retention"],
     ],
   },
 ];
@@ -90,6 +91,7 @@ function footerDestinationLabel(
     key === "about" ||
     key === "terms" ||
     key === "privacy" ||
+    key === "dataRetention" ||
     key === "status"
   ) {
     return copy.footer[key];

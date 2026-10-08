@@ -87,16 +87,20 @@ const routeMetadata = {
     title: "Privacy | Power Champion",
     description: "Learn how Power Champion handles website interactions, account information, and API requests.",
   },
+  "/data-retention": {
+    title: "Data retention | Power Champion",
+    description: "How long the b300 gateway keeps usage metadata, and why prompt content is never persisted.",
+  },
 };
 
 const routes = [
   "/", "/solutions", "/models", "/pricing", "/infrastructure", "/docs", "/trust",
-  "/status", "/company", "/contact", "/console", "/faq", "/terms", "/privacy",
+  "/status", "/company", "/contact", "/console", "/faq", "/terms", "/privacy", "/data-retention",
 ];
 
 const shellDestinations = [
   "/models", "/pricing", "/infrastructure", "/docs", "/trust", "/status",
-  "/company", "/contact", "/console", "/faq", "/terms", "/privacy",
+  "/company", "/contact", "/console", "/faq", "/terms", "/privacy", "/data-retention",
 ];
 
 function escaped(value) {

@@ -8,7 +8,7 @@ export type LocalizedSection = (typeof LOCALIZED_SECTIONS)[number];
 export const PUBLIC_ROUTES = [
   "/", "/agents", "/agent-platform", "/platform", "/models", "/compare", "/pricing", "/playground",
   "/integrations", "/docs", "/infrastructure", "/company", "/contact",
-  "/trust", "/status", "/faq", "/terms", "/privacy",
+  "/trust", "/status", "/faq", "/terms", "/privacy", "/data-retention",
 ] as const;
 const PRIVATE_ROUTES = ["/chat", "/tasks", "/agents/build", "/account", "/admin", "/login", "/register", "/console", "/api"];
 

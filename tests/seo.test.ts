@@ -103,7 +103,8 @@ describe("Public sitemap", () => {
     const expected = publicSitemapPaths(MODEL_CATALOG.map((model) => model.id)).map((path) => new URL(path, SITE_ORIGIN).href);
     expect(urls).toEqual(expected);
     expect(new Set(urls).size).toBe(urls.length);
-    expect(urls).toHaveLength(50);
+    expect(urls).toHaveLength(51);
+    expect(urls).toContain(`${SITE_ORIGIN}/data-retention`);
     expect(urls).not.toContain(`${SITE_ORIGIN}/solutions`);
     expect(urls).toContain(`${SITE_ORIGIN}/agents`);
     expect(urls).not.toContain(`${SITE_ORIGIN}/chat`);
