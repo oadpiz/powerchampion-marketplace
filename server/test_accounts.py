@@ -479,5 +479,97 @@ class AdminKeysTests(_PortalCase):
         self.assertEqual(self.client().get(BASE + "/admin/keys").status_code, 401)
 
 
+class AdminUsageTests(_PortalCase):
+    def test_month_report_with_ownership_and_totals(self):
+        self.store.create_user("admin@example.test", "Admin", PASSWORD, role="admin")
+        admin = self.client()
+        self.assertEqual(self.post(admin, "/auth/login", {"email": "admin@example.test", "password": PASSWORD}).status_code, 200)
+        user = self.register(self.client(), "a@example.test")
+        issued = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "A", "prepaidUsd": 5}).json()
+        gid = issued["key"]["gatewayKeyId"]
+        self.gateway.report = {"month": "2026-10", "keys": [
+            {"key_id": gid, "label": "portal:x:A", "requests": 3, "prompt_tokens": 10, "completion_tokens": 20, "cost_usd": "0.123456", "by_model": [{"model": "m", "requests": 3, "prompt_tokens": 10, "completion_tokens": 20, "cost_usd": "0.123456"}], "by_day": []},
+            {"key_id": "manual-key", "label": "ops", "requests": 1, "prompt_tokens": 1, "completion_tokens": 1, "cost_usd": "0.000001", "by_model": [], "by_day": []},
+        ], "total_cost_usd": "0.123457", "total_requests": 4, "unpriced_models": [], "amount_status": "confirmed", "since": 0, "until": 0}
+        body = admin.get(BASE + "/admin/usage?month=2026-10").json()
+        self.assertEqual(body["totals"], {"requests": 4, "costUsd": "0.123457"})
+        owned = next(k for k in body["keys"] if k["gatewayKeyId"] == gid)
+        self.assertEqual(owned["owner"]["email"], "a@example.test")
+        self.assertEqual(owned["costUsd"], "0.123456")
+        self.assertEqual([c for c in body["byCustomer"] if c["owner"] and c["owner"]["email"] == "a@example.test"][0]["requests"], 3)
+        self.assertEqual(self.gateway.months[-1], "2026-10")
+        self.assertEqual(admin.get(BASE + "/admin/usage?month=2026-13").status_code, 400)
+        self.gateway.fail = True
+        self.assertEqual(admin.get(BASE + "/admin/usage?month=2026-10").status_code, 503)
+
+    def test_full_shape_ordering_and_passthrough(self):
+        admin = self.admin()
+        u1 = self.register(self.client(), "a@example.test")
+        u2 = self.register(self.client(), "b@example.test")
+        g1 = self.post(admin, f"/admin/customers/{u1['id']}/keys", {"label": "A", "prepaidUsd": 5}).json()["key"]["gatewayKeyId"]
+        g2 = self.post(admin, f"/admin/customers/{u1['id']}/keys", {"label": "A2", "prepaidUsd": 5}).json()["key"]["gatewayKeyId"]
+        g3 = self.post(admin, f"/admin/customers/{u2['id']}/keys", {"label": "B", "prepaidUsd": 5}).json()["key"]["gatewayKeyId"]
+
+        def entry(key_id, requests, cost, models=()):
+            return {"key_id": key_id, "label": "L-" + key_id, "requests": requests, "prompt_tokens": 7, "completion_tokens": 9, "cost_usd": cost,
+                    "by_model": [{"model": m, "requests": requests, "prompt_tokens": 7, "completion_tokens": 9, "cost_usd": cost} for m in models], "by_day": []}
+        self.gateway.report = {"month": "2026-10", "keys": [
+            entry(g1, 2, "0.100000", ["m1"]), entry(g2, 3, "0.250000"), entry(g3, 1, "0.300000"), entry("manual-key", 5, "0.000500"),
+        ], "total_cost_usd": "0.650500", "total_requests": 11, "unpriced_models": ["mystery"], "amount_status": "estimated"}
+        body = admin.get(BASE + "/admin/usage?month=2026-10").json()
+        self.assertEqual(set(body), {"month", "source", "totals", "amountStatus", "unpricedModels", "keys", "byCustomer", "updatedAt"})
+        self.assertEqual(body["source"], "gateway")
+        self.assertEqual(body["amountStatus"], "estimated")
+        self.assertEqual(body["unpricedModels"], ["mystery"])
+        self.assertTrue(body["updatedAt"])
+        self.assertEqual([k["gatewayKeyId"] for k in body["keys"]], [g3, g2, g1, "manual-key"])
+        first = next(k for k in body["keys"] if k["gatewayKeyId"] == g1)
+        self.assertEqual(set(first), {"gatewayKeyId", "label", "owner", "requests", "inputTokens", "outputTokens", "costUsd", "byModel"})
+        self.assertEqual((first["label"], first["requests"], first["inputTokens"], first["outputTokens"]), ("L-" + g1, 2, 7, 9))
+        self.assertEqual(first["byModel"], [{"model": "m1", "requests": 2, "inputTokens": 7, "outputTokens": 9, "costUsd": "0.100000"}])
+        self.assertIsNone(next(k for k in body["keys"] if k["gatewayKeyId"] == "manual-key")["owner"])
+        self.assertEqual([(c["owner"] and c["owner"]["email"], c["requests"], c["costUsd"]) for c in body["byCustomer"]],
+                         [("a@example.test", 5, "0.350000"), ("b@example.test", 1, "0.300000"), (None, 5, "0.000500")])
+        self.assertEqual(set(body["byCustomer"][0]["owner"]), {"id", "email", "name"})
+
+    def test_unconfigured_gateway_is_empty_200(self):
+        admin = self.admin()
+        self.gateway.configured = False
+        r = admin.get(BASE + "/admin/usage?month=2026-10")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["source"], "unconfigured")
+        self.assertEqual((body["keys"], body["byCustomer"], body["unpricedModels"]), ([], [], []))
+        self.assertEqual(body["totals"], {"requests": 0, "costUsd": "0.000000"})
+        self.assertIsNone(body["amountStatus"])
+        self.assertEqual(body["month"], "2026-10")
+
+    def test_malformed_report_is_503_never_zeros(self):
+        admin = self.admin()
+        good = {"key_id": "k", "label": "l", "requests": 1, "prompt_tokens": 1, "completion_tokens": 1, "cost_usd": "0.1", "by_model": []}
+        base = {"month": "2026-10", "keys": [good], "total_cost_usd": "0.1", "total_requests": 1, "unpriced_models": [], "amount_status": "confirmed"}
+        cases = [
+            dict(base, keys=[dict(good, cost_usd="abc")]),
+            dict(base, keys=[dict(good, requests=-1)]),
+            dict(base, keys=[dict(good, requests=True)]),
+            dict(base, keys=[dict(good, by_model=[{"model": "m", "requests": 1, "prompt_tokens": 1, "completion_tokens": 1, "cost_usd": "nan"}])]),
+            dict(base, keys="nope"),
+            dict(base, total_cost_usd="x"),
+            {k: v for k, v in base.items() if k != "total_requests"},
+            dict(base, total_requests=1.5),
+            dict(base, unpriced_models=[1]),
+        ]
+        for report in cases:
+            self.gateway.report = report
+            self.assertEqual(admin.get(BASE + "/admin/usage?month=2026-10").status_code, 503, report)
+
+    def test_customers_and_anonymous_are_rejected(self):
+        self.register(self.client(), "a@example.test")
+        customer = self.client()
+        self.post(customer, "/auth/login", {"email": "a@example.test", "password": PASSWORD})
+        self.assertEqual(customer.get(BASE + "/admin/usage?month=2026-10").status_code, 403)
+        self.assertEqual(self.client().get(BASE + "/admin/usage?month=2026-10").status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -169,8 +169,14 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                 "balanceUsd": usd_from_nano(item.get("prepaid_nano_usd")), "createdAt": iso(item.get("created_at")),
                 "expiresAt": iso(item.get("expires_at")), "disabledAt": iso(item.get("disabled_at")), "lastUsedAt": iso(item.get("last_used_at")),
                 "modelIds": [m for m in item.get("model_ids", []) if isinstance(m, str)],
-                "owner": {"id": owner_row["user_id"], "email": owner_row["email"], "name": owner_row["name"]} if owner_row else None,
+                "owner": owner_json(owner_row),
                 "portalKeyId": owner_row["id"] if owner_row else None, "portalStatus": owner_row["status"] if owner_row else None}
+
+    def owners_by_gateway_key_id(con):
+        return {r["gateway_key_id"]: r for r in con.execute("SELECT k.id, k.user_id, k.gateway_key_id, k.status, u.email, u.name FROM gateway_keys k JOIN users u ON u.id=k.user_id").fetchall()}
+
+    def owner_json(owner_row):
+        return {"id": owner_row["user_id"], "email": owner_row["email"], "name": owner_row["name"]} if owner_row else None
 
     def limits_from(body):
         limits = {}
@@ -682,9 +688,79 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         except GatewayError as error:
             gateway_fail(error)
         with store.connect() as con:
-            owners = {r["gateway_key_id"]: r for r in con.execute("SELECT k.id, k.user_id, k.gateway_key_id, k.status, u.email, u.name FROM gateway_keys k JOIN users u ON u.id=k.user_id").fetchall()}
+            owners = owners_by_gateway_key_id(con)
         return {"keys": [gateway_key_json(item, owners.get(item.get("key_id"))) for item in listing["keys"]],
                 "envKeys": [gateway_key_json(item) for item in listing["env_keys"]], "gatewayConfigured": True}
+
+    @application.get(PREFIX + "/admin/usage")
+    async def admin_usage(request: Request, month: str = ""):
+        current_user(request, admin=True)
+        month = month or datetime.now(timezone.utc).strftime("%Y-%m")
+        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month) or not 2000 <= int(month[:4]) <= 2100:
+            fail("invalid_input", "Choose a valid month (YYYY-MM).")
+        if not gateway.configured:
+            return {"month": month, "source": "unconfigured", "totals": {"requests": 0, "costUsd": "0.000000"}, "amountStatus": None,
+                    "unpricedModels": [], "keys": [], "byCustomer": [], "updatedAt": iso(int(time.time()))}
+
+        def count(value):
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 9007199254740991:
+                raise ValueError()
+            return value
+
+        def cost(value):
+            amount = Decimal(str(value))
+            if not isinstance(value, (str, int, float)) or isinstance(value, bool) or not amount.is_finite() or amount < 0 or amount > Decimal("1000000000"):
+                raise ValueError()
+            return amount
+
+        try:
+            report = await gateway.usage_report(month)
+            if not isinstance(report.get("keys"), list):
+                raise ValueError()
+            unpriced = report.get("unpriced_models", [])
+            if not isinstance(unpriced, list) or not all(isinstance(model, str) for model in unpriced):
+                raise ValueError()
+            amount_status = report.get("amount_status")
+            if amount_status is not None and not isinstance(amount_status, str):
+                raise ValueError()
+            total_requests = count(report.get("total_requests"))
+            cost(report.get("total_cost_usd"))
+            total_cost = str(report["total_cost_usd"])
+            parsed = []
+            for entry in report["keys"]:
+                if not isinstance(entry, dict) or not isinstance(entry.get("key_id"), str) or not isinstance(entry.get("by_model"), list):
+                    raise ValueError()
+                label = entry.get("label")
+                if label is not None and not isinstance(label, str):
+                    raise ValueError()
+                models = []
+                for model in entry["by_model"]:
+                    if not isinstance(model, dict) or not isinstance(model.get("model"), str) or len(model["model"]) > 200:
+                        raise ValueError()
+                    models.append({"model": model["model"], "requests": count(model.get("requests")), "inputTokens": count(model.get("prompt_tokens")),
+                                   "outputTokens": count(model.get("completion_tokens")), "costUsd": str(model.get("cost_usd"))})
+                    cost(model.get("cost_usd"))
+                parsed.append(({"gatewayKeyId": entry["key_id"], "label": label, "requests": count(entry.get("requests")),
+                                "inputTokens": count(entry.get("prompt_tokens")), "outputTokens": count(entry.get("completion_tokens")),
+                                "costUsd": str(entry.get("cost_usd")), "byModel": models}, cost(entry.get("cost_usd"))))
+        except GatewayError as error:
+            gateway_fail(error)
+        except (ValueError, InvalidOperation, TypeError):
+            fail("gateway_unavailable", "Usage could not be retrieved. Please try again later.", 503)
+        with store.connect() as con:
+            owners = owners_by_gateway_key_id(con)
+        keys, customers = [], {}
+        for item, amount in sorted(parsed, key=lambda pair: (-pair[1], pair[0]["gatewayKeyId"])):
+            owner = owners.get(item["gatewayKeyId"])
+            keys.append(dict(item, owner=owner_json(owner)))
+            group = customers.setdefault(owner["user_id"] if owner else None, {"owner": owner_json(owner), "requests": 0, "cost": Decimal(0)})
+            group["requests"] += item["requests"]
+            group["cost"] += amount
+        by_customer = sorted(customers.items(), key=lambda pair: (pair[0] is None, -pair[1]["cost"]))
+        return {"month": month, "source": "gateway", "totals": {"requests": total_requests, "costUsd": total_cost}, "amountStatus": amount_status,
+                "unpricedModels": unpriced, "keys": keys,
+                "byCustomer": [{"owner": group["owner"], "requests": group["requests"], "costUsd": f"{group['cost']:.6f}"} for _, group in by_customer],
+                "updatedAt": iso(int(time.time()))}
 
     @application.post(PREFIX + "/admin/keys/{key_id}/disable")
     async def admin_disable_key(key_id: str, request: Request):
