@@ -152,6 +152,52 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         if not gateway.configured or (customer and not settings.customer_key_issuance):
             fail("provider_not_configured", "API key provisioning is not connected yet. Contact support for access.", 503)
 
+    def gateway_fail(error):
+        if error.code == "rejected" and (error.status is None or error.status < 500):
+            status = error.status if error.status in (400, 404, 409) else 400
+            fail("gateway_rejected", error.detail or "The gateway rejected the request.", status)
+        if error.code == "unconfigured":
+            fail("provider_not_configured", "The gateway is not connected.", 503)
+        fail("gateway_unavailable", "The API gateway is unavailable.", 503)
+
+    def usd_from_nano(value):
+        return None if not isinstance(value, int) or isinstance(value, bool) else f"{Decimal(value) / Decimal(10**9):.2f}"
+
+    def gateway_key_json(item, owner_row=None):
+        return {"gatewayKeyId": item.get("key_id"), "prefix": item.get("prefix"), "label": item.get("label"),
+                "dailyTokenLimit": item.get("daily_token_limit"), "rpm": item.get("rpm"), "maxInflight": item.get("max_inflight"),
+                "balanceUsd": usd_from_nano(item.get("prepaid_nano_usd")), "createdAt": iso(item.get("created_at")),
+                "expiresAt": iso(item.get("expires_at")), "disabledAt": iso(item.get("disabled_at")), "lastUsedAt": iso(item.get("last_used_at")),
+                "modelIds": [m for m in item.get("model_ids", []) if isinstance(m, str)],
+                "owner": {"id": owner_row["user_id"], "email": owner_row["email"], "name": owner_row["name"]} if owner_row else None,
+                "portalKeyId": owner_row["id"] if owner_row else None, "portalStatus": owner_row["status"] if owner_row else None}
+
+    def limits_from(body):
+        limits = {}
+        for field, name in (("dailyTokenLimit", "daily_token_limit"), ("rpm", "rpm"), ("maxInflight", "max_inflight")):
+            if body.get(field) is not None:
+                value = body[field]
+                if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 2 ** 53 - 1:
+                    fail("invalid_input", "Limits must be non-negative integers.", 422)
+                limits[name] = value
+        return limits
+
+    def usd_amount(raw, allow_zero):
+        try:
+            if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                raise ValueError
+            amount = Decimal(str(raw))
+            if not amount.is_finite() or amount < 0 or amount > 100000 or amount != amount.quantize(Decimal("0.01")) or (amount == 0 and not allow_zero):
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            fail("invalid_input", "Enter an amount " + ("from 0" if allow_zero else "above 0") + " to 100,000 USD with at most two decimals.", 422)
+        return amount
+
+    def gateway_key_id(value):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+            fail("key_not_found", "Key not found.", 404)
+        return value
+
     @application.get(PREFIX + "/health")
     async def health():
         return {"ok": True}
@@ -538,13 +584,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                 raise ValueError
         except (InvalidOperation, ValueError):
             fail("invalid_input", "Enter a prepaid amount above 0 USD with at most two decimals.", 422)
-        limits = {}
-        for field, name in (("dailyTokenLimit", "daily_token_limit"), ("rpm", "rpm"), ("maxInflight", "max_inflight")):
-            if body.get(field) is not None:
-                value = body[field]
-                if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 2 ** 53 - 1:
-                    fail("invalid_input", "Limits must be non-negative integers.", 422)
-                limits[name] = value
+        limits = limits_from(body)
         with store.connect() as con:
             target = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
         if not target:
@@ -631,6 +671,78 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             con.execute("DELETE FROM login_attempts WHERE scope=?", ("login:" + digest_token(row["email"]),))
             store.audit(con, "admin.password_reset", admin["id"], user_id)
         return {"ok": True}
+
+    @application.get(PREFIX + "/admin/keys")
+    async def admin_keys(request: Request):
+        current_user(request, admin=True)
+        if not gateway.configured:
+            return {"keys": [], "envKeys": [], "gatewayConfigured": False}
+        try:
+            listing = await gateway.list_keys()
+        except GatewayError as error:
+            gateway_fail(error)
+        with store.connect() as con:
+            owners = {r["gateway_key_id"]: r for r in con.execute("SELECT k.id, k.user_id, k.gateway_key_id, k.status, u.email, u.name FROM gateway_keys k JOIN users u ON u.id=k.user_id").fetchall()}
+        return {"keys": [gateway_key_json(item, owners.get(item.get("key_id"))) for item in listing["keys"]],
+                "envKeys": [gateway_key_json(item) for item in listing["env_keys"]], "gatewayConfigured": True}
+
+    @application.post(PREFIX + "/admin/keys/{key_id}/disable")
+    async def admin_disable_key(key_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_key_id(key_id)
+        body = await body_json(request)
+        disabled = body.get("disabled")
+        if not isinstance(disabled, bool):
+            fail("invalid_input", "Choose whether to disable or enable the key.", 422)
+        require_gateway()
+        try:
+            await gateway.set_key_disabled(key_id, disabled)
+        except GatewayError as error:
+            gateway_fail(error)
+        with store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            if disabled:
+                con.execute("UPDATE gateway_keys SET status='revoked',revoked_at=? WHERE gateway_key_id=? AND status='active'", (int(time.time()), key_id))
+            else:
+                con.execute("UPDATE gateway_keys SET status='active',revoked_at=NULL WHERE gateway_key_id=? AND status='revoked'", (key_id,))
+            store.audit(con, "admin.key_disabled" if disabled else "admin.key_enabled", admin["id"], key_id)
+        return {"ok": True}
+
+    @application.post(PREFIX + "/admin/keys/{key_id}/limits")
+    async def admin_key_limits(key_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_key_id(key_id)
+        limits = limits_from(await body_json(request))
+        if not limits:
+            fail("invalid_input", "Give at least one limit to change.", 422)
+        require_gateway()
+        try:
+            await gateway.update_limits(key_id, limits)
+        except GatewayError as error:
+            gateway_fail(error)
+        with store.connect() as con:
+            store.audit(con, "admin.key_limits", admin["id"], key_id)
+        return {"ok": True}
+
+    @application.post(PREFIX + "/admin/keys/{key_id}/balance")
+    async def admin_key_balance(key_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_key_id(key_id)
+        body = await body_json(request)
+        if (body.get("addUsd") is None) == (body.get("setUsd") is None):
+            fail("invalid_input", "Give either addUsd or setUsd.", 422)
+        amount = usd_amount(body["addUsd"], False) if body.get("addUsd") is not None else usd_amount(body["setUsd"], True)
+        require_gateway()
+        try:
+            if body.get("addUsd") is not None:
+                nano = await gateway.adjust_balance(key_id, add_usd=amount)
+            else:
+                nano = await gateway.adjust_balance(key_id, set_usd=amount)
+        except GatewayError as error:
+            gateway_fail(error)
+        with store.connect() as con:
+            store.audit(con, "admin.key_balance", admin["id"], key_id)
+        return {"ok": True, "balanceUsd": usd_from_nano(nano)}
 
     @application.get(PREFIX + "/admin/audit")
     async def audit(request: Request):

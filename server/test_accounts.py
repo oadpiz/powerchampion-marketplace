@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 
@@ -331,6 +332,151 @@ class SelfServicePasswordTests(_PortalCase):
         sixth = self.post(me, "/password", {"currentPassword": PASSWORD, "newPassword": "brand-new-password-987!"})
         self.assertEqual(sixth.status_code, 429, "even the right password is refused while throttled")
         self.assertEqual(sixth.json()["error"], "rate_limited")
+
+
+class AdminKeysTests(_PortalCase):
+    def issue(self, admin, email="a@example.test", prepaid=5):
+        user = self.register(self.client(), email)
+        issued = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "A", "prepaidUsd": prepaid}).json()
+        return user, issued["key"]["gatewayKeyId"]
+
+    def test_list_merges_ownership(self):
+        admin = self.admin()
+        user, gid = self.issue(admin)
+        self.gateway.listing = {"keys": [
+            {"key_id": gid, "prefix": "sk-test-1", "label": "portal:x:A", "daily_token_limit": 1000000, "rpm": 60, "max_inflight": 2, "prepaid_nano_usd": 5000000000, "created_at": 1700000000, "expires_at": None, "disabled_at": None, "last_used_at": None, "model_ids": []},
+            {"key_id": "manual-key", "prefix": "sk-man", "label": "ops", "daily_token_limit": 0, "rpm": 0, "max_inflight": 0, "prepaid_nano_usd": None, "created_at": 1700000000.5, "expires_at": None, "disabled_at": None, "last_used_at": None, "model_ids": []},
+        ], "env_keys": [{"key_id": "env-1", "prefix": "sk-env", "label": "environment", "unmanaged": True}]}
+        body = admin.get(BASE + "/admin/keys").json()
+        self.assertTrue(body["gatewayConfigured"])
+        by_id = {k["gatewayKeyId"]: k for k in body["keys"]}
+        owned = by_id[gid]
+        self.assertEqual(owned["owner"], {"id": user["id"], "email": "a@example.test", "name": "Test"})
+        self.assertEqual(owned["balanceUsd"], "5.00")
+        self.assertEqual(owned["portalStatus"], "active")
+        self.assertEqual(owned["portalKeyId"], rows(self.store, "gateway_keys")[0]["id"])
+        self.assertEqual(owned["dailyTokenLimit"], 1000000)
+        self.assertEqual(owned["rpm"], 60)
+        self.assertEqual(owned["maxInflight"], 2)
+        self.assertTrue(owned["createdAt"])
+        self.assertIsNone(by_id["manual-key"]["owner"])
+        self.assertIsNone(by_id["manual-key"]["portalKeyId"])
+        self.assertIsNone(by_id["manual-key"]["portalStatus"])
+        self.assertIsNone(by_id["manual-key"]["balanceUsd"])
+        self.assertEqual(body["envKeys"][0]["gatewayKeyId"], "env-1")
+        self.assertIsNone(body["envKeys"][0]["owner"])
+        self.assertNotIn("sk-test-secret", json.dumps(body))
+
+    def test_list_without_gateway_is_empty(self):
+        admin = self.admin()
+        self.gateway.configured = False
+        r = admin.get(BASE + "/admin/keys")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {"keys": [], "envKeys": [], "gatewayConfigured": False})
+
+    def test_list_gateway_down_is_503(self):
+        admin = self.admin()
+        self.gateway.fail = True
+        r = admin.get(BASE + "/admin/keys")
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.json()["error"], "gateway_unavailable")
+        self.assertNotIn("private upstream token", r.text)
+
+    def test_disable_enable_limits_balance(self):
+        admin = self.admin()
+        _user, gid = self.issue(admin)
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": True}).json(), {"ok": True})
+        self.assertEqual(self.gateway.disabled[-1], gid)
+        self.assertEqual(rows(self.store, "gateway_keys")[0]["status"], "revoked")
+        self.assertIsNotNone(rows(self.store, "gateway_keys")[0]["revoked_at"])
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": False}).status_code, 200)
+        self.assertEqual(self.gateway.enabled[-1], gid)
+        row = rows(self.store, "gateway_keys")[0]
+        self.assertEqual(row["status"], "active")
+        self.assertIsNone(row["revoked_at"])
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/limits", {"rpm": 10}).status_code, 200)
+        self.assertEqual(self.gateway.limits[-1], (gid, {"rpm": 10}))
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/limits", {"rpm": -1}).status_code, 422)
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/limits", {}).status_code, 422)
+        self.assertEqual(len(self.gateway.limits), 1)
+        r = self.post(admin, f"/admin/keys/{gid}/balance", {"addUsd": 2.5})
+        self.assertEqual(r.json(), {"ok": True, "balanceUsd": "2.50"})
+        self.assertEqual(self.gateway.balances[-1][0], gid)
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/balance", {"addUsd": 1, "setUsd": 2}).status_code, 422)
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/balance", {}).status_code, 422)
+        self.assertEqual(len(self.gateway.balances), 1)
+        actions = [e["action"] for e in rows(self.store, "audit_events")]
+        for name in ("admin.key_disabled", "admin.key_enabled", "admin.key_limits", "admin.key_balance"):
+            self.assertIn(name, actions)
+        self.assertEqual(self.audit("admin.key_balance")[0]["target_id"], gid)
+
+    def test_balance_amount_validation(self):
+        admin = self.admin()
+        _user, gid = self.issue(admin)
+        for bad in (0, -1, 1.234, 100000.01, True, "abc", "NaN", None, [1]):
+            self.assertEqual(self.post(admin, f"/admin/keys/{gid}/balance", {"addUsd": bad}).status_code, 422, bad)
+        for bad in (-1, 0.001, 100001, "Infinity"):
+            self.assertEqual(self.post(admin, f"/admin/keys/{gid}/balance", {"setUsd": bad}).status_code, 422, bad)
+        self.assertEqual(self.gateway.balances, [])
+        r = self.post(admin, f"/admin/keys/{gid}/balance", {"setUsd": 0})
+        self.assertEqual(r.json()["balanceUsd"], "0.00")
+        self.assertEqual(self.gateway.balances[-1], (gid, None, 0))
+
+    def test_disable_requires_boolean(self):
+        admin = self.admin()
+        _user, gid = self.issue(admin)
+        for bad in ("true", 1, None):
+            self.assertEqual(self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": bad}).status_code, 422)
+        self.assertEqual(self.gateway.disabled, [])
+
+    def test_unmanaged_key_has_no_local_row_to_sync(self):
+        admin = self.admin()
+        self.assertEqual(self.post(admin, "/admin/keys/manual-key/disable", {"disabled": True}).status_code, 200)
+        self.assertEqual(self.gateway.disabled, ["manual-key"])
+        self.assertEqual(self.audit("admin.key_disabled")[0]["target_id"], "manual-key")
+
+    def test_gateway_rejections_surface_status(self):
+        admin = self.admin()
+        self.gateway.reject = GatewayError("rejected", 404, "Key not found")
+        r = self.post(admin, "/admin/keys/nope/disable", {"disabled": True})
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.json()["error"], "gateway_rejected")
+        self.assertEqual(r.json()["detail"], "Key not found")
+        self.assertEqual(self.post(admin, "/admin/keys/bad id/disable", {"disabled": True}).status_code, 404)
+        self.assertEqual(self.post(admin, "/admin/keys/bad id/disable", {"disabled": True}).json()["error"], "key_not_found")
+        self.assertEqual(self.audit("admin.key_disabled"), [])
+
+    def test_gateway_failure_keeps_local_state(self):
+        admin = self.admin()
+        _user, gid = self.issue(admin)
+        self.gateway.reject = 500
+        r = self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": True})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.json()["error"], "gateway_unavailable")
+        self.assertNotIn("private upstream token", r.text)
+        self.gateway.reject = 422
+        r = self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": True})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["error"], "gateway_rejected")
+        self.assertEqual(rows(self.store, "gateway_keys")[0]["status"], "active")
+        self.assertEqual(self.audit("admin.key_disabled"), [])
+
+    def test_unconfigured_gateway_blocks_writes(self):
+        admin = self.admin()
+        self.gateway.configured = False
+        r = self.post(admin, "/admin/keys/x/disable", {"disabled": True})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.json()["error"], "provider_not_configured")
+
+    def test_customer_forbidden(self):
+        client = self.client()
+        self.register(client, "a@example.test")
+        self.assertEqual(client.get(BASE + "/admin/keys").status_code, 403)
+        self.assertEqual(self.post(client, "/admin/keys/x/balance", {"addUsd": 1}).status_code, 403)
+        self.assertEqual(self.post(client, "/admin/keys/x/disable", {"disabled": True}).status_code, 403)
+        self.assertEqual(self.post(client, "/admin/keys/x/limits", {"rpm": 1}).status_code, 403)
+        self.assertEqual((self.gateway.disabled, self.gateway.limits, self.gateway.balances), ([], [], []))
+        self.assertEqual(self.client().get(BASE + "/admin/keys").status_code, 401)
 
 
 if __name__ == "__main__":
