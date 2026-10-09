@@ -64,8 +64,12 @@ disabled at the gateway and audited as `key.revoked` (target = local key record
 id). If the gateway is unreachable or unconfigured the account is still disabled,
 the key stays `active` locally, and `key.revocation_needs_reconciliation` is
 audited with the gateway key id. The response carries `keysRevoked` and
-`keysFailed`; re-running disable (or disabling the key on `/admin/keys`) retries.
-Enabling an account does not restore revoked keys.
+`keysFailed`, and the admin UI shows both counts after a disable. To retry, disable
+the key on `/admin/keys`; re-running the account disable also retries, but only
+through the API, because the admin UI offers only Enable for a disabled account.
+Enabling an account does not restore revoked keys, and while the account is
+disabled its keys cannot be re-enabled individually either (409 `account_disabled`,
+see below).
 
 ### Gateway admin routes (A2b)
 
@@ -77,7 +81,7 @@ usage reads instead return an empty payload flagged `gatewayConfigured: false` /
 | --- | --- |
 | `GET /admin/keys` | Gateway keys (with the owning portal account where known) and the config-defined `envKeys` |
 | `POST /admin/customers/{id}/keys` | `{label, prepaidUsd, dailyTokenLimit?, rpm?, maxInflight?}`. `prepaidUsd` must be above 0, at most 100000, with at most two decimals (else 422 `invalid_input`). 201 with the one-time `secret`; a disabled account is 409 |
-| `POST /admin/keys/{id}/disable` | `{disabled: true \| false}` on a gateway key; `false` re-enables it (audited as `admin.key_enabled`) |
+| `POST /admin/keys/{id}/disable` | `{disabled: true \| false}` on a gateway key; `false` re-enables it (audited as `admin.key_enabled`). Re-enabling a key whose local owner is disabled is 409 `account_disabled` ("Enable the account first.") with no gateway call and no audit; keys without a local owner are not checked |
 | `POST /admin/keys/{id}/limits` | Change `dailyTokenLimit`, `rpm`, `maxInflight` (at least one) |
 | `POST /admin/keys/{id}/balance` | `{addUsd}` or `{setUsd}` (exactly one) |
 | `GET /admin/usage?month=YYYY-MM` | Gateway usage report, month defaults to the current UTC month |
@@ -88,10 +92,16 @@ usage reads instead return an empty payload flagged `gatewayConfigured: false` /
 | `GET /admin/gateway/nodes/{name}/jobs/{job_id}` | Poll a node operation |
 
 The customer-facing `POST /keys` creates a post-paid key with no balance and
-only when `PC_CUSTOMER_KEY_ISSUANCE=1`.
+only when `PC_CUSTOMER_KEY_ISSUANCE=1`. `GET /overview` and `GET /keys` report this
+as `keyIssuance` (true only when the gateway is configured and the flag is on);
+the customer keys page hides its create form while it is false. Customer revocation
+needs only `gatewayConfigured`.
 
 Gateway error codes: 503 `provider_not_configured` (no admin token),
-503 `gateway_unavailable` (unreachable or bad response), `gateway_rejected`
+503 `gateway_unavailable` (unreachable or bad response), 503 `gateway_auth_failed`
+(the gateway answered 401/403 to the portal's token; the detail is always "The
+portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN." and no upstream
+text is passed on), `gateway_rejected`
 (the gateway answered 400, 404 or 409; its detail is passed through), 404
 `key_not_found`, 404 `customer_not_found`, 400 `unknown_action`, and 422/400
 `invalid_input` for bad bodies.
@@ -133,7 +143,7 @@ this service. Registration establishes a portal account, not verified identity.
 | `PC_PORTAL_ENV` | Set `production` to enforce secure cookies at startup |
 | `PC_GATEWAY_ORIGIN` | `https://b300.powerchampion.ai`; fixed HTTPS origin, server-only |
 | `PC_GATEWAY_ADMIN_TOKEN` | The gateway's `SELL_PANEL_ADMIN_TOKEN`, sent as `X-Admin-Token`. Empty means key provisioning, usage and the gateway pages are disconnected |
-| `PC_CUSTOMER_KEY_ISSUANCE` | `0`; set `1` to let customers self-issue post-paid keys (balance 0) from `/account/keys`. While `0`, `POST /keys` returns 503 `provider_not_configured`. Administrator issuance (always prepaid) is unaffected |
+| `PC_CUSTOMER_KEY_ISSUANCE` | `0`; set `1` to let customers self-issue post-paid keys (balance 0) from `/account/keys`. While `0`, `POST /keys` returns 503 `provider_not_configured` and `/overview`/`/keys` report `keyIssuance: false`. Administrator issuance (always prepaid) is unaffected |
 | `PC_GATEWAY_DAILY_TOKEN_LIMIT` | `1000000`, positive daily token quota on newly issued gateway keys |
 | `PC_GATEWAY_RPM` | `60`, positive request limit on new keys |
 | `PC_GATEWAY_MAX_INFLIGHT` | `2`, positive concurrency limit on new keys |

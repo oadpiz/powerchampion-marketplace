@@ -83,7 +83,7 @@ python3 -m server.manage reset-password --email you@example.com
 - **改角色**：`customer` ↔ `admin`。
 - **重設密碼**：管理員設定新密碼並自行交給帳號擁有者；該帳號所有工作階段登出，登入失敗計數清除。先確認帳號擁有者再做。
 - 不能對自己的帳號執行以上三項（顯示為「You」，伺服器回 409 `self_target`）。自己的密碼走下面的自助頁。
-- 停用帳號會撤銷其閘道金鑰：每把仍有效的金鑰逐一呼叫閘道停用並寫一筆 `key.revoked`；閘道連不上時帳號仍然停用，並以 `key.revocation_needs_reconciliation` 記下閘道金鑰 ID，之後須人工對帳（處理方式見「連接閘道（A2b）」）。啟用帳號不會讓已撤銷的金鑰復活。
+- 停用帳號會撤銷其閘道金鑰：每把仍有效的金鑰逐一呼叫閘道停用並寫一筆 `key.revoked`；閘道連不上時帳號仍然停用，並以 `key.revocation_needs_reconciliation` 記下閘道金鑰 ID，之後須人工對帳（處理方式見「連接閘道（A2b）」）。停用完成後客戶頁會顯示「N 把閘道金鑰已撤銷」，有金鑰撤銷失敗時另外顯示「N 把金鑰無法撤銷，請到「金鑰」頁對帳處理」。啟用帳號不會讓已撤銷的金鑰復活；帳號停用期間，它的金鑰也不能在 `/admin/keys` 按「啟用」（回 409 `account_disabled`），要先啟用帳號，再逐把啟用需要的金鑰。
 - 每個動作都寫入稽核（`admin.account_disabled`、`admin.account_enabled`、`admin.role_changed`、`admin.password_reset`），稽核不記錄密碼內容。
 
 所有已登入使用者（客戶與管理員）可在 `/account/security` 自行改密碼，需輸入目前密碼；成功後保留目前工作階段、登出其他裝置，稽核事件為 `account.password_changed`。每位使用者 15 分鐘內最多 5 次嘗試，超過回 429。
@@ -136,7 +136,7 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 1. **前置檢查**：到 Dokploy 開啟閘道 compose「B300 Selling Platform」的 Environment，確認同時有 `SELL_PANEL_VIEW_TOKEN` 與 `SELL_PANEL_ADMIN_TOKEN`。缺 `SELL_PANEL_VIEW_TOKEN` 要先補，否則閘道的 view 等級路由沒有認證。
 2. **取得值**：複製 `SELL_PANEL_ADMIN_TOKEN` 的值，填進 marketplace compose 的 `PC_GATEWAY_ADMIN_TOKEN` 環境變數。**先設環境變數、再 merge**：marketplace compose 開啟 Autodeploy，merge 一進 main 就會部署，那時 token 必須已經在。值只放在 Dokploy，不要貼進聊天、issue 或 commit。
-3. **`PC_CUSTOMER_KEY_ISSUANCE` 不設**（預設 `0`）：客戶在 `/account/keys` 按發放仍回 503 `provider_not_configured`。設成 `1` 會讓客戶自助發出餘額為 0 的後付金鑰，上線前須先確認這是想要的，收款流程接上前不建議開。
+3. **`PC_CUSTOMER_KEY_ISSUANCE` 不設**（預設 `0`）：客戶的 `/overview`、`/keys` 回應帶 `keyIssuance: false`（只有閘道已連線且此旗標為 `1` 時才是 `true`），`/account/keys` 不顯示建立表單，改顯示「API 金鑰由我們的團隊簽發，請聯繫支援」；直接呼叫 `POST /keys` 仍回 503 `provider_not_configured`。客戶自己撤銷金鑰只需要閘道已連線，不受此旗標影響。設成 `1` 會讓客戶自助發出餘額為 0 的後付金鑰，上線前須先確認這是想要的，收款流程接上前不建議開。
 
 ### 部署後驗證
 
@@ -146,13 +146,16 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 - `/admin/usage`：有當月數字（API 為 `GET /api/portal/admin/usage?month=YYYY-MM`）。
 - `/admin/gateway`：看到模型與節點；對一個節點按一次 `check`，工作完成後狀態正常。
 - `/admin/audit`（操作紀錄）：出現剛才的 `admin.node_op`，目標格式為 `節點名:check`。
+- 若後台頁面顯示「閘道拒絕了入口網站的管理權杖，請檢查 portal 服務的 PC_GATEWAY_ADMIN_TOKEN 設定」（API 為 503 `gateway_auth_failed`，閘道對 portal 的 token 回了 401／403），代表 `PC_GATEWAY_ADMIN_TOKEN` 跟閘道的 `SELL_PANEL_ADMIN_TOKEN` 不一致：回到 Dokploy 重新複製值、重新部署 marketplace。這不是網路問題，重試不會好。
 
 ### 金鑰政策
 
 - **代發必帶預付**：`/admin/keys` 為客戶發金鑰必須給 `prepaidUsd`（大於 0、不超過 100000、最多兩位小數），否則回 422 `invalid_input`；每日 token、RPM、同時請求數可選填，沒填就用 `PC_GATEWAY_DAILY_TOKEN_LIMIT`、`PC_GATEWAY_RPM`、`PC_GATEWAY_MAX_INFLIGHT`。密鑰（`secret`）只在發放當下顯示一次，請當場交給客戶。已停用的帳號不能代發（409）。
 - **客戶自助發放預設關閉**：由 `PC_CUSTOMER_KEY_ISSUANCE` 控制，預設 `0`；匿名試用也維持關閉。
 - **停用即撤銷**：停用客戶帳號時，其所有仍有效的閘道金鑰一併撤銷，每把寫一筆 `key.revoked`（目標為本機金鑰紀錄 ID）。若閘道當下連不上，帳號仍會停用，並寫一筆 `key.revocation_needs_reconciliation`（目標為閘道金鑰 ID）；閘道上那把金鑰可能仍有效。
-- **對帳處理**：在操作紀錄（`/admin/audit`）找 `key.revocation_needs_reconciliation`；閘道恢復後，由管理員到 `/admin/keys` 找到該閘道金鑰 ID 按「停用」（成功會寫 `admin.key_disabled`），或對該客戶再執行一次「停用」——本機記錄中仍為有效的金鑰會被重試撤銷。停用 API 的回應帶 `keysRevoked`／`keysFailed` 數量，`keysFailed` 大於 0 就代表有金鑰需要對帳。金鑰發放過程閘道失敗時同理會有 `key.provisioning_needs_reconciliation`，以閘道金鑰 ID 比對 `/admin/keys` 清單處理。
+- **對帳處理**：在操作紀錄（`/admin/audit`）找 `key.revocation_needs_reconciliation`；閘道恢復後，主要做法是由管理員到 `/admin/keys` 找到該閘道金鑰 ID 按「停用」（成功會寫 `admin.key_disabled`）。另一個做法只能走 API：以管理員工作階段對該客戶再呼叫一次 `POST /api/portal/admin/customers/{id}/status`，body 為 `{"action": "disable"}`——本機記錄中仍為有效的金鑰會被重試撤銷；後台介面對已停用的帳號只顯示「啟用」，沒有這個按鈕。停用 API 的回應帶 `keysRevoked`／`keysFailed` 數量，`keysFailed` 大於 0 就代表有金鑰需要對帳（後台停用帳號時會直接顯示這個警告）。金鑰發放過程閘道失敗時同理會有 `key.provisioning_needs_reconciliation`，以閘道金鑰 ID 比對 `/admin/keys` 清單處理。
+- **停用帳號的金鑰不能單獨啟用**：在 `/admin/keys` 對某把金鑰按「啟用」時，若它在本機記錄裡屬於已停用的帳號，回 409 `account_disabled`（「Enable the account first.」），不呼叫閘道、不寫稽核；請先到客戶頁啟用帳號。沒有本機擁有者的金鑰（手動或設定檔建立的）不受此限制。
+- **停用模型要確認**：`/admin/gateway` 按模型的「停用」會先跳出確認視窗（停用後客戶會收到 404），確認後才送出；「啟用」仍是一鍵。
 - 金鑰相關審計事件：`admin.key_issued`、`admin.key_disabled`、`admin.key_enabled`、`admin.key_limits`、`admin.key_balance`、`key.created`（客戶自助）、`key.revoked`；閘道操作為 `admin.model_toggled`、`admin.model_maintenance`、`admin.node_op`。事件不含密鑰內容。
 
 ### 回滾
