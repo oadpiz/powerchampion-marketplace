@@ -24,7 +24,7 @@ def user_json(row):
 
 
 def key_json(row):
-    return {"id": row["id"], "label": row["label"], "prefix": row["prefix"], "status": row["status"], "createdAt": iso(row["created_at"])}
+    return {"id": row["id"], "label": row["label"], "prefix": row["prefix"], "status": row["status"], "createdAt": iso(row["created_at"]), "gatewayKeyId": row["gateway_key_id"]}
 
 
 def credit_json(row):

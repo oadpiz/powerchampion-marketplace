@@ -20,51 +20,12 @@ from server.app import create_app
 from server.gateway import GatewayAdapter, GatewayError
 from server.manage import reset_password
 from server.settings import Settings
-from server.testsupport import database_text, fresh_database, rows
+from server.testsupport import FakeGateway, database_text, fresh_database, rows
 
 
 ORIGIN = "http://localhost:3010"
 PASSWORD = "portal-test-password-123!"
 BASE = "/api/portal"
-
-
-class FakeGateway:
-    configured = True
-
-    def __init__(self):
-        self.issued = []
-        self.revoked = []
-        self.report = {"keys": [], "total_cost_usd": "99999.000000"}
-        self.months = []
-        self.fail = False
-        self.create_delay = 0
-        self.issue_lock = threading.Lock()
-
-    async def create_key(self, label, prepaid_usd, limits=None):
-        if self.create_delay:
-            await asyncio.sleep(self.create_delay)
-        if self.fail:
-            raise GatewayError("private upstream token must never escape")
-        with self.issue_lock:
-            number = len(self.issued) + 1
-            result = {
-                "key_id": "gateway-key-%d" % number,
-                "prefix": "sk-test-%d" % number,
-                "secret": "sk-test-secret-unique-%d" % number,
-            }
-            self.issued.append({"label": label, **result})
-        return result
-
-    async def revoke_key(self, key_id):
-        if self.fail:
-            raise GatewayError("private upstream token must never escape")
-        self.revoked.append(key_id)
-
-    async def usage_report(self, month):
-        if self.fail:
-            raise GatewayError("private upstream token must never escape")
-        self.months.append(month)
-        return self.report
 
 
 class PortalTests(unittest.TestCase):
@@ -75,6 +36,7 @@ class PortalTests(unittest.TestCase):
             db_path=self.database,
             allowed_origins=(ORIGIN,),
             gateway_admin_token="local-test-adapter-only",
+            customer_key_issuance=True,
         )
         self.gateway = FakeGateway()
         self.app = create_app(self.settings, gateway=self.gateway)
@@ -344,11 +306,11 @@ class PortalTests(unittest.TestCase):
         denied = self.client.delete(BASE + "/keys/" + other_key["key"]["id"],
                                     headers={"Origin": ORIGIN})
         self.assertIn(denied.status_code, (403, 404))
-        self.assertEqual(self.gateway.revoked, [])
+        self.assertEqual(self.gateway.disabled, [])
         revoked = self.client.delete(BASE + "/keys/" + own_key["key"]["id"],
                                      headers={"Origin": ORIGIN})
         self.assertIn(revoked.status_code, (200, 204))
-        self.assertEqual(self.gateway.revoked, [self.gateway.issued[0]["key_id"]])
+        self.assertEqual(self.gateway.disabled, [self.gateway.issued[0]["key_id"]])
         self.assertEqual(self.client.get(BASE + "/keys").json()["keys"][0]["status"], "revoked")
 
     def test_concurrent_key_provisioning_cannot_exceed_twenty_active_keys(self):
@@ -473,7 +435,7 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertNotIn("private upstream", response.text)
         self.assertEqual(self.client.get(BASE + "/keys").json()["keys"][0]["status"], "active")
-        self.assertEqual(self.gateway.revoked, [])
+        self.assertEqual(self.gateway.disabled, [])
 
     def test_gateway_usage_failure_is_not_presented_as_zero_usage(self):
         self.register()

@@ -147,8 +147,9 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         response.set_cookie(COOKIE_NAME, token, max_age=settings.session_ttl_seconds, httponly=True, secure=settings.secure_cookies, samesite="lax", path="/")
         return response
 
-    def require_gateway():
-        if not gateway.configured:
+    def require_gateway(customer=False):
+        # Customer self-service is a separate switch: a configured gateway alone does not let customers mint keys.
+        if not gateway.configured or (customer and not settings.customer_key_issuance):
             fail("provider_not_configured", "API key provisioning is not connected yet. Contact support for access.", 503)
 
     @application.get(PREFIX + "/health")
@@ -265,20 +266,19 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         user = current_user(request)
         return {"keys": [key_json(row) for row in store.owned_keys(user["id"])], "gatewayConfigured": bool(gateway.configured)}
 
-    @application.post(PREFIX + "/keys")
-    async def create_key(request: Request):
-        user = current_user(request)
-        body = await body_json(request)
-        label = text_value(body.get("label"), "key label", 80)
-        require_gateway()
-        reservation = store.reserve_key_slot(user["id"])
+    async def provision_key(owner_id, label, prepaid_usd, limits, actor_id, audit_action):
+        """Create a gateway key and record its owner. Returns (local row, gateway result).
+
+        The gateway key is created first and revoked again if the local write fails, so a
+        secret is never handed out for a key that no account owns."""
+        reservation = store.reserve_key_slot(owner_id)
         if not reservation:
             fail("key_limit", "Revoke an unused key before creating another.", 409)
         try:
             try:
-                created = await gateway.create_key("portal:" + user["id"][:12] + ":" + label, prepaid_usd=0)
+                created = await gateway.create_key("portal:" + owner_id[:12] + ":" + label, prepaid_usd=prepaid_usd, limits=limits or None)
             except GatewayError:
-                fail("gateway_unavailable", "The API gateway is unavailable. No key was added to your account.", 503)
+                fail("gateway_unavailable", "The API gateway is unavailable. No key was added to the account.", 503)
             key_id = uuid.uuid4().hex
             try:
                 with store.connect() as con:
@@ -286,12 +286,12 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                     # Ownership is persisted before the one-time secret is sent.
                     # Consume the slot in the same transaction, so a concurrent
                     # request cannot race the in-flight provisioning operation.
-                    slot = con.execute("SELECT id FROM key_reservations WHERE id=? AND user_id=?", (reservation, user["id"])).fetchone()
+                    slot = con.execute("SELECT id FROM key_reservations WHERE id=? AND user_id=?", (reservation, owner_id)).fetchone()
                     if not slot:
                         raise RuntimeError("reservation expired")
-                    con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", (key_id, user["id"], created["key_id"], label, created["prefix"], "active", int(time.time())))
+                    con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", (key_id, owner_id, created["key_id"], label, created["prefix"], "active", int(time.time())))
                     con.execute("DELETE FROM key_reservations WHERE id=?", (reservation,))
-                    store.audit(con, "key.created", user["id"], key_id)
+                    store.audit(con, audit_action, actor_id, key_id)
                     row = con.execute("SELECT * FROM gateway_keys WHERE id=?", (key_id,)).fetchone()
             except Exception:
                 # Compensate if the gateway succeeded but local ownership persistence failed.
@@ -299,10 +299,19 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                     await gateway.revoke_key(created["key_id"])
                 except GatewayError:
                     with store.connect() as con:
-                        store.audit(con, "key.provisioning_needs_reconciliation", user["id"], created["key_id"])
+                        store.audit(con, "key.provisioning_needs_reconciliation", actor_id, created["key_id"])
                 fail("key_create_failed", "The key could not be saved. Contact support before retrying.", 503)
         finally:
             store.release_key_slot(reservation)
+        return row, created
+
+    @application.post(PREFIX + "/keys")
+    async def create_key(request: Request):
+        user = current_user(request)
+        body = await body_json(request)
+        label = text_value(body.get("label"), "key label", 80)
+        require_gateway(customer=True)
+        row, created = await provision_key(user["id"], label, 0, None, user["id"], "key.created")
         return JSONResponse({"key": key_json(row), "secret": created["secret"]}, status_code=201)
 
     @application.delete(PREFIX + "/keys/{key_id}")
@@ -515,6 +524,39 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             fail("customer_not_found", "Account not found.", 404)
         return row
 
+    @application.post(PREFIX + "/admin/customers/{user_id}/keys")
+    async def admin_issue_key(user_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        body = await body_json(request)
+        label = text_value(body.get("label"), "key label", 80)
+        raw = body.get("prepaidUsd")
+        try:
+            if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                raise ValueError
+            prepaid = Decimal(str(raw))
+            if not prepaid.is_finite() or prepaid <= 0 or prepaid > 100000 or prepaid != prepaid.quantize(Decimal("0.01")):
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            fail("invalid_input", "Enter a prepaid amount above 0 USD with at most two decimals.", 422)
+        limits = {}
+        for field, name in (("dailyTokenLimit", "daily_token_limit"), ("rpm", "rpm"), ("maxInflight", "max_inflight")):
+            if body.get(field) is not None:
+                value = body[field]
+                if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 2 ** 53 - 1:
+                    fail("invalid_input", "Limits must be non-negative integers.", 422)
+                limits[name] = value
+        with store.connect() as con:
+            target = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        if not target:
+            fail("customer_not_found", "Account not found.", 404)
+        if target["disabled_at"]:
+            fail("invalid_input", "This account is disabled.", 409)
+        require_gateway()
+        row, created = await provision_key(user_id, label, prepaid, limits, admin["id"], "admin.key_issued")
+        balance = created.get("balance_nano_usd")
+        balance_usd = f"{Decimal(balance) / Decimal(10**9):.2f}" if isinstance(balance, int) else f"{prepaid:.2f}"
+        return JSONResponse({"key": key_json(row), "secret": created["secret"], "balanceUsd": balance_usd}, status_code=201)
+
     @application.post(PREFIX + "/admin/customers/{user_id}/status")
     async def admin_set_status(user_id: str, request: Request):
         admin = current_user(request, admin=True)
@@ -522,6 +564,27 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         action = body.get("action")
         if action not in ("disable", "enable"):
             fail("invalid_input", "Choose disable or enable.")
+        revoked, failed = 0, 0
+        if action == "disable":
+            # Check caller and target without changing anything, then revoke over the network
+            # outside any write lock; the account is disabled in the final transaction below.
+            with store.connect() as con:
+                admin_target(con, user_id, admin)
+                active = con.execute("SELECT id, gateway_key_id FROM gateway_keys WHERE user_id=? AND status='active'", (user_id,)).fetchall()
+            for key in active:
+                try:
+                    if not gateway.configured:
+                        raise GatewayError("unconfigured")
+                    await gateway.set_key_disabled(key["gateway_key_id"], True)
+                except GatewayError:
+                    failed += 1
+                    with store.connect() as con:
+                        store.audit(con, "key.revocation_needs_reconciliation", admin["id"], key["gateway_key_id"])
+                    continue
+                with store.connect() as con:
+                    con.execute("UPDATE gateway_keys SET status='revoked',revoked_at=? WHERE id=? AND status='active'", (int(time.time()), key["id"]))
+                    store.audit(con, "key.revoked", admin["id"], key["id"])
+                revoked += 1
         with store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             row = admin_target(con, user_id, admin)
@@ -533,7 +596,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                 con.execute("UPDATE users SET disabled_at=NULL WHERE id=?", (user_id,))
                 store.audit(con, "admin.account_enabled", admin["id"], user_id)
             row = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-        return {"customer": user_json(row)}
+        return {"customer": user_json(row), "keysRevoked": revoked, "keysFailed": failed}
 
     @application.post(PREFIX + "/admin/customers/{user_id}/role")
     async def admin_set_role(user_id: str, request: Request):

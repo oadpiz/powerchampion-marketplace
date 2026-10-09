@@ -6,15 +6,11 @@ from fastapi.testclient import TestClient
 from server.app import create_app
 from server.settings import Settings
 from server.test_agents import CONFIGURATION
-from server.testsupport import fresh_database, rows
+from server.testsupport import FakeGateway, fresh_database, rows
 
 ORIGIN = "http://localhost:3010"
 BASE = "/api/portal"
 PASSWORD = "customer-test-password-123!"
-
-
-class FakeGateway:
-    configured = False
 
 
 class _PortalCase(unittest.TestCase):
@@ -23,7 +19,8 @@ class _PortalCase(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.settings = Settings(db_path=fresh_database(self.directory.name), allowed_origins=(ORIGIN,))
-        self.app = create_app(self.settings, gateway=FakeGateway())
+        self.gateway = FakeGateway()
+        self.app = create_app(self.settings, gateway=self.gateway)
         self.store = self.app.state.store
         self.clients = []
 
@@ -44,6 +41,12 @@ class _PortalCase(unittest.TestCase):
         response = self.post(client, "/auth/register", {"email": email, "name": "Test", "password": PASSWORD})
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()["user"]
+
+    def admin(self, email="admin@example.test"):
+        self.store.create_user(email, "Admin", PASSWORD, role="admin")
+        client = self.client()
+        self.assertEqual(self.post(client, "/auth/login", {"email": email, "password": PASSWORD}).status_code, 200)
+        return client
 
 
 class AccountStatusTests(_PortalCase):
@@ -68,12 +71,6 @@ class AccountStatusTests(_PortalCase):
 
 
 class AdminAccountTests(_PortalCase):
-    def admin(self, email="admin@example.test"):
-        self.store.create_user(email, "Admin", PASSWORD, role="admin")
-        client = self.client()
-        self.assertEqual(self.post(client, "/auth/login", {"email": email, "password": PASSWORD}).status_code, 200)
-        return client
-
     def test_customer_list_includes_admins_with_role_and_status(self):
         admin = self.admin()
         self.register(self.client(), "a@example.test")
@@ -168,6 +165,75 @@ class AdminAccountTests(_PortalCase):
         self.assertEqual(self.post(self.client(), "/agents/resolve", {"token": token}).status_code, 404)
         self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "enable"})
         self.assertEqual(self.post(self.client(), "/agents/resolve", {"token": token}).status_code, 200)
+
+    def test_admin_issues_prepaid_key_for_customer(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        r = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "Prod", "prepaidUsd": 25})
+        self.assertEqual(r.status_code, 201, r.text)
+        body = r.json()
+        self.assertEqual(body["key"]["label"], "Prod")
+        self.assertTrue(body["secret"].startswith("sk-test-secret"))
+        self.assertEqual(body["balanceUsd"], "25.00")
+        self.assertEqual(self.gateway.issued[-1]["prepaid_usd"], 25)
+        self.assertEqual(rows(self.store, "gateway_keys")[0]["user_id"], user["id"])
+        self.assertIn("admin.key_issued", [e["action"] for e in rows(self.store, "audit_events")])
+        for bad in ({"label": "x"}, {"label": "x", "prepaidUsd": 0}, {"label": "x", "prepaidUsd": -1}, {"label": "x", "prepaidUsd": "ten"}):
+            self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", bad).status_code, 422, bad)
+
+    def test_customer_self_service_stays_closed_unless_enabled(self):
+        client = self.client()
+        self.register(client, "a@example.test")
+        r = self.post(client, "/keys", {"label": "mine"})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.json()["error"], "provider_not_configured")
+        self.assertEqual(self.gateway.issued, [])
+
+    def test_disabling_customer_revokes_their_keys(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "A", "prepaidUsd": 5}).status_code, 201)
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "B", "prepaidUsd": 5}).status_code, 201)
+        r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["keysRevoked"], 2)
+        self.assertEqual(sorted(self.gateway.disabled), sorted(k["key_id"] for k in self.gateway.issued))
+        self.assertEqual({k["status"] for k in rows(self.store, "gateway_keys")}, {"revoked"})
+
+    def test_disable_still_succeeds_when_gateway_is_down(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "A", "prepaidUsd": 5}).status_code, 201)
+        self.gateway.fail = True
+        r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["keysFailed"], 1)
+        self.assertEqual(r.json()["customer"]["status"], "disabled")
+        self.assertIn("key.revocation_needs_reconciliation", [e["action"] for e in rows(self.store, "audit_events")])
+
+    def test_admin_issue_passes_limits_and_refuses_disabled_accounts(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        r = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "Lim", "prepaidUsd": "1.50", "rpm": 30, "maxInflight": 2})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(r.json()["balanceUsd"], "1.50")
+        self.assertEqual(self.gateway.issued[-1]["limits"], {"rpm": 30, "max_inflight": 2})
+        for bad in ({"rpm": -1}, {"rpm": True}, {"dailyTokenLimit": 1.5}):
+            self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "x", "prepaidUsd": 1, **bad}).status_code, 422, bad)
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "x", "prepaidUsd": 1.005}).status_code, 422)
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "x", "prepaidUsd": 100001}).status_code, 422)
+        self.assertEqual(self.post(admin, "/admin/customers/nobody/keys", {"label": "x", "prepaidUsd": 1}).status_code, 404)
+        self.assertEqual(self.post(self.client(), f"/admin/customers/{user['id']}/keys", {"label": "x", "prepaidUsd": 1}).status_code, 401)
+        self.assertEqual(len(self.gateway.issued), 1)
+        self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"})
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "x", "prepaidUsd": 1}).status_code, 409)
+        self.assertEqual(len(self.gateway.issued), 1)
+
+    def test_enable_reports_no_key_changes(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "enable"})
+        self.assertEqual((r.json()["keysRevoked"], r.json()["keysFailed"]), (0, 0))
 
 
 class SelfServicePasswordTests(_PortalCase):
