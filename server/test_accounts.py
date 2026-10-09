@@ -4,6 +4,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from server.app import create_app
+from server.gateway import GatewayError
 from server.settings import Settings
 from server.test_agents import CONFIGURATION
 from server.testsupport import FakeGateway, fresh_database, rows
@@ -47,6 +48,12 @@ class _PortalCase(unittest.TestCase):
         client = self.client()
         self.assertEqual(self.post(client, "/auth/login", {"email": email, "password": PASSWORD}).status_code, 200)
         return client
+
+    def audit(self, action):
+        return [e for e in rows(self.store, "audit_events") if e["action"] == action]
+
+    def user_id(self, email):
+        return next(u["id"] for u in rows(self.store, "users") if u["email"] == email)
 
 
 class AccountStatusTests(_PortalCase):
@@ -177,7 +184,8 @@ class AdminAccountTests(_PortalCase):
         self.assertEqual(body["balanceUsd"], "25.00")
         self.assertEqual(self.gateway.issued[-1]["prepaid_usd"], 25)
         self.assertEqual(rows(self.store, "gateway_keys")[0]["user_id"], user["id"])
-        self.assertIn("admin.key_issued", [e["action"] for e in rows(self.store, "audit_events")])
+        issued = self.audit("admin.key_issued")
+        self.assertEqual([(e["actor_id"], e["target_id"]) for e in issued], [(self.user_id("admin@example.test"), body["key"]["id"])])
         for bad in ({"label": "x"}, {"label": "x", "prepaidUsd": 0}, {"label": "x", "prepaidUsd": -1}, {"label": "x", "prepaidUsd": "ten"}):
             self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", bad).status_code, 422, bad)
 
@@ -189,6 +197,18 @@ class AdminAccountTests(_PortalCase):
         self.assertEqual(r.json()["error"], "provider_not_configured")
         self.assertEqual(self.gateway.issued, [])
 
+    def test_customer_self_service_issues_unfunded_key_when_enabled(self):
+        self.settings = Settings(db_path=self.settings.db_path, allowed_origins=(ORIGIN,), customer_key_issuance=True)
+        self.app = create_app(self.settings, gateway=self.gateway)
+        self.store = self.app.state.store
+        client = self.client()
+        self.register(client, "a@example.test")
+        r = self.post(client, "/keys", {"label": "mine"})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(self.gateway.issued[-1]["prepaid_usd"], 0)
+        self.assertEqual(r.json()["secret"], self.gateway.issued[-1]["secret"])
+        self.assertEqual(self.audit("key.created")[0]["actor_id"], self.user_id("a@example.test"))
+
     def test_disabling_customer_revokes_their_keys(self):
         admin = self.admin()
         user = self.register(self.client(), "a@example.test")
@@ -199,6 +219,9 @@ class AdminAccountTests(_PortalCase):
         self.assertEqual(r.json()["keysRevoked"], 2)
         self.assertEqual(sorted(self.gateway.disabled), sorted(k["key_id"] for k in self.gateway.issued))
         self.assertEqual({k["status"] for k in rows(self.store, "gateway_keys")}, {"revoked"})
+        revoked = self.audit("key.revoked")
+        self.assertEqual({e["actor_id"] for e in revoked}, {self.user_id("admin@example.test")})
+        self.assertEqual(sorted(e["target_id"] for e in revoked), sorted(k["id"] for k in rows(self.store, "gateway_keys")))
 
     def test_disable_still_succeeds_when_gateway_is_down(self):
         admin = self.admin()
@@ -209,7 +232,49 @@ class AdminAccountTests(_PortalCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["keysFailed"], 1)
         self.assertEqual(r.json()["customer"]["status"], "disabled")
-        self.assertIn("key.revocation_needs_reconciliation", [e["action"] for e in rows(self.store, "audit_events")])
+        self.assertEqual(r.json()["keysRevoked"], 0)
+        self.assertEqual([k["status"] for k in rows(self.store, "gateway_keys")], ["active"], "a failed revoke must not mark the key revoked")
+        pending = self.audit("key.revocation_needs_reconciliation")
+        self.assertEqual([(e["actor_id"], e["target_id"]) for e in pending], [(self.user_id("admin@example.test"), self.gateway.issued[0]["key_id"])])
+        self.assertEqual(self.audit("key.revoked"), [])
+        self.assertNotIn("private upstream", r.text)
+
+    def test_disable_with_mixed_revocation_results(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        for label in ("A", "B"):
+            self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": label, "prepaidUsd": 5}).status_code, 201)
+        stuck = self.gateway.issued[1]["key_id"]
+        original = self.gateway.set_key_disabled
+
+        async def flaky(key_id, disabled):
+            if key_id == stuck:
+                raise GatewayError("unavailable")
+            return await original(key_id, disabled)
+
+        self.gateway.set_key_disabled = flaky
+        r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["keysRevoked"], r.json()["keysFailed"]), (1, 1))
+        self.assertEqual(r.json()["customer"]["status"], "disabled")
+        state = {k["gateway_key_id"]: k["status"] for k in rows(self.store, "gateway_keys")}
+        self.assertEqual(state, {self.gateway.issued[0]["key_id"]: "revoked", stuck: "active"})
+        self.assertEqual(self.gateway.disabled, [self.gateway.issued[0]["key_id"]])
+        self.assertEqual([e["target_id"] for e in self.audit("key.revocation_needs_reconciliation")], [stuck])
+
+    def test_disable_with_unconfigured_gateway_counts_every_active_key_as_failed(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        for label in ("A", "B"):
+            self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": label, "prepaidUsd": 5}).status_code, 201)
+        self.gateway.configured = False
+        r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["keysRevoked"], r.json()["keysFailed"]), (0, 2))
+        self.assertEqual(r.json()["customer"]["status"], "disabled")
+        self.assertEqual({k["status"] for k in rows(self.store, "gateway_keys")}, {"active"})
+        self.assertEqual(self.gateway.disabled, [])
+        self.assertEqual(len(self.audit("key.revocation_needs_reconciliation")), 2)
 
     def test_admin_issue_passes_limits_and_refuses_disabled_accounts(self):
         admin = self.admin()
