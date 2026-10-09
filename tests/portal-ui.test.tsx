@@ -667,6 +667,69 @@ describe("admin keys section", () => {
   });
 });
 
+describe("admin amount validation", () => {
+  it("rejects prepaid amounts the server would refuse and sends no request", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/keys": { keys: [], envKeys: [], gatewayConfigured: true },
+      "GET /admin/customers": {
+        customers: [{ id: "cust-1", email: "active@example.com", name: "Active", role: "customer", status: "active", createdAt: 1, keyCount: 0 }],
+      },
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Issue key for a customer" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.selectOptions(await within(dialog).findByLabelText("Customer"), "cust-1");
+    const label = within(dialog).getByLabelText("Label");
+    expect(label).toHaveAttribute("maxlength", "80");
+    await user.type(label, "Trial");
+    const amount = within(dialog).getByLabelText("Prepaid amount (USD)");
+    expect(amount).toHaveAttribute("step", "0.01");
+    expect(amount).toHaveAttribute("max", "100000");
+    for (const bad of ["1.234", "1e6", "100000.01", "0"]) {
+      await user.clear(amount);
+      await user.type(amount, bad);
+      await user.click(within(dialog).getByRole("button", { name: "Issue key" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(/at most 100,000, with at most two decimals/);
+      expect(calls.some((call) => call.method === "POST")).toBe(false);
+    }
+  });
+
+  it("rejects top-up amounts over the limit or with extra decimals", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/keys": { keys: [gatewayKey], envKeys: [], gatewayConfigured: true },
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Top up" }));
+    const dialog = await screen.findByRole("dialog");
+    const amount = within(dialog).getByLabelText("Amount (USD)");
+    for (const bad of ["2.005", "100000.01"]) {
+      await user.clear(amount);
+      await user.type(amount, bad);
+      await user.click(within(dialog).getByRole("button", { name: "Add balance" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(/two decimals/);
+    }
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("limits the maintenance message to 300 characters", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/gateway": {
+        gatewayConfigured: true,
+        state: { models: [{ id: "m1", enabled: true }] },
+        nodes: null,
+        metrics: null,
+        errors: { state: null, nodes: "unavailable", metrics: "unavailable" },
+      },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    await user.click(await screen.findByRole("button", { name: "Maintenance message for m1" }));
+    expect(within(await screen.findByRole("dialog")).getByLabelText("Message")).toHaveAttribute("maxlength", "300");
+  });
+});
+
 describe("admin dialog shell", () => {
   it("closes on Escape and returns focus to the opener", async () => {
     const user = userEvent.setup();

@@ -570,3 +570,18 @@ test("server-renders the private task console with account navigation and noinde
   assert.match(html, /href="\/account"/);
   assert.doesNotMatch(html, /data-cf-beacon/);
 });
+
+test("server-renders each administration section and rejects unknown ones", async () => {
+  for (const [path, heading] of [
+    ["/admin", "Overview"],
+    ["/admin/keys", "API keys"],
+    ["/admin/usage", "Usage"],
+    ["/admin/gateway", "Gateway"],
+  ]) {
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+    assert.match(await response.text(), new RegExp(`<h1 class="admin-content-title">${heading}</h1>`), path);
+  }
+  assert.equal((await render("/admin/not-a-section")).status, 404);
+  assert.equal((await render("/admin/keys/extra")).status, 404);
+});

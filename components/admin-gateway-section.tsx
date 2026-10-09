@@ -164,7 +164,7 @@ function MaintenanceDialog({
     >
       <label className="portal-field">
         {zh ? "訊息" : "Message"}
-        <textarea rows={3} value={message} disabled={busy} onChange={(event) => setMessage(event.target.value)} />
+        <textarea rows={3} maxLength={300} value={message} disabled={busy} onChange={(event) => setMessage(event.target.value)} />
       </label>
       {error !== null && (
         <p className="portal-error" role="alert">{portalErrorText(error, locale)}</p>

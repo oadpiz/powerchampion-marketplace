@@ -53,6 +53,15 @@ function parseOptionalCount(value: string): number | undefined | null {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
+const MAX_USD = 100000;
+
+/** Matches the server rule: above 0, at most 100,000, at most two decimals. */
+function parseUsd(value: string): number | null {
+  if (!/^\d+(\.\d{1,2})?$/.test(value.trim())) return null;
+  const amount = Number(value);
+  return amount > 0 && amount <= MAX_USD ? amount : null;
+}
+
 function ErrorLine({ message }: { message: string | null }) {
   return message === null ? null : (
     <p className="portal-error" role="alert">
@@ -97,13 +106,13 @@ function IssueKeyDialog({
   );
 
   async function submit() {
-    const prepaidUsd = Number(prepaid);
+    const prepaidUsd = parseUsd(prepaid);
     const limits = [parseOptionalCount(daily), parseOptionalCount(rpm), parseOptionalCount(inflight)];
-    if (!userId || !label.trim() || !(prepaidUsd > 0) || limits.includes(null)) {
+    if (!userId || !label.trim() || prepaidUsd === null || limits.includes(null)) {
       setMessage(
         zh
-          ? "請選擇客戶、填寫標籤、預付金額須大於 0，限額須為 0 以上的整數。"
-          : "Pick a customer, enter a label and a prepaid amount above 0; limits must be whole numbers from 0.",
+          ? "請選擇客戶、填寫標籤；預付金額須大於 0、最多 100,000 且最多兩位小數；限額須為 0 以上的整數。"
+          : "Pick a customer and enter a label. The prepaid amount must be above 0, at most 100,000, with at most two decimals; limits must be whole numbers from 0.",
       );
       return;
     }
@@ -157,11 +166,11 @@ function IssueKeyDialog({
       </label>
       <label className="portal-field">
         {zh ? "標籤" : "Label"}
-        <input value={label} disabled={busy} onChange={(event) => setLabel(event.target.value)} />
+        <input maxLength={80} value={label} disabled={busy} onChange={(event) => setLabel(event.target.value)} />
       </label>
       <label className="portal-field">
         {zh ? "預付金額（USD）" : "Prepaid amount (USD)"}
-        <input type="number" min="0" step="any" value={prepaid} disabled={busy} onChange={(event) => setPrepaid(event.target.value)} />
+        <input type="number" min="0.01" max="100000" step="0.01" value={prepaid} disabled={busy} onChange={(event) => setPrepaid(event.target.value)} />
       </label>
       <label className="portal-field">
         {zh ? "每日 token 上限（選填，0 = 不限）" : "Daily token limit (optional, 0 = unlimited)"}
@@ -261,9 +270,13 @@ function TopUpDialog({
   const [message, setMessage] = useState<string | null>(null);
 
   async function submit() {
-    const addUsd = Number(amount);
-    if (!(addUsd > 0)) {
-      setMessage(zh ? "金額須大於 0。" : "Enter an amount above 0.");
+    const addUsd = parseUsd(amount);
+    if (addUsd === null) {
+      setMessage(
+        zh
+          ? "金額須大於 0、最多 100,000 且最多兩位小數。"
+          : "Enter an amount above 0, at most 100,000, with at most two decimals.",
+      );
       return;
     }
     setBusy(true);
@@ -295,7 +308,7 @@ function TopUpDialog({
       </p>
       <label className="portal-field">
         {zh ? "金額（USD）" : "Amount (USD)"}
-        <input type="number" min="0" step="any" value={amount} disabled={busy} onChange={(event) => setAmount(event.target.value)} />
+        <input type="number" min="0.01" max="100000" step="0.01" value={amount} disabled={busy} onChange={(event) => setAmount(event.target.value)} />
       </label>
       <ErrorLine message={message} />
     </AdminDialog>

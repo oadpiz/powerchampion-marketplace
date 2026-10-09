@@ -115,7 +115,7 @@ export function AdminDialog({
         tabIndex={-1}
       >
         <h2 id={titleId}>{title}</h2>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} noValidate>
           {children}
           <div className="portal-actions">
             {cancelLabel !== undefined && (
