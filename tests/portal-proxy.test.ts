@@ -170,6 +170,18 @@ describe("portal service boundary", () => {
     expect(text).not.toContain("gateway.example");
   });
 
+  it("relays a rejected gateway token with its own code and a fixed detail", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ error: "gateway_auth_failed", detail: "internal gateway.example:9 token=secret-abc" }, { status: 503 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await GET(request("/admin/keys"));
+    expect(response.status).toBe(503);
+    const text = await response.text();
+    expect(JSON.parse(text)).toEqual({ error: "gateway_auth_failed", detail: "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN." });
+    expect(text).not.toContain("gateway.example");
+    expect(text).not.toContain("secret-abc");
+  });
+
   it("blocks cross-origin mutations, arbitrary endpoints, invalid months and oversized input", async () => {
     vi.stubGlobal("fetch", vi.fn()); vi.stubEnv("PC_PORTAL_ORIGIN", "");
     expect((await POST(request("/auth/login", "POST", {}, { origin: "https://evil.example" }))).status).toBe(403);

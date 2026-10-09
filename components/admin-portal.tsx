@@ -49,6 +49,7 @@ type Customer = {
   keyCount: number;
 };
 type AccountAction = "disable" | "enable" | "role" | "reset-password";
+type AccountActionResult = { keysRevoked?: number; keysFailed?: number };
 type AccountSelection = { action: AccountAction; customer: Customer };
 type CreditRequest = {
   id: string;
@@ -189,6 +190,9 @@ function CustomersSection({ currentUserId }: { currentUserId?: string }) {
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<AccountSelection | null>(null);
   const [done, setDone] = useState<AccountAction | null>(null);
+  const [doneResult, setDoneResult] = useState<AccountActionResult>({});
+  const keysRevoked = doneResult.keysRevoked ?? 0;
+  const keysFailed = doneResult.keysFailed ?? 0;
   const searchRef = useRef<HTMLInputElement>(null);
   const restoreFocusRef = useRef(false);
   useEffect(() => {
@@ -218,6 +222,17 @@ function CustomersSection({ currentUserId }: { currentUserId?: string }) {
               : zh
                 ? "帳號狀態已更新。"
                 : "The account status was updated."}
+          {done === "disable" &&
+            (zh
+              ? ` ${keysRevoked} 把閘道金鑰已撤銷。`
+              : ` ${keysRevoked} gateway ${keysRevoked === 1 ? "key" : "keys"} revoked.`)}
+        </p>
+      )}
+      {done === "disable" && keysFailed > 0 && (
+        <p role="alert" className="portal-error">
+          {zh
+            ? `${keysFailed} 把金鑰無法撤銷，請到「金鑰」頁對帳處理。`
+            : `${keysFailed} ${keysFailed === 1 ? "key" : "keys"} could not be revoked. Reconcile ${keysFailed === 1 ? "it" : "them"} on the API keys page.`}
         </p>
       )}
       <ResourceState {...resource}>
@@ -369,8 +384,9 @@ function CustomersSection({ currentUserId }: { currentUserId?: string }) {
           action={selection.action}
           customer={selection.customer}
           onClose={() => setSelection(null)}
-          onDone={() => {
+          onDone={(result) => {
             setDone(selection.action);
+            setDoneResult(result);
             setSelection(null);
             restoreFocusRef.current = true;
             resource.refresh();
@@ -390,7 +406,7 @@ function AccountActionDialog({
   action: AccountAction;
   customer: Customer;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (result: AccountActionResult) => void;
 }) {
   const locale = useLocale().locale;
   const zh = locale === "zh";
@@ -481,12 +497,15 @@ function AccountActionDialog({
           ? { path: `${base}/reset-password`, body: { newPassword: password } }
           : { path: `${base}/status`, body: { action } };
     try {
-      await portalRequest(request.path, {
+      const result = await portalRequest<AccountActionResult>(request.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request.body),
       });
-      onDone();
+      onDone({
+        keysRevoked: typeof result?.keysRevoked === "number" ? result.keysRevoked : undefined,
+        keysFailed: typeof result?.keysFailed === "number" ? result.keysFailed : undefined,
+      });
     } catch (reason: unknown) {
       setError(reason);
     } finally {
@@ -514,8 +533,8 @@ function AccountActionDialog({
   const impact =
     action === "disable"
       ? zh
-        ? `${who}：登入、既有工作階段與 agent token 會立即失效。sell-panel 簽發的 API 金鑰不受影響，請到閘道撤銷。`
-        : `${who}: Sign-in, active sessions and agent tokens stop working immediately. API keys issued in sell-panel are not affected; revoke them in the gateway.`
+        ? `${who}：登入、既有工作階段與 agent token 會立即失效，該帳號所有啟用中的閘道 API 金鑰也會被撤銷。重新啟用帳號不會恢復這些金鑰。`
+        : `${who}: Sign-in, active sessions and agent tokens stop working immediately, and every active gateway API key of this account is revoked. Enabling the account later does not restore those keys.`
       : action === "enable"
         ? zh
           ? `${who} 將可以重新登入。`

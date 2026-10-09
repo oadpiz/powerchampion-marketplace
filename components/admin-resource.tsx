@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { portalRequest, PortalError } from "../lib/portal-client";
+import { portalErrorCodeText, portalRequest, PortalError } from "../lib/portal-client";
 import { useLocale } from "./locale-provider";
 
 export function errorMessage(error: unknown, zh: boolean): string {
   if (error instanceof PortalError) {
+    // A specific error code (a rejected gateway token, a gateway outage, …) says more than the status.
+    const specific = portalErrorCodeText(error, zh ? "zh" : "en");
+    if (specific) return specific;
     if (error.status === 401)
       return zh
         ? "登入已失效，請重新登入後再試。"

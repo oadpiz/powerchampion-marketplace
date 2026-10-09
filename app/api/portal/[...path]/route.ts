@@ -117,9 +117,12 @@ async function proxy(request: Request) {
     if (response.status === 503 && "error" in data && data.error === "usage_pricing_incomplete") {
       return failure("usage_pricing_incomplete", "Pricing is incomplete for this usage report. Please contact support.", 503);
     }
-    // The only upstream 5xx whose code the browser may see; the detail is rewritten so no gateway address can leak.
+    // The only upstream gateway 5xx codes the browser may see; the detail is rewritten so no gateway address or token can leak.
     if (response.status === 503 && "error" in data && data.error === "gateway_unavailable") {
       return failure("gateway_unavailable", "The API gateway is unavailable. Please try again later.", 503);
+    }
+    if (response.status === 503 && "error" in data && data.error === "gateway_auth_failed") {
+      return failure("gateway_auth_failed", "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN.", 503);
     }
     if (response.status >= 500) return failure("service_unavailable", "This service is unavailable or has not been configured yet. Please try again later.", response.status === 503 ? 503 : 502);
     const resultHeaders = new Headers(RESPONSE_HEADERS);

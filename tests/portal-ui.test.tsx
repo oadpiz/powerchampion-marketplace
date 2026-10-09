@@ -85,6 +85,11 @@ describe("account portal", () => {
     expect(portalErrorText(new PortalError(400, "unknown_action", "x"), "en")).toBe("That node action is not available.");
     expect(portalErrorText(new PortalError(404, "key_not_found", "x"), "en")).toBe("That API key no longer exists on the gateway.");
     expect(portalErrorText(new PortalError(404, "customer_not_found", "x"), "en")).toBe("That account was not found.");
+    expect(portalErrorText(new PortalError(503, "gateway_auth_failed", "x"), "en")).toBe("The gateway rejected the portal's admin token. Check PC_GATEWAY_ADMIN_TOKEN on the portal service.");
+    expect(portalErrorText(new PortalError(503, "gateway_auth_failed", "x"), "zh")).toBe("閘道拒絕了入口網站的管理權杖，請檢查 portal 服務的 PC_GATEWAY_ADMIN_TOKEN 設定。");
+    expect(portalErrorText(new PortalError(409, "account_disabled", "x"), "en")).toBe("This key's account is disabled. Enable the account first.");
+    expect(portalErrorText(new PortalError(409, "account_disabled", "x"), "zh")).toBe("此金鑰所屬的帳號已停用，請先啟用帳號。");
+    expect(portalErrorText(new PortalError(403, "account_disabled", "x"), "en")).toBe("This account has been disabled. Contact support.");
   });
 
   it("preserves the saved-agent destination when switching from login to registration", async () => {
@@ -168,7 +173,7 @@ describe("account portal", () => {
           }),
         );
       return Promise.resolve(
-        Response.json({ keys: [], gatewayConfigured: true }),
+        Response.json({ keys: [], gatewayConfigured: true, keyIssuance: true }),
       );
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -183,6 +188,27 @@ describe("account portal", () => {
     );
     expect(screen.queryByText(secret)).not.toBeInTheDocument();
     expect(storage).not.toHaveBeenCalled();
+  });
+
+  it("replaces key creation with a contact note when customer issuance is off", async () => {
+    const fetchMock = vi.fn().mockImplementation((url) =>
+      Promise.resolve(
+        String(url).endsWith("/session")
+          ? Response.json({ user: customer })
+          : Response.json({
+              keys: [{ id: "key-1", label: "Production", prefix: "sk-prod", status: "active", createdAt: "2026-09-01T00:00:00Z" }],
+              gatewayConfigured: true,
+              keyIssuance: false,
+            }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<AccountPortal section="keys" />);
+    expect(await screen.findByText("API keys are issued by our team — contact support.")).toBeVisible();
+    expect(screen.queryByLabelText("Key label")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create API key" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/not connected to the model gateway/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Revoke Production" })).toBeEnabled();
   });
 
   it("requires a concrete confirmation before revoking a key", async () => {
@@ -393,20 +419,43 @@ describe("account portal", () => {
       if (u.endsWith("/admin/customers") && !init?.method) return Promise.resolve(Response.json({ customers }));
       if (u.endsWith("/status") && init?.method === "POST") {
         customers[0].status = "disabled";
-        return Promise.resolve(Response.json({ customer: customers[0] }));
+        return Promise.resolve(Response.json({ customer: customers[0], keysRevoked: 2, keysFailed: 0 }));
       }
       return Promise.resolve(Response.json({ error: "unexpected" }, { status: 500 }));
     });
     vi.stubGlobal("fetch", fetchMock);
     wrap(<AdminPortal section="customers" />);
     await user.click(await screen.findByRole("button", { name: /disable/i }));
-    expect(screen.getByText(/API keys issued in sell-panel are not affected; revoke them in the gateway/)).toBeVisible();
+    expect(screen.getByText(/every active gateway API key of this account is revoked/)).toBeVisible();
+    expect(screen.queryByText(/not affected/)).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /confirm/i }));
     expect(await screen.findByText("disabled", { exact: false })).toBeVisible();
+    expect(screen.getByText(/2 gateway keys revoked\./)).toBeVisible();
+    expect(screen.queryByText(/could not be revoked/)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/search by name/i)).toHaveFocus();
     const call = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
     expect(String(call?.[0])).toMatch(/\/admin\/customers\/b{32}\/status$/);
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ action: "disable" });
+  });
+
+  it("warns when some keys could not be revoked while disabling an account", async () => {
+    const user = userEvent.setup();
+    const customers = [{ id: "b".repeat(32), email: "roy@example.test", name: "Roy", role: "customer", status: "active", createdAt: "2026-09-25T00:00:00Z", keyCount: 3 }];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((url, init) => {
+      const u = String(url);
+      if (u.endsWith("/session")) return Promise.resolve(Response.json({ user: { ...customer, role: "admin" } }));
+      if (u.endsWith("/admin/customers") && !init?.method) return Promise.resolve(Response.json({ customers }));
+      if (u.endsWith("/status") && init?.method === "POST") {
+        customers[0].status = "disabled";
+        return Promise.resolve(Response.json({ customer: customers[0], keysRevoked: 1, keysFailed: 2 }));
+      }
+      return Promise.resolve(Response.json({ error: "unexpected" }, { status: 500 }));
+    }));
+    wrap(<AdminPortal section="customers" />);
+    await user.click(await screen.findByRole("button", { name: /disable/i }));
+    await user.click(screen.getByRole("button", { name: /confirm/i }));
+    expect(await screen.findByText(/1 gateway key revoked\./)).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("2 keys could not be revoked. Reconcile them on the API keys page.");
   });
 
   it("offers no account actions on the signed-in admin's own row", async () => {
@@ -597,6 +646,30 @@ describe("admin keys section", () => {
       await screen.findByText(/Gateway not connected \(PC_GATEWAY_ADMIN_TOKEN is not set\)/),
     ).toBeVisible();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("names a rejected gateway token instead of a generic outage", async () => {
+    adminFetch({
+      "GET /admin/keys": () =>
+        Response.json({ error: "gateway_auth_failed", detail: "The portal's gateway token was rejected." }, { status: 503 }),
+    });
+    wrap(<AdminPortal section="keys" />);
+    expect(
+      await screen.findByText("The gateway rejected the portal's admin token. Check PC_GATEWAY_ADMIN_TOKEN on the portal service."),
+    ).toBeVisible();
+    expect(screen.queryByText(/Administration services are currently unavailable/)).not.toBeInTheDocument();
+  });
+
+  it("explains why a key of a disabled account cannot be enabled", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/keys": { keys: [{ ...gatewayKey, disabledAt: 1_760_000_100, portalStatus: "revoked" }], envKeys: [], gatewayConfigured: true },
+      "POST /admin/keys/gk-1/disable": () =>
+        Response.json({ error: "account_disabled", detail: "Enable the account first." }, { status: 409 }),
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Enable" }));
+    expect(await screen.findByText("This key's account is disabled. Enable the account first.")).toBeVisible();
   });
 
   it("issues a key for an active customer and shows the secret once", async () => {
@@ -851,21 +924,31 @@ describe("admin gateway section", () => {
     expect(screen.getByText("GPU metrics are unavailable right now.")).toBeVisible();
   });
 
-  it("renders GPU metrics defensively when fields are missing", async () => {
+  it("renders the gateway's GPU metrics and tolerates missing fields", async () => {
     adminFetch({
       "GET /admin/gateway": {
         ...overview,
         metrics: {
           ts: 1,
-          gpus: [{ index: 0, name: "B300", utilization: 83, memory_used: 1024, memory_total: 4096 }, { odd: true }, null],
+          gpu_source_up: true,
+          vllm_source_up: true,
+          gpus: [
+            { index: 3, model: "NVIDIA B300", util: 83, mem_used_gb: 120.5, mem_total_gb: 180, temp_c: 61, power_w: 712.4 },
+            { odd: true },
+            null,
+          ],
           serving: { running: 3, waiting: 1 },
         },
         errors: { state: null, nodes: null, metrics: null },
       },
     });
     wrap(<AdminPortal section="gateway" />);
-    expect(await screen.findByText("B300")).toBeVisible();
-    expect(screen.getByText(/83/)).toBeVisible();
+    const row = (await screen.findByText("NVIDIA B300")).closest("tr") as HTMLElement;
+    const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(cells).toEqual(["3", "NVIDIA B300", "83%", "120.5 / 180 GB", "61°C", "712.4 W"]);
+    expect(screen.getByRole("columnheader", { name: "Memory (used / total, GB)" })).toBeVisible();
+    const sparse = within(screen.getByRole("table", { name: "GPU metrics" })).getAllByRole("row")[2];
+    expect(within(sparse).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["1", "—", "—", "—", "—", "—"]);
     expect(screen.getByText(/Running 3/)).toBeVisible();
   });
 
@@ -877,9 +960,32 @@ describe("admin gateway section", () => {
     });
     wrap(<AdminPortal section="gateway" />);
     await user.click(await screen.findByRole("button", { name: "Disable zai/glm-5" }));
+    const dialog = await screen.findByRole("dialog", { name: "Disable model zai/glm-5?" });
+    expect(within(dialog).getByText("Customers will receive 404 for this model until it is enabled again.")).toBeVisible();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Disable model" }));
     await waitFor(() =>
       expect(calls.some((call) => call.path === "/admin/gateway/models/zai%2Fglm-5/toggle")).toBe(true),
     );
+  });
+
+  it("sends nothing when disabling a model is cancelled, and enables without a dialog", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/gateway": overview,
+      "POST /admin/gateway/models/other-model/toggle": { id: "other-model", enabled: true },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    await user.click(await screen.findByRole("button", { name: "Disable zai/glm-5" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Enable other-model" }));
+    await waitFor(() =>
+      expect(calls.filter((call) => call.method === "POST").map((call) => call.path)).toEqual(["/admin/gateway/models/other-model/toggle"]),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("sets and clears a maintenance message", async () => {

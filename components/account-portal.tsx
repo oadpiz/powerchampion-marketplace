@@ -33,8 +33,11 @@ type Overview = {
   pendingCreditCount: number;
   approvedCreditUsd: number;
   gatewayConfigured: boolean;
+  keyIssuance?: boolean;
 };
-type Keys = { keys: Key[]; gatewayConfigured: boolean };
+// keyIssuance: whether customers may create keys themselves (gateway connected and
+// PC_CUSTOMER_KEY_ISSUANCE on). Revoking only needs the gateway.
+type Keys = { keys: Key[]; gatewayConfigured: boolean; keyIssuance?: boolean };
 type Usage = {
   month: string;
   rows: {
@@ -523,33 +526,39 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                 {zh ? "金鑰使用方式" : "Using your key"} ↗
               </Link>
             </div>
-            <form className="portal-inline-form" onSubmit={createKey}>
-              <label className="portal-field">
-                {zh ? "金鑰名稱" : "Key label"}
-                <input
-                  value={label}
-                  onChange={(event) => setLabel(event.target.value)}
-                  maxLength={100}
-                  required
-                  placeholder={zh ? "例如：正式環境" : "e.g. Production app"}
-                  disabled={busy || !data.gatewayConfigured || !!secret}
-                />
-              </label>
-              <button
-                className="portal-button"
-                disabled={
-                  busy || !data.gatewayConfigured || !label.trim() || !!secret
-                }
-              >
-                {busy
-                  ? zh
-                    ? "處理中…"
-                    : "Please wait…"
-                  : zh
-                    ? "建立 API 金鑰"
-                    : "Create API key"}
-              </button>
-            </form>
+            {data.keyIssuance ? (
+              <form className="portal-inline-form" onSubmit={createKey}>
+                <label className="portal-field">
+                  {zh ? "金鑰名稱" : "Key label"}
+                  <input
+                    value={label}
+                    onChange={(event) => setLabel(event.target.value)}
+                    maxLength={100}
+                    required
+                    placeholder={zh ? "例如：正式環境" : "e.g. Production app"}
+                    disabled={busy || !!secret}
+                  />
+                </label>
+                <button
+                  className="portal-button"
+                  disabled={busy || !label.trim() || !!secret}
+                >
+                  {busy
+                    ? zh
+                      ? "處理中…"
+                      : "Please wait…"
+                    : zh
+                      ? "建立 API 金鑰"
+                      : "Create API key"}
+                </button>
+              </form>
+            ) : (
+              <p className="portal-note">
+                {zh
+                  ? "API 金鑰由我們的團隊簽發，請聯繫支援。"
+                  : "API keys are issued by our team — contact support."}
+              </p>
+            )}
           </section>
           <section className="portal-panel">
             <div className="portal-panel-heading">

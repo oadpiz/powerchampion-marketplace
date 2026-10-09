@@ -236,23 +236,24 @@ function GpuPanel({ metrics, zh }: { metrics: NonNullable<GatewayOverview["metri
                 <th scope="col">GPU</th>
                 <th scope="col">{zh ? "名稱" : "Name"}</th>
                 <th scope="col">{zh ? "使用率" : "Utilization"}</th>
-                <th scope="col">{zh ? "記憶體（已用 / 總量）" : "Memory (used / total)"}</th>
+                <th scope="col">{zh ? "記憶體（已用 / 總量，GB）" : "Memory (used / total, GB)"}</th>
                 <th scope="col">{zh ? "溫度" : "Temp"}</th>
                 <th scope="col">{zh ? "功耗" : "Power"}</th>
               </tr>
             </thead>
             <tbody>
               {gpus.map((gpu, index) => {
-                const used = pick(gpu, ["mem_used", "memory_used"]);
-                const total = pick(gpu, ["mem_total", "memory_total"]);
+                // Field names follow the gateway's /api/metrics gpus[] (sell-panel app.py api_metrics).
+                const used = pick(gpu, ["mem_used_gb"]);
+                const total = pick(gpu, ["mem_total_gb"]);
                 return (
                   <tr key={index}>
                     <td>{cell(pick(gpu, ["index"]) ?? index)}</td>
-                    <td>{cell(pick(gpu, ["name"]))}</td>
-                    <td>{cell(pick(gpu, ["util", "utilization"]), "%")}</td>
-                    <td>{used === undefined && total === undefined ? "—" : `${cell(used)} / ${cell(total)}`}</td>
-                    <td>{cell(pick(gpu, ["temp", "temperature"]), "°C")}</td>
-                    <td>{cell(pick(gpu, ["power"]), " W")}</td>
+                    <td>{cell(pick(gpu, ["model", "name"]))}</td>
+                    <td>{cell(pick(gpu, ["util"]), "%")}</td>
+                    <td>{used === undefined && total === undefined ? "—" : `${cell(used)} / ${cell(total)} GB`}</td>
+                    <td>{cell(pick(gpu, ["temp_c"]), "°C")}</td>
+                    <td>{cell(pick(gpu, ["power_w"]), " W")}</td>
                   </tr>
                 );
               })}
@@ -271,6 +272,7 @@ export function AdminGatewaySection() {
   const zh = locale === "zh";
   const resource = usePortalResource<GatewayOverview>("/admin/gateway");
   const [maintenance, setMaintenance] = useState<GatewayModel | null>(null);
+  const [confirmDisable, setConfirmDisable] = useState<GatewayModel | null>(null);
   const [confirmOp, setConfirmOp] = useState<{ node: string; action: string } | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState(false);
@@ -288,7 +290,14 @@ export function AdminGatewaySection() {
       setError(reason);
     } finally {
       setBusy(false);
+      setConfirmDisable(null);
     }
+  }
+
+  function startToggle(model: GatewayModel) {
+    // Disabling cuts customers off, so it is confirmed; enabling stays one click.
+    if (model.enabled) setConfirmDisable(model);
+    else void toggleModel(model);
   }
 
   async function runOp(node: string, action: string) {
@@ -365,7 +374,7 @@ export function AdminGatewaySection() {
                             <td>{text(model.node)}</td>
                             <td>
                               <div className="portal-actions">
-                                <button type="button" className="portal-text-button" disabled={busy} aria-label={`${model.enabled ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"} ${model.id}`} onClick={() => toggleModel(model)}>
+                                <button type="button" className="portal-text-button" disabled={busy} aria-label={`${model.enabled ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"} ${model.id}`} onClick={() => startToggle(model)}>
                                   {model.enabled ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"}
                                 </button>
                                 <button type="button" className="portal-text-button" aria-label={zh ? `${model.id} 的維護訊息` : `Maintenance message for ${model.id}`} onClick={() => setMaintenance(model)}>
@@ -457,6 +466,23 @@ export function AdminGatewaySection() {
             resource.refresh();
           }}
         />
+      )}
+      {confirmDisable && (
+        <AdminDialog
+          title={zh ? `停用模型 ${confirmDisable.id}？` : `Disable model ${confirmDisable.id}?`}
+          confirmLabel={zh ? "停用模型" : "Disable model"}
+          cancelLabel={zh ? "取消" : "Cancel"}
+          onConfirm={() => toggleModel(confirmDisable)}
+          onClose={() => setConfirmDisable(null)}
+          inFlight={busy}
+          danger
+        >
+          <p className="portal-note">
+            {zh
+              ? "停用後客戶會收到 404，直到重新啟用此模型。"
+              : "Customers will receive 404 for this model until it is enabled again."}
+          </p>
+        </AdminDialog>
       )}
       {confirmOp && (
         <ConfirmNodeDialog
