@@ -493,3 +493,418 @@ describe("AdminShell", () => {
     expect(assign).toHaveBeenCalledWith("/login");
   });
 });
+
+type Handler = (init: RequestInit | undefined) => unknown;
+function adminFetch(routes: Record<string, Handler | unknown>) {
+  const calls: { method: string; path: string; body: unknown }[] = [];
+  const mock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input).replace("/api/portal", "");
+    const method = init?.method ?? "GET";
+    calls.push({
+      method,
+      path,
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+    });
+    if (path === "/session")
+      return Response.json({ user: { ...customer, role: "admin" } });
+    const route = routes[`${method} ${path}`];
+    if (route === undefined)
+      return Response.json({ error: "not_found" }, { status: 404 });
+    const value = typeof route === "function" ? (route as Handler)(init) : route;
+    return value instanceof Response ? value : Response.json(value);
+  });
+  vi.stubGlobal("fetch", mock);
+  return calls;
+}
+
+const gatewayKey = {
+  gatewayKeyId: "gk-1",
+  prefix: "pc-live-aaaa",
+  label: "Acme production",
+  dailyTokenLimit: 0,
+  rpm: 60,
+  maxInflight: 0,
+  balanceUsd: "12.5",
+  createdAt: 1_760_000_000,
+  expiresAt: null,
+  disabledAt: null,
+  lastUsedAt: null,
+  modelIds: [],
+  owner: { id: "cust-9", email: "owner@example.com", name: "Owner" },
+  portalKeyId: "pk-1",
+  portalStatus: "active",
+};
+
+describe("admin keys section", () => {
+  it("lists keys with the owner email, postpaid balance and unowned keys", async () => {
+    adminFetch({
+      "GET /admin/keys": {
+        keys: [
+          gatewayKey,
+          {
+            ...gatewayKey,
+            gatewayKeyId: "gk-2",
+            prefix: "pc-live-bbbb",
+            label: "Orphan",
+            owner: null,
+            portalKeyId: null,
+            portalStatus: null,
+            balanceUsd: null,
+            disabledAt: 1_760_000_100,
+          },
+        ],
+        envKeys: [{ ...gatewayKey, gatewayKeyId: "env-1", prefix: "env-key", label: "Env key", owner: null }],
+        gatewayConfigured: true,
+      },
+    });
+    wrap(<AdminPortal section="keys" />);
+    expect(await screen.findByText("owner@example.com")).toBeVisible();
+    expect(screen.getByText("pc-live-aaaa")).toBeVisible();
+    expect(screen.getByText("$12.50")).toBeVisible();
+    expect(screen.getAllByText("Unassigned").length).toBeGreaterThan(0);
+    expect(screen.getByText("Postpaid")).toBeVisible();
+    expect(screen.getByText("Disabled")).toBeVisible();
+    expect(screen.getByText("Env key")).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("API keys");
+  });
+
+  it("shows 未歸屬 when the locale is Chinese", async () => {
+    localStorage.setItem("pc-locale", "zh");
+    window.history.replaceState({}, "", "/admin/keys");
+    try {
+      adminFetch({
+        "GET /admin/keys": {
+          keys: [{ ...gatewayKey, owner: null, balanceUsd: null }],
+          envKeys: [],
+          gatewayConfigured: true,
+        },
+      });
+      wrap(<AdminPortal section="keys" />);
+      expect(await screen.findByText("未歸屬")).toBeVisible();
+      expect(screen.getByText("後付")).toBeVisible();
+    } finally {
+      localStorage.removeItem("pc-locale");
+      window.history.replaceState({}, "", "/");
+    }
+  });
+
+  it("explains an unconfigured gateway instead of rendering tables", async () => {
+    adminFetch({
+      "GET /admin/keys": { keys: [], envKeys: [], gatewayConfigured: false },
+    });
+    wrap(<AdminPortal section="keys" />);
+    expect(
+      await screen.findByText(/Gateway not connected \(PC_GATEWAY_ADMIN_TOKEN is not set\)/),
+    ).toBeVisible();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("issues a key for an active customer and shows the secret once", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/keys": { keys: [], envKeys: [], gatewayConfigured: true },
+      "GET /admin/customers": {
+        customers: [
+          { id: "cust-1", email: "active@example.com", name: "Active", role: "customer", status: "active", createdAt: 1, keyCount: 0 },
+          { id: "cust-2", email: "off@example.com", name: "Off", role: "customer", status: "disabled", createdAt: 1, keyCount: 0 },
+        ],
+      },
+      "POST /admin/customers/cust-1/keys": Response.json(
+        { key: { id: "pk-5", label: "Trial", prefix: "pc-live-cccc", gatewayKeyId: "gk-5" }, secret: "pc-live-secret-value", balanceUsd: "5" },
+        { status: 201 },
+      ),
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Issue key for a customer" }));
+    const dialog = await screen.findByRole("dialog");
+    const select = await within(dialog).findByLabelText("Customer");
+    expect(within(dialog).queryByRole("option", { name: /off@example.com/ })).not.toBeInTheDocument();
+    await user.selectOptions(select, "cust-1");
+    await user.type(within(dialog).getByLabelText("Label"), "Trial");
+    await user.type(within(dialog).getByLabelText("Prepaid amount (USD)"), "5");
+    await user.click(within(dialog).getByRole("button", { name: "Issue key" }));
+    expect(await screen.findByText("pc-live-secret-value")).toBeVisible();
+    const post = calls.find((call) => call.method === "POST");
+    expect(post?.path).toBe("/admin/customers/cust-1/keys");
+    expect(post?.body).toEqual({ label: "Trial", prepaidUsd: 5 });
+    await user.click(screen.getByRole("button", { name: "I have delivered it to the customer" }));
+    expect(screen.queryByText("pc-live-secret-value")).not.toBeInTheDocument();
+  });
+
+  it("disables a key, adjusts limits and tops up the balance with the right requests", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/keys": { keys: [gatewayKey], envKeys: [], gatewayConfigured: true },
+      "POST /admin/keys/gk-1/disable": { ok: true },
+      "POST /admin/keys/gk-1/limits": { ok: true },
+      "POST /admin/keys/gk-1/balance": { ok: true, balanceUsd: "17.5" },
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Disable" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path.endsWith("/disable"))?.body).toEqual({ disabled: true }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Limits" }));
+    let dialog = await screen.findByRole("dialog");
+    const rpm = within(dialog).getByLabelText("Requests per minute");
+    await user.clear(rpm);
+    await user.type(rpm, "120");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path.endsWith("/limits"))?.body).toEqual({
+        dailyTokenLimit: 0,
+        rpm: 120,
+        maxInflight: 0,
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Top up" }));
+    dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Amount (USD)"), "5");
+    await user.click(within(dialog).getByRole("button", { name: "Add balance" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path.endsWith("/balance"))?.body).toEqual({ addUsd: 5 }),
+    );
+  });
+});
+
+describe("admin dialog shell", () => {
+  it("closes on Escape and returns focus to the opener", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/keys": { keys: [gatewayKey], envKeys: [], gatewayConfigured: true },
+    });
+    wrap(<AdminPortal section="keys" />);
+    const opener = await screen.findByRole("button", { name: "Top up" });
+    await user.click(opener);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Amount (USD)")).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(opener).toHaveFocus();
+  });
+});
+
+describe("admin usage section", () => {
+  const usage = {
+    month: "2026-10",
+    source: "gateway",
+    totals: { requests: 1234, costUsd: "3.14159" },
+    amountStatus: "estimated",
+    unpricedModels: ["mystery-model"],
+    keys: [
+      {
+        gatewayKeyId: "gk-1",
+        label: "Acme production",
+        owner: { id: "cust-9", email: "owner@example.com", name: "Owner" },
+        requests: 1000,
+        inputTokens: 5000,
+        outputTokens: 7000,
+        costUsd: "2.5",
+        byModel: [{ model: "glm-5", requests: 1000, inputTokens: 5000, outputTokens: 7000, costUsd: "2.5" }],
+      },
+    ],
+    byCustomer: [{ owner: { id: "cust-9", email: "owner@example.com", name: "Owner" }, requests: 1000, costUsd: "2.5" }],
+    updatedAt: 1_760_000_000,
+  };
+
+  it("renders totals, the unpriced-model warning and the per-model breakdown", async () => {
+    const user = userEvent.setup();
+    adminFetch({ "GET /admin/usage?month=2026-10": usage });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T00:00:00Z"));
+    try {
+      wrap(<AdminPortal section="usage" />);
+      expect(await screen.findByText("$3.1416")).toBeVisible();
+      expect(screen.getByText("1,234")).toBeVisible();
+      expect(screen.getByText(/mystery-model/)).toBeVisible();
+      expect(screen.getByText(/not confirmed/i)).toBeVisible();
+      await user.click(screen.getByRole("button", { name: /Models for Acme production/ }));
+      expect(screen.getByText("glm-5")).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refetches with the chosen month", async () => {
+    const calls = adminFetch({
+      "GET /admin/usage?month=2026-10": usage,
+      "GET /admin/usage?month=2026-09": { ...usage, month: "2026-09", totals: { requests: 7, costUsd: "0.5" }, unpricedModels: [] },
+    });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T00:00:00Z"));
+    try {
+      wrap(<AdminPortal section="usage" />);
+      await screen.findByText("$3.1416");
+      fireEvent.change(screen.getByLabelText("Month"), { target: { value: "2026-09" } });
+      expect(await screen.findByText("$0.5000")).toBeVisible();
+      expect(calls.some((call) => call.path === "/admin/usage?month=2026-09")).toBe(true);
+      expect(screen.queryByText(/mystery-model/)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("explains an unconfigured gateway", async () => {
+    adminFetch({
+      "GET /admin/usage?month=2026-10": { ...usage, source: "unconfigured", keys: [], byCustomer: [], unpricedModels: [] },
+    });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-09T00:00:00Z"));
+    try {
+      wrap(<AdminPortal section="usage" />);
+      expect(await screen.findByText(/Gateway not connected/)).toBeVisible();
+      expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("admin gateway section", () => {
+  const overview = {
+    gatewayConfigured: true,
+    state: {
+      models: [
+        { id: "zai/glm-5", enabled: true, node: "b300-a" },
+        { id: "other-model", enabled: false, maintenance_message: "Back soon" },
+      ],
+    },
+    nodes: {
+      nodes: [
+        { name: "b300-a", enabled: true, role: "primary", models: ["zai/glm-5"], reachable: true, state: "serving" },
+      ],
+      actions: ["check", "restart", "stop"],
+    },
+    metrics: null,
+    errors: { state: null, nodes: null, metrics: "unavailable" },
+  };
+
+  it("still renders models and nodes when the metrics source is unavailable", async () => {
+    adminFetch({ "GET /admin/gateway": overview });
+    wrap(<AdminPortal section="gateway" />);
+    expect((await screen.findAllByText("zai/glm-5")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Back soon")).toBeVisible();
+    expect(screen.getAllByText("b300-a").length).toBeGreaterThan(0);
+    expect(screen.getByText("GPU metrics are unavailable right now.")).toBeVisible();
+  });
+
+  it("renders GPU metrics defensively when fields are missing", async () => {
+    adminFetch({
+      "GET /admin/gateway": {
+        ...overview,
+        metrics: {
+          ts: 1,
+          gpus: [{ index: 0, name: "B300", utilization: 83, memory_used: 1024, memory_total: 4096 }, { odd: true }, null],
+          serving: { running: 3, waiting: 1 },
+        },
+        errors: { state: null, nodes: null, metrics: null },
+      },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    expect(await screen.findByText("B300")).toBeVisible();
+    expect(screen.getByText(/83/)).toBeVisible();
+    expect(screen.getByText(/Running 3/)).toBeVisible();
+  });
+
+  it("toggles a model using an encoded id", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/gateway": overview,
+      "POST /admin/gateway/models/zai%2Fglm-5/toggle": { id: "zai/glm-5", enabled: false },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    await user.click(await screen.findByRole("button", { name: "Disable zai/glm-5" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.path === "/admin/gateway/models/zai%2Fglm-5/toggle")).toBe(true),
+    );
+  });
+
+  it("sets and clears a maintenance message", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/gateway": overview,
+      "POST /admin/gateway/models/other-model/maintenance": { id: "other-model", maintenance_message: "" },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    await user.click(await screen.findByRole("button", { name: "Maintenance message for other-model" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Message")).toHaveValue("Back soon");
+    await user.click(within(dialog).getByRole("button", { name: "Clear message" }));
+    await waitFor(() =>
+      expect(calls.find((call) => call.path.endsWith("/maintenance"))?.body).toEqual({ message: "" }),
+    );
+  });
+
+  it("runs a node action and polls the job until it finishes", async () => {
+    const user = userEvent.setup();
+    let polls = 0;
+    const calls = adminFetch({
+      "GET /admin/gateway": overview,
+      "POST /admin/gateway/nodes/b300-a/ops/check": { job_id: "job-7" },
+      "GET /admin/gateway/nodes/b300-a/jobs/job-7": () => {
+        polls += 1;
+        return { job_id: "job-7", state: polls >= 2 ? "done" : "running" };
+      },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    const checkButton = await screen.findByRole("button", { name: "Run check on b300-a" });
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    try {
+      await user.click(checkButton);
+      expect(await screen.findByText(/job-7/)).toBeVisible();
+      expect(calls.find((call) => call.method === "POST" && call.path.includes("/ops/check"))).toBeDefined();
+      await vi.advanceTimersByTimeAsync(5000);
+      await waitFor(() => expect(polls).toBe(1));
+      await vi.advanceTimersByTimeAsync(5000);
+      await waitFor(() => expect(polls).toBe(2));
+      expect(await screen.findByText(/done/i)).toBeVisible();
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(polls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("asks for confirmation before stopping a node", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/gateway": overview,
+      "POST /admin/gateway/nodes/b300-a/ops/stop": { job_id: "job-8" },
+      "GET /admin/gateway/nodes/b300-a/jobs/job-8": { job_id: "job-8", state: "done" },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    await user.click(await screen.findByRole("button", { name: "Run stop on b300-a" }));
+    expect(calls.some((call) => call.path.includes("/ops/stop"))).toBe(false);
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(calls.some((call) => call.path.includes("/ops/stop"))).toBe(false);
+    await user.click(await screen.findByRole("button", { name: "Run stop on b300-a" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Stop node" }));
+    await waitFor(() => expect(calls.some((call) => call.path === "/admin/gateway/nodes/b300-a/ops/stop")).toBe(true));
+  });
+
+  it("explains an unconfigured gateway", async () => {
+    adminFetch({
+      "GET /admin/gateway": { gatewayConfigured: false, state: null, nodes: null, metrics: null, errors: { state: null, nodes: null, metrics: null } },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    expect(await screen.findByText(/Gateway not connected/)).toBeVisible();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+});
+
+describe("admin navigation for gateway sections", () => {
+  it.each([
+    ["/admin/keys", "API keys"],
+    ["/admin/usage", "Usage"],
+    ["/admin/gateway", "Gateway"],
+  ])("marks %s as the current section", (pathname, name) => {
+    wrap(<AdminShell pathname={pathname}><p>content</p></AdminShell>);
+    expect(screen.getByRole("link", { name })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name })).toHaveAttribute("href", pathname);
+    const labels = within(screen.getByRole("navigation", { name: /administration/i }))
+      .getAllByRole("link")
+      .map((link) => link.textContent);
+    expect(labels).toEqual(["Overview", "Customers", "API keys", "Usage", "Gateway", "Credit requests", "Audit log"]);
+  });
+});
