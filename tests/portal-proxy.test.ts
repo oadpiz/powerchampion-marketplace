@@ -107,6 +107,69 @@ describe("portal service boundary", () => {
     expect(fetchMock.mock.calls.length).toBe(4);
   });
 
+  it("proxies the gateway administration routes to the exact upstream path", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    const id = "a".repeat(32);
+    const get = ["/admin/keys", "/admin/usage", "/admin/gateway", "/admin/gateway/nodes/b300-1.node/jobs/job_1.2-x"];
+    const post = [
+      `/admin/customers/${id}/keys`,
+      "/admin/keys/key_ABC-123/disable", "/admin/keys/key_ABC-123/limits", "/admin/keys/key_ABC-123/balance",
+      "/admin/gateway/models/zai-org%2FGLM-5.3/toggle", "/admin/gateway/models/glm-5.3:fp8/maintenance",
+      ...["start", "stop", "restart", "check", "backup", "fw-status"].map((action) => `/admin/gateway/nodes/b300-1/ops/${action}`),
+    ];
+    for (const path of get) expect((await GET(request(path))).status).toBe(200);
+    for (const path of post) expect((await POST(request(path, "POST", {}))).status).toBe(200);
+    expect((await POST(request("/admin/keys/key_ABC-123/disable", "POST"))).status).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      ...get, ...post, "/admin/keys/key_ABC-123/disable",
+    ].map((path) => `http://127.0.0.1:3020/api/portal${path}`));
+    expect(fetchMock.mock.calls.at(-1)?.[1].body).toBeUndefined();
+  });
+
+  it("forwards a valid administrator usage month and rejects an invalid one", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await GET(request("/admin/usage?month=2026-10"))).status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:3020/api/portal/admin/usage?month=2026-10");
+    expect((await GET(request("/admin/usage?month=2026-13"))).status).toBe(400);
+    expect((await GET(request("/admin/usage?month=2026-10&evil=1"))).status).toBe(200);
+    expect(fetchMock.mock.calls[1][0]).toBe("http://127.0.0.1:3020/api/portal/admin/usage?month=2026-10");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses adjacent, traversing and malformed gateway administration paths", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    const blocked = [
+      "/admin/gateway/nodes/x/ops/rm", "/admin/keys//disable", "/admin/gateway/models/%2e%2e/toggle",
+      "/admin/gateway/models/a%2F..%2Fb/toggle", "/admin/gateway/nodes/../ops/check", "/admin/customers/not-hex/keys",
+      "/admin/keys/x/delete", "/admin/gateway/models/%2E/toggle", "/admin/gateway/nodes/x/jobs/a%2e%2eb",
+      "/admin/gateway/nodes//ops/check", "/admin/gateway/nodes/x/ops/check/extra",
+    ];
+    for (const path of blocked) {
+      expect((await POST(request(path, "POST", {}))).status).toBe(404);
+      expect((await GET(request(path))).status).toBe(404);
+    }
+    expect((await DELETE(request("/admin/keys/x", "DELETE"))).status).toBe(404);
+    expect((await DELETE(request("/admin/gateway/models/x/toggle", "DELETE"))).status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("relays a gateway outage with its own error code instead of the generic service message", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ error: "gateway_unavailable", detail: "internal gateway.example:9" }, { status: 503 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await GET(request("/admin/gateway"));
+    expect(response.status).toBe(503);
+    const text = await response.text();
+    expect(JSON.parse(text).error).toBe("gateway_unavailable");
+    expect(text).not.toContain("gateway.example");
+  });
+
   it("blocks cross-origin mutations, arbitrary endpoints, invalid months and oversized input", async () => {
     vi.stubGlobal("fetch", vi.fn()); vi.stubEnv("PC_PORTAL_ORIGIN", "");
     expect((await POST(request("/auth/login", "POST", {}, { origin: "https://evil.example" }))).status).toBe(403);

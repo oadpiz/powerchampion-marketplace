@@ -79,6 +79,12 @@ describe("account portal", () => {
     expect(safeAccountReturn("/admin/customers")).toBe("/admin/customers");
     expect(safeAccountReturn("/admin/anything")).toBe("/account");
     expect(portalErrorText(new PortalError(503, "usage_pricing_incomplete", "Internal details"), "en")).toContain("Pricing data is incomplete");
+    expect(portalErrorText(new PortalError(404, "gateway_rejected", "Model not found on the gateway."), "en")).toBe("Model not found on the gateway.");
+    expect(portalErrorText(new PortalError(404, "gateway_rejected", ""), "en")).toBe("The gateway rejected the request.");
+    expect(portalErrorText(new PortalError(503, "gateway_unavailable", "x"), "en")).toBe("The API gateway is unavailable right now. Try again in a moment.");
+    expect(portalErrorText(new PortalError(400, "unknown_action", "x"), "en")).toBe("That node action is not available.");
+    expect(portalErrorText(new PortalError(404, "key_not_found", "x"), "en")).toBe("That API key no longer exists on the gateway.");
+    expect(portalErrorText(new PortalError(404, "customer_not_found", "x"), "en")).toBe("That account was not found.");
   });
 
   it("preserves the saved-agent destination when switching from login to registration", async () => {

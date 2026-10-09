@@ -60,6 +60,18 @@ export function portalErrorText(error: unknown, locale: "en" | "zh") {
     return locale === "zh"
       ? "部分模型的用量價格資料尚未完整，暫時無法顯示可靠的費用報表。請聯繫支援確認計費資料。"
       : "Pricing data is incomplete for some model usage, so a reliable cost report is not available yet. Contact support to confirm billing details.";
+  if (code === "gateway_rejected")
+    return error instanceof PortalError && error.message.trim() && error.message !== "The request could not be completed."
+      ? error.message
+      : locale === "zh" ? "閘道拒絕了這個請求。" : "The gateway rejected the request.";
+  if (code === "gateway_unavailable")
+    return locale === "zh" ? "API 閘道目前無法使用，請稍後再試。" : "The API gateway is unavailable right now. Try again in a moment.";
+  if (code === "unknown_action")
+    return locale === "zh" ? "此節點操作無法使用。" : "That node action is not available.";
+  if (code === "key_not_found")
+    return locale === "zh" ? "閘道上已找不到此 API 金鑰。" : "That API key no longer exists on the gateway.";
+  if (code === "customer_not_found")
+    return locale === "zh" ? "找不到此帳號。" : "That account was not found.";
   if (code === "invalid_credentials")
     return locale === "zh"
       ? "電子郵件或密碼不正確，請確認後再試。"
