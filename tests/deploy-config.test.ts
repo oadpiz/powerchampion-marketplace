@@ -72,8 +72,12 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(compose).toMatch(/^volumes:\s*\n(?:\s+[a-z-]+:\s*\n)*\s+portal-pg-data:/m);
   });
 
-  it("leaves gateway key self-service and the anonymous trial disconnected", () => {
-    expect(compose).not.toMatch(/^\s+PC_GATEWAY_ADMIN_TOKEN\s*:/m);
+  it("wires the gateway admin token from the environment and keeps the trial and customer issuance off", () => {
+    // Value comes from the Dokploy environment (empty by default); a literal token must never be committed.
+    expect(portal).toMatch(/^\s+PC_GATEWAY_ADMIN_TOKEN:\s*\$\{PC_GATEWAY_ADMIN_TOKEN:-\}\s*$/m);
+    expect(compose).not.toMatch(/^\s+PC_GATEWAY_ADMIN_TOKEN\s*:\s*(?!\$\{PC_GATEWAY_ADMIN_TOKEN:-\}\s*$)\S/m);
+    // Customer self-service issuance stays off unless the operator opts in.
+    expect(portal).toMatch(/^\s+PC_CUSTOMER_KEY_ISSUANCE:\s*\$\{PC_CUSTOMER_KEY_ISSUANCE:-0\}\s*$/m);
     expect(compose).not.toMatch(/^\s+PC_TRIAL_API_KEY\s*:/m);
     expect(portal).toMatch(/^\s+PC_TRIAL_ENABLED:\s*"0"\s*$/m);
   });

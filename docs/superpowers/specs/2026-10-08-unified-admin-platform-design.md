@@ -50,7 +50,8 @@ aria2c 雙鏡像或 ModelScope）。沒有「輸入 repo id 就下載並上架�
 | 0 前置 | 0 | 閘道分支收斂，Dokploy 改部署 `main` | 無 |
 | A 總後台骨架 | A1 | portal 換 Postgres（含遷移、備份、回滾） | 0 |
 | | A2a | 後台殼層、帳號管理（停用／啟用、改角色）、密碼重設 | A1 |
-| | A2b | 接閘道 admin token、代理路由、admin 金鑰／用量／閘道／personas 頁 | A2a |
+| | A2b | 接閘道 admin token、代理路由、admin 金鑰／用量／閘道頁、停用即撤銷金鑰 | A2a |
+| | A2c | Personas、fleet 工作流、`/api/control`、兌換碼 | A2b |
 | | A3 | 閘道 HTML 管理頁退場切換 | A2b |
 | B 模型控制台 | B1 | 節點 agent：通用下載、serve 模板、recipe 推送、離線 stub 測試 | 0 |
 | | B2 | 閘道：模型 CRUD 與持久化疊加層、recipe 推送路由 | B1 |
@@ -60,7 +61,7 @@ aria2c 雙鏡像或 ModelScope）。沒有「輸入 repo id 就下載並上架�
 
 每個子期各自一份實作計畫、獨立可部署、獨立可回滾。B1 不依賴 A，可提早開工。
 
-2026-10-09：A2 拆為 A2a／A2b；A2a 加入殼層與密碼重設（使用者需求）。
+2026-10-09：A2 拆為 A2a／A2b；A2a 加入殼層與密碼重設（使用者需求）。2026-10-09：A2b 不含 Personas／fleet，移到 A2c；客戶自助發放由 `PC_CUSTOMER_KEY_ISSUANCE` 控制（預設關）；停用客戶即撤銷其閘道金鑰。
 
 ## 4. 第 0 期：閘道分支收斂
 
@@ -123,8 +124,10 @@ aria2c 雙鏡像或 ModelScope）。沒有「輸入 repo id 就下載並上架�
 ### 5.3 A2：後台殼層與帳號管理（A2a）、接閘道 admin token 與 admin 頁（A2b）
 
 A2 於 2026-10-09 拆成兩期：**A2a**（後台殼層、帳號管理、密碼重設）不依賴閘道，先做先上；
-**A2b**（閘道 admin token、代理路由、金鑰／用量／閘道／Personas 頁）接在 A2a 之後。以下
-「後台殼層」「密碼重設」兩段屬 A2a，其餘（安全閘門、代理、頁面表中的金鑰／用量／閘道／Personas）屬 A2b。
+**A2b**（閘道 admin token、代理路由、金鑰／用量／閘道頁、停用即撤銷金鑰）接在 A2a 之後；
+Personas、fleet 工作流、`/api/control`、兌換碼移到 **A2c**。以下「後台殼層」「密碼重設」兩段屬 A2a，
+其餘（安全閘門、金鑰政策、停用即撤銷、頁面表中的金鑰／用量／閘道）屬 A2b；代理清單中的
+`/api/personas*`、`/api/fleet/*` 與頁面表的 Personas 屬 A2c。
 
 **後台殼層（A2a，選項 A：獨立 layout）**：`/admin*` 使用自己的 layout（`app/admin/layout.tsx`），
 **不載入行銷頁首與客戶側欄**，改用後台專屬的側欄與頂欄；站台殼層對 `/admin*` 直接略過。
@@ -136,11 +139,21 @@ A2 於 2026-10-09 拆成兩期：**A2a**（後台殼層、帳號管理、密碼�
 停用的帳號不能登入、既有 session 與其智能體權杖一併失效；停用／啟用／改角色同樣不得對自己執行。
 CLI（`manage.py`）保留作為首個管理員與緊急復原的後備。
 
+**金鑰政策（A2b）**：admin 代發的金鑰一律預付（`prepaidUsd` > 0、≤ 100000、至多兩位小數），
+缺或不合法回 422 `invalid_input`；`dailyTokenLimit`／`rpm`／`maxInflight` 只是附加限制。
+客戶自助發放由 `PC_CUSTOMER_KEY_ISSUANCE` 控制，預設 `0`（關閉，`POST /keys` 回 503
+`provider_not_configured`）；設為 `1` 時客戶可自行發出餘額 0 的後付金鑰，線上收款接上前不建議開。
+匿名試用維持關閉。
+
+**停用即撤銷（A2b）**：停用客戶帳號時，其所有仍有效的閘道金鑰一併撤銷（每把審計 `key.revoked`）。
+閘道連不上時帳號仍然停用，並審計 `key.revocation_needs_reconciliation`（目標為閘道金鑰 ID）；
+營運者再執行一次停用、或到「金鑰」頁停用該金鑰即可對帳。啟用帳號不復活已撤銷的金鑰。
+
 **安全閘門**：生產設定 `PC_GATEWAY_ADMIN_TOKEN`。原本不設的顧慮是「API 發的 key 沒有預付餘額，
 變成無花費上限的後付」。規則：
 - portal 發 key **必須帶 `prepaid_usd > 0`**（閘道 `POST /api/keys` 已支援），`daily_token_limit`
   只是附加限制，**不得單獨放行**。缺 `prepaid_usd` 或 ≤ 0 回 422。
-- **客戶自助發 key 維持關閉**，只有 admin 能發（線上收款接上前不開放；Airwallex 另有 spec）。
+- **客戶自助發 key 預設關閉**，只有 admin 能發（線上收款接上前不開放；Airwallex 另有 spec）；由 `PC_CUSTOMER_KEY_ISSUANCE` 控制，預設 `0`。
 - 匿名試用維持關閉。
 
 `server/gateway.py` 擴充代理：`/api/state`、`/api/models/{id}/toggle`、`/api/models/{id}/maintenance`、
@@ -155,8 +168,8 @@ admin 新增頁（`app/admin/[[...section]]`）：
 | 客戶 | 搜尋、停用／啟用、改角色、重設密碼（A2a）；看其全部金鑰、撤銷金鑰、加值預付餘額（A2b）。清單含 admin 帳號並顯示角色與狀態 | 全部寫 `audit_events` |
 | 金鑰 | 全站金鑰清單、發 key（帶 `prepaid_usd`）、限額、停用 | 同上 |
 | 用量 | 全站月報（代理 `/api/usage/report`），依客戶與模型彙總 | 無 |
-| 閘道 | 模型啟停、維護訊息、節點 start/stop/restart/check、GPU 指標、fleet 的 freeze/resume/candidate/approve/drain/rollback | 同上 |
-| Personas | 代理 `/api/personas*`：清單、建立、revisions、activate、try | 同上 |
+| 閘道 | 模型啟停、維護訊息、節點 start/stop/restart/check（A2b）、GPU 指標、fleet 的 freeze/resume/candidate/approve/drain/rollback（A2c） | 同上 |
+| Personas（A2c） | 代理 `/api/personas*`：清單、建立、revisions、activate、try | 同上 |
 | 安全性（帳戶頁） | `/account/security`：使用者自助改密碼（A2a；客戶與 admin 共用，非 `/admin` 頁） | 寫 `audit_events`（`account.password_changed`） |
 | 收件匣 | C2 才啟用 | |
 | 模型 | B3 才啟用 | |
