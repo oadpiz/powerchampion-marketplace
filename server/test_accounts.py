@@ -571,5 +571,126 @@ class AdminUsageTests(_PortalCase):
         self.assertEqual(self.client().get(BASE + "/admin/usage?month=2026-10").status_code, 401)
 
 
+class AdminGatewayTests(_PortalCase):
+    def test_overview_isolates_failures(self):
+        admin = self.admin()
+        body = admin.get(BASE + "/admin/gateway").json()
+        self.assertTrue(body["gatewayConfigured"])
+        self.assertEqual(body["state"]["gateway"]["public_base_url"], "https://gateway.example")
+        self.assertEqual(body["errors"], {"state": None, "nodes": None, "metrics": None})
+        self.gateway.fail = True
+        body = admin.get(BASE + "/admin/gateway").json()
+        self.assertIsNone(body["state"])
+        self.assertEqual(body["errors"]["state"], "unavailable")
+
+    def test_overview_failure_of_one_call_does_not_hide_the_others(self):
+        admin = self.admin()
+
+        async def broken():
+            raise GatewayError("invalid_response")
+
+        async def crash():
+            raise RuntimeError("private upstream token must never escape")
+
+        self.gateway.nodes = broken
+        self.gateway.metrics = crash
+        response = admin.get(BASE + "/admin/gateway")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["state"], self.gateway.state_value)
+        self.assertIsNone(body["nodes"])
+        self.assertIsNone(body["metrics"])
+        self.assertEqual(body["errors"], {"state": None, "nodes": "invalid_response", "metrics": "unavailable"})
+        self.assertNotIn("private upstream token", response.text)
+
+    def test_overview_unconfigured_does_not_call_the_gateway(self):
+        admin = self.admin()
+        self.gateway.configured = False
+        self.gateway.fail = True
+        body = admin.get(BASE + "/admin/gateway").json()
+        self.assertEqual(body, {"gatewayConfigured": False, "state": None, "nodes": None, "metrics": None,
+                                "errors": {"state": "unconfigured", "nodes": "unconfigured", "metrics": "unconfigured"}})
+
+    def test_model_and_node_actions_are_audited(self):
+        admin = self.admin()
+        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {}).json()["enabled"], True)
+        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/maintenance", {"message": "down for 10 min"}).status_code, 200)
+        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/maintenance", {"message": "x" * 301}).status_code, 422)
+        r = self.post(admin, "/admin/gateway/nodes/b300-14/ops/check", {})
+        self.assertEqual(r.json()["job_id"], "job-1")
+        self.assertEqual(self.post(admin, "/admin/gateway/nodes/b300-14/ops/format", {}).status_code, 400)
+        self.assertEqual(admin.get(BASE + "/admin/gateway/nodes/b300-14/jobs/job-1").json()["state"], "done")
+        actions = [e["action"] for e in rows(self.store, "audit_events")]
+        for name in ("admin.model_toggled", "admin.model_maintenance", "admin.node_op"):
+            self.assertIn(name, actions)
+        self.assertEqual(self.gateway.ops, [("b300-14", "check")])
+        self.assertEqual(self.gateway.toggled, ["glm-5.3"])
+        self.assertEqual(self.gateway.maintenance, [("glm-5.3", "down for 10 min")])
+        self.assertEqual([e["target_id"] for e in self.audit("admin.model_toggled")], ["glm-5.3"])
+        self.assertEqual([e["target_id"] for e in self.audit("admin.model_maintenance")], ["glm-5.3"])
+        self.assertEqual([e["target_id"] for e in self.audit("admin.node_op")], ["b300-14:check"])
+        self.assertEqual(self.audit("admin.model_toggled")[0]["actor_id"], self.user_id("admin@example.test"))
+
+    def test_model_id_with_slash_and_empty_maintenance_message(self):
+        admin = self.admin()
+        self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/toggle", {}).json()["id"], "zai-org/GLM-5.3")
+        self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/maintenance", {}).status_code, 200)
+        self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/maintenance", {"message": ""}).status_code, 200)
+        self.assertEqual(self.gateway.maintenance, [("zai-org/GLM-5.3", ""), ("zai-org/GLM-5.3", "")])
+        for bad in (None, 5, ["x"]):
+            self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/maintenance", {"message": bad}).status_code, 422, bad)
+        self.assertEqual(len(self.gateway.maintenance), 2)
+
+    def test_gateway_rejection_and_outage_are_mapped_and_not_audited(self):
+        admin = self.admin()
+        self.gateway.reject = GatewayError("rejected", 404, "unknown model")
+        r = self.post(admin, "/admin/gateway/models/glm-9/toggle", {})
+        self.assertEqual((r.status_code, r.json()["error"]), (404, "gateway_rejected"))
+        self.gateway.reject = None
+        self.gateway.fail = True
+        r = self.post(admin, "/admin/gateway/nodes/b300-14/ops/check", {})
+        self.assertEqual((r.status_code, r.json()["error"]), (503, "gateway_unavailable"))
+        self.assertNotIn("private upstream token", r.text)
+        self.assertEqual([e for e in rows(self.store, "audit_events") if e["action"].startswith("admin.model") or e["action"] == "admin.node_op"], [])
+
+    def test_unconfigured_gateway_refuses_writes(self):
+        admin = self.admin()
+        self.gateway.configured = False
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {})
+        self.assertEqual((r.status_code, r.json()["error"]), (503, "provider_not_configured"))
+        self.assertEqual(self.gateway.toggled, [])
+
+    def test_bad_path_parameters_never_reach_the_gateway(self):
+        admin = self.admin()
+        r = self.post(admin, "/admin/gateway/nodes/bad name/ops/check", {})
+        self.assertEqual((r.status_code, r.json()["error"]), (400, "invalid_input"))
+        r = admin.get(BASE + "/admin/gateway/nodes/b300-14/jobs/bad%20job")
+        self.assertEqual((r.status_code, r.json()["error"]), (400, "invalid_input"))
+        r = self.post(admin, "/admin/gateway/models/bad model/toggle", {})
+        self.assertEqual((r.status_code, r.json()["error"]), (400, "invalid_input"))
+        r = self.post(admin, "/admin/gateway/nodes/b300-14/ops/format", {})
+        self.assertEqual((r.status_code, r.json()["error"]), (400, "unknown_action"))
+        self.assertEqual((self.gateway.ops, self.gateway.toggled, self.gateway.maintenance), ([], [], []))
+
+    def test_dot_segment_model_ids_never_reach_the_gateway(self):
+        admin = self.admin()
+        for path in ("/admin/gateway/models/a%2F..%2Fb/toggle", "/admin/gateway/models/../toggle",
+                     "/admin/gateway/models//toggle", "/admin/gateway/models/a%2F.%2Fb/toggle", "/admin/gateway/models/a%2F..%2Fb/maintenance"):
+            r = admin.post(BASE + path, json={"message": "x"}, headers={"Origin": ORIGIN})
+            self.assertIn(r.status_code, (400, 404), path)
+        self.assertEqual((self.gateway.toggled, self.gateway.maintenance), ([], []))
+        self.assertEqual([e for e in rows(self.store, "audit_events") if e["action"].startswith("admin.model")], [])
+
+    def test_customer_forbidden(self):
+        client = self.client()
+        self.register(client, "a@example.test")
+        self.assertEqual(client.get(BASE + "/admin/gateway").status_code, 403)
+        self.assertEqual(self.post(client, "/admin/gateway/nodes/b300-14/ops/stop", {}).status_code, 403)
+        self.assertEqual(self.post(client, "/admin/gateway/models/glm-5.3/toggle", {}).status_code, 403)
+        self.assertEqual(client.get(BASE + "/admin/gateway/nodes/b300-14/jobs/job-1").status_code, 403)
+        self.assertEqual(self.client().get(BASE + "/admin/gateway").status_code, 401)
+        self.assertEqual((self.gateway.ops, self.gateway.toggled), ([], []))
+
+
 if __name__ == "__main__":
     unittest.main()

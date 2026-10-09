@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .agents import AgentError, Agents, parse_name, parse_version
-from .gateway import GatewayAdapter, GatewayError
+from .gateway import JOB_ID, MODEL_ID, NODE_ACTIONS, NODE_NAME, GatewayAdapter, GatewayError
 from .chat import TRIAL_COOKIE, TrialChat
 from .security import clean_name, digest_token, normalize_email, password_hash, validate_password, verify_password
 from .settings import Settings
@@ -819,6 +819,75 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         with store.connect() as con:
             store.audit(con, "admin.key_balance", admin["id"], key_id)
         return {"ok": True, "balanceUsd": usd_from_nano(nano)}
+
+    async def gateway_call(call, *args):
+        require_gateway()
+        try:
+            return await call(*args)
+        except GatewayError as error:
+            if error.code == "invalid_identifier":
+                fail("invalid_input", "Check the model, node or job name.")
+            gateway_fail(error)
+        except ValueError:
+            fail("invalid_input", "Check the request details.", 422)
+
+    def gateway_path(value, pattern):
+        # The adapter rejects dot-segments too; checking here keeps them from ever reaching it.
+        if not pattern.fullmatch(value) or any(part in ("", ".", "..") for part in value.split("/")):
+            fail("invalid_input", "Check the model, node or job name.")
+
+    @application.get(PREFIX + "/admin/gateway")
+    async def admin_gateway(request: Request):
+        current_user(request, admin=True)
+        names = ("state", "nodes", "metrics")
+        if not gateway.configured:
+            return {"gatewayConfigured": False, **{name: None for name in names}, "errors": {name: "unconfigured" for name in names}}
+        results = await asyncio.gather(gateway.state(), gateway.nodes(), gateway.metrics(), return_exceptions=True)
+        body = {"gatewayConfigured": True, "errors": {}}
+        for name, result in zip(names, results):
+            failed = isinstance(result, BaseException)
+            body[name] = None if failed else result
+            body["errors"][name] = (result.code if isinstance(result, GatewayError) else "unavailable") if failed else None
+        return body
+
+    @application.post(PREFIX + "/admin/gateway/models/{model_id:path}/toggle")
+    async def admin_model_toggle(model_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_path(model_id, MODEL_ID)
+        result = await gateway_call(gateway.toggle_model, model_id)
+        with store.connect() as con:
+            store.audit(con, "admin.model_toggled", admin["id"], model_id)
+        return result
+
+    @application.post(PREFIX + "/admin/gateway/models/{model_id:path}/maintenance")
+    async def admin_model_maintenance(model_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_path(model_id, MODEL_ID)
+        message = (await body_json(request)).get("message", "")
+        if not isinstance(message, str) or len(message) > 300:
+            fail("invalid_input", "The maintenance message must be text of at most 300 characters.", 422)
+        result = await gateway_call(gateway.set_maintenance, model_id, message)
+        with store.connect() as con:
+            store.audit(con, "admin.model_maintenance", admin["id"], model_id)
+        return result
+
+    @application.post(PREFIX + "/admin/gateway/nodes/{name}/ops/{action}")
+    async def admin_node_op(name: str, action: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_path(name, NODE_NAME)
+        if action not in NODE_ACTIONS:
+            fail("unknown_action", "That node action is not supported.")
+        result = await gateway_call(gateway.node_op, name, action)
+        with store.connect() as con:
+            store.audit(con, "admin.node_op", admin["id"], f"{name}:{action}")
+        return result
+
+    @application.get(PREFIX + "/admin/gateway/nodes/{name}/jobs/{job_id}")
+    async def admin_node_job(name: str, job_id: str, request: Request):
+        current_user(request, admin=True)
+        gateway_path(name, NODE_NAME)
+        gateway_path(job_id, JOB_ID)
+        return await gateway_call(gateway.node_job, name, job_id)
 
     @application.get(PREFIX + "/admin/audit")
     async def audit(request: Request):
