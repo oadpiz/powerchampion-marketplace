@@ -727,6 +727,63 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.gateway.update_limits("k", {})
 
+    async def test_dot_segment_identifiers_are_rejected_before_network_request(self):
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True})):
+            for model_id in ("a/../b", "..", "../keys", "../../state", "a//b", ".", "a/./b", "/a", "a/"):
+                with self.subTest(model_id=model_id):
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.toggle_model(model_id)
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.set_maintenance(model_id, "x")
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+            for name in ("..", "."):
+                with self.subTest(node=name):
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.node_op(name, "check")
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.node_job(name, "j1")
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.node_job("n", name)
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+        self.assertEqual(self.requests, [])
+
+    async def test_toggle_model_and_maintenance_paths_and_bodies(self):
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True, "enabled": False})):
+            value = await self.gateway.toggle_model("zai-org/GLM-5.3:fp8")
+            self.assertEqual(value["enabled"], False)
+            await self.gateway.set_maintenance("zai-org/GLM-5.3:fp8", "back at noon")
+        self.assertEqual(self.requests[0].method, "POST")
+        self.assertEqual(self.requests[0].url.path, "/api/models/zai-org/GLM-5.3:fp8/toggle")
+        self.assertEqual(self.requests[1].url.path, "/api/models/zai-org/GLM-5.3:fp8/maintenance")
+        self.assertEqual(json.loads(self.requests[1].content), {"message": "back at noon"})
+        with self.assertRaises(ValueError):
+            await self.gateway.set_maintenance("m", "x" * 301)
+
+    async def test_read_only_methods_paths_and_success_values(self):
+        def responder(request):
+            if request.url.path == "/api/keys":
+                return httpx.Response(200, json={"keys": [{"id": "k1"}, "junk"], "env_keys": [{"label": "env"}]})
+            if request.url.path == "/api/nodes":
+                return httpx.Response(200, json={"nodes": [{"name": "b300-14"}]})
+            if request.url.path == "/api/metrics":
+                return httpx.Response(200, json={"requests": 3})
+            return httpx.Response(200, json={"status": "done"})
+        with self.transport(responder):
+            keys = await self.gateway.list_keys()
+            nodes = await self.gateway.nodes()
+            metrics = await self.gateway.metrics()
+            job = await self.gateway.node_job("b300-14", "job.1")
+        self.assertEqual(keys, {"keys": [{"id": "k1"}], "env_keys": [{"label": "env"}]})
+        self.assertEqual(nodes["nodes"][0]["name"], "b300-14")
+        self.assertEqual(metrics["requests"], 3)
+        self.assertEqual(job["status"], "done")
+        self.assertEqual([(r.method, r.url.path) for r in self.requests],
+                         [("GET", "/api/keys"), ("GET", "/api/nodes"), ("GET", "/api/metrics"),
+                          ("GET", "/api/nodes/b300-14/jobs/job.1")])
+
 
 if __name__ == "__main__":
     unittest.main()

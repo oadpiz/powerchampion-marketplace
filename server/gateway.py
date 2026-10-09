@@ -37,6 +37,13 @@ def _strip_secrets(value):
     return value
 
 
+def _identifier(value, pattern):
+    """Regex-match, then reject empty/dot segments that HTTP clients would normalize away."""
+    if not isinstance(value, str) or not pattern.fullmatch(value) or any(part in ("", ".", "..") for part in value.split("/")):
+        raise GatewayError("invalid_identifier")
+    return value
+
+
 def _limit_payload(limits):
     payload = {}
     for name, value in (limits or {}).items():
@@ -153,26 +160,24 @@ class GatewayAdapter:
         return await self._request("GET", "/api/nodes")
 
     async def node_op(self, name, action):
-        if not isinstance(name, str) or not NODE_NAME.fullmatch(name) or action not in NODE_ACTIONS:
+        name = _identifier(name, NODE_NAME)
+        if action not in NODE_ACTIONS:
             raise GatewayError("invalid_identifier")
         return await self._request("POST", "/api/nodes/" + name + "/ops/" + action)
 
     async def node_job(self, name, job_id):
-        if not isinstance(name, str) or not NODE_NAME.fullmatch(name) or not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
-            raise GatewayError("invalid_identifier")
+        name, job_id = _identifier(name, NODE_NAME), _identifier(job_id, JOB_ID)
         return await self._request("GET", "/api/nodes/" + name + "/jobs/" + job_id)
 
     async def metrics(self):
         return await self._request("GET", "/api/metrics")
 
     async def toggle_model(self, model_id):
-        if not isinstance(model_id, str) or not MODEL_ID.fullmatch(model_id):
-            raise GatewayError("invalid_identifier")
+        model_id = _identifier(model_id, MODEL_ID)
         return await self._request("POST", "/api/models/" + model_id + "/toggle")
 
     async def set_maintenance(self, model_id, message):
-        if not isinstance(model_id, str) or not MODEL_ID.fullmatch(model_id):
-            raise GatewayError("invalid_identifier")
+        model_id = _identifier(model_id, MODEL_ID)
         if not isinstance(message, str) or len(message) > 300:
             raise ValueError("message too long")
         return await self._request("POST", "/api/models/" + model_id + "/maintenance", {"message": message})
