@@ -24,6 +24,7 @@ class Settings:
     trial_api_key: str = field(default="", repr=False)
     trial_daily_request_limit: int = 0
     trial_session_daily_limit: int = 5
+    customer_key_issuance: bool = False
     runtime_enabled: bool = False
     runtime_encryption_key: str = field(default="", repr=False)
 
@@ -85,6 +86,7 @@ class Settings:
             trial_api_key=os.environ.get("PC_TRIAL_API_KEY", ""),
             trial_daily_request_limit=int(os.environ.get("PC_TRIAL_DAILY_REQUEST_LIMIT", "0")),
             trial_session_daily_limit=int(os.environ.get("PC_TRIAL_SESSION_REQUEST_LIMIT", "5")),
+            customer_key_issuance=os.environ.get("PC_CUSTOMER_KEY_ISSUANCE", "0") == "1",
             runtime_enabled=os.environ.get("PC_RUNTIME_ENABLED", "0") == "1",
             runtime_encryption_key=os.environ.get("PC_RUNTIME_ENCRYPTION_KEY", ""),
         )

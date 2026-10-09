@@ -40,7 +40,7 @@ class FakeGateway:
         self.create_delay = 0
         self.issue_lock = threading.Lock()
 
-    async def create_key(self, label):
+    async def create_key(self, label, prepaid_usd, limits=None):
         if self.create_delay:
             await asyncio.sleep(self.create_delay)
         if self.fail:
@@ -625,7 +625,7 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.transport(lambda _: httpx.Response(200, json={
             "key": "sk-local-test-customer-secret", "key_id": "key-123", "label": "Application",
         })):
-            result = await self.gateway.create_key("Application")
+            result = await self.gateway.create_key("Application", prepaid_usd=0)
         self.assertEqual(result["secret"], "sk-local-test-customer-secret")
         self.assertEqual(result["key_id"], "key-123")
         request = self.requests[0]
@@ -634,6 +634,7 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.headers["X-Admin-Token"], "adapter-test-admin-token")
         payload = json.loads(request.content)
         self.assertEqual(payload["label"], "Application")
+        self.assertEqual(payload["prepaid_usd"], 0)
         for name in ("daily_token_limit", "rpm", "max_inflight"):
             self.assertGreater(payload[name], 0)
         self.assertNotIn("adapter-test-admin-token", json.dumps(result))
@@ -672,6 +673,59 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(GatewayError):
                 await self.gateway.revoke_key("../another-resource?admin=true")
         self.assertEqual(self.requests, [])
+
+    async def test_create_key_sends_prepaid_and_returns_balance(self):
+        with self.transport(lambda _: httpx.Response(200, json={"key": "sk-local-test-customer-secret", "key_id": "key-123", "label": "x", "balance_nano_usd": 5000000000})):
+            result = await self.gateway.create_key("x", prepaid_usd=5)
+        payload = json.loads(self.requests[0].content)
+        self.assertEqual(payload["prepaid_usd"], 5)
+        self.assertEqual(result["balance_nano_usd"], 5000000000)
+
+    async def test_rejected_responses_keep_status_and_detail_without_token(self):
+        with self.transport(lambda _: httpx.Response(404, json={"error": "not_found", "detail": "Key not found"})):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.set_key_disabled("key-404", True)
+        self.assertEqual(caught.exception.code, "rejected")
+        self.assertEqual(caught.exception.status, 404)
+        self.assertEqual(caught.exception.detail, "Key not found")
+        self.assertNotIn("adapter-test-admin-token", repr(caught.exception))
+
+    async def test_server_errors_are_unavailable(self):
+        with self.transport(lambda _: httpx.Response(502, text="bad gateway")):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.list_keys()
+        self.assertEqual(caught.exception.code, "unavailable")
+
+    async def test_state_strips_secrets(self):
+        with self.transport(lambda _: httpx.Response(200, json={"models": [], "gateway": {"public_base_url": "https://x", "api_key": "sk-env-secret", "nested": {"admin_token": "t"}}})):
+            value = await self.gateway.state()
+        self.assertNotIn("api_key", value["gateway"])
+        self.assertNotIn("admin_token", value["gateway"]["nested"])
+        self.assertEqual(value["gateway"]["public_base_url"], "https://x")
+        self.assertNotIn("sk-env-secret", json.dumps(value))
+
+    async def test_node_op_validates_action_and_name(self):
+        with self.assertRaises(GatewayError):
+            await self.gateway.node_op("b300-14", "rm-rf")
+        with self.assertRaises(GatewayError):
+            await self.gateway.node_op("../x", "check")
+        with self.transport(lambda _: httpx.Response(200, json={"job_id": "j1"})):
+            value = await self.gateway.node_op("b300-14", "check")
+        self.assertEqual(self.requests[0].url.path, "/api/nodes/b300-14/ops/check")
+        self.assertEqual(value["job_id"], "j1")
+
+    async def test_balance_and_limits_contracts(self):
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True, "key_id": "k", "balance_nano_usd": 7000000000})):
+            balance = await self.gateway.adjust_balance("k", add_usd=7)
+        self.assertEqual(balance, 7000000000)
+        self.assertEqual(json.loads(self.requests[0].content), {"add_usd": 7})
+        with self.assertRaises(ValueError):
+            await self.gateway.adjust_balance("k", add_usd=1, set_usd=2)
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True})):
+            await self.gateway.update_limits("k", {"rpm": 10})
+        self.assertEqual(json.loads(self.requests[-1].content), {"rpm": 10})
+        with self.assertRaises(ValueError):
+            await self.gateway.update_limits("k", {})
 
 
 if __name__ == "__main__":

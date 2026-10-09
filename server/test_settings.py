@@ -30,5 +30,12 @@ class DatabaseUrlTests(unittest.TestCase):
             Settings(database_url="mysql://u:p@db/x")
 
 
+class KeyIssuanceSettingTests(unittest.TestCase):
+    def test_customer_key_issuance_defaults_off_and_reads_env(self):
+        self.assertFalse(Settings().customer_key_issuance)
+        with patch.dict(os.environ, {"PC_CUSTOMER_KEY_ISSUANCE": "1"}, clear=False):
+            self.assertTrue(Settings.from_env().customer_key_issuance)
+
+
 if __name__ == "__main__":
     unittest.main()

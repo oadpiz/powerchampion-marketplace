@@ -276,7 +276,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             fail("key_limit", "Revoke an unused key before creating another.", 409)
         try:
             try:
-                created = await gateway.create_key("portal:" + user["id"][:12] + ":" + label)
+                created = await gateway.create_key("portal:" + user["id"][:12] + ":" + label, prepaid_usd=0)
             except GatewayError:
                 fail("gateway_unavailable", "The API gateway is unavailable. No key was added to your account.", 503)
             key_id = uuid.uuid4().hex
