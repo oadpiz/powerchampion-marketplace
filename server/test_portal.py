@@ -20,51 +20,12 @@ from server.app import create_app
 from server.gateway import GatewayAdapter, GatewayError
 from server.manage import reset_password
 from server.settings import Settings
-from server.testsupport import database_text, fresh_database, rows
+from server.testsupport import FakeGateway, database_text, fresh_database, rows
 
 
 ORIGIN = "http://localhost:3010"
 PASSWORD = "portal-test-password-123!"
 BASE = "/api/portal"
-
-
-class FakeGateway:
-    configured = True
-
-    def __init__(self):
-        self.issued = []
-        self.revoked = []
-        self.report = {"keys": [], "total_cost_usd": "99999.000000"}
-        self.months = []
-        self.fail = False
-        self.create_delay = 0
-        self.issue_lock = threading.Lock()
-
-    async def create_key(self, label):
-        if self.create_delay:
-            await asyncio.sleep(self.create_delay)
-        if self.fail:
-            raise GatewayError("private upstream token must never escape")
-        with self.issue_lock:
-            number = len(self.issued) + 1
-            result = {
-                "key_id": "gateway-key-%d" % number,
-                "prefix": "sk-test-%d" % number,
-                "secret": "sk-test-secret-unique-%d" % number,
-            }
-            self.issued.append({"label": label, **result})
-        return result
-
-    async def revoke_key(self, key_id):
-        if self.fail:
-            raise GatewayError("private upstream token must never escape")
-        self.revoked.append(key_id)
-
-    async def usage_report(self, month):
-        if self.fail:
-            raise GatewayError("private upstream token must never escape")
-        self.months.append(month)
-        return self.report
 
 
 class PortalTests(unittest.TestCase):
@@ -75,6 +36,7 @@ class PortalTests(unittest.TestCase):
             db_path=self.database,
             allowed_origins=(ORIGIN,),
             gateway_admin_token="local-test-adapter-only",
+            customer_key_issuance=True,
         )
         self.gateway = FakeGateway()
         self.app = create_app(self.settings, gateway=self.gateway)
@@ -344,11 +306,11 @@ class PortalTests(unittest.TestCase):
         denied = self.client.delete(BASE + "/keys/" + other_key["key"]["id"],
                                     headers={"Origin": ORIGIN})
         self.assertIn(denied.status_code, (403, 404))
-        self.assertEqual(self.gateway.revoked, [])
+        self.assertEqual(self.gateway.disabled, [])
         revoked = self.client.delete(BASE + "/keys/" + own_key["key"]["id"],
                                      headers={"Origin": ORIGIN})
         self.assertIn(revoked.status_code, (200, 204))
-        self.assertEqual(self.gateway.revoked, [self.gateway.issued[0]["key_id"]])
+        self.assertEqual(self.gateway.disabled, [self.gateway.issued[0]["key_id"]])
         self.assertEqual(self.client.get(BASE + "/keys").json()["keys"][0]["status"], "revoked")
 
     def test_concurrent_key_provisioning_cannot_exceed_twenty_active_keys(self):
@@ -473,7 +435,7 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertNotIn("private upstream", response.text)
         self.assertEqual(self.client.get(BASE + "/keys").json()["keys"][0]["status"], "active")
-        self.assertEqual(self.gateway.revoked, [])
+        self.assertEqual(self.gateway.disabled, [])
 
     def test_gateway_usage_failure_is_not_presented_as_zero_usage(self):
         self.register()
@@ -625,7 +587,7 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.transport(lambda _: httpx.Response(200, json={
             "key": "sk-local-test-customer-secret", "key_id": "key-123", "label": "Application",
         })):
-            result = await self.gateway.create_key("Application")
+            result = await self.gateway.create_key("Application", prepaid_usd=0)
         self.assertEqual(result["secret"], "sk-local-test-customer-secret")
         self.assertEqual(result["key_id"], "key-123")
         request = self.requests[0]
@@ -634,6 +596,7 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.headers["X-Admin-Token"], "adapter-test-admin-token")
         payload = json.loads(request.content)
         self.assertEqual(payload["label"], "Application")
+        self.assertEqual(payload["prepaid_usd"], 0)
         for name in ("daily_token_limit", "rpm", "max_inflight"):
             self.assertGreater(payload[name], 0)
         self.assertNotIn("adapter-test-admin-token", json.dumps(result))
@@ -672,6 +635,116 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(GatewayError):
                 await self.gateway.revoke_key("../another-resource?admin=true")
         self.assertEqual(self.requests, [])
+
+    async def test_create_key_sends_prepaid_and_returns_balance(self):
+        with self.transport(lambda _: httpx.Response(200, json={"key": "sk-local-test-customer-secret", "key_id": "key-123", "label": "x", "balance_nano_usd": 5000000000})):
+            result = await self.gateway.create_key("x", prepaid_usd=5)
+        payload = json.loads(self.requests[0].content)
+        self.assertEqual(payload["prepaid_usd"], 5)
+        self.assertEqual(result["balance_nano_usd"], 5000000000)
+
+    async def test_rejected_responses_keep_status_and_detail_without_token(self):
+        with self.transport(lambda _: httpx.Response(404, json={"error": "not_found", "detail": "Key not found"})):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.set_key_disabled("key-404", True)
+        self.assertEqual(caught.exception.code, "rejected")
+        self.assertEqual(caught.exception.status, 404)
+        self.assertEqual(caught.exception.detail, "Key not found")
+        self.assertNotIn("adapter-test-admin-token", repr(caught.exception))
+
+    async def test_server_errors_are_unavailable(self):
+        with self.transport(lambda _: httpx.Response(502, text="bad gateway")):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.list_keys()
+        self.assertEqual(caught.exception.code, "unavailable")
+
+    async def test_state_strips_secrets(self):
+        with self.transport(lambda _: httpx.Response(200, json={"models": [], "gateway": {"public_base_url": "https://x", "api_key": "sk-env-secret", "nested": {"admin_token": "t"}}})):
+            value = await self.gateway.state()
+        self.assertNotIn("api_key", value["gateway"])
+        self.assertNotIn("admin_token", value["gateway"]["nested"])
+        self.assertEqual(value["gateway"]["public_base_url"], "https://x")
+        self.assertNotIn("sk-env-secret", json.dumps(value))
+
+    async def test_node_op_validates_action_and_name(self):
+        with self.assertRaises(GatewayError):
+            await self.gateway.node_op("b300-14", "rm-rf")
+        with self.assertRaises(GatewayError):
+            await self.gateway.node_op("../x", "check")
+        with self.transport(lambda _: httpx.Response(200, json={"job_id": "j1"})):
+            value = await self.gateway.node_op("b300-14", "check")
+        self.assertEqual(self.requests[0].url.path, "/api/nodes/b300-14/ops/check")
+        self.assertEqual(value["job_id"], "j1")
+
+    async def test_balance_and_limits_contracts(self):
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True, "key_id": "k", "balance_nano_usd": 7000000000})):
+            balance = await self.gateway.adjust_balance("k", add_usd=7)
+        self.assertEqual(balance, 7000000000)
+        self.assertEqual(json.loads(self.requests[0].content), {"add_usd": 7})
+        with self.assertRaises(ValueError):
+            await self.gateway.adjust_balance("k", add_usd=1, set_usd=2)
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True})):
+            await self.gateway.update_limits("k", {"rpm": 10})
+        self.assertEqual(json.loads(self.requests[-1].content), {"rpm": 10})
+        with self.assertRaises(ValueError):
+            await self.gateway.update_limits("k", {})
+
+    async def test_dot_segment_identifiers_are_rejected_before_network_request(self):
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True})):
+            for model_id in ("a/../b", "..", "../keys", "../../state", "a//b", ".", "a/./b", "/a", "a/"):
+                with self.subTest(model_id=model_id):
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.toggle_model(model_id)
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.set_maintenance(model_id, "x")
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+            for name in ("..", "."):
+                with self.subTest(node=name):
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.node_op(name, "check")
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.node_job(name, "j1")
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.node_job("n", name)
+                    self.assertEqual(caught.exception.code, "invalid_identifier")
+        self.assertEqual(self.requests, [])
+
+    async def test_toggle_model_and_maintenance_paths_and_bodies(self):
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True, "enabled": False})):
+            value = await self.gateway.toggle_model("zai-org/GLM-5.3:fp8")
+            self.assertEqual(value["enabled"], False)
+            await self.gateway.set_maintenance("zai-org/GLM-5.3:fp8", "back at noon")
+        self.assertEqual(self.requests[0].method, "POST")
+        self.assertEqual(self.requests[0].url.path, "/api/models/zai-org/GLM-5.3:fp8/toggle")
+        self.assertEqual(self.requests[1].url.path, "/api/models/zai-org/GLM-5.3:fp8/maintenance")
+        self.assertEqual(json.loads(self.requests[1].content), {"message": "back at noon"})
+        with self.assertRaises(ValueError):
+            await self.gateway.set_maintenance("m", "x" * 301)
+
+    async def test_read_only_methods_paths_and_success_values(self):
+        def responder(request):
+            if request.url.path == "/api/keys":
+                return httpx.Response(200, json={"keys": [{"id": "k1"}, "junk"], "env_keys": [{"label": "env"}]})
+            if request.url.path == "/api/nodes":
+                return httpx.Response(200, json={"nodes": [{"name": "b300-14"}]})
+            if request.url.path == "/api/metrics":
+                return httpx.Response(200, json={"requests": 3})
+            return httpx.Response(200, json={"status": "done"})
+        with self.transport(responder):
+            keys = await self.gateway.list_keys()
+            nodes = await self.gateway.nodes()
+            metrics = await self.gateway.metrics()
+            job = await self.gateway.node_job("b300-14", "job.1")
+        self.assertEqual(keys, {"keys": [{"id": "k1"}], "env_keys": [{"label": "env"}]})
+        self.assertEqual(nodes["nodes"][0]["name"], "b300-14")
+        self.assertEqual(metrics["requests"], 3)
+        self.assertEqual(job["status"], "done")
+        self.assertEqual([(r.method, r.url.path) for r in self.requests],
+                         [("GET", "/api/keys"), ("GET", "/api/nodes"), ("GET", "/api/metrics"),
+                          ("GET", "/api/nodes/b300-14/jobs/job.1")])
 
 
 if __name__ == "__main__":

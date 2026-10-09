@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type ReactNode,
 } from "react";
 import {
   portalErrorText,
@@ -15,9 +14,25 @@ import {
   PortalError,
   type PortalUser,
 } from "../lib/portal-client";
+import { AdminGatewaySection } from "./admin-gateway-section";
+import { AdminKeysSection } from "./admin-keys-section";
+import { AdminUsageSection } from "./admin-usage-section";
 import { useLocale } from "./locale-provider";
+import {
+  ResourceState,
+  dateLabel,
+  errorMessage,
+  usePortalResource,
+} from "./admin-resource";
 
-export type AdminSection = "overview" | "customers" | "credits" | "audit";
+export type AdminSection =
+  | "overview"
+  | "customers"
+  | "keys"
+  | "usage"
+  | "gateway"
+  | "credits"
+  | "audit";
 type Overview = {
   customerCount: number;
   keyCount: number;
@@ -34,6 +49,7 @@ type Customer = {
   keyCount: number;
 };
 type AccountAction = "disable" | "enable" | "role" | "reset-password";
+type AccountActionResult = { keysRevoked?: number; keysFailed?: number };
 type AccountSelection = { action: AccountAction; customer: Customer };
 type CreditRequest = {
   id: string;
@@ -57,56 +73,6 @@ type ReviewSelection = {
   decision: "approve" | "reject";
 };
 
-function errorMessage(error: unknown, zh: boolean): string {
-  if (error instanceof PortalError) {
-    if (error.status === 401)
-      return zh
-        ? "登入已失效，請重新登入後再試。"
-        : "Your session has expired. Sign in again to continue.";
-    if (error.status === 403)
-      return zh
-        ? "目前帳號沒有管理員權限。"
-        : "This account does not have administrator access.";
-    if (error.status === 409)
-      return zh
-        ? "這筆申請的狀態已變更。請重新整理後查看最新結果。"
-        : "This request has changed. Refresh to see its latest status.";
-    if (error.status === 429)
-      return zh
-        ? "操作過於頻繁，請稍後再試。"
-        : "Too many requests. Please try again shortly.";
-    if (error.status >= 500)
-      return zh
-        ? "管理服務目前尚未可用，請稍後重試。"
-        : "Administration services are currently unavailable. Please try again later.";
-  }
-  return zh
-    ? "無法完成此操作。請檢查連線並重試。"
-    : "We could not complete this request. Check your connection and try again.";
-}
-
-function dateLabel(value: string | number | null, zh: boolean): string {
-  if (value === null || value === "") return "—";
-  const numeric =
-    typeof value === "number"
-      ? value
-      : /^\d+$/.test(value)
-        ? Number(value)
-        : null;
-  const date =
-    numeric === null
-      ? new Date(value)
-      : new Date(numeric < 1e12 ? numeric * 1000 : numeric);
-  return Number.isNaN(date.getTime())
-    ? zh
-      ? "日期未提供"
-      : "Date unavailable"
-    : new Intl.DateTimeFormat(zh ? "zh-TW" : "en-US", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(date);
-}
-
 function moneyLabel(value: number, zh: boolean): string {
   return Number.isFinite(value)
     ? new Intl.NumberFormat(zh ? "zh-TW" : "en-US", {
@@ -126,80 +92,6 @@ function statusLabel(value: string, zh: boolean): string {
     rejected: ["Rejection recorded", "已記錄駁回"],
   };
   return labels[value]?.[zh ? 1 : 0] ?? value;
-}
-
-function usePortalResource<T>(path: string) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [loading, setLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    portalRequest<T>(path, { signal: controller.signal })
-      .then((result) => {
-        if (!controller.signal.aborted) {
-          setData(result);
-          setLoading(false);
-        }
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) {
-          setError(reason);
-          setLoading(false);
-        }
-      });
-    return () => controller.abort();
-  }, [path, revision]);
-  function refresh() {
-    setLoading(true);
-    setError(null);
-    setData(null);
-    setRevision((value) => value + 1);
-  }
-  return { data, error, loading, refresh };
-}
-
-function ResourceState({
-  loading,
-  error,
-  refresh,
-  children,
-}: {
-  loading: boolean;
-  error: unknown;
-  refresh: () => void;
-  children: ReactNode;
-}) {
-  const zh = useLocale().locale === "zh";
-  if (loading)
-    return (
-      <div className="portal-panel" role="status">
-        <p>{zh ? "正在載入管理資料…" : "Loading administration data…"}</p>
-      </div>
-    );
-  if (error)
-    return (
-      <div className="portal-panel">
-        <p className="portal-error" role="alert">
-          {errorMessage(error, zh)}
-        </p>
-        <div className="portal-actions">
-          <button
-            className="portal-button-secondary"
-            type="button"
-            onClick={refresh}
-          >
-            {zh ? "重試" : "Try again"}
-          </button>
-          {error instanceof PortalError && error.status === 401 && (
-            <Link className="portal-button" href="/login?next=%2Fadmin">
-              {zh ? "重新登入" : "Sign in again"}
-            </Link>
-          )}
-        </div>
-      </div>
-    );
-  return children;
 }
 
 function OverviewSection() {
@@ -298,6 +190,9 @@ function CustomersSection({ currentUserId }: { currentUserId?: string }) {
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<AccountSelection | null>(null);
   const [done, setDone] = useState<AccountAction | null>(null);
+  const [doneResult, setDoneResult] = useState<AccountActionResult>({});
+  const keysRevoked = doneResult.keysRevoked ?? 0;
+  const keysFailed = doneResult.keysFailed ?? 0;
   const searchRef = useRef<HTMLInputElement>(null);
   const restoreFocusRef = useRef(false);
   useEffect(() => {
@@ -327,6 +222,17 @@ function CustomersSection({ currentUserId }: { currentUserId?: string }) {
               : zh
                 ? "帳號狀態已更新。"
                 : "The account status was updated."}
+          {done === "disable" &&
+            (zh
+              ? ` ${keysRevoked} 把閘道金鑰已撤銷。`
+              : ` ${keysRevoked} gateway ${keysRevoked === 1 ? "key" : "keys"} revoked.`)}
+        </p>
+      )}
+      {done === "disable" && keysFailed > 0 && (
+        <p role="alert" className="portal-error">
+          {zh
+            ? `${keysFailed} 把金鑰無法撤銷，請到「金鑰」頁對帳處理。`
+            : `${keysFailed} ${keysFailed === 1 ? "key" : "keys"} could not be revoked. Reconcile ${keysFailed === 1 ? "it" : "them"} on the API keys page.`}
         </p>
       )}
       <ResourceState {...resource}>
@@ -478,8 +384,9 @@ function CustomersSection({ currentUserId }: { currentUserId?: string }) {
           action={selection.action}
           customer={selection.customer}
           onClose={() => setSelection(null)}
-          onDone={() => {
+          onDone={(result) => {
             setDone(selection.action);
+            setDoneResult(result);
             setSelection(null);
             restoreFocusRef.current = true;
             resource.refresh();
@@ -499,7 +406,7 @@ function AccountActionDialog({
   action: AccountAction;
   customer: Customer;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (result: AccountActionResult) => void;
 }) {
   const locale = useLocale().locale;
   const zh = locale === "zh";
@@ -590,12 +497,15 @@ function AccountActionDialog({
           ? { path: `${base}/reset-password`, body: { newPassword: password } }
           : { path: `${base}/status`, body: { action } };
     try {
-      await portalRequest(request.path, {
+      const result = await portalRequest<AccountActionResult>(request.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(request.body),
       });
-      onDone();
+      onDone({
+        keysRevoked: typeof result?.keysRevoked === "number" ? result.keysRevoked : undefined,
+        keysFailed: typeof result?.keysFailed === "number" ? result.keysFailed : undefined,
+      });
     } catch (reason: unknown) {
       setError(reason);
     } finally {
@@ -623,8 +533,8 @@ function AccountActionDialog({
   const impact =
     action === "disable"
       ? zh
-        ? `${who}：登入、既有工作階段與 agent token 會立即失效。sell-panel 簽發的 API 金鑰不受影響，請到閘道撤銷。`
-        : `${who}: Sign-in, active sessions and agent tokens stop working immediately. API keys issued in sell-panel are not affected; revoke them in the gateway.`
+        ? `${who}：登入、既有工作階段與 agent token 會立即失效，該帳號所有啟用中的閘道 API 金鑰也會被撤銷。重新啟用帳號不會恢復這些金鑰。`
+        : `${who}: Sign-in, active sessions and agent tokens stop working immediately, and every active gateway API key of this account is revoked. Enabling the account later does not restore those keys.`
       : action === "enable"
         ? zh
           ? `${who} 將可以重新登入。`
@@ -1137,6 +1047,9 @@ export function AdminPortal({
       en: "Customers",
       zh: "客戶",
     },
+    { section: "keys", href: "/admin/keys", en: "API keys", zh: "金鑰" },
+    { section: "usage", href: "/admin/usage", en: "Usage", zh: "用量" },
+    { section: "gateway", href: "/admin/gateway", en: "Gateway", zh: "閘道" },
     {
       section: "credits",
       href: "/admin/credits",
@@ -1205,6 +1118,9 @@ export function AdminPortal({
           {section === "customers" && (
             <CustomersSection currentUserId={session.data?.user.id} />
           )}
+          {section === "keys" && <AdminKeysSection />}
+          {section === "usage" && <AdminUsageSection />}
+          {section === "gateway" && <AdminGatewaySection />}
           {section === "credits" && <CreditsSection />}
           {section === "audit" && <AuditSection />}
         </>

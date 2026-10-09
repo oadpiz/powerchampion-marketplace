@@ -1,6 +1,6 @@
 # Power Champion 帳號後台與上線交接
 
-目前版本提供可持續儲存的客戶帳號與管理後台，並隨 powerchampion.ai 一起部署（見下方「正式環境（Dokploy）」）。既有推論服務及正式付款流程未變更；閘道金鑰自助發放與匿名試用維持關閉。
+目前版本提供可持續儲存的客戶帳號與管理後台，並隨 powerchampion.ai 一起部署（見下方「正式環境（Dokploy）」）。既有推論服務及正式付款流程未變更；匿名試用維持關閉。閘道需另外設定 admin token 才會連線（見「連接閘道（A2b）」），客戶自助發放金鑰預設關閉。
 
 ## 開啟本機版本
 
@@ -79,10 +79,11 @@ python3 -m server.manage reset-password --email you@example.com
 
 管理員在 `/admin/customers` 管理所有帳號（清單包含管理員，並顯示角色與狀態）：
 
-- **停用／啟用**：停用的帳號無法登入（回 403 `account_disabled`），既有工作階段立即登出，其智能體權杖也停止生效；啟用後可再登入。**停用不會撤銷 sell-panel 簽發的 API 金鑰**（金鑰由閘道管理），需要時請另到閘道撤銷。
+- **停用／啟用**：停用的帳號無法登入（回 403 `account_disabled`），既有工作階段立即登出，其智能體權杖也停止生效；啟用後可再登入。停用帳號會同時撤銷其所有仍有效的閘道金鑰（見「連接閘道（A2b）」的「停用即撤銷」）。
 - **改角色**：`customer` ↔ `admin`。
 - **重設密碼**：管理員設定新密碼並自行交給帳號擁有者；該帳號所有工作階段登出，登入失敗計數清除。先確認帳號擁有者再做。
 - 不能對自己的帳號執行以上三項（顯示為「You」，伺服器回 409 `self_target`）。自己的密碼走下面的自助頁。
+- 停用帳號會撤銷其閘道金鑰：每把仍有效的金鑰逐一呼叫閘道停用並寫一筆 `key.revoked`；閘道連不上時帳號仍然停用，並以 `key.revocation_needs_reconciliation` 記下閘道金鑰 ID，之後須人工對帳（處理方式見「連接閘道（A2b）」）。停用完成後客戶頁會顯示「N 把閘道金鑰已撤銷」，有金鑰撤銷失敗時另外顯示「N 把金鑰無法撤銷，請到「金鑰」頁對帳處理」。啟用帳號不會讓已撤銷的金鑰復活；帳號停用期間，它的金鑰也不能在 `/admin/keys` 按「啟用」（回 409 `account_disabled`），要先啟用帳號，再逐把啟用需要的金鑰。
 - 每個動作都寫入稽核（`admin.account_disabled`、`admin.account_enabled`、`admin.role_changed`、`admin.password_reset`），稽核不記錄密碼內容。
 
 所有已登入使用者（客戶與管理員）可在 `/account/security` 自行改密碼，需輸入目前密碼；成功後保留目前工作階段、登出其他裝置，稽核事件為 `account.password_changed`。每位使用者 15 分鐘內最多 5 次嘗試，超過回 429。
@@ -106,7 +107,7 @@ read -s PW; PC_PORTAL_NEW_PASSWORD="$PW" python -m server.manage reset-password 
 - 帳號服務容器 `powerchampion-portal` 只在 Compose 內部網路，沒有對外 port、沒有 Traefik 路由，也不在 `dokploy-network`；網站以 `PC_PORTAL_ORIGIN=http://powerchampion-portal:3020` 連線。BFF 只允許單段主機名（Compose 服務名）使用 http，其他明文位址一律拒絕。
 - SQLite 資料庫在具名 volume `portal-data`（容器內 `/data/portal.sqlite3`），重新部署不會清除；切換到 Postgres 後它是 SQLite 後備與回滾來源。備份需另外在 Dokploy 設定 Volume Backup；Postgres 以每日 `pg_dump` 寫入 volume `portal-pg-dumps`，Volume Backup 指向該 volume，不要直接備份 `portal-pg-data`（見 `docs/deploy/a1-postgres-cutover.md`）。
 - 已設定 `PC_PORTAL_ENV=production`、`PC_PORTAL_SECURE_COOKIES=1`、`PC_PORTAL_ALLOWED_ORIGINS=https://powerchampion.ai`。網站需 `VINEXT_TRUST_PROXY=1`，否則 TLS 在 Traefik 終止後同源檢查會失敗、全站會被標為 noindex。
-- **刻意未設定** `PC_GATEWAY_ADMIN_TOKEN`：sell-panel 以此 API 建立的金鑰不帶預付餘額，閘道會視為後付且無花費上限。客戶按「建立金鑰」會看到尚未開通；金鑰仍由營運者在 sell-panel 手動發放。要開放自助發放，需先讓閘道對新金鑰強制預付。
+- `PC_GATEWAY_ADMIN_TOKEN` 由 Dokploy 環境變數帶入（compose 只寫 `${PC_GATEWAY_ADMIN_TOKEN:-}`，不寫死值）；留空代表閘道未連線。`PC_CUSTOMER_KEY_ISSUANCE` 預設 `0`（客戶自助發放關閉）。連接步驟與政策見下節「連接閘道（A2b）」。
 - 匿名試用關閉（`PC_TRIAL_ENABLED=0`、無 `PC_TRIAL_API_KEY`）。
 
 建立第一個管理員：在 Dokploy 開啟 `powerchampion-portal` 容器的 Terminal（選 **Bash**，不要選 `/bin/sh`）。網頁終端的 `getpass` 收不到輸入，必須用環境變數帶密碼：
@@ -127,11 +128,45 @@ python -c "from alembic import command; from server.migrate import _config; from
 
 登入限制目前只有帳號層級（每帳號 15 分鐘 5 次失敗、註冊每帳號每小時 10 次）。建議另在邊緣（Cloudflare 或 Traefik）對 `/api/portal/auth/*` 設定以來源 IP 計的速率限制。
 
+## 連接閘道（A2b）
+
+A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／節點。未設定 `PC_GATEWAY_ADMIN_TOKEN` 時，`/admin/keys`、`/admin/usage`、`/admin/gateway` 顯示「閘道尚未連線（PC_GATEWAY_ADMIN_TOKEN 未設定）」，客戶與帳號功能不受影響。後台導覽順序：總覽、客戶、金鑰、用量、閘道、儲值申請、操作紀錄。
+
+### 部署前
+
+1. **前置檢查**：到 Dokploy 開啟閘道 compose「B300 Selling Platform」的 Environment，確認同時有 `SELL_PANEL_VIEW_TOKEN` 與 `SELL_PANEL_ADMIN_TOKEN`。缺 `SELL_PANEL_VIEW_TOKEN` 要先補，否則閘道的 view 等級路由沒有認證。
+2. **取得值**：複製 `SELL_PANEL_ADMIN_TOKEN` 的值，填進 marketplace compose 的 `PC_GATEWAY_ADMIN_TOKEN` 環境變數。**先設環境變數、再 merge**：marketplace compose 開啟 Autodeploy，merge 一進 main 就會部署，那時 token 必須已經在。值只放在 Dokploy，不要貼進聊天、issue 或 commit。
+3. **`PC_CUSTOMER_KEY_ISSUANCE` 不設**（預設 `0`）：客戶的 `/overview`、`/keys` 回應帶 `keyIssuance: false`（只有閘道已連線且此旗標為 `1` 時才是 `true`），`/account/keys` 不顯示建立表單，改顯示「API 金鑰由我們的團隊簽發，請聯繫支援」；直接呼叫 `POST /keys` 仍回 503 `provider_not_configured`。客戶自己撤銷金鑰只需要閘道已連線，不受此旗標影響。設成 `1` 會讓客戶自助發出餘額為 0 的後付金鑰，上線前須先確認這是想要的，收款流程接上前不建議開。
+
+### 部署後驗證
+
+以管理員登入後依序確認（驗收只對節點做一次 `check`，**不要在生產做 stop／restart**）：
+
+- `/admin/keys`：看到閘道上的金鑰，以及設定檔（env）金鑰。
+- `/admin/usage`：有當月數字（API 為 `GET /api/portal/admin/usage?month=YYYY-MM`）。
+- `/admin/gateway`：看到模型與節點；對一個節點按一次 `check`，工作完成後狀態正常。
+- `/admin/audit`（操作紀錄）：出現剛才的 `admin.node_op`，目標格式為 `節點名:check`。
+- 若後台頁面顯示「閘道拒絕了入口網站的管理權杖，請檢查 portal 服務的 PC_GATEWAY_ADMIN_TOKEN 設定」（API 為 503 `gateway_auth_failed`，閘道對 portal 的 token 回了 401／403），代表 `PC_GATEWAY_ADMIN_TOKEN` 跟閘道的 `SELL_PANEL_ADMIN_TOKEN` 不一致：回到 Dokploy 重新複製值、重新部署 marketplace。這不是網路問題，重試不會好。
+
+### 金鑰政策
+
+- **代發必帶預付**：`/admin/keys` 為客戶發金鑰必須給 `prepaidUsd`（大於 0、不超過 100000、最多兩位小數），否則回 422 `invalid_input`；每日 token、RPM、同時請求數可選填，沒填就用 `PC_GATEWAY_DAILY_TOKEN_LIMIT`、`PC_GATEWAY_RPM`、`PC_GATEWAY_MAX_INFLIGHT`。密鑰（`secret`）只在發放當下顯示一次，請當場交給客戶。已停用的帳號不能代發（409）。
+- **客戶自助發放預設關閉**：由 `PC_CUSTOMER_KEY_ISSUANCE` 控制，預設 `0`；匿名試用也維持關閉。
+- **停用即撤銷**：停用客戶帳號時，其所有仍有效的閘道金鑰一併撤銷，每把寫一筆 `key.revoked`（目標為本機金鑰紀錄 ID）。若閘道當下連不上，帳號仍會停用，並寫一筆 `key.revocation_needs_reconciliation`（目標為閘道金鑰 ID）；閘道上那把金鑰可能仍有效。
+- **對帳處理**：在操作紀錄（`/admin/audit`）找 `key.revocation_needs_reconciliation`；閘道恢復後，主要做法是由管理員到 `/admin/keys` 找到該閘道金鑰 ID 按「停用」（成功會寫 `admin.key_disabled`）。另一個做法只能走 API：以管理員工作階段對該客戶再呼叫一次 `POST /api/portal/admin/customers/{id}/status`，body 為 `{"action": "disable"}`——本機記錄中仍為有效的金鑰會被重試撤銷；後台介面對已停用的帳號只顯示「啟用」，沒有這個按鈕。停用 API 的回應帶 `keysRevoked`／`keysFailed` 數量，`keysFailed` 大於 0 就代表有金鑰需要對帳（後台停用帳號時會直接顯示這個警告）。金鑰發放過程閘道失敗時同理會有 `key.provisioning_needs_reconciliation`，以閘道金鑰 ID 比對 `/admin/keys` 清單處理。
+- **停用帳號的金鑰不能單獨啟用**：在 `/admin/keys` 對某把金鑰按「啟用」時，若它在本機記錄裡屬於已停用的帳號，回 409 `account_disabled`（「Enable the account first.」），不呼叫閘道、不寫稽核；請先到客戶頁啟用帳號。沒有本機擁有者的金鑰（手動或設定檔建立的）不受此限制。
+- **停用模型要確認**：`/admin/gateway` 按模型的「停用」會先跳出確認視窗（停用後客戶會收到 404），確認後才送出；「啟用」仍是一鍵。
+- 金鑰相關審計事件：`admin.key_issued`、`admin.key_disabled`、`admin.key_enabled`、`admin.key_limits`、`admin.key_balance`、`key.created`（客戶自助）、`key.revoked`；閘道操作為 `admin.model_toggled`、`admin.model_maintenance`、`admin.node_op`。事件不含密鑰內容。
+
+### 回滾
+
+把 Dokploy 的 `PC_GATEWAY_ADMIN_TOKEN` 拿掉並重新部署：後台三個頁面回到「未連線」，客戶資料、帳號與已發出的金鑰不受影響（金鑰留在閘道）。此版沒有新增資料庫結構，不需要降級 schema。
+
 ## 串接正式服務前
 
 1. 為帳號服務配置獨立的 HTTPS 入口、持久資料庫和備份。前端設定 `PC_PORTAL_ORIGIN` 為該服務的 HTTPS origin，不包含路徑；開發時未設定此值會使用本機 `127.0.0.1:3020`。Cloudflare 部署請使用伺服器環境變數；本機的 `.dev.vars` 檔已排除版本控制。
 2. 帳號服務設定 `PC_PORTAL_ENV=production`、`PC_PORTAL_SECURE_COOKIES=1` 及精確的 `PC_PORTAL_ALLOWED_ORIGINS`。限制服務只能由網站入口存取，並由可信任的邊緣入口執行 IP 請求限制。
-3. 確認實際生產閘道契約後，才將 `PC_GATEWAY_ADMIN_TOKEN` 設定在帳號服務。金鑰發放／停用與用量讀取會使用真正的閘道管理 API；前端不會取得此管理憑證。詳細環境設定見 [server/README.md](../server/README.md)。
+3. 依上節「連接閘道（A2b）」設定 `PC_GATEWAY_ADMIN_TOKEN`。金鑰發放／停用與用量讀取會使用真正的閘道管理 API；前端不會取得此管理憑證。詳細環境設定見 [server/README.md](../server/README.md)。
 4. 選定付款服務後，再接入付款確認、簽章 webhook、退款和閘道可用餘額。現在的儲值審核只儲存人工查核紀錄；核准本身不代表收款成功，也不會自動增加可花用餘額。
 
 既有客戶金鑰需要明確確認並匯入歸屬，系統不會根據名稱或信箱猜測金鑰的擁有者。

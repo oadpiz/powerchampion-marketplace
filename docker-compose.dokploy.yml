@@ -66,9 +66,13 @@ services:
       # back to the SQLite file in /data (rollback path); see docs/deploy/a1-postgres-cutover.md.
       PC_PORTAL_DATABASE_URL: ${PC_PORTAL_DATABASE_URL:-}
       PC_GATEWAY_ORIGIN: https://b300.powerchampion.ai
-      # Key self-service stays disconnected on purpose: PC_GATEWAY_ADMIN_TOKEN is
-      # not passed. Gateway keys created without a prepaid balance are post-paid
-      # with no spend cap, so connect it only together with prepaid enforcement.
+      # A2b: the gateway admin token connects the administrator pages (keys, usage,
+      # gateway). Set it in Dokploy before merging, never in this file. Empty means
+      # the gateway stays disconnected. Keys issued by an administrator are always
+      # prepaid; customer self-service issuance is opt-in via PC_CUSTOMER_KEY_ISSUANCE
+      # (default 0 = off). See docs/portal-operations.md, section "連接閘道（A2b）".
+      PC_GATEWAY_ADMIN_TOKEN: ${PC_GATEWAY_ADMIN_TOKEN:-}
+      PC_CUSTOMER_KEY_ISSUANCE: ${PC_CUSTOMER_KEY_ISSUANCE:-0}
       # The anonymous chat trial stays off (no PC_TRIAL_API_KEY either).
       PC_TRIAL_ENABLED: "0"
       # Background tasks are opt-in. This dedicated Fernet key encrypts each

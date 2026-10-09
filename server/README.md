@@ -59,13 +59,65 @@ target is the calling admin (use `/password` for your own account), 404
 Repeating a status or role change that is already in effect is a no-op and
 writes no audit event.
 
-Disabling an account does not revoke API keys issued through sell-panel: those
-are managed by the gateway, so revoke them there if needed.
+Disabling an account revokes every active gateway key it owns: each key is
+disabled at the gateway and audited as `key.revoked` (target = local key record
+id). If the gateway is unreachable or unconfigured the account is still disabled,
+the key stays `active` locally, and `key.revocation_needs_reconciliation` is
+audited with the gateway key id. The response carries `keysRevoked` and
+`keysFailed`, and the admin UI shows both counts after a disable. To retry, disable
+the key on `/admin/keys`; re-running the account disable also retries, but only
+through the API, because the admin UI offers only Enable for a disabled account.
+Enabling an account does not restore revoked keys, and while the account is
+disabled its keys cannot be re-enabled individually either (409 `account_disabled`,
+see below).
+
+### Gateway admin routes (A2b)
+
+All require an administrator and live under `/api/portal`. They return 503
+`provider_not_configured` while `PC_GATEWAY_ADMIN_TOKEN` is empty (the key list and
+usage reads instead return an empty payload flagged `gatewayConfigured: false` / `source: "unconfigured"`).
+
+| Route | Purpose |
+| --- | --- |
+| `GET /admin/keys` | Gateway keys (with the owning portal account where known) and the config-defined `envKeys` |
+| `POST /admin/customers/{id}/keys` | `{label, prepaidUsd, dailyTokenLimit?, rpm?, maxInflight?}`. `prepaidUsd` must be above 0, at most 100000, with at most two decimals (else 422 `invalid_input`). 201 with the one-time `secret`; a disabled account is 409 |
+| `POST /admin/keys/{id}/disable` | `{disabled: true \| false}` on a gateway key; `false` re-enables it (audited as `admin.key_enabled`). Re-enabling a key whose local owner is disabled is 409 `account_disabled` ("Enable the account first.") with no gateway call and no audit; keys without a local owner are not checked |
+| `POST /admin/keys/{id}/limits` | Change `dailyTokenLimit`, `rpm`, `maxInflight` (at least one) |
+| `POST /admin/keys/{id}/balance` | `{addUsd}` or `{setUsd}` (exactly one) |
+| `GET /admin/usage?month=YYYY-MM` | Gateway usage report, month defaults to the current UTC month |
+| `GET /admin/gateway` | Models and nodes from `/api/state`; any `api_key`, key, token, secret or password string field is stripped server-side |
+| `POST /admin/gateway/models/{id}/toggle` | Enable or disable a model |
+| `POST /admin/gateway/models/{id}/maintenance` | Set or clear the maintenance message (text, at most 300 characters) |
+| `POST /admin/gateway/nodes/{name}/ops/{action}` | `action` is one of `start`, `stop`, `restart`, `check`, `backup`, `fw-status` (else 400 `unknown_action`) |
+| `GET /admin/gateway/nodes/{name}/jobs/{job_id}` | Poll a node operation |
+
+The customer-facing `POST /keys` creates a post-paid key with no balance and
+only when `PC_CUSTOMER_KEY_ISSUANCE=1`. `GET /overview` and `GET /keys` report this
+as `keyIssuance` (true only when the gateway is configured and the flag is on);
+the customer keys page hides its create form while it is false. Customer revocation
+needs only `gatewayConfigured`.
+
+Gateway error codes: 503 `provider_not_configured` (no admin token),
+503 `gateway_unavailable` (unreachable or bad response), 503 `gateway_auth_failed`
+(the gateway answered 401/403 to the portal's token; the detail is always "The
+portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN." and no upstream
+text is passed on), `gateway_rejected`
+(the gateway answered 400, 404 or 409; its detail is passed through), 404
+`key_not_found`, 404 `customer_not_found`, 400 `unknown_action`, and 422/400
+`invalid_input` for bad bodies.
 
 Audit actions written by these routes (actor = caller, target = affected
 account; never any password material): `account.password_changed`,
 `admin.account_disabled`, `admin.account_enabled`, `admin.role_changed`,
 `admin.password_reset`. The CLI writes `account.password_reset_by_operator`.
+
+Audit actions for keys and the gateway (A2b): `admin.key_issued`,
+`admin.key_disabled`, `admin.key_enabled`, `admin.key_limits`,
+`admin.key_balance`, `admin.model_toggled`, `admin.model_maintenance`,
+`admin.node_op` (target `name:action`), `key.created` (customer self-issue),
+`key.revoked`, `key.revocation_needs_reconciliation` and
+`key.provisioning_needs_reconciliation` (a key was created at the gateway but
+could not be recorded or rolled back locally). No event stores a key secret.
 
 Operator-assisted recovery, after independently verifying the account owner:
 
@@ -90,7 +142,8 @@ this service. Registration establishes a portal account, not verified identity.
 | `PC_PORTAL_SECURE_COOKIES` | `0` locally; **set `1` for HTTPS deployment** |
 | `PC_PORTAL_ENV` | Set `production` to enforce secure cookies at startup |
 | `PC_GATEWAY_ORIGIN` | `https://b300.powerchampion.ai`; fixed HTTPS origin, server-only |
-| `PC_GATEWAY_ADMIN_TOKEN` | Empty means key provisioning and usage integration are disconnected |
+| `PC_GATEWAY_ADMIN_TOKEN` | The gateway's `SELL_PANEL_ADMIN_TOKEN`, sent as `X-Admin-Token`. Empty means key provisioning, usage and the gateway pages are disconnected |
+| `PC_CUSTOMER_KEY_ISSUANCE` | `0`; set `1` to let customers self-issue post-paid keys (balance 0) from `/account/keys`. While `0`, `POST /keys` returns 503 `provider_not_configured` and `/overview`/`/keys` report `keyIssuance: false`. Administrator issuance (always prepaid) is unaffected |
 | `PC_GATEWAY_DAILY_TOKEN_LIMIT` | `1000000`, positive daily token quota on newly issued gateway keys |
 | `PC_GATEWAY_RPM` | `60`, positive request limit on new keys |
 | `PC_GATEWAY_MAX_INFLIGHT` | `2`, positive concurrency limit on new keys |
@@ -125,6 +178,13 @@ in the database, or returned by any portal endpoint. Upstream redirects are disa
 responses are size-limited and validated. Legacy keys must be explicitly mapped
 before their usage could appear in a customer's account; the portal does not
 guess ownership from email or labels.
+
+Administrator pages also use the gateway's `/api/state`, model toggle and
+maintenance routes, node ops and jobs, key list/limits/balance routes. The
+`/api/state` payload is proxied with `gateway.api_key` and any key, token,
+secret or password string fields stripped before it reaches the browser.
+Connection steps and the key policy are in `docs/portal-operations.md`
+(section "連接閘道（A2b）").
 
 Do not connect this adapter to production without validating the current
 gateway implementation and authorization. With no admin token, account

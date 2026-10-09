@@ -7,6 +7,9 @@ import { portalRequest } from "../lib/portal-client";
 const NAV = [
   { href: "/admin", en: "Overview", zh: "總覽" },
   { href: "/admin/customers", en: "Customers", zh: "客戶" },
+  { href: "/admin/keys", en: "API keys", zh: "金鑰" },
+  { href: "/admin/usage", en: "Usage", zh: "用量" },
+  { href: "/admin/gateway", en: "Gateway", zh: "閘道" },
   { href: "/admin/credits", en: "Credit requests", zh: "儲值申請" },
   { href: "/admin/audit", en: "Audit log", zh: "操作紀錄" },
 ] as const;

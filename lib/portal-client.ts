@@ -54,16 +54,39 @@ export async function portalRequest<T>(
 }
 
 export function portalErrorText(error: unknown, locale: "en" | "zh") {
+  return portalErrorCodeText(error, locale) ?? portalErrorStatusText(error, locale);
+}
+
+/** Copy for error codes that mean one specific thing; null when only the HTTP status is informative. */
+export function portalErrorCodeText(error: unknown, locale: "en" | "zh"): string | null {
   const status = error instanceof PortalError ? error.status : 503;
   const code = error instanceof PortalError ? error.code : "unavailable";
   if (code === "usage_pricing_incomplete")
     return locale === "zh"
       ? "部分模型的用量價格資料尚未完整，暫時無法顯示可靠的費用報表。請聯繫支援確認計費資料。"
       : "Pricing data is incomplete for some model usage, so a reliable cost report is not available yet. Contact support to confirm billing details.";
+  if (code === "gateway_rejected")
+    return error instanceof PortalError && error.message.trim() && error.message !== "The request could not be completed."
+      ? error.message
+      : locale === "zh" ? "閘道拒絕了這個請求。" : "The gateway rejected the request.";
+  if (code === "gateway_unavailable")
+    return locale === "zh" ? "API 閘道目前無法使用，請稍後再試。" : "The API gateway is unavailable right now. Try again in a moment.";
+  if (code === "gateway_auth_failed")
+    return locale === "zh"
+      ? "閘道拒絕了入口網站的管理權杖，請檢查 portal 服務的 PC_GATEWAY_ADMIN_TOKEN 設定。"
+      : "The gateway rejected the portal's admin token. Check PC_GATEWAY_ADMIN_TOKEN on the portal service.";
+  if (code === "unknown_action")
+    return locale === "zh" ? "此節點操作無法使用。" : "That node action is not available.";
+  if (code === "key_not_found")
+    return locale === "zh" ? "閘道上已找不到此 API 金鑰。" : "That API key no longer exists on the gateway.";
+  if (code === "customer_not_found")
+    return locale === "zh" ? "找不到此帳號。" : "That account was not found.";
   if (code === "invalid_credentials")
     return locale === "zh"
       ? "電子郵件或密碼不正確，請確認後再試。"
       : "The email or password is incorrect. Check your details and try again.";
+  if (code === "account_disabled" && status === 409)
+    return locale === "zh" ? "此金鑰所屬的帳號已停用，請先啟用帳號。" : "This key's account is disabled. Enable the account first.";
   if (code === "account_disabled")
     return locale === "zh" ? "此帳號已被停用，請聯繫支援。" : "This account has been disabled. Contact support.";
   if (code === "invalid_current_password")
@@ -74,6 +97,12 @@ export function portalErrorText(error: unknown, locale: "en" | "zh") {
     return locale === "zh"
       ? "此電子郵件已註冊，請登入或聯繫支援。"
       : "This email is already registered. Sign in or contact support.";
+  return null;
+}
+
+function portalErrorStatusText(error: unknown, locale: "en" | "zh"): string {
+  const status = error instanceof PortalError ? error.status : 503;
+  const code = error instanceof PortalError ? error.code : "unavailable";
   if (status === 401)
     return locale === "zh"
       ? "請登入後繼續，或重新登入以更新工作階段。"

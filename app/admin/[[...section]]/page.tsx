@@ -16,7 +16,7 @@ export default async function AdminPage({
   const current = section[0] ?? "overview";
   if (
     section.length > 1 ||
-    !["overview", "customers", "credits", "audit"].includes(current)
+    !["overview", "customers", "keys", "usage", "gateway", "credits", "audit"].includes(current)
   )
     notFound();
   return <AdminPortal section={current as AdminSection} />;

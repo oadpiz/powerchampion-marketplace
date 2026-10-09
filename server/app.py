@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .agents import AgentError, Agents, parse_name, parse_version
-from .gateway import GatewayAdapter, GatewayError
+from .gateway import JOB_ID, MODEL_ID, NODE_ACTIONS, NODE_NAME, GatewayAdapter, GatewayError
 from .chat import TRIAL_COOKIE, TrialChat
 from .security import clean_name, digest_token, normalize_email, password_hash, validate_password, verify_password
 from .settings import Settings
@@ -147,9 +147,69 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         response.set_cookie(COOKIE_NAME, token, max_age=settings.session_ttl_seconds, httponly=True, secure=settings.secure_cookies, samesite="lax", path="/")
         return response
 
-    def require_gateway():
-        if not gateway.configured:
+    def require_gateway(customer=False):
+        # Customer self-service is a separate switch: a configured gateway alone does not let customers mint keys.
+        if not gateway.configured or (customer and not settings.customer_key_issuance):
             fail("provider_not_configured", "API key provisioning is not connected yet. Contact support for access.", 503)
+
+    def key_issuance():
+        # Mirrors require_gateway(customer=True): whether POST /keys can succeed for a customer.
+        return bool(gateway.configured and settings.customer_key_issuance)
+
+    def gateway_fail(error):
+        if error.code == "rejected" and error.status in (401, 403):
+            # The gateway refused the portal's own credential: an operator fix, not a network problem.
+            fail("gateway_auth_failed", "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN.", 503)
+        if error.code == "rejected" and (error.status is None or error.status < 500):
+            status = error.status if error.status in (400, 404, 409) else 400
+            fail("gateway_rejected", error.detail or "The gateway rejected the request.", status)
+        if error.code == "unconfigured":
+            fail("provider_not_configured", "The gateway is not connected.", 503)
+        fail("gateway_unavailable", "The API gateway is unavailable.", 503)
+
+    def usd_from_nano(value):
+        return None if not isinstance(value, int) or isinstance(value, bool) else f"{Decimal(value) / Decimal(10**9):.2f}"
+
+    def gateway_key_json(item, owner_row=None):
+        return {"gatewayKeyId": item.get("key_id"), "prefix": item.get("prefix"), "label": item.get("label"),
+                "dailyTokenLimit": item.get("daily_token_limit"), "rpm": item.get("rpm"), "maxInflight": item.get("max_inflight"),
+                "balanceUsd": usd_from_nano(item.get("prepaid_nano_usd")), "createdAt": iso(item.get("created_at")),
+                "expiresAt": iso(item.get("expires_at")), "disabledAt": iso(item.get("disabled_at")), "lastUsedAt": iso(item.get("last_used_at")),
+                "modelIds": [m for m in item.get("model_ids", []) if isinstance(m, str)],
+                "owner": owner_json(owner_row),
+                "portalKeyId": owner_row["id"] if owner_row else None, "portalStatus": owner_row["status"] if owner_row else None}
+
+    def owners_by_gateway_key_id(con):
+        return {r["gateway_key_id"]: r for r in con.execute("SELECT k.id, k.user_id, k.gateway_key_id, k.status, u.email, u.name FROM gateway_keys k JOIN users u ON u.id=k.user_id").fetchall()}
+
+    def owner_json(owner_row):
+        return {"id": owner_row["user_id"], "email": owner_row["email"], "name": owner_row["name"]} if owner_row else None
+
+    def limits_from(body):
+        limits = {}
+        for field, name in (("dailyTokenLimit", "daily_token_limit"), ("rpm", "rpm"), ("maxInflight", "max_inflight")):
+            if body.get(field) is not None:
+                value = body[field]
+                if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 2 ** 53 - 1:
+                    fail("invalid_input", "Limits must be non-negative integers.", 422)
+                limits[name] = value
+        return limits
+
+    def usd_amount(raw, allow_zero):
+        try:
+            if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                raise ValueError
+            amount = Decimal(str(raw))
+            if not amount.is_finite() or amount < 0 or amount > 100000 or amount != amount.quantize(Decimal("0.01")) or (amount == 0 and not allow_zero):
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            fail("invalid_input", "Enter an amount " + ("from 0" if allow_zero else "above 0") + " to 100,000 USD with at most two decimals.", 422)
+        return amount
+
+    def gateway_key_id(value):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+            fail("key_not_found", "Key not found.", 404)
+        return value
 
     @application.get(PREFIX + "/health")
     async def health():
@@ -258,27 +318,26 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             keys = con.execute("SELECT COUNT(*) FROM gateway_keys WHERE user_id=? AND status='active'", (user["id"],)).fetchone()[0]
             pending = con.execute("SELECT COUNT(*) FROM credit_requests WHERE user_id=? AND status='pending'", (user["id"],)).fetchone()[0]
             approved = int(con.execute("SELECT COALESCE(SUM(amount_cents),0) FROM credit_requests WHERE user_id=? AND status='approved'", (user["id"],)).fetchone()[0] or 0)
-        return {"user": user, "keyCount": keys, "pendingCreditCount": pending, "approvedCreditUsd": approved / 100, "gatewayConfigured": bool(gateway.configured)}
+        return {"user": user, "keyCount": keys, "pendingCreditCount": pending, "approvedCreditUsd": approved / 100, "gatewayConfigured": bool(gateway.configured), "keyIssuance": key_issuance()}
 
     @application.get(PREFIX + "/keys")
     async def keys(request: Request):
         user = current_user(request)
-        return {"keys": [key_json(row) for row in store.owned_keys(user["id"])], "gatewayConfigured": bool(gateway.configured)}
+        return {"keys": [key_json(row) for row in store.owned_keys(user["id"])], "gatewayConfigured": bool(gateway.configured), "keyIssuance": key_issuance()}
 
-    @application.post(PREFIX + "/keys")
-    async def create_key(request: Request):
-        user = current_user(request)
-        body = await body_json(request)
-        label = text_value(body.get("label"), "key label", 80)
-        require_gateway()
-        reservation = store.reserve_key_slot(user["id"])
+    async def provision_key(owner_id, label, prepaid_usd, limits, actor_id, audit_action):
+        """Create a gateway key and record its owner. Returns (local row, gateway result).
+
+        The gateway key is created first and revoked again if the local write fails, so a
+        secret is never handed out for a key that no account owns."""
+        reservation = store.reserve_key_slot(owner_id)
         if not reservation:
             fail("key_limit", "Revoke an unused key before creating another.", 409)
         try:
             try:
-                created = await gateway.create_key("portal:" + user["id"][:12] + ":" + label)
+                created = await gateway.create_key("portal:" + owner_id[:12] + ":" + label, prepaid_usd=prepaid_usd, limits=limits or None)
             except GatewayError:
-                fail("gateway_unavailable", "The API gateway is unavailable. No key was added to your account.", 503)
+                fail("gateway_unavailable", "The API gateway is unavailable. No key was added to the account.", 503)
             key_id = uuid.uuid4().hex
             try:
                 with store.connect() as con:
@@ -286,12 +345,12 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                     # Ownership is persisted before the one-time secret is sent.
                     # Consume the slot in the same transaction, so a concurrent
                     # request cannot race the in-flight provisioning operation.
-                    slot = con.execute("SELECT id FROM key_reservations WHERE id=? AND user_id=?", (reservation, user["id"])).fetchone()
+                    slot = con.execute("SELECT id FROM key_reservations WHERE id=? AND user_id=?", (reservation, owner_id)).fetchone()
                     if not slot:
                         raise RuntimeError("reservation expired")
-                    con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", (key_id, user["id"], created["key_id"], label, created["prefix"], "active", int(time.time())))
+                    con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", (key_id, owner_id, created["key_id"], label, created["prefix"], "active", int(time.time())))
                     con.execute("DELETE FROM key_reservations WHERE id=?", (reservation,))
-                    store.audit(con, "key.created", user["id"], key_id)
+                    store.audit(con, audit_action, actor_id, key_id)
                     row = con.execute("SELECT * FROM gateway_keys WHERE id=?", (key_id,)).fetchone()
             except Exception:
                 # Compensate if the gateway succeeded but local ownership persistence failed.
@@ -299,10 +358,19 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                     await gateway.revoke_key(created["key_id"])
                 except GatewayError:
                     with store.connect() as con:
-                        store.audit(con, "key.provisioning_needs_reconciliation", user["id"], created["key_id"])
+                        store.audit(con, "key.provisioning_needs_reconciliation", actor_id, created["key_id"])
                 fail("key_create_failed", "The key could not be saved. Contact support before retrying.", 503)
         finally:
             store.release_key_slot(reservation)
+        return row, created
+
+    @application.post(PREFIX + "/keys")
+    async def create_key(request: Request):
+        user = current_user(request)
+        body = await body_json(request)
+        label = text_value(body.get("label"), "key label", 80)
+        require_gateway(customer=True)
+        row, created = await provision_key(user["id"], label, 0, None, user["id"], "key.created")
         return JSONResponse({"key": key_json(row), "secret": created["secret"]}, status_code=201)
 
     @application.delete(PREFIX + "/keys/{key_id}")
@@ -515,6 +583,33 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             fail("customer_not_found", "Account not found.", 404)
         return row
 
+    @application.post(PREFIX + "/admin/customers/{user_id}/keys")
+    async def admin_issue_key(user_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        body = await body_json(request)
+        label = text_value(body.get("label"), "key label", 80)
+        raw = body.get("prepaidUsd")
+        try:
+            if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                raise ValueError
+            prepaid = Decimal(str(raw))
+            if not prepaid.is_finite() or prepaid <= 0 or prepaid > 100000 or prepaid != prepaid.quantize(Decimal("0.01")):
+                raise ValueError
+        except (InvalidOperation, ValueError):
+            fail("invalid_input", "Enter a prepaid amount above 0 USD with at most two decimals.", 422)
+        limits = limits_from(body)
+        with store.connect() as con:
+            target = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        if not target:
+            fail("customer_not_found", "Account not found.", 404)
+        if target["disabled_at"]:
+            fail("invalid_input", "This account is disabled.", 409)
+        require_gateway()
+        row, created = await provision_key(user_id, label, prepaid, limits, admin["id"], "admin.key_issued")
+        balance = created.get("balance_nano_usd")
+        balance_usd = f"{Decimal(balance) / Decimal(10**9):.2f}" if isinstance(balance, int) else f"{prepaid:.2f}"
+        return JSONResponse({"key": key_json(row), "secret": created["secret"], "balanceUsd": balance_usd}, status_code=201)
+
     @application.post(PREFIX + "/admin/customers/{user_id}/status")
     async def admin_set_status(user_id: str, request: Request):
         admin = current_user(request, admin=True)
@@ -522,6 +617,27 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         action = body.get("action")
         if action not in ("disable", "enable"):
             fail("invalid_input", "Choose disable or enable.")
+        revoked, failed = 0, 0
+        if action == "disable":
+            # Check caller and target without changing anything, then revoke over the network
+            # outside any write lock; the account is disabled in the final transaction below.
+            with store.connect() as con:
+                admin_target(con, user_id, admin)
+                active = con.execute("SELECT id, gateway_key_id FROM gateway_keys WHERE user_id=? AND status='active'", (user_id,)).fetchall()
+            for key in active:
+                try:
+                    if not gateway.configured:
+                        raise GatewayError("unconfigured")
+                    await gateway.set_key_disabled(key["gateway_key_id"], True)
+                except GatewayError:
+                    failed += 1
+                    with store.connect() as con:
+                        store.audit(con, "key.revocation_needs_reconciliation", admin["id"], key["gateway_key_id"])
+                    continue
+                with store.connect() as con:
+                    con.execute("UPDATE gateway_keys SET status='revoked',revoked_at=? WHERE id=? AND status='active'", (int(time.time()), key["id"]))
+                    store.audit(con, "key.revoked", admin["id"], key["id"])
+                revoked += 1
         with store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             row = admin_target(con, user_id, admin)
@@ -533,7 +649,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                 con.execute("UPDATE users SET disabled_at=NULL WHERE id=?", (user_id,))
                 store.audit(con, "admin.account_enabled", admin["id"], user_id)
             row = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-        return {"customer": user_json(row)}
+        return {"customer": user_json(row), "keysRevoked": revoked, "keysFailed": failed}
 
     @application.post(PREFIX + "/admin/customers/{user_id}/role")
     async def admin_set_role(user_id: str, request: Request):
@@ -568,6 +684,224 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             con.execute("DELETE FROM login_attempts WHERE scope=?", ("login:" + digest_token(row["email"]),))
             store.audit(con, "admin.password_reset", admin["id"], user_id)
         return {"ok": True}
+
+    @application.get(PREFIX + "/admin/keys")
+    async def admin_keys(request: Request):
+        current_user(request, admin=True)
+        if not gateway.configured:
+            return {"keys": [], "envKeys": [], "gatewayConfigured": False}
+        try:
+            listing = await gateway.list_keys()
+        except GatewayError as error:
+            gateway_fail(error)
+        with store.connect() as con:
+            owners = owners_by_gateway_key_id(con)
+        return {"keys": [gateway_key_json(item, owners.get(item.get("key_id"))) for item in listing["keys"]],
+                "envKeys": [gateway_key_json(item) for item in listing["env_keys"]], "gatewayConfigured": True}
+
+    @application.get(PREFIX + "/admin/usage")
+    async def admin_usage(request: Request, month: str = ""):
+        current_user(request, admin=True)
+        month = month or datetime.now(timezone.utc).strftime("%Y-%m")
+        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month) or not 2000 <= int(month[:4]) <= 2100:
+            fail("invalid_input", "Choose a valid month (YYYY-MM).")
+        if not gateway.configured:
+            return {"month": month, "source": "unconfigured", "totals": {"requests": 0, "costUsd": "0.000000"}, "amountStatus": None,
+                    "unpricedModels": [], "keys": [], "byCustomer": [], "updatedAt": iso(int(time.time()))}
+
+        def count(value):
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 9007199254740991:
+                raise ValueError()
+            return value
+
+        def cost(value):
+            amount = Decimal(str(value))
+            if not isinstance(value, (str, int, float)) or isinstance(value, bool) or not amount.is_finite() or amount < 0 or amount > Decimal("1000000000"):
+                raise ValueError()
+            return amount
+
+        try:
+            report = await gateway.usage_report(month)
+            if not isinstance(report.get("keys"), list):
+                raise ValueError()
+            unpriced = report.get("unpriced_models", [])
+            if not isinstance(unpriced, list) or not all(isinstance(model, str) for model in unpriced):
+                raise ValueError()
+            amount_status = report.get("amount_status")
+            if amount_status is not None and not isinstance(amount_status, str):
+                raise ValueError()
+            total_requests = count(report.get("total_requests"))
+            cost(report.get("total_cost_usd"))
+            total_cost = str(report["total_cost_usd"])
+            parsed = []
+            for entry in report["keys"]:
+                if not isinstance(entry, dict) or not isinstance(entry.get("key_id"), str) or not isinstance(entry.get("by_model"), list):
+                    raise ValueError()
+                label = entry.get("label")
+                if label is not None and not isinstance(label, str):
+                    raise ValueError()
+                models = []
+                for model in entry["by_model"]:
+                    if not isinstance(model, dict) or not isinstance(model.get("model"), str) or len(model["model"]) > 200:
+                        raise ValueError()
+                    models.append({"model": model["model"], "requests": count(model.get("requests")), "inputTokens": count(model.get("prompt_tokens")),
+                                   "outputTokens": count(model.get("completion_tokens")), "costUsd": str(model.get("cost_usd"))})
+                    cost(model.get("cost_usd"))
+                parsed.append(({"gatewayKeyId": entry["key_id"], "label": label, "requests": count(entry.get("requests")),
+                                "inputTokens": count(entry.get("prompt_tokens")), "outputTokens": count(entry.get("completion_tokens")),
+                                "costUsd": str(entry.get("cost_usd")), "byModel": models}, cost(entry.get("cost_usd"))))
+        except GatewayError as error:
+            gateway_fail(error)
+        except (ValueError, InvalidOperation, TypeError):
+            fail("gateway_unavailable", "Usage could not be retrieved. Please try again later.", 503)
+        with store.connect() as con:
+            owners = owners_by_gateway_key_id(con)
+        keys, customers = [], {}
+        for item, amount in sorted(parsed, key=lambda pair: (-pair[1], pair[0]["gatewayKeyId"])):
+            owner = owners.get(item["gatewayKeyId"])
+            keys.append(dict(item, owner=owner_json(owner)))
+            group = customers.setdefault(owner["user_id"] if owner else None, {"owner": owner_json(owner), "requests": 0, "cost": Decimal(0)})
+            group["requests"] += item["requests"]
+            group["cost"] += amount
+        by_customer = sorted(customers.items(), key=lambda pair: (pair[0] is None, -pair[1]["cost"]))
+        return {"month": month, "source": "gateway", "totals": {"requests": total_requests, "costUsd": total_cost}, "amountStatus": amount_status,
+                "unpricedModels": unpriced, "keys": keys,
+                "byCustomer": [{"owner": group["owner"], "requests": group["requests"], "costUsd": f"{group['cost']:.6f}"} for _, group in by_customer],
+                "updatedAt": iso(int(time.time()))}
+
+    @application.post(PREFIX + "/admin/keys/{key_id}/disable")
+    async def admin_disable_key(key_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_key_id(key_id)
+        body = await body_json(request)
+        disabled = body.get("disabled")
+        if not isinstance(disabled, bool):
+            fail("invalid_input", "Choose whether to disable or enable the key.", 422)
+        require_gateway()
+        if not disabled:
+            # Keys revoked by disabling their account stay revoked until the account is enabled.
+            # Keys without a local owner are admin-managed and are not checked here.
+            with store.connect() as con:
+                owner = con.execute("SELECT u.disabled_at FROM gateway_keys k JOIN users u ON u.id=k.user_id WHERE k.gateway_key_id=?", (key_id,)).fetchone()
+            if owner and owner["disabled_at"] is not None:
+                fail("account_disabled", "Enable the account first.", 409)
+        try:
+            await gateway.set_key_disabled(key_id, disabled)
+        except GatewayError as error:
+            gateway_fail(error)
+        with store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            if disabled:
+                con.execute("UPDATE gateway_keys SET status='revoked',revoked_at=? WHERE gateway_key_id=? AND status='active'", (int(time.time()), key_id))
+            else:
+                con.execute("UPDATE gateway_keys SET status='active',revoked_at=NULL WHERE gateway_key_id=? AND status='revoked'", (key_id,))
+            store.audit(con, "admin.key_disabled" if disabled else "admin.key_enabled", admin["id"], key_id)
+        return {"ok": True}
+
+    @application.post(PREFIX + "/admin/keys/{key_id}/limits")
+    async def admin_key_limits(key_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_key_id(key_id)
+        limits = limits_from(await body_json(request))
+        if not limits:
+            fail("invalid_input", "Give at least one limit to change.", 422)
+        require_gateway()
+        try:
+            await gateway.update_limits(key_id, limits)
+        except GatewayError as error:
+            gateway_fail(error)
+        with store.connect() as con:
+            store.audit(con, "admin.key_limits", admin["id"], key_id)
+        return {"ok": True}
+
+    @application.post(PREFIX + "/admin/keys/{key_id}/balance")
+    async def admin_key_balance(key_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_key_id(key_id)
+        body = await body_json(request)
+        if (body.get("addUsd") is None) == (body.get("setUsd") is None):
+            fail("invalid_input", "Give either addUsd or setUsd.", 422)
+        amount = usd_amount(body["addUsd"], False) if body.get("addUsd") is not None else usd_amount(body["setUsd"], True)
+        require_gateway()
+        try:
+            if body.get("addUsd") is not None:
+                nano = await gateway.adjust_balance(key_id, add_usd=amount)
+            else:
+                nano = await gateway.adjust_balance(key_id, set_usd=amount)
+        except GatewayError as error:
+            gateway_fail(error)
+        with store.connect() as con:
+            store.audit(con, "admin.key_balance", admin["id"], key_id)
+        return {"ok": True, "balanceUsd": usd_from_nano(nano)}
+
+    async def gateway_call(call, *args):
+        require_gateway()
+        try:
+            return await call(*args)
+        except GatewayError as error:
+            if error.code == "invalid_identifier":
+                fail("invalid_input", "Check the model, node or job name.")
+            gateway_fail(error)
+        except ValueError:
+            fail("invalid_input", "Check the request details.", 422)
+
+    def gateway_path(value, pattern):
+        # The adapter rejects dot-segments too; checking here keeps them from ever reaching it.
+        if not pattern.fullmatch(value) or any(part in ("", ".", "..") for part in value.split("/")):
+            fail("invalid_input", "Check the model, node or job name.")
+
+    @application.get(PREFIX + "/admin/gateway")
+    async def admin_gateway(request: Request):
+        current_user(request, admin=True)
+        names = ("state", "nodes", "metrics")
+        if not gateway.configured:
+            return {"gatewayConfigured": False, **{name: None for name in names}, "errors": {name: "unconfigured" for name in names}}
+        results = await asyncio.gather(gateway.state(), gateway.nodes(), gateway.metrics(), return_exceptions=True)
+        body = {"gatewayConfigured": True, "errors": {}}
+        for name, result in zip(names, results):
+            failed = isinstance(result, BaseException)
+            body[name] = None if failed else result
+            body["errors"][name] = (result.code if isinstance(result, GatewayError) else "unavailable") if failed else None
+        return body
+
+    @application.post(PREFIX + "/admin/gateway/models/{model_id:path}/toggle")
+    async def admin_model_toggle(model_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_path(model_id, MODEL_ID)
+        result = await gateway_call(gateway.toggle_model, model_id)
+        with store.connect() as con:
+            store.audit(con, "admin.model_toggled", admin["id"], model_id)
+        return result
+
+    @application.post(PREFIX + "/admin/gateway/models/{model_id:path}/maintenance")
+    async def admin_model_maintenance(model_id: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_path(model_id, MODEL_ID)
+        message = (await body_json(request)).get("message", "")
+        if not isinstance(message, str) or len(message) > 300:
+            fail("invalid_input", "The maintenance message must be text of at most 300 characters.", 422)
+        result = await gateway_call(gateway.set_maintenance, model_id, message)
+        with store.connect() as con:
+            store.audit(con, "admin.model_maintenance", admin["id"], model_id)
+        return result
+
+    @application.post(PREFIX + "/admin/gateway/nodes/{name}/ops/{action}")
+    async def admin_node_op(name: str, action: str, request: Request):
+        admin = current_user(request, admin=True)
+        gateway_path(name, NODE_NAME)
+        if action not in NODE_ACTIONS:
+            fail("unknown_action", "That node action is not supported.")
+        result = await gateway_call(gateway.node_op, name, action)
+        with store.connect() as con:
+            store.audit(con, "admin.node_op", admin["id"], f"{name}:{action}")
+        return result
+
+    @application.get(PREFIX + "/admin/gateway/nodes/{name}/jobs/{job_id}")
+    async def admin_node_job(name: str, job_id: str, request: Request):
+        current_user(request, admin=True)
+        gateway_path(name, NODE_NAME)
+        gateway_path(job_id, JOB_ID)
+        return await gateway_call(gateway.node_job, name, job_id)
 
     @application.get(PREFIX + "/admin/audit")
     async def audit(request: Request):
