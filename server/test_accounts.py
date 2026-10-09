@@ -210,6 +210,24 @@ class AdminAccountTests(_PortalCase):
         self.assertEqual(r.json()["secret"], self.gateway.issued[-1]["secret"])
         self.assertEqual(self.audit("key.created")[0]["actor_id"], self.user_id("a@example.test"))
 
+    def test_key_issuance_flag_is_reported_to_customers(self):
+        client = self.client()
+        self.register(client, "a@example.test")
+        for path in ("/keys", "/overview"):
+            body = client.get(BASE + path).json()
+            self.assertTrue(body["gatewayConfigured"], path)
+            self.assertIs(body["keyIssuance"], False, path)
+        self.settings = Settings(db_path=self.settings.db_path, allowed_origins=(ORIGIN,), customer_key_issuance=True)
+        self.app = create_app(self.settings, gateway=self.gateway)
+        self.store = self.app.state.store
+        client = self.client()
+        self.register(client, "b@example.test")
+        for path in ("/keys", "/overview"):
+            self.assertIs(client.get(BASE + path).json()["keyIssuance"], True, path)
+        self.gateway.configured = False
+        for path in ("/keys", "/overview"):
+            self.assertIs(client.get(BASE + path).json()["keyIssuance"], False, path)
+
     def test_disabling_customer_revokes_their_keys(self):
         admin = self.admin()
         user = self.register(self.client(), "a@example.test")
@@ -460,6 +478,45 @@ class AdminKeysTests(_PortalCase):
         self.assertEqual(r.json()["error"], "gateway_rejected")
         self.assertEqual(rows(self.store, "gateway_keys")[0]["status"], "active")
         self.assertEqual(self.audit("admin.key_disabled"), [])
+
+    def test_enable_refuses_keys_of_a_disabled_account(self):
+        admin = self.admin()
+        user, gid = self.issue(admin)
+        self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "disable"}).json()["keysRevoked"], 1)
+        r = self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": False})
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.json(), {"error": "account_disabled", "detail": "Enable the account first."})
+        self.assertEqual(self.gateway.enabled, [])
+        self.assertEqual(rows(self.store, "gateway_keys")[0]["status"], "revoked")
+        self.assertEqual(self.audit("admin.key_enabled"), [])
+        # Disabling stays possible, and once the account is enabled again its keys can be too.
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": True}).status_code, 200)
+        self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "enable"})
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": False}).status_code, 200)
+        self.assertEqual(self.gateway.enabled, [gid])
+        self.assertEqual(rows(self.store, "gateway_keys")[0]["status"], "active")
+
+    def test_enable_of_an_active_accounts_key_and_of_unowned_keys_still_works(self):
+        admin = self.admin()
+        _user, gid = self.issue(admin)
+        self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": True})
+        self.assertEqual(self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": False}).status_code, 200)
+        self.assertEqual(self.post(admin, "/admin/keys/manual-key/disable", {"disabled": False}).status_code, 200)
+        self.assertEqual(self.gateway.enabled, [gid, "manual-key"])
+
+    def test_rejected_gateway_token_is_reported_as_auth_failure(self):
+        admin = self.admin()
+        _user, gid = self.issue(admin)
+        for status in (401, 403):
+            self.gateway.reject = status
+            for response in (admin.get(BASE + "/admin/keys"), self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": True}),
+                             self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {})):
+                self.assertEqual(response.status_code, 503, response.text)
+                self.assertEqual(response.json(), {"error": "gateway_auth_failed",
+                                                   "detail": "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN."})
+        self.assertEqual(rows(self.store, "gateway_keys")[0]["status"], "active")
+        self.assertEqual(self.audit("admin.key_disabled"), [])
+        self.assertEqual(self.audit("admin.model_toggled"), [])
 
     def test_unconfigured_gateway_blocks_writes(self):
         admin = self.admin()

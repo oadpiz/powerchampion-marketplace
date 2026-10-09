@@ -152,7 +152,14 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         if not gateway.configured or (customer and not settings.customer_key_issuance):
             fail("provider_not_configured", "API key provisioning is not connected yet. Contact support for access.", 503)
 
+    def key_issuance():
+        # Mirrors require_gateway(customer=True): whether POST /keys can succeed for a customer.
+        return bool(gateway.configured and settings.customer_key_issuance)
+
     def gateway_fail(error):
+        if error.code == "rejected" and error.status in (401, 403):
+            # The gateway refused the portal's own credential: an operator fix, not a network problem.
+            fail("gateway_auth_failed", "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN.", 503)
         if error.code == "rejected" and (error.status is None or error.status < 500):
             status = error.status if error.status in (400, 404, 409) else 400
             fail("gateway_rejected", error.detail or "The gateway rejected the request.", status)
@@ -311,12 +318,12 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             keys = con.execute("SELECT COUNT(*) FROM gateway_keys WHERE user_id=? AND status='active'", (user["id"],)).fetchone()[0]
             pending = con.execute("SELECT COUNT(*) FROM credit_requests WHERE user_id=? AND status='pending'", (user["id"],)).fetchone()[0]
             approved = int(con.execute("SELECT COALESCE(SUM(amount_cents),0) FROM credit_requests WHERE user_id=? AND status='approved'", (user["id"],)).fetchone()[0] or 0)
-        return {"user": user, "keyCount": keys, "pendingCreditCount": pending, "approvedCreditUsd": approved / 100, "gatewayConfigured": bool(gateway.configured)}
+        return {"user": user, "keyCount": keys, "pendingCreditCount": pending, "approvedCreditUsd": approved / 100, "gatewayConfigured": bool(gateway.configured), "keyIssuance": key_issuance()}
 
     @application.get(PREFIX + "/keys")
     async def keys(request: Request):
         user = current_user(request)
-        return {"keys": [key_json(row) for row in store.owned_keys(user["id"])], "gatewayConfigured": bool(gateway.configured)}
+        return {"keys": [key_json(row) for row in store.owned_keys(user["id"])], "gatewayConfigured": bool(gateway.configured), "keyIssuance": key_issuance()}
 
     async def provision_key(owner_id, label, prepaid_usd, limits, actor_id, audit_action):
         """Create a gateway key and record its owner. Returns (local row, gateway result).
@@ -771,6 +778,13 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         if not isinstance(disabled, bool):
             fail("invalid_input", "Choose whether to disable or enable the key.", 422)
         require_gateway()
+        if not disabled:
+            # Keys revoked by disabling their account stay revoked until the account is enabled.
+            # Keys without a local owner are admin-managed and are not checked here.
+            with store.connect() as con:
+                owner = con.execute("SELECT u.disabled_at FROM gateway_keys k JOIN users u ON u.id=k.user_id WHERE k.gateway_key_id=?", (key_id,)).fetchone()
+            if owner and owner["disabled_at"] is not None:
+                fail("account_disabled", "Enable the account first.", 409)
         try:
             await gateway.set_key_disabled(key_id, disabled)
         except GatewayError as error:
