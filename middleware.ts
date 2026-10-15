@@ -4,6 +4,12 @@ import { isIndexableRequest, languageForPath } from "./lib/seo";
 /** Compute request context from the URL, never from caller-supplied locale headers. */
 export function middleware(request: NextRequest) {
   const url = new URL(request.url);
+  // Simplified Chinese was retired; keep old /zh-Hans links working by sending them to Traditional Chinese.
+  const retired = url.pathname.match(/^\/zh-(?:Hans|CN|cn|hans)(\/.*)?$/);
+  if (retired) {
+    url.pathname = `/zh-Hant${retired[1] ?? ""}`;
+    return NextResponse.redirect(url, 301);
+  }
   const indexable = isIndexableRequest(url);
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pc-language", languageForPath(url.pathname));

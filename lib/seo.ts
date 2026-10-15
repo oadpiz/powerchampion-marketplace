@@ -1,7 +1,7 @@
 /** Public URL and indexation rules shared by page metadata and the edge entry. */
 export const SITE_ORIGIN = "https://powerchampion.ai";
 export const SOCIAL_IMAGE = `${SITE_ORIGIN}/og-platform.png`;
-export const INTERNATIONAL_LOCALES = ["zh-Hant", "zh-Hans", "ja", "ko"] as const;
+export const INTERNATIONAL_LOCALES = ["zh-Hant", "ja", "ko"] as const;
 export type InternationalLocale = (typeof INTERNATIONAL_LOCALES)[number];
 export const LOCALIZED_SECTIONS = ["/", "/models", "/pricing", "/infrastructure", "/company", "/agent-platform"] as const;
 export type LocalizedSection = (typeof LOCALIZED_SECTIONS)[number];

@@ -80,7 +80,7 @@ const WEBSITE_JSON_LD = {
   name: "Power Champion",
   url: SITE_ORIGIN,
   publisher: { "@id": `${SITE_ORIGIN}/#organization` },
-  inLanguage: ["en", "zh-Hant", "zh-Hans", "ja", "ko"],
+  inLanguage: ["en", "zh-Hant", "ja", "ko"],
 };
 
 const SERVICE_JSON_LD = {

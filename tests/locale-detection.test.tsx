@@ -102,7 +102,7 @@ describe("English canonical pages and explicit language preferences", () => {
     expect(document.documentElement).toHaveAttribute("lang", "zh-Hant");
   });
 
-  it("exposes all five same-section language links in the public footer", () => {
+  it("exposes all four same-section language links in the public footer", () => {
     window.history.replaceState({}, "", "/company");
     mount();
     const footer = within(screen.getByRole("contentinfo"));
@@ -112,7 +112,6 @@ describe("English canonical pages and explicit language preferences", () => {
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
       "/company",
       "/zh-Hant/company",
-      "/zh-Hans/company",
       "/ja/company",
       "/ko/company",
     ]);
@@ -121,7 +120,7 @@ describe("English canonical pages and explicit language preferences", () => {
     ).not.toBeInTheDocument();
   });
 
-  it.each(["/ja/company", "/ko", "/zh-Hans/pricing", "/zh-Hant/models"])(
+  it.each(["/ja/company", "/ko", "/zh-Hant/pricing", "/zh-Hant/models"])(
     "keeps explicit regional document language for %s",
     (path) => {
       window.history.replaceState({}, "", path);

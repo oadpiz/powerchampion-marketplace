@@ -39,7 +39,7 @@ describe("Search visibility boundaries", () => {
 });
 
 describe("Localized search metadata", () => {
-  it("shares the Agent introduction with its own social image and five public translations", () => {
+  it("shares the Agent introduction with its own social image and four public translations", () => {
     const metadata = metadataForRoute("/agent-platform");
     const image = readFileSync(`${process.cwd()}/public/og-agents.png`);
     const version = createHash("sha256").update(image).digest("hex").slice(0, 8);
@@ -55,7 +55,7 @@ describe("Localized search metadata", () => {
       const alternates = languageAlternates(section);
       expect(alternates.en).toBe(new URL(section, SITE_ORIGIN).href);
       expect(alternates["x-default"]).toBe(alternates.en);
-      expect(Object.keys(alternates)).toHaveLength(6);
+      expect(Object.keys(alternates)).toHaveLength(5);
       expect(metadataForRoute(section).alternates?.languages).toEqual(alternates);
       for (const language of INTERNATIONAL_LOCALES) {
         const metadata = metadataForLocalizedPage(language, section, "Localized title", "Localized description");
@@ -103,7 +103,7 @@ describe("Public sitemap", () => {
     const expected = publicSitemapPaths(MODEL_CATALOG.map((model) => model.id)).map((path) => new URL(path, SITE_ORIGIN).href);
     expect(urls).toEqual(expected);
     expect(new Set(urls).size).toBe(urls.length);
-    expect(urls).toHaveLength(51);
+    expect(urls).toHaveLength(45);
     expect(urls).toContain(`${SITE_ORIGIN}/data-retention`);
     expect(urls).not.toContain(`${SITE_ORIGIN}/solutions`);
     expect(urls).toContain(`${SITE_ORIGIN}/agents`);
