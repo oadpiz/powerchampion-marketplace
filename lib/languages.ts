@@ -1,6 +1,5 @@
 export const INTERNATIONAL_LANGUAGES = [
   "zh-Hant",
-  "zh-Hans",
   "ja",
   "ko",
 ] as const;
@@ -18,7 +17,6 @@ export type InternationalSection = (typeof INTERNATIONAL_SECTIONS)[number];
 export const LANGUAGE_NAMES: Record<InternationalLanguage | "en", string> = {
   en: "English",
   "zh-Hant": "繁體中文",
-  "zh-Hans": "简体中文",
   ja: "日本語",
   ko: "한국어",
 };

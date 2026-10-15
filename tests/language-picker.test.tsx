@@ -25,7 +25,7 @@ describe("LanguagePicker", () => {
     expect(screen.getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant/agent-platform");
     expect(screen.getByRole("link", { name: "日本語" })).toHaveAttribute("href", "/ja/agent-platform");
   });
-  it("shows the current language text and all five dedicated homepage links", async () => {
+  it("shows the current language text and all four dedicated homepage links", async () => {
     const user = userEvent.setup();
     mount();
     const trigger = screen.getByRole("button", { name: "Language: English" });
@@ -47,7 +47,6 @@ describe("LanguagePicker", () => {
     ).toEqual([
       ["English", "/"],
       ["繁體中文", "/zh-Hant"],
-      ["简体中文", "/zh-Hans"],
       ["日本語", "/ja"],
       ["한국어", "/ko"],
     ]);

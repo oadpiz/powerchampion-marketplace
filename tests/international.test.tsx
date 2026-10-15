@@ -54,6 +54,7 @@ describe("indexable international marketing", () => {
     ])
       expect(getInternationalRoute(path)).toBeNull();
     expect(generateStaticParams()).toHaveLength(24);
+    expect(generateStaticParams()).toContainEqual({ language: "zh-Hans", segments: ["pricing"] });
   });
 
   for (const language of INTERNATIONAL_LANGUAGES) {
@@ -197,7 +198,7 @@ describe("indexable international marketing", () => {
           `https://powerchampion.ai${internationalPath(language, section)}`,
         );
         const alternates = metadata.alternates?.languages;
-        expect(Object.keys(alternates ?? {})).toHaveLength(6);
+        expect(Object.keys(alternates ?? {})).toHaveLength(5);
         expect(alternates?.ja).toBe(
           `https://powerchampion.ai${internationalPath("ja", section)}`,
         );

@@ -29,11 +29,6 @@ const LABELS: Record<
     title: "網站語言",
     coverage: "此頁支援英文與繁體中文，其他語言會開啟對應地區的首頁。",
   },
-  "zh-Hans": {
-    trigger: "语言：",
-    title: "网站语言",
-    coverage: "此页提供英文与繁体中文，其他语言将打开对应地区的首页。",
-  },
   ja: {
     trigger: "言語: ",
     title: "表示言語",

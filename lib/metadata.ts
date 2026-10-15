@@ -132,7 +132,7 @@ export function metadataForPage(
   languages?: Record<string, string>,
 ): Metadata {
   const canonical = new URL(pathname === "/solutions" ? "/" : pathname, SITE_ORIGIN).href;
-  const ogLocale = { en: "en_US", "zh-Hant": "zh_TW", "zh-Hans": "zh_CN", ja: "ja_JP", ko: "ko_KR" }[language];
+  const ogLocale = { en: "en_US", "zh-Hant": "zh_TW", ja: "ja_JP", ko: "ko_KR" }[language];
   const agentPage = pathname.endsWith("/agent-platform");
   // Fingerprint the public asset so CDN caches update with its contents.
   const image = agentPage ? `${SITE_ORIGIN}/og-agents.png?v=ad72019e` : SOCIAL_IMAGE;
