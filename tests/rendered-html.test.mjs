@@ -174,6 +174,14 @@ test("redirects the browser compatibility favicon to the published PNG", async (
   assert.equal(response.headers.get("location"), "http://localhost/favicon.png");
 });
 
+test("sends retired Simplified Chinese links to Traditional Chinese", async () => {
+  for (const [from, to] of [["/zh-Hans", "/zh-Hant"], ["/zh-Hans/pricing", "/zh-Hant/pricing"], ["/zh-CN/models", "/zh-Hant/models"]]) {
+    const response = await request(from);
+    assert.equal(response.status, 301, from);
+    assert.equal(new URL(response.headers.get("location"), "http://localhost").pathname, to, from);
+  }
+});
+
 test("keeps canonical URLs fixed and prevents preview and private-page indexing", async () => {
   for (const host of ["localhost:3010", "preview.example", "powerchampion.ai", "market place.example"]) {
     const response = await request("/models", host, "powerchampion.ai");
@@ -252,7 +260,7 @@ test("describes the questions each page renders, in that page's language", async
 });
 
 test("server-renders localized primary content with reciprocal search annotations", async () => {
-  const markers = { "zh-Hant": /模型/, "zh-Hans": /模型/, ja: /モデル/, ko: /모델/ };
+  const markers = { "zh-Hant": /模型/, ja: /モデル/, ko: /모델/ };
   for (const [language, marker] of Object.entries(markers)) {
     for (const section of ["", "/models", "/pricing", "/infrastructure", "/company"]) {
       const path = `/${language}${section}`;
@@ -262,7 +270,7 @@ test("server-renders localized primary content with reciprocal search annotation
       assert.match(html, new RegExp(`<html lang="${language}"`), path);
       assert.match(html, marker, path);
       assert.match(html, new RegExp(`<link rel="canonical" href="https://powerchampion.ai/${language}${section}"`), path);
-      for (const alternate of ["en", "zh-Hant", "zh-Hans", "ja", "ko", "x-default"]) {
+      for (const alternate of ["en", "zh-Hant", "ja", "ko", "x-default"]) {
         const alternatePath = alternate === "en" || alternate === "x-default"
           ? section
           : `/${alternate}${section}`;
@@ -272,11 +280,10 @@ test("server-renders localized primary content with reciprocal search annotation
   }
 });
 
-test("server-renders the full premium homepage and usable controls in all five languages", async () => {
+test("server-renders the full premium homepage and usable controls in all four languages", async () => {
   const homepages = [
     { path: "/", language: "en", title: "One API. Every possibility.", picker: "Language: English", filter: "Filter models", code: "Code language", pause: "Pause motion" },
     { path: "/zh-Hant", language: "zh-Hant", title: "一組 API。 無限可能。", picker: "語言：繁體中文", filter: "篩選模型", code: "程式碼語言", pause: "暫停動態" },
-    { path: "/zh-Hans", language: "zh-Hans", title: "一组 API。 无限可能。", picker: "语言：简体中文", filter: "筛选模型", code: "代码语言", pause: "暂停动态" },
     { path: "/ja", language: "ja", title: "ひとつの API。 広がる可能性。", picker: "言語: 日本語", filter: "モデルを絞り込む", code: "コードの言語", pause: "動きを止める" },
     { path: "/ko", language: "ko", title: "하나의 API. 무한한 가능성.", picker: "언어: 한국어", filter: "모델 필터", code: "코드 언어", pause: "동작 일시 정지" },
   ];
@@ -319,8 +326,8 @@ test("server-renders the full premium homepage and usable controls in all five l
   }
 });
 
-test("publishes a five-language Agent introduction with actual FAQs and reciprocal metadata", async () => {
-  for (const language of ["en", "zh-Hant", "zh-Hans", "ja", "ko"]) {
+test("publishes a four-language Agent introduction with actual FAQs and reciprocal metadata", async () => {
+  for (const language of ["en", "zh-Hant", "ja", "ko"]) {
     const path = `${language === "en" ? "" : `/${language}`}/agent-platform`;
     const response = await render(path);
     assert.equal(response.status, 200, path);
@@ -342,7 +349,7 @@ test("publishes a five-language Agent introduction with actual FAQs and reciproc
     assert.ok(faq?.mainEntity.length >= 3, path);
     assert.equal(faq.url, `https://powerchampion.ai${path}`);
     for (const question of faq.mainEntity) assert.ok(html.includes(question.name.replaceAll("&", "&amp;").replaceAll("'", "&#x27;").replaceAll('"', "&quot;")), path);
-    for (const alternate of ["en", "zh-Hant", "zh-Hans", "ja", "ko", "x-default"]) {
+    for (const alternate of ["en", "zh-Hant", "ja", "ko", "x-default"]) {
       const target = `${alternate === "en" || alternate === "x-default" ? "" : `/${alternate}`}/agent-platform`;
       assert.match(html, new RegExp(`<link rel="alternate" href="${escaped(`https://powerchampion.ai${target}`)}" hreflang="${alternate}"`), path);
     }
