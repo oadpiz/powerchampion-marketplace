@@ -17,7 +17,7 @@ npm run dev -- --port 3010
 - 註冊：`http://localhost:3010/register`
 - 客戶工作區：`http://localhost:3010/account`
 - 管理後台：`http://localhost:3010/admin`
-- 繁中／簡中／日文／韓文公開頁：`/zh-Hant`、`/zh-Hans`、`/ja`、`/ko`
+- 繁中／日文／韓文公開頁：`/zh-Hant`、`/ja`、`/ko`。舊 `/zh-Hans` 連結會轉址至對應繁中頁面。
 
 帳號資料存在 Postgres（Dokploy 內網服務 `powerchampion-db`，volume `portal-pg-data`）；連線逾時 5 秒、鎖等待逾時 15 秒（`connect_timeout`／`lock_timeout`）；本機開發預設仍用 `.local/portal.sqlite3`，設 `PC_PORTAL_DATABASE_URL` 可切換。正式環境必須配置持久磁碟與備份。服務初次啟動不會自動建立管理員，也不會將第一個註冊的人變成管理員。
 

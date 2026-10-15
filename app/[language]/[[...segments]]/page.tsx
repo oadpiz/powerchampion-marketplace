@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { InternationalSite } from "../../../components/international-site";
 import { JsonLd } from "../../../components/json-ld";
 import { HOME_COPY } from "../../../lib/home-copy";
@@ -8,15 +8,44 @@ import { faqPageJsonLd } from "../../../lib/structured-data";
 import { INTERNATIONAL_CONTENT } from "../../../lib/international-content";
 import {
   getInternationalRoute,
+  internationalPath,
   INTERNATIONAL_LANGUAGES,
   INTERNATIONAL_SECTIONS,
 } from "../../../lib/languages";
 import { metadataForLocalizedPage } from "../../../lib/metadata";
 
-type PageProps = { params: Promise<{ language: string; segments?: string[] }> };
+type PageProps = {
+  params: Promise<{ language: string; segments?: string[] }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-async function resolvePage(params: PageProps["params"]) {
+async function resolvePage(
+  params: PageProps["params"],
+  searchParams?: PageProps["searchParams"],
+) {
   const { language, segments = [] } = await params;
+  if (language === "zh-Hans") {
+    const section = segments[0] ?? "";
+    if (
+      segments.length > 1 ||
+      !INTERNATIONAL_SECTIONS.some((candidate) => candidate === section)
+    )
+      notFound();
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries((await searchParams) ?? {})) {
+      if (Array.isArray(value)) {
+        for (const item of value) query.append(key, item);
+      } else if (value !== undefined) {
+        query.append(key, value);
+      }
+    }
+    const destination = internationalPath(
+      "zh-Hant",
+      section as (typeof INTERNATIONAL_SECTIONS)[number],
+    );
+    const suffix = query.size ? `?${query.toString()}` : "";
+    permanentRedirect(`${destination}${suffix}`);
+  }
   const route = getInternationalRoute(
     `/${language}${segments.length ? `/${segments.join("/")}` : ""}`,
   );
@@ -25,18 +54,24 @@ async function resolvePage(params: PageProps["params"]) {
 }
 
 export function generateStaticParams() {
-  return INTERNATIONAL_LANGUAGES.flatMap((language) =>
+  const current = INTERNATIONAL_LANGUAGES.flatMap((language) =>
     INTERNATIONAL_SECTIONS.map((section) => ({
       language,
       segments: section ? [section] : [],
     })),
   );
+  const legacySimplifiedChinese = INTERNATIONAL_SECTIONS.map((section) => ({
+    language: "zh-Hans",
+    segments: section ? [section] : [],
+  }));
+  return [...current, ...legacySimplifiedChinese];
 }
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: PageProps): Promise<Metadata> {
-  const { language, section } = await resolvePage(params);
+  const { language, section } = await resolvePage(params, searchParams);
   const page = INTERNATIONAL_CONTENT[language].pages[section];
   return metadataForLocalizedPage(
     language,
@@ -46,8 +81,11 @@ export async function generateMetadata({
   );
 }
 
-export default async function InternationalPage({ params }: PageProps) {
-  const route = await resolvePage(params);
+export default async function InternationalPage({
+  params,
+  searchParams,
+}: PageProps) {
+  const route = await resolvePage(params, searchParams);
   const faq = route.section === ""
     ? faqPageJsonLd(`/${route.language}`, HOME_COPY[route.language].faqs.map(([question, answer]) => ({ question, answer })))
     : route.section === "agent-platform"

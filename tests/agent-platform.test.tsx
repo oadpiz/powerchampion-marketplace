@@ -45,7 +45,7 @@ describe("Agent platform product page", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it.each<HomeLanguage>(["en", "zh-Hant", "zh-Hans", "ja", "ko"])("ships readable, localized server content in %s", (language) => {
+  it.each<HomeLanguage>(["en", "zh-Hant", "ja", "ko"])("ships readable, localized server content in %s", (language) => {
     const copy = agentPlatformCopy[language];
     const html = renderToString(<AgentPlatformContent language={language} />);
     expect(html).toContain(copy.title[0]);

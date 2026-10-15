@@ -100,7 +100,7 @@ describe("Agent capability walkthrough", () => {
     expect(screen.getByRole("button", { name: "Play walkthrough" })).toBeVisible();
   });
 
-  it.each<HomeLanguage>(["en", "zh-Hant", "zh-Hans", "ja", "ko"])("keeps each scenario and stage translated in %s", (language) => {
+  it.each<HomeLanguage>(["en", "zh-Hant", "ja", "ko"])("keeps each scenario and stage translated in %s", (language) => {
     const copy = agentShowcaseCopy[language];
     render(<AgentShowcase language={language} />);
     expect(screen.getByText(copy.example)).toBeVisible();
