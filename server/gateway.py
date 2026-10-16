@@ -53,6 +53,22 @@ def _limit_payload(limits):
     return payload
 
 
+def validate_grant_receipt(receipt, operation_id, key_id, amount_nano_usd):
+    """An HTTP success is insufficient: it must describe this exact credit."""
+    if (not isinstance(receipt, dict)
+            or receipt.get("operation_id") != operation_id
+            or receipt.get("key_id") != key_id or receipt.get("currency") != "USD"
+            or type(receipt.get("credited_nano_usd")) is not int
+            or receipt["credited_nano_usd"] != amount_nano_usd
+            or type(receipt.get("balance_after_nano_usd")) is not int
+            or not -(2**63) <= receipt["balance_after_nano_usd"] <= 2**63 - 1
+            or type(receipt.get("created_at")) not in (int, float)
+            or not 0 < receipt["created_at"] <= 253402300799):
+        raise GatewayError("invalid_response")
+    # Store only the documented receipt fields, never unexpected upstream data.
+    return {name: receipt[name] for name in ("operation_id", "key_id", "currency", "credited_nano_usd", "balance_after_nano_usd", "created_at")}
+
+
 class GatewayAdapter:
     def __init__(self, settings):
         self.settings = settings
@@ -140,6 +156,12 @@ class GatewayAdapter:
         if value.get("ok") is not True or not isinstance(balance, int) or isinstance(balance, bool):
             raise GatewayError("invalid_response")
         return balance
+
+    async def grant_credit(self, operation_id, key_id, amount_nano_usd):
+        request = {"operation_id": operation_id, "key_id": key_id,
+                   "amount_nano_usd": amount_nano_usd, "currency": "USD"}
+        receipt = await self._request("POST", "/api/credits/grants", request)
+        return validate_grant_receipt(receipt, operation_id, key_id, amount_nano_usd)
 
     async def list_keys(self):
         value = await self._request("GET", "/api/keys")

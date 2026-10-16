@@ -75,6 +75,26 @@ export function portalErrorCodeText(error: unknown, locale: "en" | "zh"): string
     return locale === "zh"
       ? "閘道拒絕了入口網站的管理權杖，請檢查 portal 服務的 PC_GATEWAY_ADMIN_TOKEN 設定。"
       : "The gateway rejected the portal's admin token. Check PC_GATEWAY_ADMIN_TOKEN on the portal service.";
+  if (code === "key_revocation_pending")
+    return locale === "zh"
+      ? "金鑰撤銷處理中，請稍後重新整理；若持續未完成，請管理員核對。"
+      : "Key revocation is in progress. Refresh in a moment; if it remains unfinished, ask an administrator to reconcile it.";
+  if (code === "credit_fulfillment_pending")
+    return locale === "zh"
+      ? "此金鑰仍有已確認收款的待入額申請，請管理員完成入額後再撤銷。"
+      : "Ask an administrator to complete the pending credit before revoking this key.";
+  if (code === "credit_target_required")
+    return locale === "zh"
+      ? "請選擇此客戶本人使用中且已保存的金鑰，再確認入額。"
+      : "Select an active key owned by this customer and confirm they have saved it before issuing credit.";
+  if (code === "credit_target_locked")
+    return locale === "zh"
+      ? "此申請的入額金鑰已固定，不能變更。請重新整理並確認原本的金鑰。"
+      : "This request's target key cannot be changed. Refresh and check the original key.";
+  if (code === "key_unavailable")
+    return locale === "zh"
+      ? "入額金鑰目前無法使用，可能已撤銷或正在撤銷。請聯繫支援確認此申請。"
+      : "The target key is unavailable or being revoked. Contact support to reconcile this request.";
   if (code === "unknown_action")
     return locale === "zh" ? "此節點操作無法使用。" : "That node action is not available.";
   if (code === "key_not_found")

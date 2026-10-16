@@ -15,11 +15,11 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .agents import AgentError, Agents, parse_name, parse_version
-from .gateway import JOB_ID, MODEL_ID, NODE_ACTIONS, NODE_NAME, GatewayAdapter, GatewayError
+from .gateway import JOB_ID, MODEL_ID, NODE_ACTIONS, NODE_NAME, GatewayAdapter, GatewayError, validate_grant_receipt
 from .chat import TRIAL_COOKIE, TrialChat
 from .security import clean_name, digest_token, normalize_email, password_hash, validate_password, verify_password
 from .settings import Settings
-from .store import Store, credit_json, iso, key_json, user_json
+from .store import Store, CreditStateError, credit_json, iso, key_json, user_json
 from .runtime_api import attach_runtime
 
 COOKIE_NAME = "pc_portal_session"
@@ -119,6 +119,10 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
 
     @application.exception_handler(PortalError)
     async def portal_error(_request, error):
+        return JSONResponse({"error": error.code, "detail": error.detail}, status_code=error.status)
+
+    @application.exception_handler(CreditStateError)
+    async def credit_state_error(_request, error):
         return JSONResponse({"error": error.code, "detail": error.detail}, status_code=error.status)
 
     @application.exception_handler(StarletteHTTPException)
@@ -348,7 +352,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
                     slot = con.execute("SELECT id FROM key_reservations WHERE id=? AND user_id=?", (reservation, owner_id)).fetchone()
                     if not slot:
                         raise RuntimeError("reservation expired")
-                    con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", (key_id, owner_id, created["key_id"], label, created["prefix"], "active", int(time.time())))
+                    con.execute("INSERT INTO gateway_keys (id,user_id,gateway_key_id,label,prefix,status,created_at,revoked_at) VALUES (?,?,?,?,?,?,?,NULL)", (key_id, owner_id, created["key_id"], label, created["prefix"], "active", int(time.time())))
                     con.execute("DELETE FROM key_reservations WHERE id=?", (reservation,))
                     store.audit(con, audit_action, actor_id, key_id)
                     row = con.execute("SELECT * FROM gateway_keys WHERE id=?", (key_id,)).fetchone()
@@ -376,19 +380,17 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
     @application.delete(PREFIX + "/keys/{key_id}")
     async def revoke_key(key_id: str, request: Request):
         user = current_user(request)
-        with store.connect() as con:
-            row = con.execute("SELECT * FROM gateway_keys WHERE id=? AND user_id=?", (key_id, user["id"])).fetchone()
-        if not row:
-            fail("key_not_found", "Key not found.", 404)
+        require_gateway()
+        row = store.begin_key_revocation(key_id, user["id"])
         if row["status"] == "revoked":
             return {"key": key_json(row)}
-        require_gateway()
         try:
             await gateway.revoke_key(row["gateway_key_id"])
         except GatewayError:
+            store.clear_key_revocation(key_id)
             fail("gateway_unavailable", "The gateway could not confirm revocation. Please try again.", 503)
         with store.connect() as con:
-            changed = con.execute("UPDATE gateway_keys SET status='revoked',revoked_at=? WHERE id=? AND user_id=? AND status='active'", (int(time.time()), key_id, user["id"])).rowcount
+            changed = con.execute("UPDATE gateway_keys SET status='revoked',revoked_at=?,revocation_started_at=NULL WHERE id=? AND user_id=? AND status='active'", (int(time.time()), key_id, user["id"])).rowcount
             if changed:
                 store.audit(con, "key.revoked", user["id"], key_id)
             row = con.execute("SELECT * FROM gateway_keys WHERE id=? AND user_id=?", (key_id, user["id"])).fetchone()
@@ -440,25 +442,28 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
     @application.get(PREFIX + "/credits")
     async def credits(request: Request):
         user = current_user(request)
-        with store.connect() as con:
-            rows = con.execute("SELECT * FROM credit_requests WHERE user_id=? ORDER BY created_at DESC,id", (user["id"],)).fetchall()
-        return {"requests": [credit_json(row) for row in rows]}
+        rows = store.credit_requests(user["id"])
+        keys = [key_json(row) for row in store.owned_keys(user["id"]) if row["status"] == "active" and not row["revocation_started_at"]]
+        return {"requests": [credit_json(row) for row in rows], "keys": keys, "gatewayConfigured": bool(gateway.configured)}
 
     @application.post(PREFIX + "/credits")
     async def request_credit(request: Request):
         user = current_user(request)
         body = await body_json(request)
+        if set(body) - {"amountUsd", "reference", "targetKeyId"}:
+            fail("invalid_input", "Enter only the payment amount, reference and saved target key.")
         amount = credit_cents(body.get("amountUsd"))
         reference = text_value(body.get("reference"), "payment reference", 160)
+        target = text_value(body.get("targetKeyId"), "saved target key", 80)
         credit_id = uuid.uuid4().hex
         with store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
+            store.credit_target(con, target, user["id"])
             if con.execute("SELECT COUNT(*) FROM credit_requests WHERE user_id=? AND status='pending'", (user["id"],)).fetchone()[0] >= 20:
                 fail("request_limit", "Wait for your pending requests to be reviewed.", 409)
-            con.execute("INSERT INTO credit_requests (id,user_id,amount_cents,status,reference,created_at) VALUES (?,?,?,'pending',?,?)", (credit_id, user["id"], amount, reference, int(time.time())))
+            con.execute("INSERT INTO credit_requests (id,user_id,amount_cents,status,reference,created_at,target_key_id) VALUES (?,?,?,'pending',?,?,?)", (credit_id, user["id"], amount, reference, int(time.time()), target))
             store.audit(con, "credit.requested", user["id"], credit_id)
-            row = con.execute("SELECT * FROM credit_requests WHERE id=?", (credit_id,)).fetchone()
-        return JSONResponse({"request": credit_json(row)}, status_code=201)
+        return JSONResponse({"request": credit_json(store.credit_request(credit_id))}, status_code=201)
 
     @application.get(PREFIX + "/agents")
     async def list_agents(request: Request):
@@ -544,31 +549,32 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
     async def admin_credits(request: Request):
         current_user(request, admin=True)
         with store.connect() as con:
-            rows = con.execute("SELECT c.*,u.email,u.name FROM credit_requests c JOIN users u ON u.id=c.user_id ORDER BY CASE WHEN status='pending' THEN 0 ELSE 1 END,c.created_at DESC,c.id LIMIT 1000").fetchall()
-        return {"requests": [credit_json(row) for row in rows]}
+            keys = con.execute("SELECT k.* FROM gateway_keys k JOIN users u ON u.id=k.user_id WHERE k.status='active' AND k.revocation_started_at IS NULL AND u.disabled_at IS NULL ORDER BY k.created_at DESC,k.id").fetchall()
+        return {"requests": [credit_json(row) for row in store.credit_requests()], "keys": [dict(key_json(row), userId=row["user_id"]) for row in keys], "gatewayConfigured": bool(gateway.configured)}
 
     @application.post(PREFIX + "/admin/credits/{credit_id}/review")
     async def review_credit(credit_id: str, request: Request):
         user = current_user(request, admin=True)
         body = await body_json(request)
+        if set(body) - {"decision", "note", "targetKeyId"}:
+            fail("invalid_input", "Payment amount and target cannot be changed during review.")
         decision = body.get("decision")
         if decision not in ("approve", "reject"):
             fail("invalid_input", "Choose approve or reject.")
         note = text_value(body.get("note", ""), "review note", 500, required=False)
-        desired = "approved" if decision == "approve" else "rejected"
-        with store.connect() as con:
-            con.execute("BEGIN IMMEDIATE")
-            row = con.execute("SELECT * FROM credit_requests WHERE id=?", (credit_id,)).fetchone()
-            if not row:
-                fail("credit_not_found", "Credit request not found.", 404)
-            if row["status"] == desired:
-                return {"request": credit_json(row)}
-            if row["status"] != "pending":
-                fail("already_reviewed", "This request has already been reviewed.", 409)
-            con.execute("UPDATE credit_requests SET status=?,reviewed_at=?,reviewer_id=?,review_note=? WHERE id=? AND status='pending'", (desired, int(time.time()), user["id"], note, credit_id))
-            store.audit(con, "credit." + desired, user["id"], credit_id)
-            row = con.execute("SELECT * FROM credit_requests WHERE id=?", (credit_id,)).fetchone()
-        return {"request": credit_json(row)}
+        target = text_value(body["targetKeyId"], "saved target key", 80) if "targetKeyId" in body else None
+        grant = store.prepare_credit_review(credit_id, decision, note, target, user["id"])
+        if grant:
+            try:
+                receipt = await gateway.grant_credit(grant["operation_id"], grant["key_id"], grant["amount_nano_usd"])
+                receipt = validate_grant_receipt(receipt, grant["operation_id"], grant["key_id"], grant["amount_nano_usd"])
+                store.complete_credit_fulfillment(credit_id, receipt, user["id"])
+            except GatewayError as error:
+                # Ambiguous transport errors retain the same fixed operation and target.
+                code = "gateway_auth_failed" if error.code == "rejected" and error.status in (401, 403) else "gateway_rejected" if error.code == "rejected" else "gateway_unavailable"
+                store.credit_fulfillment_failed(credit_id, code)
+        row = store.credit_request(credit_id)
+        return JSONResponse({"request": credit_json(row)}, status_code=202 if row["fulfillment_status"] == "pending" else 200)
 
     def admin_target(con, user_id, admin):
         # Re-check the caller inside the write lock: current_user() ran before BEGIN IMMEDIATE,

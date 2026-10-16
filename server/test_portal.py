@@ -90,8 +90,12 @@ class PortalTests(unittest.TestCase):
         return response.json()
 
     def request_credit(self, amount=50, client=None):
+        keys = (client or self.client).get(BASE + "/keys").json()["keys"]
+        key = next((key for key in keys if key["status"] == "active"), None)
+        if key is None:
+            key = self.issue_key(client=client, label="Saved payment target")["key"]
         response = self.post(BASE + "/credits", {
-            "amountUsd": amount, "reference": "Purchase request PC-001",
+            "amountUsd": amount, "reference": "Purchase request PC-001", "targetKeyId": key["id"],
         }, client=client)
         self.assertIn(response.status_code, (200, 201), response.text)
         return response.json()["request"]

@@ -1,5 +1,6 @@
 """Durable portal data. The gateway remains the authority for inference usage."""
 import os
+import json
 import secrets
 import time
 import uuid
@@ -29,9 +30,24 @@ def key_json(row):
 
 def credit_json(row):
     result = {"id": row["id"], "amountUsd": row["amount_cents"] / 100, "status": row["status"], "reference": row["reference"], "createdAt": iso(row["created_at"]), "reviewedAt": iso(row["reviewed_at"])}
+    result.update(userId=row["user_id"], targetKeyId=row["target_key_id"],
+                  targetKeyLabel=row.get("target_key_label"), targetKeyPrefix=row.get("target_key_prefix"),
+                  paymentConfirmedAt=iso(row["payment_confirmed_at"]),
+                  fulfillmentStatus=row["fulfillment_status"], fulfillmentError=row["fulfillment_error"],
+                  fulfilledAt=iso(row["fulfilled_at"]))
     if "email" in row.keys():
         result.update(email=row["email"], name=row["name"])
     return result
+
+
+class CreditStateError(Exception):
+    def __init__(self, code, detail, status=409):
+        self.code, self.detail, self.status = code, detail, status
+
+
+CREDIT_SELECT = """SELECT c.*, k.label AS target_key_label, k.prefix AS target_key_prefix,
+ u.email, u.name FROM credit_requests c JOIN users u ON u.id=c.user_id
+ LEFT JOIN gateway_keys k ON k.id=c.target_key_id"""
 
 
 class Store:
@@ -45,6 +61,102 @@ class Store:
 
     def connect(self):
         return self.db.connect()
+
+    @staticmethod
+    def credit_target(con, key_id, user_id):
+        row = con.execute("SELECT k.*,u.disabled_at AS owner_disabled_at FROM gateway_keys k JOIN users u ON u.id=k.user_id WHERE k.id=? AND k.user_id=?", (key_id, user_id)).fetchone()
+        if not row:
+            raise CreditStateError("key_not_found", "Choose a key belonging to this account.", 404)
+        if row["status"] != "active" or row["owner_disabled_at"] or row["revocation_started_at"]:
+            raise CreditStateError("key_unavailable", "Choose an active key that is not being revoked.")
+        return row
+
+    def credit_request(self, credit_id):
+        with self.connect() as con:
+            return con.execute(CREDIT_SELECT + " WHERE c.id=?", (credit_id,)).fetchone()
+
+    def credit_requests(self, user_id=None):
+        with self.connect() as con:
+            if user_id is not None:
+                return con.execute(CREDIT_SELECT + " WHERE c.user_id=? ORDER BY c.created_at DESC,c.id", (user_id,)).fetchall()
+            return con.execute(CREDIT_SELECT + " ORDER BY CASE WHEN c.status='pending' THEN 0 ELSE 1 END,c.created_at DESC,c.id LIMIT 1000").fetchall()
+
+    def prepare_credit_review(self, credit_id, decision, note, target_key_id, actor_id):
+        """Persist payment confirmation before HTTP. Every retry has one fixed grant."""
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            actor = con.execute("SELECT role,disabled_at FROM users WHERE id=?", (actor_id,)).fetchone()
+            if not actor or actor["role"] != "admin" or actor["disabled_at"] is not None:
+                raise CreditStateError("admin_required", "Administrator access is required.", 403)
+            row = con.execute("SELECT * FROM credit_requests WHERE id=?", (credit_id,)).fetchone()
+            if not row:
+                raise CreditStateError("credit_not_found", "Credit request not found.", 404)
+            if target_key_id is not None and row["target_key_id"] is not None and target_key_id != row["target_key_id"]:
+                raise CreditStateError("credit_target_locked", "The payment's target key cannot be changed.")
+            if decision == "reject":
+                if row["payment_confirmed_at"] is not None or row["status"] == "approved":
+                    raise CreditStateError("already_confirmed", "A confirmed payment cannot be rejected.")
+                if target_key_id is not None:
+                    raise CreditStateError("invalid_input", "Do not change a key while rejecting a payment.", 400)
+                if row["status"] != "rejected":
+                    con.execute("UPDATE credit_requests SET status='rejected',reviewed_at=?,reviewer_id=?,review_note=? WHERE id=?", (int(time.time()), actor_id, note, credit_id))
+                    self.audit(con, "credit.rejected", actor_id, credit_id)
+                return None
+            if row["status"] == "rejected":
+                raise CreditStateError("already_reviewed", "This request was rejected.")
+            if row["fulfillment_status"] == "fulfilled":
+                return None
+            target = row["target_key_id"] or target_key_id
+            if not target:
+                raise CreditStateError("credit_target_required", "Choose this customer's saved API key before confirming payment.")
+            if row["payment_confirmed_at"] is None:
+                key = self.credit_target(con, target, row["user_id"])
+                operation_id = "portal-credit:" + str(uuid.UUID(credit_id))
+                con.execute("UPDATE credit_requests SET target_key_id=?,status='pending',payment_confirmed_at=?,fulfillment_status='pending',fulfillment_operation_id=?,reviewed_at=?,reviewer_id=?,review_note=? WHERE id=?", (target, int(time.time()), operation_id, int(time.time()), actor_id, note, credit_id))
+                self.audit(con, "credit.payment_confirmed", actor_id, credit_id)
+            else:
+                # Replay must reach the gateway receipt even when the key/owner was
+                # disabled after its successful grant but before portal finalization.
+                key = con.execute("SELECT * FROM gateway_keys WHERE id=? AND user_id=?", (target, row["user_id"])).fetchone()
+                if not key:
+                    raise CreditStateError("key_not_found", "The payment's original key requires operator reconciliation.", 404)
+                operation_id = row["fulfillment_operation_id"]
+                if not operation_id:
+                    raise CreditStateError("credit_operation_missing", "The payment's original operation requires operator reconciliation; no replacement grant was created.")
+            return {"operation_id": operation_id, "key_id": key["gateway_key_id"], "amount_nano_usd": row["amount_cents"] * 10000000, "currency": "USD"}
+
+    def complete_credit_fulfillment(self, credit_id, receipt, actor_id):
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT fulfillment_status FROM credit_requests WHERE id=?", (credit_id,)).fetchone()
+            if row and row["fulfillment_status"] != "fulfilled":
+                con.execute("UPDATE credit_requests SET status='approved',fulfillment_status='fulfilled',fulfillment_error=NULL,fulfillment_receipt=?,fulfilled_at=? WHERE id=?", (json.dumps(receipt, sort_keys=True), int(time.time()), credit_id))
+                self.audit(con, "credit.fulfilled", actor_id, credit_id)
+
+    def credit_fulfillment_failed(self, credit_id, code):
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            con.execute("UPDATE credit_requests SET fulfillment_error=? WHERE id=? AND fulfillment_status='pending'", (code, credit_id))
+
+    def begin_key_revocation(self, key_id, user_id):
+        with self.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT * FROM gateway_keys WHERE id=? AND user_id=?", (key_id, user_id)).fetchone()
+            if not row:
+                raise CreditStateError("key_not_found", "Key not found.", 404)
+            if row["status"] == "revoked":
+                return row
+            if row["revocation_started_at"] is not None:
+                raise CreditStateError("key_revocation_pending", "Revocation is already in progress. Wait for it to finish; if interrupted, contact support to reconcile the gateway before retrying.")
+            held = con.execute("SELECT 1 FROM credit_requests WHERE target_key_id=? AND payment_confirmed_at IS NOT NULL AND fulfillment_status<>'fulfilled'", (key_id,)).fetchone()
+            if held:
+                raise CreditStateError("credit_fulfillment_pending", "This key is receiving a confirmed payment. Finish credit fulfillment before revoking it.")
+            con.execute("UPDATE gateway_keys SET revocation_started_at=? WHERE id=?", (int(time.time()), key_id))
+            return row
+
+    def clear_key_revocation(self, key_id):
+        with self.connect() as con:
+            con.execute("UPDATE gateway_keys SET revocation_started_at=NULL WHERE id=?", (key_id,))
 
     @staticmethod
     def audit(con, action, actor_id, target_id=None):
