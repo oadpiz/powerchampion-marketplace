@@ -61,7 +61,7 @@ class MigrationTests(unittest.TestCase):
             store = Store(path)
             with store.connect() as con:
                 self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "u1@example.test")
-                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], ["0002_users_disabled_at"])
+                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], ["0003_credit_fulfillment"])
 
     def _columns(self, store, table):
         with store.connect() as con:
@@ -77,7 +77,7 @@ class MigrationTests(unittest.TestCase):
     def test_downgrade_to_baseline_round_trips(self):
         from server.store import Store
         store = Store(self.db.url)
-        self.assertEqual(self._versions(store), ["0002_users_disabled_at"])
+        self.assertEqual(self._versions(store), ["0003_credit_fulfillment"])
         self.assertIn("disabled_at", self._columns(store, "users"))
         with store.connect() as con:
             con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at,disabled_at) VALUES (?,?,?,?,?,?,?)",
@@ -88,7 +88,7 @@ class MigrationTests(unittest.TestCase):
         with store.connect() as con:
             self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "u1@example.test")
         upgrade_to_head(self.db.url)
-        self.assertEqual(self._versions(store), ["0002_users_disabled_at"])
+        self.assertEqual(self._versions(store), ["0003_credit_fulfillment"])
         self.assertIn("disabled_at", self._columns(store, "users"))
         with store.connect() as con:
             self.assertIsNone(con.execute("SELECT disabled_at FROM users WHERE id='u1'").fetchone()[0])
@@ -101,6 +101,25 @@ class MigrationTests(unittest.TestCase):
         target = str(Path(self.directory.name) / "pct%20dir" / "p.sqlite")
         Store(target)  # must not raise
         self.assertTrue(Path(target).exists())
+
+    def test_legacy_approved_payment_upgrades_without_implicit_funding_target(self):
+        from server.store import Store
+        store = Store(self.db.url)
+        downgrade_to(self.db.url, "0002_users_disabled_at")
+        with store.connect() as con:
+            con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
+                        ("legacy-user", "legacy@example.test", "Legacy", "unused", "customer", 1))
+            con.execute("INSERT INTO credit_requests (id,user_id,amount_cents,status,reference,created_at) VALUES (?,?,?,?,?,?)",
+                        ("legacy-payment", "legacy-user", 12500, "approved", "historical manual receipt", 1))
+        upgrade_to_head(self.db.url)
+        with store.connect() as con:
+            row = con.execute("SELECT * FROM credit_requests WHERE id='legacy-payment'").fetchone()
+        self.assertEqual(row["status"], "approved")
+        self.assertEqual(row["amount_cents"], 12500)
+        self.assertIsNone(row["target_key_id"])
+        self.assertIsNone(row["payment_confirmed_at"])
+        self.assertIsNone(row["fulfillment_receipt"])
+        self.assertEqual(row["fulfillment_status"], "not_started")
 
 
 if __name__ == "__main__":

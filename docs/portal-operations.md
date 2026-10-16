@@ -118,13 +118,13 @@ read -s PW; PC_PORTAL_ADMIN_PASSWORD="$PW" python -m server.manage create-admin 
 
 ### 回滾（schema）
 
-資料庫結構由 Alembic 管理，目前 head 為 `0002_users_disabled_at`（新增 `users.disabled_at`）。**在退回 A2a 之前的舊映像前，必須先用新映像把結構降回基線**：在 `powerchampion-portal` 容器的 Terminal（Bash）執行：
+資料庫結構由 Alembic 管理，目前人工入額版本的 head 為 `0003_credit_fulfillment`（前一版為 `0002_users_disabled_at`）。**在退回 A2a 之前的舊映像前，必須先備份資料並評估入額紀錄，再用新映像把結構降回基線**：在 `powerchampion-portal` 容器的 Terminal（Bash）執行：
 
 ```sh
 python -c "from alembic import command; from server.migrate import _config; from server.db import Database; from server.settings import Settings; command.downgrade(_config(Database(Settings.from_env().resolved_database_url).url), '0001_baseline')"
 ```
 
-沒做的話，舊映像的 `Store()` 啟動時會拋出 `Can't locate revision '0002_users_disabled_at'` 並不斷重啟。降級會刪除 `users.disabled_at` 欄位，**所有被停用的帳號會因此恢復為啟用**；回滾後如需維持停用，要自行處理（例如重設密碼）。再次升級到新映像時，啟動會自動回到 head。
+沒做的話，舊映像的 `Store()` 啟動時會拋出 `Can't locate revision '0002_users_disabled_at'` 並不斷重啟。從人工入額版本降級還會刪除 target、收款確認與 fulfillment 等資料，會失去入額恢復所需的本機狀態；gateway 既有入額不會跟著回退，勿在待入額期間直接降級。降級也會刪除 `users.disabled_at` 欄位，**所有被停用的帳號會因此恢復為啟用**；回滾後如需維持停用，要自行處理（例如重設密碼）。再次升級到新映像時，啟動會自動回到 head。
 
 登入限制目前只有帳號層級（每帳號 15 分鐘 5 次失敗、註冊每帳號每小時 10 次）。建議另在邊緣（Cloudflare 或 Traefik）對 `/api/portal/auth/*` 設定以來源 IP 計的速率限制。
 
@@ -136,7 +136,7 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 1. **前置檢查**：到 Dokploy 開啟閘道 compose「B300 Selling Platform」的 Environment，確認同時有 `SELL_PANEL_VIEW_TOKEN` 與 `SELL_PANEL_ADMIN_TOKEN`。缺 `SELL_PANEL_VIEW_TOKEN` 要先補，否則閘道的 view 等級路由沒有認證。
 2. **取得值**：複製 `SELL_PANEL_ADMIN_TOKEN` 的值，填進 marketplace compose 的 `PC_GATEWAY_ADMIN_TOKEN` 環境變數。**先設環境變數、再 merge**：marketplace compose 開啟 Autodeploy，merge 一進 main 就會部署，那時 token 必須已經在。值只放在 Dokploy，不要貼進聊天、issue 或 commit。
-3. **`PC_CUSTOMER_KEY_ISSUANCE` 不設**（預設 `0`）：客戶的 `/overview`、`/keys` 回應帶 `keyIssuance: false`（只有閘道已連線且此旗標為 `1` 時才是 `true`），`/account/keys` 不顯示建立表單，改顯示「API 金鑰由我們的團隊簽發，請聯繫支援」；直接呼叫 `POST /keys` 仍回 503 `provider_not_configured`。客戶自己撤銷金鑰只需要閘道已連線，不受此旗標影響。設成 `1` 會讓客戶自助發出餘額為 0 的後付金鑰，上線前須先確認這是想要的，收款流程接上前不建議開。
+3. **`PC_CUSTOMER_KEY_ISSUANCE` 不設**（預設 `0`）：客戶的 `/overview`、`/keys` 回應帶 `keyIssuance: false`（只有閘道已連線且此旗標為 `1` 時才是 `true`），`/account/keys` 不顯示建立表單，改顯示「API 金鑰由我們的團隊簽發，請聯繫支援」；直接呼叫 `POST /keys` 仍回 503 `provider_not_configured`。客戶自己撤銷金鑰只需要閘道已連線，不受此旗標影響。設成 `1` 會讓客戶自助發出餘額為 0 的預付金鑰；完整密鑰只顯示一次，客戶須先安全保存，再以該金鑰提交入額申請。這個旗標不會啟用線上付款。
 
 ### 部署後驗證
 
@@ -160,16 +160,41 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 ### 回滾
 
-把 Dokploy 的 `PC_GATEWAY_ADMIN_TOKEN` 拿掉並重新部署：後台三個頁面回到「未連線」，客戶資料、帳號與已發出的金鑰不受影響（金鑰留在閘道）。此版沒有新增資料庫結構，不需要降級 schema。
+把 Dokploy 的 `PC_GATEWAY_ADMIN_TOKEN` 拿掉並重新部署：後台三個頁面回到「未連線」，客戶資料、帳號與已發出的金鑰不受影響（金鑰留在閘道）。以上是 A2b 連線功能的關閉方式；本次人工收款入額版本另有資料庫 migration，移除 token 不會撤銷已入額款項，也不能當成 schema 回滾。請先備份，並依目前 Alembic revision 評估回退版本。
 
 ## 串接正式服務前
 
 1. 為帳號服務配置獨立的 HTTPS 入口、持久資料庫和備份。前端設定 `PC_PORTAL_ORIGIN` 為該服務的 HTTPS origin，不包含路徑；開發時未設定此值會使用本機 `127.0.0.1:3020`。Cloudflare 部署請使用伺服器環境變數；本機的 `.dev.vars` 檔已排除版本控制。
 2. 帳號服務設定 `PC_PORTAL_ENV=production`、`PC_PORTAL_SECURE_COOKIES=1` 及精確的 `PC_PORTAL_ALLOWED_ORIGINS`。限制服務只能由網站入口存取，並由可信任的邊緣入口執行 IP 請求限制。
 3. 依上節「連接閘道（A2b）」設定 `PC_GATEWAY_ADMIN_TOKEN`。金鑰發放／停用與用量讀取會使用真正的閘道管理 API；前端不會取得此管理憑證。詳細環境設定見 [server/README.md](../server/README.md)。
-4. 選定付款服務後，再接入付款確認、簽章 webhook、退款和閘道可用餘額。現在的儲值審核只儲存人工查核紀錄；核准本身不代表收款成功，也不會自動增加可花用餘額。
+4. 本次提供「人工確認收款後，自動向指定金鑰入額」。尚未選定或接入 payment provider，沒有 checkout、簽章 webhook、自動驗收付款或退款流程。未來付款整合需另外驗收；客戶提交申請不代表已收到款項。
 
 既有客戶金鑰需要明確確認並匯入歸屬，系統不會根據名稱或信箱猜測金鑰的擁有者。
+
+## 人工收款確認與指定金鑰入額
+
+這次變更橫跨 gateway 與 Marketplace 兩個 repository。**先部署 gateway 的 `POST /api/credits/grants` 與原子入額／receipt 儲存，再部署 Marketplace backend、migration 與 UI**；舊 gateway 不支援此 API，不能先開放管理員核准。部署、真實收款及正式金鑰入額需另行授權，本文件不代表已完成上線驗收。
+
+USD 沿用既有使用額度的記帳單位，不代表已決定收款貨幣。payment provider、實際支付幣別、匯率／手續費與收款對帳方式尚待決定；人工操作也須先明確核對實收款與欲入額的 USD 金額。
+
+### 開通與客戶流程
+
+1. 確認 gateway 已支援 grants、Marketplace 的 `PC_GATEWAY_ADMIN_TOKEN` 設定正確。需要客戶自行建立 0 額度預付金鑰時，才明確設定 `PC_CUSTOMER_KEY_ISSUANCE=1`；預設仍關閉，該旗標與匿名試用、線上付款無關。
+2. 客戶到 `/account/keys` 建立金鑰，在一次性畫面複製並安全保存完整 secret，按「我已保存金鑰」。服務不保存可再次取回的 secret；遺失時應先建立並保存另一把金鑰，勿將款項入到無法使用的金鑰。
+3. 到 `/account/credits` **明確選取本人使用中的已保存金鑰**，勾選保存確認，填入與團隊核對的 USD 入額金額及付款參考。沒有使用中的金鑰會導回建立／保存頁面；系統不會替客戶任選一把金鑰。
+4. 提交只建立 `pending` 申請，不會收款或入額。綁定後金鑰及金額不能任意改換。查詢實際剩餘餘額沿用 `/console` 及客戶自己的金鑰；申請金額和 receipt 當時餘額都不等於即時可用餘額。
+
+### 管理員確認與恢復
+
+- 在 `/admin/credits` 核對客戶、申請 ID、參考編號、金額與入額金鑰。**確認確實收到款項且換算金額無誤**，才按「確認收款並入額」，再於對話框確認。這是人工收款認定，客戶沒有確認已付款就自動開通的權限。
+- 伺服器先保存 `paymentConfirmedAt`、`fulfillmentStatus=pending`，再以同一申請產生的固定 operation ID 呼叫 gateway。只有 gateway receipt 核對與本機完成紀錄成功後，才成為 `status=approved`、`fulfillmentStatus=fulfilled`，UI 才顯示「額度已入帳」；這不保證當下餘額為正或已有可用額度，仍須查詢即時餘額。
+- 逾時或回應遺失可回 HTTP `202`；它表示入額待處理，**不是入額成功**。管理員修復設定／連線後，在同一筆申請按「重試入額」，重送同一個 `approve`；gateway 以 operation ID 回放同一 receipt，避免重複加額。不要另建申請、手動再補同額或換目標金鑰。客戶端僅顯示等待管理員處理。
+- `paymentConfirmedAt` 一經保存便禁止駁回；待入額不是退款流程。未確認收款的 pending 申請仍可駁回。已確認而待入額的金鑰也不能由客戶撤銷（409 `credit_fulfillment_pending`）；先由管理員完成／對帳該筆入額，再處理撤銷。若 UI 顯示舊狀態，先重新整理再操作；API 也會檢查狀態與歸屬。
+- 舊資料中的 `approved` 只代表歷史審核紀錄，migration 不會自動補發。`fulfillmentStatus=not_started` 顯示「舊核准紀錄 · 尚未入額」。管理員須先核對歷史實收款與既有人工入額，避免重複補款，再明確啟動。
+- 舊申請若沒有 `targetKeyId`，管理員在確認對話框中，從**該申請客戶本人使用中的金鑰**明確選一把，確認客戶已保存其 secret 後，以 `{decision:"approve", note:"…", targetKeyId:"本機金鑰 ID"}` 送出。沒有可用金鑰時先協助客戶建立並保存，不按標籤／信箱猜測歸屬。已綁定 target 的重試不要傳新 target；換綁會被拒絕。
+
+本機測試只可使用臨時帳號、測試金鑰與測試資料庫。正式 payment provider、真實收款、退款與付費推論均不在此功能的本機測試證據內。
+
 
 ## SEO 與宣傳
 

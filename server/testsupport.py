@@ -56,6 +56,7 @@ class FakeGateway:
         self.reject = None
         self.create_delay = 0
         self.issue_lock = threading.Lock()
+        self.credit_receipts = {}
 
     def _maybe_fail(self):
         if self.reject is not None:
@@ -91,6 +92,15 @@ class FakeGateway:
         self._maybe_fail()
         self.balances.append((key_id, add_usd, set_usd))
         return int(round(float(set_usd if set_usd is not None else add_usd) * 1e9))
+
+    async def grant_credit(self, operation_id, key_id, amount_nano_usd):
+        self._maybe_fail()
+        with self.issue_lock:
+            if operation_id not in self.credit_receipts:
+                self.credit_receipts[operation_id] = {"operation_id": operation_id, "key_id": key_id,
+                    "currency": "USD", "credited_nano_usd": amount_nano_usd,
+                    "balance_after_nano_usd": amount_nano_usd, "created_at": 1700000000}
+            return dict(self.credit_receipts[operation_id])
 
     async def list_keys(self):
         self._maybe_fail()

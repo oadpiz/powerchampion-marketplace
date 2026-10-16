@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { useModalIsolation } from "./use-modal-isolation";
 import {
+  creditStatusText,
+  creditTargetText,
+  type CreditRequest as BaseCreditRequest,
+  type CreditTargetKey,
+} from "../lib/credit-request";
+import {
   useEffect,
   useRef,
   useState,
@@ -51,13 +57,8 @@ type Customer = {
 type AccountAction = "disable" | "enable" | "role" | "reset-password";
 type AccountActionResult = { keysRevoked?: number; keysFailed?: number };
 type AccountSelection = { action: AccountAction; customer: Customer };
-type CreditRequest = {
-  id: string;
-  amountUsd: number;
-  status: string;
-  reference: string | null;
-  createdAt: string | number;
-  reviewedAt: string | number | null;
+type CreditRequest = BaseCreditRequest & {
+  userId: string;
   email: string;
   name: string;
 };
@@ -155,8 +156,8 @@ function OverviewSection() {
         </p>
         <p className="portal-note">
           {zh
-            ? "此狀態代表連線設定是否存在，不代表即時健康檢查。儲值申請的審核紀錄不會變更 Gateway 餘額。"
-            : "This indicates whether a connection is configured, not a live health check. Reviewing a credit request does not change a gateway balance."}
+            ? "此狀態代表連線設定是否存在，不代表即時健康檢查。管理員確認收款後，系統會向指定金鑰入額。"
+            : "This indicates whether a connection is configured, not a live health check. Confirming payment issues credit to the selected key."}
         </p>
         <Link href="/status">
           {zh ? "查看即時服務狀態" : "View service status"} →
@@ -438,7 +439,7 @@ function AccountActionDialog({
       }
       if (event.key === "Tab") {
         const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-          "button:not(:disabled), textarea:not(:disabled), input:not(:disabled), a[href]",
+          "button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]",
         );
         if (!focusable?.length) {
           event.preventDefault();
@@ -629,10 +630,12 @@ function ReviewDialog({
   selection,
   onClose,
   onReviewed,
+  keys,
 }: {
   selection: ReviewSelection;
+  keys: CreditTargetKey[];
   onClose: () => void;
-  onReviewed: (decision: "approve" | "reject") => void;
+  onReviewed: (request: CreditRequest) => void;
 }) {
   const zh = useLocale().locale === "zh";
   const [note, setNote] = useState("");
@@ -642,6 +645,10 @@ function ReviewDialog({
   const cancelRef = useRef<HTMLButtonElement>(null);
   const inFlightRef = useRef(false);
   const approve = selection.decision === "approve";
+  const retry = !!selection.request.paymentConfirmedAt;
+  const needsTarget = approve && !selection.request.targetKeyId;
+  const [targetKeyId, setTargetKeyId] = useState("");
+  const ownedKeys = keys.filter((key) => key.userId === selection.request.userId && key.status === "active");
   useModalIsolation(true, dialogRef);
 
   useEffect(() => {
@@ -654,7 +661,7 @@ function ReviewDialog({
       }
       if (event.key === "Tab") {
         const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-          "button:not(:disabled), textarea:not(:disabled), input:not(:disabled), a[href]",
+          "button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), a[href]",
         );
         if (!focusable?.length) {
           event.preventDefault();
@@ -686,12 +693,12 @@ function ReviewDialog({
 
   async function review(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (inFlightRef.current) return;
+    if (inFlightRef.current || (needsTarget && !ownedKeys.some((key) => key.id === targetKeyId))) return;
     inFlightRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
-      await portalRequest(
+      const result = await portalRequest<{ request: CreditRequest }>(
         `/admin/credits/${encodeURIComponent(selection.request.id)}/review`,
         {
           method: "POST",
@@ -699,10 +706,11 @@ function ReviewDialog({
           body: JSON.stringify({
             decision: selection.decision,
             note: note.trim(),
+            ...(needsTarget ? { targetKeyId } : {}),
           }),
         },
       );
-      onReviewed(selection.decision);
+      onReviewed(result.request);
     } catch (reason: unknown) {
       setError(reason);
     } finally {
@@ -727,9 +735,9 @@ function ReviewDialog({
         </p>
         <h2 id="review-title">
           {approve
-            ? zh
-              ? "記錄核准這筆申請？"
-              : "Record approval for this request?"
+            ? retry
+              ? zh ? "重試這筆已確認收款的入額？" : "Retry this confirmed payment's credit?"
+              : zh ? "已確認收到款項並向此金鑰入額？" : "Confirm payment received and issue credit?"
             : zh
               ? "記錄駁回這筆申請？"
               : "Record rejection for this request?"}
@@ -743,11 +751,22 @@ function ReviewDialog({
           {selection.request.id}
         </p>
         <p className="portal-note" id="review-impact">
-          {zh
-            ? "此操作只記錄內部審核結果，不會付款、退款或增加 Gateway 儲值餘額。實際儲值仍需另外確認與處理。"
-            : "This records an internal review only. It does not charge, refund, or add credit to a gateway balance. Actual funding must be verified and processed separately."}
+          {approve
+            ? zh
+              ? "請先人工核對實際收款與 USD 入額金額。確認後將入額至指定金鑰；收款一經確認便不能駁回。入額逾時可重試同一申請，請勿另建申請。"
+              : "Manually verify the received payment and USD credit amount first. Confirmation issues credit to the target key and prevents rejection. Retry the same request after a timeout; do not create another request."
+            : zh ? "只駁回尚未確認收款的申請；此操作不退款。" : "Reject only a request without confirmed payment. This action does not refund a payment."}
         </p>
+        <p>{zh ? "入額金鑰：" : "Target key: "}{creditTargetText(selection.request, zh)}</p>
         <form onSubmit={review}>
+          {needsTarget && <label className="portal-field">
+            {zh ? "入額 API 金鑰" : "Target API key"}
+            <select value={targetKeyId} required disabled={submitting} onChange={(event) => setTargetKeyId(event.target.value)}>
+              <option value="">{zh ? "確認客戶已保存後選擇金鑰" : "Choose a key the customer has saved"}</option>
+              {ownedKeys.map((key) => <option key={key.id} value={key.id}>{key.label} · {key.prefix}…</option>)}
+            </select>
+            {ownedKeys.length === 0 && <span className="portal-hint">{zh ? "此客戶沒有使用中的金鑰，請先協助建立並保存。" : "This customer has no active key. Help them create and save one first."}</span>}
+          </label>}
           <label className="portal-field">
             {zh ? "審核備註（選填）" : "Review note (optional)"}
             <textarea
@@ -781,16 +800,16 @@ function ReviewDialog({
             <button
               type="submit"
               className="portal-button"
-              disabled={submitting}
+              disabled={submitting || (needsTarget && !ownedKeys.some((key) => key.id === targetKeyId))}
             >
               {submitting
                 ? zh
-                  ? "正在記錄…"
+                  ? "正在處理…"
                   : "Recording…"
                 : approve
-                  ? zh
-                    ? "確認記錄核准"
-                    : "Confirm and record approval"
+                  ? retry
+                    ? zh ? "重試入額" : "Retry credit"
+                    : zh ? "確認已收款並入額" : "Confirm payment received and issue credit"
                   : zh
                     ? "確認記錄駁回"
                     : "Confirm and record rejection"}
@@ -804,12 +823,12 @@ function ReviewDialog({
 
 function CreditsSection() {
   const zh = useLocale().locale === "zh";
-  const resource = usePortalResource<{ requests: CreditRequest[] }>(
+  const resource = usePortalResource<{ requests: CreditRequest[]; keys: CreditTargetKey[]; gatewayConfigured: boolean }>(
     "/admin/credits",
   );
   const [status, setStatus] = useState("pending");
   const [selection, setSelection] = useState<ReviewSelection | null>(null);
-  const [recorded, setRecorded] = useState<"approve" | "reject" | null>(null);
+  const [recorded, setRecorded] = useState<CreditRequest | null>(null);
   const requests =
     resource.data?.requests.filter(
       (request) => status === "all" || request.status === status,
@@ -818,13 +837,7 @@ function CreditsSection() {
     <>
       {recorded && (
         <p role="status" className="portal-note">
-          {recorded === "approve"
-            ? zh
-              ? "已記錄核准。Gateway 餘額未變更。"
-              : "Approval recorded. No gateway balance was changed."
-            : zh
-              ? "已記錄駁回。Gateway 餘額未變更。"
-              : "Rejection recorded. No gateway balance was changed."}
+          {creditStatusText(recorded, zh)}
         </p>
       )}
       <ResourceState {...resource}>
@@ -841,9 +854,10 @@ function CreditsSection() {
           </div>
           <p className="portal-note">
             {zh
-              ? "審核會留下管理紀錄，不會自動儲值。請依實際付款核對結果記錄核准或駁回。"
-              : "Reviews create an administrative record and do not automatically fund an account. Record your decision after checking payment details."}
+              ? "此流程需人工確認收款，尚未串接線上金流。僅管理員可確認收款並入額；入額待處理時重試同一申請，只有入額完成才可視為成功。"
+              : "Payments are confirmed manually; an online payment provider is not connected. Only administrators confirm payment and issue credit. Retry the same pending request; only completed fulfillment means credit was added."}
           </p>
+          {resource.data?.gatewayConfigured === false && <p className="portal-note">{zh ? "請先設定閘道，再執行或重試入額。" : "Configure the gateway before issuing or retrying credit."}</p>}
           <label className="portal-field">
             {zh ? "篩選狀態" : "Filter by status"}
             <select
@@ -871,6 +885,7 @@ function CreditsSection() {
                     </th>
                     <th scope="col">{zh ? "申請金額" : "Requested amount"}</th>
                     <th scope="col">{zh ? "付款參考" : "Payment reference"}</th>
+                    <th scope="col">{zh ? "入額金鑰" : "Target key"}</th>
                     <th scope="col">{zh ? "狀態" : "Status"}</th>
                     <th scope="col">{zh ? "時間" : "Dates"}</th>
                     <th scope="col">{zh ? "審核" : "Review"}</th>
@@ -892,9 +907,10 @@ function CreditsSection() {
                       </td>
                       <td>{moneyLabel(request.amountUsd, zh)}</td>
                       <td>{request.reference || "—"}</td>
+                      <td>{creditTargetText(request, zh)}</td>
                       <td>
                         <span className="portal-badge">
-                          {statusLabel(request.status, zh)}
+                          {creditStatusText(request, zh)}
                         </span>
                       </td>
                       <td>
@@ -910,20 +926,21 @@ function CreditsSection() {
                         )}
                       </td>
                       <td>
-                        {request.status === "pending" ? (
+                        {request.fulfillmentStatus !== "fulfilled" && request.status !== "rejected" ? (
                           <div className="portal-actions">
                             <button
                               type="button"
                               className="portal-button-secondary"
-                              aria-label={`${zh ? "核准" : "Approve"} ${request.email} · ${request.id}`}
+                              disabled={!resource.data?.gatewayConfigured}
+                              aria-label={`${request.paymentConfirmedAt ? zh ? "重試入額" : "Retry credit" : request.status === "approved" ? zh ? "執行入額" : "Issue credit" : zh ? "確認收款並入額" : "Confirm payment and issue credit"} ${request.email} · ${request.id}`}
                               onClick={() => {
                                 setRecorded(null);
                                 setSelection({ request, decision: "approve" });
                               }}
                             >
-                              {zh ? "核准" : "Approve"}
+                              {request.paymentConfirmedAt ? zh ? "重試入額" : "Retry credit" : request.status === "approved" ? zh ? "執行入額" : "Issue credit" : zh ? "確認收款並入額" : "Confirm payment and issue credit"}
                             </button>
-                            <button
+                            {!request.paymentConfirmedAt && request.status === "pending" && <button
                               type="button"
                               className="portal-button-secondary"
                               aria-label={`${zh ? "駁回" : "Reject"} ${request.email} · ${request.id}`}
@@ -933,7 +950,7 @@ function CreditsSection() {
                               }}
                             >
                               {zh ? "駁回" : "Reject"}
-                            </button>
+                            </button>}
                           </div>
                         ) : (
                           "—"
@@ -956,9 +973,10 @@ function CreditsSection() {
       {selection && (
         <ReviewDialog
           selection={selection}
+          keys={resource.data?.keys ?? []}
           onClose={() => setSelection(null)}
-          onReviewed={(decision) => {
-            setRecorded(decision);
+          onReviewed={(request) => {
+            setRecorded(request);
             setSelection(null);
             resource.refresh();
           }}

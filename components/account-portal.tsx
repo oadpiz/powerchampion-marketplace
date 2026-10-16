@@ -10,23 +10,14 @@ import {
   type PortalUser,
 } from "../lib/portal-client";
 import { useLocale } from "./locale-provider";
+import {
+  creditStatusText,
+  creditTargetText,
+  type CreditRequest as Credit,
+  type CreditTargetKey as Key,
+} from "../lib/credit-request";
 
 type Section = "overview" | "keys" | "usage" | "credits" | "security";
-type Key = {
-  id: string;
-  label: string;
-  prefix: string;
-  status: string;
-  createdAt: string;
-};
-type Credit = {
-  id: string;
-  amountUsd: number;
-  status: string;
-  reference: string;
-  createdAt: string;
-  reviewedAt?: string | null;
-};
 type Overview = {
   user: PortalUser;
   keyCount: number;
@@ -50,7 +41,7 @@ type Usage = {
   source: "gateway" | "unconfigured";
   updatedAt: string | null;
 };
-type Credits = { requests: Credit[] };
+type Credits = Keys & { requests: Credit[] };
 const NAV: { section: Section; href: string; en: string; zh: string }[] = [
   { section: "overview", href: "/account", en: "Overview", zh: "總覽" },
   { section: "keys", href: "/account/keys", en: "API keys", zh: "API 金鑰" },
@@ -114,6 +105,8 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
   const [revokeKey, setRevokeKey] = useState<Key | null>(null);
   const [amount, setAmount] = useState("50");
   const [reference, setReference] = useState("");
+  const [targetKeyId, setTargetKeyId] = useState("");
+  const [keySaved, setKeySaved] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -244,14 +237,21 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
 
   async function submitCredit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (
+      busy || !keySaved || !data || !("requests" in data) ||
+      !data.gatewayConfigured ||
+      !data.keys.some((key) => key.id === targetKeyId && key.status === "active")
+    ) return;
     const result = await mutate<unknown>("/credits", "POST", {
       amountUsd: Number(amount),
       reference: reference.trim(),
+      targetKeyId,
     });
     if (result) {
       setSubmitted(true);
       setReference("");
+      setTargetKeyId("");
+      setKeySaved(false);
       setRefresh((value) => value + 1);
     }
   }
@@ -350,13 +350,13 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
         aria-label={zh ? "帳號導覽" : "Account navigation"}
       >
         {NAV.map((item) => (
-          <Link
+          <a
             key={item.section}
             href={item.href}
             aria-current={section === item.section ? "page" : undefined}
           >
             {item[locale]}
-          </Link>
+          </a>
         ))}
       </nav>
       {loading && (
@@ -713,17 +713,31 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
               <h2>{zh ? "提交付款驗證" : "Submit payment verification"}</h2>
               <p className="portal-muted">
                 {zh
-                  ? "已依團隊提供的付款方式完成付款後，請提交金額與參考編號，供團隊核對。尚未付款請先聯繫我們。"
-                  : "After paying through the instructions provided by our team, submit the amount and reference for review. Contact us first if you have not arranged payment."}
+                  ? "請先保存入額金鑰，並與團隊確認收款方式與換算金額，再提交參考編號供人工核對。"
+                  : "Save your target key first, then arrange payment instructions and the credit amount with our team. Submit the reference for manual verification."}
               </p>
               <p className="portal-note">
                 {zh
                   ? "此表單只建立待審核紀錄，不會扣款，也不會增加模型閘道額度。實際可用餘額請至餘額查詢確認。"
                   : "This form creates a review request. It does not charge your payment method or add gateway credits. Check your gateway balance separately."}
               </p>
-              <form className="portal-credit-form" onSubmit={submitCredit}>
+              {!data.gatewayConfigured ? (
+                <p className="portal-note">{zh ? "閘道設定完成後才可申請入額，請聯繫支援。" : "Funding is unavailable until the gateway is configured. Contact support."}</p>
+              ) : !data.keys.some((key) => key.status === "active") ? (
+                <a className="portal-button" href="/account/keys">{zh ? "建立並保存 API 金鑰" : "Create and save an API key"}</a>
+              ) : <form className="portal-credit-form" onSubmit={submitCredit}>
                 <label className="portal-field">
-                  {zh ? "已付款金額（USD）" : "Amount paid (USD)"}
+                  {zh ? "入額 API 金鑰" : "Target API key"}
+                  <select required value={targetKeyId} disabled={busy} onChange={(event) => { setTargetKeyId(event.target.value); setKeySaved(false); }}>
+                    <option value="">{zh ? "請選擇已保存的金鑰" : "Choose a key you have saved"}</option>
+                    {data.keys.filter((key) => key.status === "active").map((key) => <option key={key.id} value={key.id}>{key.label} · {key.prefix}…</option>)}
+                  </select>
+                </label>
+                <label className="portal-field">
+                  <span><input type="checkbox" checked={keySaved} disabled={busy || !targetKeyId} onChange={(event) => setKeySaved(event.target.checked)} /> {zh ? "我已安全保存此金鑰的完整密鑰；入額後將使用此金鑰。" : "I have securely saved this key's full secret and will use it after funding."}</span>
+                </label>
+                <label className="portal-field">
+                  {zh ? "申請入額（USD 記帳單位）" : "Credit amount (USD accounting)"}
                   <input
                     type="number"
                     min={10}
@@ -756,6 +770,8 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                     disabled={
                       busy ||
                       !reference.trim() ||
+                      !keySaved ||
+                      !data.keys.some((key) => key.id === targetKeyId && key.status === "active") ||
                       Number(amount) < 10 ||
                       Number(amount) > 10000
                     }
@@ -775,7 +791,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                     {zh ? "聯繫付款團隊" : "Contact payment support"} ↗
                   </Link>
                 </div>
-              </form>
+              </form>}
             </section>
             <section className="portal-panel">
               <h2>{zh ? "申請紀錄" : "Request history"}</h2>
@@ -792,6 +808,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                       <tr>
                         <th>{zh ? "金額" : "Amount"}</th>
                         <th>{zh ? "付款參考編號" : "Reference"}</th>
+                        <th>{zh ? "入額金鑰" : "Target key"}</th>
                         <th>{zh ? "狀態" : "Status"}</th>
                         <th>{zh ? "申請日期" : "Submitted"}</th>
                         <th>{zh ? "審核日期" : "Reviewed"}</th>
@@ -802,9 +819,10 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                         <tr key={item.id}>
                           <td>{money(item.amountUsd)}</td>
                           <td>{item.reference}</td>
+                          <td>{creditTargetText(item, zh)}</td>
                           <td>
                             <span className="portal-badge">
-                              {statusText(item.status, zh)}
+                              {creditStatusText(item, zh)}
                             </span>
                           </td>
                           <td>{date(item.createdAt, zh)}</td>

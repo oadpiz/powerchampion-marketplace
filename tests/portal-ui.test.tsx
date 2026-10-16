@@ -20,6 +20,8 @@ const customer = {
   name: "Person",
   role: "customer",
 };
+const creditKey = { id: "key-1", userId: "cust-1", label: "Saved production", prefix: "sk-owned", status: "active", createdAt: "2026-09-01T00:00:00Z", gatewayKeyId: "gateway-1" };
+const creditRequest = { id: "credit-1", userId: "cust-1", email: customer.email, name: customer.name, amountUsd: 50, status: "pending", reference: "BANK-123", createdAt: "2026-09-01T00:00:00Z", reviewedAt: null, targetKeyId: "key-1", targetKeyLabel: "Saved production", targetKeyPrefix: "sk-owned", paymentConfirmedAt: null, fulfillmentStatus: "not_started", fulfillmentError: null, fulfilledAt: null };
 const wrap = (node: React.ReactNode) =>
   render(<LocaleProvider>{node}</LocaleProvider>);
 afterEach(() => {
@@ -90,6 +92,15 @@ describe("account portal", () => {
     expect(portalErrorText(new PortalError(409, "account_disabled", "x"), "en")).toBe("This key's account is disabled. Enable the account first.");
     expect(portalErrorText(new PortalError(409, "account_disabled", "x"), "zh")).toBe("此金鑰所屬的帳號已停用，請先啟用帳號。");
     expect(portalErrorText(new PortalError(403, "account_disabled", "x"), "en")).toBe("This account has been disabled. Contact support.");
+    expect(portalErrorText(new PortalError(409, "credit_fulfillment_pending", "x"), "en")).toContain("Ask an administrator to complete the pending credit before revoking");
+    expect(portalErrorText(new PortalError(409, "credit_target_required", "x"), "en")).toContain("Select an active key owned by this customer");
+    expect(portalErrorText(new PortalError(409, "credit_target_locked", "x"), "en")).toContain("cannot be changed");
+    expect(portalErrorText(new PortalError(409, "key_unavailable", "x"), "en")).toContain("target key is unavailable");
+  });
+
+  it("explains an in-flight key revocation without asking the customer to submit it again", () => {
+    expect(portalErrorText(new PortalError(409, "key_revocation_pending", "x"), "en")).toContain("Key revocation is in progress");
+    expect(portalErrorText(new PortalError(409, "key_revocation_pending", "x"), "zh")).toBe("金鑰撤銷處理中，請稍後重新整理；若持續未完成，請管理員核對。");
   });
 
   it("preserves the saved-agent destination when switching from login to registration", async () => {
@@ -264,20 +275,17 @@ describe("account portal", () => {
       if (init?.method === "POST")
         return Promise.resolve(
           Response.json({
-            request: {
-              id: "credit-1",
-              amountUsd: 50,
-              status: "pending",
-              reference: "BANK-123",
-            },
+            request: creditRequest,
           }),
         );
-      return Promise.resolve(Response.json({ requests: [] }));
+      return Promise.resolve(Response.json({ requests: [], keys: [creditKey], gatewayConfigured: true }));
     });
     vi.stubGlobal("fetch", fetchMock);
     wrap(<AccountPortal section="credits" />);
-    const amount = await screen.findByLabelText("Amount paid (USD)");
+    const amount = await screen.findByLabelText("Credit amount (USD accounting)");
     fireEvent.change(amount, { target: { value: "50" } });
+    await user.selectOptions(screen.getByLabelText("Target API key"), "key-1");
+    await user.click(screen.getByRole("checkbox", { name: /I have securely saved/ }));
     await user.type(screen.getByLabelText("Payment reference"), "BANK-123");
     await user.click(
       screen.getByRole("button", { name: "Submit verification request" }),
@@ -290,7 +298,7 @@ describe("account portal", () => {
         fetchMock.mock.calls.find((call) => call[1]?.method === "POST")![1]
           .body,
       ),
-    ).toEqual({ amountUsd: 50, reference: "BANK-123" });
+    ).toEqual({ amountUsd: 50, reference: "BANK-123", targetKeyId: "key-1" });
     expect(
       screen.getByText(
         /does not charge your payment method or add gateway credits/,
@@ -348,7 +356,7 @@ describe("account portal", () => {
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
-  it("allows cancelling a credit review and requires a separate confirmation to record approval", async () => {
+  it("allows cancelling a credit review and requires confirmation of received payment before issuing credit", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn().mockImplementation((url, init) => {
       if (String(url).endsWith("/session"))
@@ -356,32 +364,23 @@ describe("account portal", () => {
           Response.json({ user: { ...customer, role: "admin" } }),
         );
       if (init?.method === "POST")
-        return Promise.resolve(Response.json({ ok: true }));
+        return Promise.resolve(Response.json({ request: { ...creditRequest, status: "approved", paymentConfirmedAt: "2026-09-01T00:00:00Z", fulfillmentStatus: "fulfilled", fulfilledAt: "2026-09-01T00:00:00Z" } }));
       return Promise.resolve(
         Response.json({
-          requests: [
-            {
-              id: "credit-1",
-              email: customer.email,
-              name: customer.name,
-              amountUsd: 50,
-              status: "pending",
-              reference: "BANK-123",
-              createdAt: "2026-09-01T00:00:00Z",
-              reviewedAt: null,
-            },
-          ],
+          requests: [creditRequest],
+          keys: [creditKey],
+          gatewayConfigured: true,
         }),
       );
     });
     vi.stubGlobal("fetch", fetchMock);
     wrap(<AdminPortal section="credits" />);
     const approve = await screen.findByRole("button", {
-      name: "Approve person@example.com · credit-1",
+      name: "Confirm payment and issue credit person@example.com · credit-1",
     });
     await user.click(approve);
     expect(screen.getByRole("dialog")).toHaveTextContent(
-      "does not charge, refund, or add credit",
+      "Manually verify the received payment",
     );
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -394,11 +393,11 @@ describe("account portal", () => {
       "Matched bank reference",
     );
     await user.click(
-      screen.getByRole("button", { name: "Confirm and record approval" }),
+      screen.getByRole("button", { name: "Confirm payment received and issue credit" }),
     );
     expect(
       await screen.findByText(
-        "Approval recorded. No gateway balance was changed.",
+        "Credit added",
       ),
     ).toBeVisible();
     const post = fetchMock.mock.calls.find(
