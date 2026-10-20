@@ -16,7 +16,9 @@ type AllocationNode = {
   note: string;
   updatedAt: string | null;
   updatedBy: string | null;
+  pendingCleanup: { revision: number; engineer: string | null } | null;
 };
+type PendingCleanup = { node: string; revision: number; engineer: string | null };
 type Engineer = {
   id: string;
   clusterId: string;
@@ -43,7 +45,9 @@ export type AllocationState = {
     reserved: number;
     perEngineer: { id: string; username: string; nodes: number }[];
   };
+  pendingCleanup: PendingCleanup[];
   warnings?: string[];
+  sshPubkey?: string | null;
 };
 type ExportResult = {
   filename: string;
@@ -51,12 +55,19 @@ type ExportResult = {
   revision: number;
   generatedAt: string;
   warnings: string[];
-  excluded: { username: string; reason: string; nodes?: string[] }[];
+  excluded: { username: string; reason: string; pendingCleanup?: string[] }[];
   renderReady: boolean;
   monitoringReady: boolean;
   missingKeys: string[];
+  pendingCleanup: PendingCleanup[];
 };
-type NodeDraft = { role: Role; engineerId: string; note: string };
+type NodeDraft = { role: Role; engineerId: string; note: string; synced: boolean };
+
+/** Mirrors the server: exported text must not be able to carry an ansible/Jinja template. */
+const DISPLAY_NAME = /^[\p{L}\p{N}_ .-]{1,64}$/u;
+const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+const SYNC_CONFIRM_ZH = "我已依手冊 4.7 執行節點同步，且確認該節點已無工程師帳號";
+const SYNC_CONFIRM_EN = "I ran the node sync (runbook 4.7) and confirmed no engineer account remains on this node";
 type EngineerDialog = { kind: "create" } | { kind: "edit"; engineer: Engineer };
 
 /** From ~/github/b300-cluster/docs/engineer-access-runbook.md (2026-10-20: sections 1, 2, 4.2, 4.6, 4.7, 4.8). One command per block. */
@@ -110,12 +121,14 @@ function downloadText(filename: string, text: string) {
 
 function EngineerFormDialog({
   dialog,
+  revision,
   onClose,
   onSaved,
 }: {
   dialog: EngineerDialog;
+  revision: number;
   onClose: () => void;
-  onSaved: (state: AllocationState) => void;
+  onSaved: (state: AllocationState, savedKey: string | null) => void;
 }) {
   const locale = useLocale().locale;
   const zh = locale === "zh";
@@ -143,9 +156,22 @@ function EngineerFormDialog({
       );
       return;
     }
+    const normalisedEmail = email.trim().toLowerCase();
+    if (!EMAIL.test(normalisedEmail)) {
+      setMessage(zh ? "Email 只能包含英數字與 . _ % + -（例如 name@oadpiz.com）。" : "Use an email of letters, digits and . _ % + - only (for example name@oadpiz.com).");
+      return;
+    }
+    if (displayName.trim() && !DISPLAY_NAME.test(displayName.trim())) {
+      setMessage(
+        zh
+          ? "顯示名稱最多 64 字，只能用文字、數字、空白與 . - _（不可用 { } % # : , 引號或反斜線）。"
+          : "Use at most 64 letters, digits, spaces, . - or _ for the display name (no { } % # : , quotes or backslash).",
+      );
+      return;
+    }
     setBusy(true);
     setMessage(null);
-    const body: Record<string, string> = { email: email.trim(), displayName: displayName.trim() };
+    const body: Record<string, string | number> = { email: normalisedEmail, displayName: displayName.trim(), expected_revision: revision };
     if (key.trim()) body.sshPubkey = key.trim();
     try {
       const state = editing
@@ -157,7 +183,10 @@ function EngineerFormDialog({
             method: "POST",
             body: JSON.stringify({ ...body, username }),
           });
-      onSaved(state);
+      const saved = key.trim()
+        ? (state.sshPubkey ?? state.engineers.find((engineer) => engineer.username === (editing?.username ?? username))?.sshPubkey ?? null)
+        : null;
+      onSaved(state, saved);
     } catch (reason: unknown) {
       setMessage(errorText(reason, locale));
       setBusy(false);
@@ -208,12 +237,15 @@ function EngineerFormDialog({
         <p className="portal-hint">
           {zh ? "目前指紋：" : "Current fingerprint: "}
           <code>{editing.keyFingerprint}</code>
+          <br />
+          {zh ? "目前儲存的公鑰（正規化後）：" : "Saved key (normalised): "}
+          <code>{editing.sshPubkey}</code>
         </p>
       )}
       <p className="portal-hint">
         {zh
-          ? "接受 ssh-ed25519、ecdsa 或 3072 位元以上的 ssh-rsa；只貼公鑰（.pub），不要貼私鑰，也不要加 from= 等選項。"
-          : "Accepts ssh-ed25519, ecdsa, or ssh-rsa of 3072 bits or more. Paste the public key (.pub) only, never the private key, and no options such as from=."}
+          ? "接受 ssh-ed25519、ecdsa 或 3072 位元以上的 ssh-rsa；只貼公鑰（.pub），不要貼私鑰，也不要加 from= 等選項。註解只保留英數字與 @ . _ + -，其他註解會被拿掉。"
+          : "Accepts ssh-ed25519, ecdsa, or ssh-rsa of 3072 bits or more. Paste the public key (.pub) only, never the private key, and no options such as from=. A comment is kept only if it uses letters, digits and @ . _ + -; otherwise it is dropped."}
       </p>
       <ErrorLine message={message} />
     </AdminDialog>
@@ -223,10 +255,14 @@ function EngineerFormDialog({
 function NodeRow({
   node,
   engineers,
+  revision,
+  lastExportRevision,
   onSaved,
 }: {
   node: AllocationNode;
   engineers: Engineer[];
+  revision: number;
+  lastExportRevision: number;
   onSaved: (state: AllocationState) => void;
 }) {
   const locale = useLocale().locale;
@@ -236,6 +272,11 @@ function NodeRow({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const active = engineers.filter((engineer) => engineer.active);
+  const toSelling = draft !== null && draft.role === "selling" && node.role !== "selling";
+  const engineerToSelling = toSelling && node.role === "engineer";
+  const cleanup = toSelling && node.role === "reserved" ? node.pendingCleanup : null;
+  const notExported = cleanup !== null && lastExportRevision < cleanup.revision;
+  const blocked = engineerToSelling || notExported || (cleanup !== null && !draft?.synced);
 
   async function send(confirm: boolean) {
     if (!draft) return;
@@ -248,7 +289,9 @@ function NodeRow({
           role: draft.role,
           ...(draft.role === "engineer" && { engineerId: draft.engineerId }),
           note: draft.note,
+          expected_revision: revision,
           ...(confirm && { confirm_selling_change: true }),
+          ...(cleanup !== null && draft.synced && { confirm_node_synced: true }),
         }),
       });
       setDraft(null);
@@ -263,7 +306,7 @@ function NodeRow({
   }
 
   function save() {
-    if (!draft) return;
+    if (!draft || blocked) return;
     if (draft.role === "engineer" && !draft.engineerId) {
       setMessage(zh ? "請選擇工程師。" : "Choose an engineer.");
       return;
@@ -281,6 +324,16 @@ function NodeRow({
         </td>
         <td>
           <span className="portal-badge">{roleLabel(node.role, zh)}</span>
+          {node.pendingCleanup && (
+            <>
+              <br />
+              <span className="portal-badge">
+                {zh
+                  ? `待清理（原 ${node.pendingCleanup.engineer ?? "工程師"}）`
+                  : `Pending cleanup (was ${node.pendingCleanup.engineer ?? "an engineer"})`}
+              </span>
+            </>
+          )}
         </td>
         <td>{node.engineer ? node.engineer.username : "—"}</td>
         <td>{node.note || "—"}</td>
@@ -300,7 +353,7 @@ function NodeRow({
             aria-label={zh ? `編輯 ${node.name}` : `Edit ${node.name}`}
             onClick={() => {
               setMessage(null);
-              setDraft({ role: node.role, engineerId: node.engineerId ?? "", note: node.note });
+              setDraft({ role: node.role, engineerId: node.engineerId ?? "", note: node.note, synced: false });
             }}
           >
             {zh ? "編輯" : "Edit"}
@@ -320,7 +373,7 @@ function NodeRow({
           aria-label={zh ? `${node.name} 角色` : `${node.name} role`}
           value={draft.role}
           disabled={busy}
-          onChange={(event) => setDraft({ ...draft, role: event.target.value as Role })}
+          onChange={(event) => setDraft({ ...draft, role: event.target.value as Role, synced: false })}
         >
           {(["selling", "engineer", "reserved"] as Role[]).map((role) => (
             <option key={role} value={role}>
@@ -355,8 +408,33 @@ function NodeRow({
       </td>
       <td>{dateLabel(node.updatedAt, zh)}</td>
       <td>
+        {engineerToSelling && (
+          <p className="portal-note" role="status">
+            {zh
+              ? "請先改為保留並完成節點同步，再改為業務。"
+              : "Set the node to Reserved and finish the node sync first, then make it Selling."}
+          </p>
+        )}
+        {notExported && cleanup && (
+          <p className="portal-note" role="status">
+            {zh
+              ? `${node.name} 離開 ${cleanup.engineer ?? "工程師"} 後還沒匯出：請先匯出 engineers.yaml（版本 ≥ ${cleanup.revision}）並執行節點同步（4.7）。`
+              : `${node.name} has not been exported since it left ${cleanup.engineer ?? "its engineer"}: export engineers.yaml (revision ${cleanup.revision} or later) and run the node sync (4.7) first.`}
+          </p>
+        )}
+        {cleanup && !notExported && (
+          <label className="portal-field">
+            <input
+              type="checkbox"
+              checked={draft.synced}
+              disabled={busy}
+              onChange={(event) => setDraft({ ...draft, synced: event.target.checked })}
+            />
+            {zh ? SYNC_CONFIRM_ZH : SYNC_CONFIRM_EN}
+          </label>
+        )}
         <div className="portal-actions">
-          <button type="button" className="portal-button" disabled={busy} onClick={save}>
+          <button type="button" className="portal-button" disabled={busy || blocked} onClick={save}>
             {zh ? "儲存" : "Save"}
           </button>
           <button
@@ -409,7 +487,7 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
       onStateChange(
         await portalRequest<AllocationState>("/admin/allocation/owner", {
           method: "POST",
-          body: JSON.stringify({ ownerEmail: owner.trim() }),
+          body: JSON.stringify({ ownerEmail: owner.trim().toLowerCase(), expected_revision: state.revision }),
         }),
       );
     } catch (reason: unknown) {
@@ -425,7 +503,13 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
       const exported = await portalRequest<ExportResult>("/admin/allocation/export");
       downloadText(exported.filename || "engineers.yaml", exported.yaml);
       setResult(exported);
-      onStateChange(await portalRequest<AllocationState>("/admin/allocation"));
+      // The download itself is read-only; recording it (and its revision) is a separate write.
+      onStateChange(
+        await portalRequest<AllocationState>("/admin/allocation/export/mark", {
+          method: "POST",
+          body: JSON.stringify({ revision: exported.revision }),
+        }),
+      );
     } catch (reason: unknown) {
       setMessage(errorText(reason, locale));
     }
@@ -512,8 +596,8 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
       </ol>
       <p className="portal-hint">
         {zh
-          ? "業務節點不會開個人帳號，playbook 也不會碰它們：要把工程師的節點改成業務，先改成「保留」並同步一次（4.7 會移除帳號），再改成業務。"
-          : "Selling nodes never get personal accounts and the playbook never touches them: to turn an engineer's node into a selling node, set it to Reserved and sync once (4.7 removes the account), then make it Selling."}
+          ? "業務節點不會開個人帳號，playbook 也不會碰它們，所以工程師節點不能直接改成業務：先改成「保留」→ 匯出 engineers.yaml → 執行節點同步（4.7，移除不再分配的工程師帳號）→ 在該節點勾選「已完成節點同步」→ 再改成業務。"
+          : "Selling nodes never get personal accounts and the playbook never touches them, so an engineer node cannot go straight to Selling: set it to Reserved → export engineers.yaml → run the node sync (4.7, which removes engineer accounts that are no longer assigned) → tick the sync confirmation on that node → then make it Selling."}
       </p>
     </section>
   );
@@ -528,11 +612,20 @@ export function AdminAllocationSection() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const state = override ?? resource.data;
 
   function applyState(next: AllocationState) {
     setOverride(next);
     setWarnings(next.warnings ?? []);
+  }
+
+  function reload() {
+    setOverride(null);
+    setWarnings([]);
+    setMessage(null);
+    setNotice(null);
+    resource.refresh();
   }
 
   async function setActive(engineer: Engineer, active: boolean) {
@@ -542,7 +635,7 @@ export function AdminAllocationSection() {
       applyState(
         await portalRequest<AllocationState>(`/admin/allocation/engineers/${encodeURIComponent(engineer.id)}/status`, {
           method: "POST",
-          body: JSON.stringify({ active }),
+          body: JSON.stringify({ active, expected_revision: state?.revision }),
         }),
       );
     } catch (reason: unknown) {
@@ -562,6 +655,11 @@ export function AdminAllocationSection() {
               <span className="portal-badge">{zh ? `保留 ${state.summary.reserved} 台` : `Reserved: ${state.summary.reserved}`}</span>
             </div>
             <div className="portal-actions">
+              <button type="button" className="portal-button-secondary" onClick={reload}>
+                {zh ? "重新整理" : "Reload"}
+              </button>
+            </div>
+            <div className="portal-actions">
               {state.summary.perEngineer.map((item) => (
                 <span key={item.id} className="portal-badge">
                   {zh ? `${item.username} ${item.nodes} 台` : `${item.username}: ${item.nodes}`}
@@ -569,6 +667,30 @@ export function AdminAllocationSection() {
               ))}
             </div>
           </section>
+          {state.pendingCleanup.length > 0 && (
+            <section className="portal-panel" aria-labelledby="allocation-pending">
+              <h2 id="allocation-pending">{zh ? "待清理節點" : "Pending cleanup"}</h2>
+              <p className="portal-hint">
+                {zh
+                  ? "這些節點離開了工程師、目前是保留。匯出 engineers.yaml 並執行節點同步（4.7）移除帳號後，勾選確認才可改為業務。"
+                  : "These nodes left an engineer and are reserved. Export engineers.yaml and run the node sync (4.7) to remove the account; only then can you confirm and make them selling."}
+              </p>
+              <ul>
+                {state.pendingCleanup.map((item) => (
+                  <li key={item.node}>
+                    {zh
+                      ? `${item.node}：原屬 ${item.engineer ?? "工程師"}（版本 ${item.revision} 起）`
+                      : `${item.node}: was ${item.engineer ?? "an engineer"} (since revision ${item.revision})`}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {notice && (
+            <p className="portal-note" role="status">
+              {notice}
+            </p>
+          )}
           {warnings.length > 0 && (
             <ul className="portal-note" role="status">
               {warnings.map((warning) => (
@@ -594,7 +716,14 @@ export function AdminAllocationSection() {
                 </thead>
                 <tbody>
                   {state.nodes.map((node) => (
-                    <NodeRow key={`${node.name}:${state.revision}`} node={node} engineers={state.engineers} onSaved={applyState} />
+                    <NodeRow
+                      key={`${node.name}:${state.revision}`}
+                      node={node}
+                      engineers={state.engineers}
+                      revision={state.revision}
+                      lastExportRevision={state.lastExport?.revision ?? 0}
+                      onSaved={applyState}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -685,10 +814,18 @@ export function AdminAllocationSection() {
           {dialog && (
             <EngineerFormDialog
               dialog={dialog}
+              revision={state.revision}
               onClose={() => setDialog(null)}
-              onSaved={(next) => {
+              onSaved={(next, savedKey) => {
                 setDialog(null);
                 applyState(next);
+                setNotice(
+                  savedKey
+                    ? zh
+                      ? `已儲存公鑰（正規化後）：${savedKey}`
+                      : `Saved key (normalised): ${savedKey}`
+                    : null,
+                );
               }}
             />
           )}

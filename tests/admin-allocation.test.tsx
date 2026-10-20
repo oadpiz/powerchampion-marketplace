@@ -35,6 +35,7 @@ function seedState(): AllocationState {
         note: "",
         updatedAt: "2026-10-20T08:00:00Z",
         updatedBy: null,
+        pendingCleanup: null,
       };
     }),
     engineers: Object.keys(OWNERS).map((username) => ({
@@ -61,6 +62,7 @@ function seedState(): AllocationState {
         nodes: OWNERS[username].split(" ").length,
       })),
     },
+    pendingCleanup: [],
   };
 }
 
@@ -133,7 +135,7 @@ describe("admin node allocation section", () => {
     expect(calls.find((call) => call.method === "POST")).toEqual({
       method: "POST",
       path: "/admin/allocation/nodes/b300-14",
-      body: { role: "reserved", note: "", confirm_selling_change: true },
+      body: { role: "reserved", note: "", expected_revision: 3, confirm_selling_change: true },
     });
     const row = (await screen.findByRole("rowheader", { name: "b300-14" })).closest("tr")!;
     expect(within(row).getByText("Reserved")).toBeVisible();
@@ -156,6 +158,7 @@ describe("admin node allocation section", () => {
       role: "engineer",
       engineerId: engineerId("nati"),
       note: "bench",
+      expected_revision: 3,
     });
   });
 
@@ -186,8 +189,9 @@ describe("admin node allocation section", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({
-      email: "Kim@oadpiz.com",
+      email: "kim@oadpiz.com",
       displayName: "",
+      expected_revision: 3,
       sshPubkey: "ssh-ed25519 AAAAC3Nza kim",
       username: "kim",
     });
@@ -207,11 +211,10 @@ describe("admin node allocation section", () => {
       downloads.push(`${this.download} ${this.href}`);
     });
     const exported = { ...seedState(), lastExport: { revision: 3, at: "2026-10-20T09:00:00Z" } };
-    let exportedOnce = false;
     const calls = stubPortal({
-      "GET /admin/allocation": () => (exportedOnce ? exported : seedState()),
+      "GET /admin/allocation": () => seedState(),
+      "POST /admin/allocation/export/mark": () => exported,
       "GET /admin/allocation/export": () => {
-        exportedOnce = true;
         return {
           filename: "engineers.yaml",
           yaml: "selling:\n  nodes: [b300-14, b300-31]\n",
@@ -222,6 +225,7 @@ describe("admin node allocation section", () => {
           renderReady: false,
           monitoringReady: true,
           missingKeys: ["justin"],
+          pendingCleanup: [],
         };
       },
     });
@@ -238,5 +242,94 @@ describe("admin node allocation section", () => {
     expect(await screen.findByText(/Last export: revision 3/)).toBeVisible();
     expect(screen.getByText(/Monitoring can sync .*justin have no key yet/)).toBeVisible();
     expect(calls.filter((call) => call.path === "/admin/allocation/export")).toHaveLength(1);
+    expect(calls.find((call) => call.path === "/admin/allocation/export/mark")).toEqual({
+      method: "POST",
+      path: "/admin/allocation/export/mark",
+      body: { revision: 3 },
+    });
+  });
+
+  it("does not let an engineer node go straight to selling", async () => {
+    const user = userEvent.setup();
+    const calls = stubPortal({ "GET /admin/allocation": () => seedState() });
+    wrap();
+    await user.click(await screen.findByRole("button", { name: "Edit b300-30" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "b300-30 role" }), "selling");
+    expect(screen.getByText(/Set the node to Reserved and finish the node sync first/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("needs an export and the sync checkbox before a pending node becomes selling", async () => {
+    const user = userEvent.setup();
+    const pending = (lastExport: number | null) => {
+      const state = seedState();
+      state.revision = 5;
+      state.lastExport = lastExport === null ? null : { revision: lastExport, at: null };
+      state.nodes[14] = { ...state.nodes[14], role: "reserved", engineerId: null, engineer: null, pendingCleanup: { revision: 5, engineer: "ll" } };
+      state.pendingCleanup = [{ node: "b300-30", revision: 5, engineer: "ll" }];
+      return state;
+    };
+    let current = pending(4);
+    const calls = stubPortal({
+      "GET /admin/allocation": () => current,
+      "POST /admin/allocation/nodes/b300-30": () => seedState(),
+    });
+    const { unmount } = wrap();
+    expect(await screen.findByText("b300-30: was ll (since revision 5)")).toBeVisible();
+    expect(screen.getByText("Pending cleanup (was ll)")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Edit b300-30" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "b300-30 role" }), "selling");
+    expect(screen.getByText(/revision 5 or later/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    unmount();
+
+    current = pending(5);
+    wrap();
+    await user.click(await screen.findByRole("button", { name: "Edit b300-30" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "b300-30 role" }), "selling");
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: /I ran the node sync \(runbook 4\.7\)/ }));
+    expect(save).toBeEnabled();
+    await user.click(save);
+    await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+      role: "selling",
+      note: "",
+      expected_revision: 5,
+      confirm_node_synced: true,
+    });
+  });
+
+  it("rejects a templated display name before sending anything", async () => {
+    const user = userEvent.setup();
+    const calls = stubPortal({ "GET /admin/allocation": () => seedState() });
+    wrap();
+    await user.click(await screen.findByRole("button", { name: "Edit justin" }));
+    const dialog = screen.getByRole("dialog");
+    for (const payload of ["{{ lookup('pipe','id') }}", "Justin: admin"]) {
+      const field = within(dialog).getByRole("textbox", { name: /Display name/ });
+      await user.clear(field);
+      await user.type(field, payload.replace(/[{[]/g, (c) => c + c));
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(/no \{ \} % # : , quotes or backslash/);
+    }
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("shows the conflict message when another administrator changed the data", async () => {
+    const user = userEvent.setup();
+    stubPortal({
+      "GET /admin/allocation": () => seedState(),
+      "POST /admin/allocation/nodes/b300-11": () =>
+        Response.json({ error: "revision_conflict", detail: "資料已被其他管理員更新，請重新整理。 (The allocation changed; reload and try again.)" }, { status: 409 }),
+    });
+    wrap();
+    await user.click(await screen.findByRole("button", { name: "Edit b300-11" }));
+    await user.type(screen.getByRole("textbox", { name: "b300-11 note" }), "x");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/資料已被其他管理員更新，請重新整理/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reload" })).toBeVisible();
   });
 });
