@@ -76,6 +76,19 @@ class _AllocationCase(_PortalCase):
         self.assertEqual(r.status_code, 200, r.text)
         return r.json()
 
+    def mark(self, revision=None):
+        r = self.post(self.admin_client, "/admin/allocation/export/mark", {"revision": revision or self.revision()})
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()
+
+    def release(self, name):
+        """engineer -> reserved -> export + mark -> confirmed sync -> selling."""
+        self.assertEqual(self.assign(name, {"role": "reserved"}).status_code, 200)
+        self.mark()
+        r = self.assign(name, {"role": "selling", "confirm_node_synced": True})
+        self.assertEqual(r.status_code, 200, r.text)
+        return r
+
 
 class SeedAndStateTests(_AllocationCase):
     def test_seed_matches_the_2026_10_20_assignment(self):
@@ -110,7 +123,8 @@ class SeedAndStateTests(_AllocationCase):
                                ("/admin/allocation/engineers", {"username": "x1", "email": "x1@oadpiz.com"}),
                                ("/admin/allocation/engineers/" + engineer_id, {"displayName": "J"}),
                                ("/admin/allocation/engineers/" + engineer_id + "/status", {"active": False}),
-                               ("/admin/allocation/owner", {"ownerEmail": "o@oadpiz.com"})):
+                               ("/admin/allocation/owner", {"ownerEmail": "o@oadpiz.com"}),
+                               ("/admin/allocation/export/mark", {"revision": 1})):
                 r = self.post(client, path, body)
                 self.assertEqual(r.status_code, status, path)
         self.assertEqual(self.revision(), 1)
@@ -239,11 +253,153 @@ class SellingGuardTests(_AllocationCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.node("b300-31")["note"], "glm-5.2 + qwen3-vl")
 
-    def test_engineer_to_selling_warns_about_the_leftover_account(self):
-        r = self.assign("b300-30", {"role": "selling"})
+    def test_engineer_node_cannot_go_straight_to_selling(self):
+        revision = self.revision()
+        for body in ({"role": "selling"}, {"role": "selling", "confirm_selling_change": True, "confirm_node_synced": True}):
+            r = self.assign("b300-30", body)
+            self.assertEqual(r.status_code, 409)
+            self.assertEqual(r.json()["error"], "engineer_to_selling")
+            self.assertIn("請先改為保留並完成節點同步，再改為業務", r.json()["detail"])
+        self.assertEqual(self.node("b300-30")["role"], "engineer")
+        self.assertEqual(self.revision(), revision)
+
+
+class PendingCleanupTests(_AllocationCase):
+    def test_reserved_to_selling_needs_an_export_and_a_confirmed_sync(self):
+        r = self.assign("b300-30", {"role": "reserved"})
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(len(r.json()["warnings"]), 1)
-        self.assertIn("4.7", r.json()["warnings"][0])
+        pending_revision = self.revision()
+        node = self.node("b300-30")
+        self.assertEqual(node["pendingCleanup"], {"revision": pending_revision, "engineer": "ll"})
+        self.assertEqual(self.state()["pendingCleanup"], [{"node": "b300-30", "revision": pending_revision, "engineer": "ll"}])
+        detail = json.loads(self.audit("alloc.node_assign")[-1]["details"])
+        self.assertEqual(detail["pendingCleanup"], {"revision": pending_revision, "engineer": "ll"})
+        # not exported yet: even with the confirmation it is refused
+        r = self.assign("b300-30", {"role": "selling", "confirm_node_synced": True})
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "node_cleanup_pending"))
+        # an export of an older revision does not count
+        self.mark(pending_revision - 1)
+        self.assertEqual(self.assign("b300-30", {"role": "selling", "confirm_node_synced": True}).json()["error"], "node_cleanup_pending")
+        self.mark(pending_revision)
+        # exported, but the sync is not confirmed
+        for body in ({"role": "selling"}, {"role": "selling", "confirm_node_synced": False}):
+            r = self.assign("b300-30", body)
+            self.assertEqual((r.status_code, r.json()["error"]), (409, "node_sync_unconfirmed"))
+        self.assertEqual(self.assign("b300-30", {"role": "selling", "confirm_node_synced": "yes"}).status_code, 400)
+        r = self.assign("b300-30", {"role": "selling", "confirm_node_synced": True})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.node("b300-30")["role"], "selling")
+        self.assertIsNone(self.node("b300-30")["pendingCleanup"])
+        self.assertEqual(self.state()["pendingCleanup"], [])
+        detail = json.loads(self.audit("alloc.node_assign")[-1]["details"])
+        self.assertEqual(detail["confirmNodeSynced"], {"revision": pending_revision, "lastExportRevision": pending_revision})
+        self.assertEqual(detail["from"]["role"], "reserved")
+
+    def test_a_reserved_node_without_an_engineer_history_goes_to_selling_freely(self):
+        self.release("b300-30")
+        r = self.assign("b300-30", {"role": "reserved", "confirm_selling_change": True})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(self.node("b300-30")["pendingCleanup"])
+        self.assertEqual(self.assign("b300-30", {"role": "selling"}).status_code, 200)
+
+    def test_reassigning_to_an_engineer_clears_the_pending_cleanup(self):
+        self.assign("b300-30", {"role": "reserved"})
+        self.assign("b300-30", {"role": "engineer", "engineerId": self.engineer("nati")["id"]})
+        self.assertIsNone(self.node("b300-30")["pendingCleanup"])
+
+    def test_export_lists_pending_nodes_and_their_former_engineer(self):
+        for node in ("b300-29", "b300-30"):
+            self.assign(node, {"role": "reserved"})
+        result = self.export()
+        self.assertEqual([p["node"] for p in result["pendingCleanup"]], ["b300-29", "b300-30"])
+        self.assertTrue(any("Pending cleanup: b300-29 (was ll), b300-30 (was ll)" in w for w in result["warnings"]))
+        self.assertIn("#   b300-29: was ll (since revision", result["yaml"])
+        self.assertEqual(result["excluded"], [{"username": "ll", "reason": "no_nodes", "pendingCleanup": ["b300-29", "b300-30"]}])
+        self.assertTrue(any(w.startswith("ll: active but has no nodes") and "pending cleanup" in w for w in result["warnings"]))
+        self.assertIn("#   ll: no_nodes (pending cleanup on b300-29, b300-30)", result["yaml"])
+        self.assertNotIn("ll", [e["username"] for e in yaml.safe_load(result["yaml"])["engineers"]])
+
+
+class InjectionTests(_AllocationCase):
+    PAYLOADS = ("{{ lookup('pipe','id') }}", "{% raw %}x", "{# c #}", "a:b", "x, y", 'a"b', "a'b", "a\\b", "50%", "#x")
+
+    def test_template_payloads_are_rejected_in_every_exported_text_field(self):
+        justin = self.engineer("justin")["id"]
+        revision = self.revision()
+        for payload in self.PAYLOADS:
+            r = self.post(self.admin_client, "/admin/allocation/engineers/" + justin, {"displayName": payload})
+            self.assertEqual(r.status_code, 400, ("displayName", payload))
+            r = self.post(self.admin_client, "/admin/allocation/engineers", {"username": "eve", "email": "eve@oadpiz.com", "displayName": payload})
+            self.assertEqual(r.status_code, 400, ("create displayName", payload))
+        for email in ("{{lookup('pipe','id')}}@oadpiz.com", "a{{x}}@oadpiz.com", "a@b{{x}}.com", "a,b@oadpiz.com", "a:b@oadpiz.com", "a'b@oadpiz.com"):
+            self.assertEqual(self.post(self.admin_client, "/admin/allocation/engineers/" + justin, {"email": email}).status_code, 400, email)
+            self.assertEqual(self.post(self.admin_client, "/admin/allocation/owner", {"ownerEmail": email}).status_code, 400, email)
+        for username in ("{{x}}", "a{%b"):
+            self.assertEqual(self.post(self.admin_client, "/admin/allocation/engineers", {"username": username, "email": "z@oadpiz.com"}).status_code, 400)
+        for note in ("{{ lookup('pipe','id') }}", "{% if %}", "{# x #}"):
+            self.assertEqual(self.assign("b300-11", {"role": "engineer", "engineerId": justin, "note": note}).status_code, 400, note)
+        self.assertEqual(self.revision(), revision)
+
+    def test_unsafe_key_comments_are_dropped_and_the_normalised_key_is_returned(self):
+        base = ed_key(None)
+        self.set_key("justin", base + " {{ lookup('pipe','id') }}")
+        self.assertEqual(self.engineer("justin")["sshPubkey"], base)
+        self.set_key("mwind", ed_key(None) + " mwind@laptop")
+        self.assertTrue(self.engineer("mwind")["sshPubkey"].endswith(" mwind@laptop"))
+        r = self.post(self.admin_client, "/admin/allocation/engineers", {"username": "kim", "email": "kim@oadpiz.com",
+                                                                        "sshPubkey": ed_key(None) + " kim's key: {% x %}"})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(len(r.json()["sshPubkey"].split(" ")), 2, "comment dropped")
+        exported = self.export()["yaml"]
+        for marker in ("{{", "{%", "{#"):
+            self.assertNotIn(marker, exported)
+
+    def test_display_names_allow_letters_digits_cjk_and_dot_dash_underscore(self):
+        justin = self.engineer("justin")["id"]
+        for name in ("Justin Lin", "林小明", "j.lin-2_x", "a" * 64):
+            r = self.post(self.admin_client, "/admin/allocation/engineers/" + justin, {"displayName": name})
+            self.assertEqual(r.status_code, 200, (name, r.text))
+            self.assertEqual(self.engineer("justin")["displayName"], name)
+        self.assertEqual(self.post(self.admin_client, "/admin/allocation/engineers/" + justin, {"displayName": "a" * 65}).status_code, 400)
+
+
+class ConcurrencyTests(_AllocationCase):
+    def test_a_stale_expected_revision_is_refused(self):
+        revision = self.revision()
+        self.assertEqual(self.assign("b300-11", {"role": "engineer", "engineerId": self.engineer("justin")["id"], "note": "a",
+                                                 "expected_revision": revision}).status_code, 200)
+        writes = [
+            ("/admin/allocation/nodes/b300-12", {"role": "reserved"}),
+            ("/admin/allocation/engineers", {"username": "eve", "email": "eve@oadpiz.com"}),
+            ("/admin/allocation/engineers/" + self.engineer("justin")["id"], {"displayName": "J"}),
+            ("/admin/allocation/engineers/" + self.engineer("justin")["id"] + "/status", {"active": False}),
+            ("/admin/allocation/owner", {"ownerEmail": "o@oadpiz.com"}),
+        ]
+        for path, body in writes:
+            r = self.post(self.admin_client, path, {**body, "expected_revision": revision})
+            self.assertEqual(r.status_code, 409, path)
+            self.assertEqual(r.json()["error"], "revision_conflict")
+            self.assertIn("資料已被其他管理員更新，請重新整理", r.json()["detail"])
+        self.assertEqual(self.revision(), revision + 1)
+        self.assertEqual(self.assign("b300-12", {"role": "reserved", "expected_revision": "1"}).status_code, 400)
+
+    def test_writes_recheck_the_admin_inside_the_lock(self):
+        # Simulate a demotion that lands between the session check and the write lock.
+        admin_id = self.user_id("admin@example.test")
+        real = self.app.state.store.session_user
+        def stale_session(token):
+            user = real(token)
+            with self.store.connect() as con:
+                con.execute("UPDATE users SET role='customer' WHERE id=?", (admin_id,))
+            return {**user, "role": "admin"} if user else user
+        self.app.state.store.session_user = stale_session
+        try:
+            r = self.assign("b300-12", {"role": "reserved"})
+        finally:
+            self.app.state.store.session_user = real
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "admin_required"))
+        roles = {n["name"]: n["role"] for n in rows(self.store, "alloc_nodes")}
+        self.assertEqual(roles["b300-12"], "engineer", "nothing was written")
 
 
 class AuditAndRevisionTests(_AllocationCase):
@@ -293,12 +449,22 @@ class AuditAndRevisionTests(_AllocationCase):
         self.assertEqual(self.revision(), revision)
         self.assertEqual([e for e in rows(self.store, "audit_events") if e["action"].startswith("alloc.")], [])
 
-    def test_export_is_audited_without_bumping_the_revision(self):
+    def test_export_is_read_only_and_mark_records_it(self):
         revision = self.revision()
         self.export()
-        self.assertEqual(self.revision(), revision)
+        self.assertEqual(self.audit("alloc.export"), [])
+        self.assertIsNone(self.state()["lastExport"])
+        state = self.mark(revision)
+        self.assertEqual(state["lastExport"]["revision"], revision)
+        self.assertEqual(self.revision(), revision, "marking does not bump the revision")
         self.assertEqual([e["target_id"] for e in self.audit("alloc.export")], ["revision:%d" % revision])
-        self.assertEqual(self.state()["lastExport"]["revision"], revision)
+        bad = self.post(self.admin_client, "/admin/allocation/export/mark", {"revision": revision + 1})
+        self.assertEqual(bad.status_code, 400)
+        self.assertEqual(self.post(self.admin_client, "/admin/allocation/export/mark", {"revision": "1"}).status_code, 400)
+        self.assign("b300-12", {"role": "reserved"})
+        self.mark(self.revision())
+        self.mark(revision)
+        self.assertEqual(self.state()["lastExport"]["revision"], self.revision(), "an older mark never lowers it")
 
 
 class ExportTests(_AllocationCase):
@@ -353,6 +519,7 @@ class ExportTests(_AllocationCase):
         r = self.post(self.admin_client, "/admin/allocation/engineers", {"username": "kim", "email": "kim@oadpiz.com"})
         self.assertEqual(r.status_code, 201, r.text)
         self.assertEqual(self.engineer("kim")["clusterId"], "eng6")
+        self.assertEqual([e["username"] for e in self.state()["engineers"]][-1], "kim", "seeded engineers sort first")
         self.assign("b300-30", {"role": "engineer", "engineerId": self.engineer("kim")["id"]})
         entry = next(e for e in yaml.safe_load(self.export()["yaml"])["engineers"] if e["username"] == "kim")
         self.assertEqual((entry["id"], entry["nodes"]), ("eng6", ["b300-30"]))
@@ -368,8 +535,8 @@ class ExportTests(_AllocationCase):
         result = self.export()
         parsed = yaml.safe_load(result["yaml"])
         self.assertNotIn("ll", [e["username"] for e in parsed["engineers"]])
-        self.assertEqual(result["excluded"], [{"username": "ll", "reason": "no_nodes"}])
-        self.assertIn("#   ll: no_nodes", result["yaml"])
+        self.assertEqual(result["excluded"], [{"username": "ll", "reason": "no_nodes", "pendingCleanup": ["b300-29", "b300-30"]}])
+        self.assertIn("#   ll: no_nodes (pending cleanup on b300-29, b300-30)", result["yaml"])
         self.assertEqual(parsed["owner"]["email"], "CHANGE_ME@your-mail-domain")
         self.assertFalse(result["renderReady"])
         self.assertFalse(result["monitoringReady"])
@@ -391,9 +558,9 @@ class ExportTests(_AllocationCase):
     def test_absent_engineer_never_lists_a_selling_node(self):
         self.ready()
         ll = self.engineer("ll")["id"]
-        self.assign("b300-29", {"role": "selling"})
+        self.release("b300-29")
         self.assign("b300-30", {"role": "reserved"})
-        self.post(self.admin_client, f"/admin/allocation/engineers/{ll}/status", {"active": False})
+        self.assertEqual(self.post(self.admin_client, f"/admin/allocation/engineers/{ll}/status", {"active": False}).status_code, 200)
         result = self.export()
         entry = next(e for e in yaml.safe_load(result["yaml"])["engineers"] if e["username"] == "ll")
         self.assertEqual(entry["nodes"], ["b300-30"])

@@ -66,6 +66,12 @@ def upgrade():
         sa.Column("note", sa.Text(), nullable=False, server_default=""),
         sa.Column("updated_at", sa.Integer(), nullable=False),
         sa.Column("updated_by", sa.Text(), sa.ForeignKey("users.id"), nullable=True),
+        # Set when the node goes engineer -> reserved: the revision of that change and the
+        # engineer who held it. The node may become selling only after an export at or after
+        # that revision has been synced (ansible never touches selling nodes, so the
+        # engineer's account must be removed while the node is still reserved).
+        sa.Column("pending_cleanup_revision", sa.Integer(), nullable=True),
+        sa.Column("pending_cleanup_engineer_id", sa.Text(), sa.ForeignKey("alloc_engineers.id"), nullable=True),
         sa.CheckConstraint("role IN ('selling','engineer','reserved')", name="alloc_nodes_role"),
         sa.CheckConstraint("(role = 'engineer') = (engineer_id IS NOT NULL)", name="alloc_nodes_engineer"),
     )
@@ -88,8 +94,9 @@ def upgrade():
         engineer_id = uuid.uuid4().hex
         engineer_rows.append({"id": engineer_id, "cluster_id": "eng%d" % (index + 1), "username": username, "email": email, "display_name": username,
                               "ssh_pubkey": None, "active": True, "node_history": json.dumps(list(owned)),
-                              # distinct created_at keeps the seed order (= the old eng1..eng5 order)
-                              "created_at": now + index, "updated_at": now + index})
+                              # distinct created_at in the past keeps the seed order (eng1..eng5) and
+                              # sorts every seeded engineer before any engineer created later
+                              "created_at": now - len(ENGINEERS) + index, "updated_at": now})
         for node in owned:
             owner[node] = engineer_id
     op.bulk_insert(engineers, engineer_rows)
@@ -98,7 +105,8 @@ def upgrade():
         name = "b300-%d" % number
         role = "selling" if name in SELLING else "engineer" if name in owner else "reserved"
         node_rows.append({"name": name, "ip": "172.16.10.%d" % number, "role": role, "engineer_id": owner.get(name),
-                          "note": "", "updated_at": now, "updated_by": None})
+                          "note": "", "updated_at": now, "updated_by": None,
+                          "pending_cleanup_revision": None, "pending_cleanup_engineer_id": None})
     op.bulk_insert(nodes, node_rows)
     op.bulk_insert(meta, [{"id": 1, "revision": 1, "owner_email": OWNER_EMAIL, "updated_at": now, "updated_by": None,
                            "last_export_revision": None, "last_export_at": None}])

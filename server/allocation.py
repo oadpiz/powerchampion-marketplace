@@ -46,6 +46,18 @@ KEY_TYPES = ("ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa
 KEY_LINE = re.compile(r"^(?P<type>\S+) (?P<blob>[A-Za-z0-9+/]+={0,3})(?: (?P<comment>.*))?$")
 MIN_RSA_BITS = 3072
 NOTE_MAX = 200
+# Everything exported ends up in ansible vars, and ansible evaluates Jinja in strings.
+# Exported text is therefore restricted to template-free character sets.
+EMAIL = re.compile(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")
+DISPLAY_NAME = re.compile(r"^[\w .-]{1,64}$")  # \w: Unicode letters/digits (incl. CJK) and _
+KEY_COMMENT = re.compile(r"^[A-Za-z0-9@._+-]{1,100}$")
+TEMPLATE_MARKERS = ("{{", "{%", "{#")
+
+
+def reject_template(value: str, label: str) -> str:
+    if any(marker in value for marker in TEMPLATE_MARKERS):
+        _bad("The " + label + " cannot contain {{, {% or {#.")
+    return value
 
 
 class AllocationError(Exception):
@@ -77,15 +89,17 @@ def validate_email(value) -> str:
         _bad("Enter a valid email address.")
     if PLACEHOLDER in email.upper():
         _bad("Enter a real email address, not a placeholder.")
+    if not EMAIL.fullmatch(email):
+        _bad("Use an email of letters, digits and . _ % + - only (for example name@oadpiz.com).")
     return email
 
 
 def validate_display_name(value, fallback: str) -> str:
     if value is None or (isinstance(value, str) and not value.strip()):
         return fallback
-    if not isinstance(value, str) or len(value.strip()) > 80 or any(ord(c) < 32 or ord(c) == 127 for c in value):
-        _bad("Enter a display name of at most 80 characters.")
-    return value.strip()
+    if not isinstance(value, str) or not DISPLAY_NAME.fullmatch(value.strip()):
+        _bad("Use a display name of at most 64 letters, digits, spaces, . - or _ (CJK allowed; no { } % # : , quotes or backslash).")
+    return reject_template(value.strip(), "display name")
 
 
 def validate_note(value) -> str:
@@ -93,7 +107,8 @@ def validate_note(value) -> str:
         return ""
     if not isinstance(value, str) or len(value.strip()) > NOTE_MAX or any(ord(c) < 32 or ord(c) == 127 for c in value):
         _bad("Enter a note of at most %d characters on one line." % NOTE_MAX)
-    return value.strip()
+    # The note is never exported; refusing template markers anyway keeps it safe if that changes.
+    return reject_template(value.strip(), "note")
 
 
 def fingerprint(blob: bytes) -> str:
@@ -144,8 +159,9 @@ def parse_public_key(value) -> dict:
     if not ok:
         _bad("The key data does not match its type or is damaged.")
     comment = (match.group("comment") or "").strip()
-    if len(comment) > 200:
-        _bad("Shorten the key comment to at most 200 characters.")
+    # A comment outside [A-Za-z0-9@._+-] is dropped rather than exported (ansible templates it).
+    if comment and not KEY_COMMENT.fullmatch(comment):
+        comment = ""
     normalised = key_type + " " + match.group("blob") + (" " + comment if comment else "")
     return {"line": normalised, "type": key_type, "bits": bits, "fingerprint": fingerprint(blob), "comment": comment}
 
@@ -187,9 +203,17 @@ def _snapshot(con):
     return engineers, nodes, meta
 
 
+def pending_cleanup(nodes, by_id):
+    """Nodes that left an engineer (now reserved) and whose sync has not been confirmed."""
+    return [{"node": n["name"], "revision": n["pending_cleanup_revision"],
+             "engineer": by_id[n["pending_cleanup_engineer_id"]]["username"] if n["pending_cleanup_engineer_id"] in by_id else None}
+            for n in nodes if n["pending_cleanup_revision"] is not None]
+
+
 def state_json(con):
     engineers, nodes, meta = _snapshot(con)
     by_id = {e["id"]: e for e in engineers}
+    pending = {p["node"]: p for p in pending_cleanup(nodes, by_id)}
     owned = {e["id"]: [] for e in engineers}
     for n in nodes:
         if n["engineer_id"]:
@@ -202,7 +226,10 @@ def state_json(con):
         "nodes": [{"name": n["name"], "ip": n["ip"], "role": n["role"], "engineerId": n["engineer_id"],
                    "engineer": ({"id": n["engineer_id"], "username": by_id[n["engineer_id"]]["username"],
                                  "displayName": by_id[n["engineer_id"]]["display_name"]} if n["engineer_id"] else None),
-                   "note": n["note"], "updatedAt": iso(n["updated_at"]), "updatedBy": n["updated_by_email"]} for n in nodes],
+                   "note": n["note"], "updatedAt": iso(n["updated_at"]), "updatedBy": n["updated_by_email"],
+                   "pendingCleanup": ({"revision": pending[n["name"]]["revision"], "engineer": pending[n["name"]]["engineer"]}
+                                      if n["name"] in pending else None)} for n in nodes],
+        "pendingCleanup": list(pending.values()),
         "engineers": [engineer_json(e, owned[e["id"]]) for e in engineers],
         "summary": {"selling": counts["selling"], "engineer": counts["engineer"], "reserved": counts["reserved"],
                     "perEngineer": [{"id": e["id"], "username": e["username"], "nodes": len(owned[e["id"]])}
@@ -240,13 +267,28 @@ def build_export(con, now=None):
     for n in nodes:
         if n["engineer_id"]:
             owned[n["engineer_id"]].append(n["name"])
+    by_id = {e["id"]: e for e in engineers}
+    pending = pending_cleanup(nodes, by_id)
+    pending_by_engineer = {}
+    for p in pending:
+        pending_by_engineer.setdefault(p["engineer"], []).append(p["node"])
     warnings, excluded, entries, missing_keys = [], [], [], []
+    if pending:
+        listed = ", ".join(f"{p['node']} (was {p['engineer'] or 'unknown'})" for p in pending)
+        warnings.append(f"Pending cleanup: {listed}. These nodes left an engineer and are reserved; run the node sync "
+                        "(runbook 4.7) with this file so the account is removed, then confirm it in the portal before "
+                        "making a node selling.")
     for e in engineers:
         user = e["username"]
         if e["active"]:
             if not owned[e["id"]]:
-                excluded.append({"username": user, "reason": "no_nodes"})
-                warnings.append(f"{user}: active but has no nodes, so it is left out (render.py rejects an engineer without nodes).")
+                item = {"username": user, "reason": "no_nodes"}
+                if user in pending_by_engineer:
+                    item["pendingCleanup"] = pending_by_engineer[user]
+                excluded.append(item)
+                warnings.append(f"{user}: active but has no nodes, so it is left out (render.py rejects an engineer without nodes)"
+                                + (f"; their account on {', '.join(pending_by_engineer[user])} is pending cleanup: run the node sync (4.7)."
+                                   if user in pending_by_engineer else "."))
                 continue
             if not e["ssh_pubkey"]:
                 missing_keys.append(user)
@@ -297,8 +339,13 @@ def build_export(con, now=None):
         lines.append("#")
         lines.append("# Listed in the portal but not exported (see the portal's export warnings):")
         for item in excluded:
-            nodes_text = (" (" + ", ".join(item["nodes"]) + " stay unassigned)") if item.get("nodes") else ""
+            nodes_text = (" (pending cleanup on " + ", ".join(item["pendingCleanup"]) + ")") if item.get("pendingCleanup") else ""
             lines.append(f"#   {item['username']}: {item['reason']}{nodes_text}")
+    if pending:
+        lines.append("#")
+        lines.append("# Pending cleanup (left an engineer, now reserved; sync 4.7, then confirm in the portal):")
+        for p in pending:
+            lines.append(f"#   {p['node']}: was {p['engineer'] or 'unknown'} (since revision {p['revision']})")
     lines += ["", "selling:", "  nodes: " + _flow(selling)]
     lines.append("  # Ops-owned (portal constant, copied from engineers.yaml 2026-10-20): vLLM /metrics ports per selling node.")
     if vllm_ports:
@@ -328,7 +375,8 @@ def build_export(con, now=None):
     return {"document": document, "yaml": text, "warnings": warnings, "excluded": excluded,
             "revision": meta["revision"], "generatedAt": generated,
             "renderReady": bool(entries) and bool(meta["owner_email"]) and not missing_keys,
-            "monitoringReady": bool(entries) and bool(meta["owner_email"]), "missingKeys": missing_keys}
+            "monitoringReady": bool(entries) and bool(meta["owner_email"]), "missingKeys": missing_keys,
+            "pendingCleanup": pending}
 
 
 def _self_check(text, document):
@@ -340,13 +388,34 @@ def _self_check(text, document):
 
 # ---------------------------------------------------------------- routes
 
+REVISION_CONFLICT = "資料已被其他管理員更新，請重新整理。 (The allocation changed; reload and try again.)"
+ENGINEER_TO_SELLING = ("請先改為保留並完成節點同步，再改為業務。 (Set the node to reserved and finish the node sync "
+                       "first, then make it selling.)")
+
+
 def attach_allocation(app, store, current_user, body_json, prefix):
+    from fastapi.responses import JSONResponse
+
     base = prefix + "/admin/allocation"
 
     @app.exception_handler(AllocationError)
     async def allocation_error(_request, error):
-        from fastapi.responses import JSONResponse
         return JSONResponse({"error": error.code, "detail": error.detail}, status_code=error.status)
+
+    def write_lock(con, admin, body):
+        """Serialise writers, re-check the caller is still an active admin, and enforce
+        optimistic concurrency when the client sent expected_revision."""
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT role, disabled_at FROM users WHERE id=?", (admin["id"],)).fetchone()
+        if not row or row["role"] != "admin" or row["disabled_at"] is not None:
+            _bad("Administrator access is required.", "admin_required", 403)
+        expected = body.get("expected_revision")
+        if expected is not None:
+            if isinstance(expected, bool) or not isinstance(expected, int):
+                _bad("expected_revision must be an integer.")
+            current = con.execute("SELECT revision FROM alloc_meta WHERE id=1").fetchone()[0]
+            if expected != current:
+                _bad(REVISION_CONFLICT, "revision_conflict", 409)
 
     def engineer_row(con, engineer_id):
         if not ENGINEER_ID.fullmatch(engineer_id or ""):
@@ -359,7 +428,7 @@ def attach_allocation(app, store, current_user, body_json, prefix):
     def unique_or_conflict(con, column, value, exclude_id=None):
         row = con.execute("SELECT id FROM alloc_engineers WHERE " + column + "=?", (value,)).fetchone()
         if row and row["id"] != exclude_id:
-            label = {"username": "username", "email": "email", "ssh_pubkey": "SSH public key"}[column]
+            label = {"username": "username", "email": "email"}[column]
             _bad("Another engineer already uses this " + label + ".", "engineer_conflict", 409)
 
     def key_duplicate(con, line, exclude_id=None):
@@ -367,6 +436,12 @@ def attach_allocation(app, store, current_user, body_json, prefix):
         for row in con.execute("SELECT id, ssh_pubkey FROM alloc_engineers WHERE ssh_pubkey IS NOT NULL").fetchall():
             if row["id"] != exclude_id and row["ssh_pubkey"].split(" ")[1] == blob:
                 _bad("Another engineer already uses this SSH public key.", "engineer_conflict", 409)
+
+    def flag(body, name):
+        value = body.get(name)
+        if value is not None and not isinstance(value, bool):
+            _bad(name + " must be true or false.")
+        return value is True
 
     def respond(con, **extra):
         return {**state_json(con), **extra}
@@ -389,7 +464,7 @@ def attach_allocation(app, store, current_user, body_json, prefix):
         now = int(time.time())
         engineer_id = uuid.uuid4().hex
         with store.connect() as con:
-            con.execute("BEGIN IMMEDIATE")
+            write_lock(con, admin, body)
             unique_or_conflict(con, "username", username)
             unique_or_conflict(con, "email", email)
             if key:
@@ -403,15 +478,14 @@ def attach_allocation(app, store, current_user, body_json, prefix):
             store.audit(con, "alloc.engineer_create", admin["id"], engineer_id,
                         {"username": username, "clusterId": cluster_id, "email": email, "displayName": display,
                          "keyFingerprint": key["fingerprint"] if key else None, "revision": revision})
-            from fastapi.responses import JSONResponse
-            return JSONResponse(respond(con, engineerId=engineer_id), status_code=201)
+            return JSONResponse(respond(con, engineerId=engineer_id, sshPubkey=key["line"] if key else None), status_code=201)
 
     @app.post(base + "/engineers/{engineer_id}")
     async def allocation_engineer_update(engineer_id: str, request: Request):
         admin = current_user(request, admin=True)
         body = await body_json(request)
         with store.connect() as con:
-            con.execute("BEGIN IMMEDIATE")
+            write_lock(con, admin, body)
             row = engineer_row(con, engineer_id)
             if "username" in body and body["username"] != row["username"]:
                 _bad("A username cannot be changed (it is the Linux account name). Deactivate this engineer and add a new one.")
@@ -459,7 +533,7 @@ def attach_allocation(app, store, current_user, body_json, prefix):
         if not isinstance(active, bool):
             _bad("Send active: true or false.")
         with store.connect() as con:
-            con.execute("BEGIN IMMEDIATE")
+            write_lock(con, admin, body)
             row = engineer_row(con, engineer_id)
             if bool(row["active"]) == active:
                 return respond(con, changed=False)
@@ -489,11 +563,10 @@ def attach_allocation(app, store, current_user, body_json, prefix):
                 _bad("Choose the engineer for this node.")
         elif engineer_id not in (None, ""):
             _bad("Only an engineer node has an engineer.")
-        confirm = body.get("confirm_selling_change")
-        if confirm is not None and not isinstance(confirm, bool):
-            _bad("confirm_selling_change must be true or false.")
+        confirm_selling = flag(body, "confirm_selling_change")
+        confirm_synced = flag(body, "confirm_node_synced")
         with store.connect() as con:
-            con.execute("BEGIN IMMEDIATE")
+            write_lock(con, admin, body)
             node = con.execute("SELECT * FROM alloc_nodes WHERE name=?", (name,)).fetchone()
             if not node:
                 _bad("Node not found.", "node_not_found", 404)
@@ -505,30 +578,53 @@ def attach_allocation(app, store, current_user, body_json, prefix):
                     _bad(f"{engineer['username']} is deactivated. Reactivate the engineer first.", "engineer_inactive", 409)
             new_engineer = engineer["id"] if engineer else None
             if node["role"] == role and node["engineer_id"] == new_engineer and node["note"] == note:
-                return respond(con, changed=False, warnings=[])
-            if node["role"] == "selling" and role != "selling" and confirm is not True:
+                return respond(con, changed=False)
+            if node["role"] == "selling" and role != "selling" and not confirm_selling:
                 _bad(f"{name} is a selling node serving customers. Moving it out of selling needs "
                      "confirm_selling_change: true.", "selling_change_unconfirmed", 409)
+            if node["role"] == "engineer" and role == "selling":
+                # ansible never touches selling nodes, so the account must be removed while reserved.
+                _bad(ENGINEER_TO_SELLING, "engineer_to_selling", 409)
+            meta = con.execute("SELECT last_export_revision FROM alloc_meta WHERE id=1").fetchone()
+            pending_revision = node["pending_cleanup_revision"]
+            pending_engineer = node["pending_cleanup_engineer_id"]
+            cleanup_confirmed = None
+            if node["role"] != "selling" and role == "selling" and pending_revision is not None:
+                if (meta["last_export_revision"] or 0) < pending_revision:
+                    _bad(f"{name} 離開工程師後還沒匯出：請先匯出 engineers.yaml（版本 ≥ {pending_revision}）並執行節點同步（4.7）。"
+                         f" (Export revision {pending_revision} or later and run the node sync first.)", "node_cleanup_pending", 409)
+                if not confirm_synced:
+                    _bad(f"{name} 需要確認已依手冊 4.7 完成節點同步、且節點上已無工程師帳號（confirm_node_synced: true）。"
+                         " (Confirm the node sync with confirm_node_synced: true.)", "node_sync_unconfirmed", 409)
+                cleanup_confirmed = {"revision": pending_revision, "lastExportRevision": meta["last_export_revision"]}
             old_engineer = (con.execute("SELECT username FROM alloc_engineers WHERE id=?", (node["engineer_id"],)).fetchone()
                             if node["engineer_id"] else None)
-            con.execute("UPDATE alloc_nodes SET role=?,engineer_id=?,note=?,updated_at=?,updated_by=? WHERE name=?",
-                        (role, new_engineer, note, int(time.time()), admin["id"], name))
+            revision = bump_revision(con, admin["id"])
+            if node["role"] == "engineer" and role == "reserved":
+                pending_revision, pending_engineer = revision, node["engineer_id"]
+            elif role != "reserved":
+                # selling: cleanup confirmed above; engineer: the node play now owns the node again.
+                pending_revision, pending_engineer = None, None
+            con.execute("UPDATE alloc_nodes SET role=?,engineer_id=?,note=?,updated_at=?,updated_by=?,"
+                        "pending_cleanup_revision=?,pending_cleanup_engineer_id=? WHERE name=?",
+                        (role, new_engineer, note, int(time.time()), admin["id"], pending_revision, pending_engineer, name))
             if engineer:
                 history = _history(engineer)
                 if name not in history:
                     history = sorted(history + [name], key=node_number)
                     con.execute("UPDATE alloc_engineers SET node_history=? WHERE id=?", (json.dumps(history), engineer["id"]))
-            revision = bump_revision(con, admin["id"])
-            store.audit(con, "alloc.node_assign", admin["id"], name, {
+            details = {
                 "from": {"role": node["role"], "engineer": old_engineer["username"] if old_engineer else None, "note": node["note"]},
                 "to": {"role": role, "engineer": engineer["username"] if engineer else None, "note": note},
-                "revision": revision})
-            warnings = []
-            if node["role"] == "engineer" and role == "selling":
-                warnings.append(f"{name} was {old_engineer['username'] if old_engineer else 'an engineer'}'s node. The node playbook "
-                                "never touches selling nodes, so that account stays on it: per the runbook, first export with "
-                                f"{name} reserved and run the node playbook (4.7), then make it selling.")
-            return respond(con, changed=True, warnings=warnings)
+                "revision": revision}
+            if confirm_selling and node["role"] == "selling":
+                details["confirmSellingChange"] = True
+            if cleanup_confirmed:
+                details["confirmNodeSynced"] = cleanup_confirmed
+            if pending_revision is not None and node["role"] == "engineer":
+                details["pendingCleanup"] = {"revision": pending_revision, "engineer": old_engineer["username"] if old_engineer else None}
+            store.audit(con, "alloc.node_assign", admin["id"], name, details)
+            return respond(con, changed=True)
 
     @app.post(base + "/owner")
     async def allocation_owner(request: Request):
@@ -536,7 +632,7 @@ def attach_allocation(app, store, current_user, body_json, prefix):
         body = await body_json(request)
         email = validate_email(body.get("ownerEmail"))
         with store.connect() as con:
-            con.execute("BEGIN IMMEDIATE")
+            write_lock(con, admin, body)
             meta = con.execute("SELECT owner_email FROM alloc_meta WHERE id=1").fetchone()
             if meta["owner_email"] == email:
                 return respond(con, changed=False)
@@ -548,19 +644,37 @@ def attach_allocation(app, store, current_user, body_json, prefix):
 
     @app.get(base + "/export")
     async def allocation_export(request: Request):
-        admin = current_user(request, admin=True)
-        now = int(time.time())
+        """Read-only: render the file. Recording that it was downloaded is POST …/export/mark."""
+        current_user(request, admin=True)
         with store.connect() as con:
-            con.execute("BEGIN IMMEDIATE")
-            result = build_export(con, now)
-            con.execute("UPDATE alloc_meta SET last_export_revision=?,last_export_at=? WHERE id=1", (result["revision"], now))
-            store.audit(con, "alloc.export", admin["id"], "revision:%d" % result["revision"],
-                        {"revision": result["revision"], "excluded": [i["username"] for i in result["excluded"]],
-                         "renderReady": result["renderReady"], "missingKeys": result["missingKeys"]})
+            result = build_export(con)
         if request.query_params.get("format") == "yaml":
             return PlainTextResponse(result["yaml"], media_type="application/yaml",
                                      headers={"Content-Disposition": 'attachment; filename="engineers.yaml"'})
         return {"filename": "engineers.yaml", "yaml": result["yaml"], "revision": result["revision"],
                 "generatedAt": result["generatedAt"], "warnings": result["warnings"], "excluded": result["excluded"],
                 "renderReady": result["renderReady"], "monitoringReady": result["monitoringReady"],
-                "missingKeys": result["missingKeys"]}
+                "missingKeys": result["missingKeys"], "pendingCleanup": result["pendingCleanup"]}
+
+    @app.post(base + "/export/mark")
+    async def allocation_export_mark(request: Request):
+        """Record that the file for `revision` was exported (gates reserved -> selling cleanup)."""
+        admin = current_user(request, admin=True)
+        body = await body_json(request)
+        revision = body.get("revision")
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+            _bad("revision must be the exported revision number.")
+        with store.connect() as con:
+            write_lock(con, admin, {})
+            current = con.execute("SELECT revision, last_export_revision FROM alloc_meta WHERE id=1").fetchone()
+            if revision > current["revision"]:
+                _bad("That revision does not exist yet.")
+            # An older download marked late never lowers the recorded export.
+            recorded = max(revision, current["last_export_revision"] or 0)
+            con.execute("UPDATE alloc_meta SET last_export_revision=?,last_export_at=? WHERE id=1", (recorded, int(time.time())))
+            result = build_export(con)
+            store.audit(con, "alloc.export", admin["id"], "revision:%d" % revision,
+                        {"revision": revision, "currentRevision": current["revision"],
+                         "excluded": [i["username"] for i in result["excluded"]], "missingKeys": result["missingKeys"],
+                         "pendingCleanup": [p["node"] for p in result["pendingCleanup"]]})
+            return respond(con)
