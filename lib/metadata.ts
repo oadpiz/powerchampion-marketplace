@@ -24,6 +24,7 @@ export type RoutePath =
   | "/pricing"
   | "/infrastructure"
   | "/docs"
+  | "/docs/api"
   | "/trust"
   | "/status"
   | "/company"
@@ -85,6 +86,10 @@ export const ROUTE_METADATA = {
   "/docs": {
     title: "Documentation | Power Champion",
     description: "Quick start for the OpenAI-compatible API at b300.powerchampion.ai — cURL, Python, and JavaScript examples.",
+  },
+  "/docs/api": {
+    title: "API Reference | Power Champion",
+    description: "Full reference for the b300 OpenAI-compatible API: endpoints and limits, models and prices, keys and rate limits, prepaid billing, errors and retries.",
   },
   "/trust": {
     title: "Trust and Service Policies | Power Champion",
