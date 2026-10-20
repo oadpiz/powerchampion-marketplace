@@ -1,4 +1,5 @@
 """Durable portal data. The gateway remains the authority for inference usage."""
+import json
 import os
 import secrets
 import time
@@ -47,8 +48,11 @@ class Store:
         return self.db.connect()
 
     @staticmethod
-    def audit(con, action, actor_id, target_id=None):
-        con.execute("INSERT INTO audit_events VALUES (?,?,?,?,?)", (uuid.uuid4().hex, actor_id, action, target_id, int(time.time())))
+    def audit(con, action, actor_id, target_id=None, details=None):
+        """details: optional JSON-serialisable old->new record; never put secrets in it."""
+        encoded = None if details is None else json.dumps(details, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        con.execute("INSERT INTO audit_events (id,actor_id,action,target_id,created_at,details) VALUES (?,?,?,?,?,?)",
+                    (uuid.uuid4().hex, actor_id, action, target_id, int(time.time()), encoded))
 
     def create_user(self, email, name, password, role="customer"):
         email, name = normalize_email(email), clean_name(name)
