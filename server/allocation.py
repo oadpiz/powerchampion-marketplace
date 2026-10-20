@@ -163,6 +163,9 @@ def parse_public_key(value) -> dict:
     if not ok:
         _bad("The key data does not match its type or is damaged.")
     comment = (match.group("comment") or "").strip()
+    if PLACEHOLDER in comment.upper():
+        # render.py treats any key line containing CHANGE_ME as the "no key yet" placeholder.
+        _bad("Remove CHANGE_ME from the key comment: the cluster tools would treat this key as a missing-key placeholder.")
     # A comment outside [A-Za-z0-9@._+-] is dropped rather than exported (ansible templates it).
     if comment and not KEY_COMMENT.fullmatch(comment):
         comment = ""
@@ -196,8 +199,19 @@ def key_pending_sync(row, last_export_revision) -> bool:
     return changed is not None and changed > (last_export_revision or 0)
 
 
-def record_key_change(con, engineer_id, revision, by):
-    con.execute("UPDATE alloc_engineers SET key_updated_revision=?,key_updated_by=? WHERE id=?", (revision, by, engineer_id))
+def record_key_change(con, engineer_id, revision, by, old_line):
+    """Call after the key is saved, before key_updated_revision moves. key_previous_fingerprint
+    is the key the machines had at the last export: several changes between two exports keep
+    the first one's "from"."""
+    row = con.execute("SELECT e.key_updated_revision, e.key_previous_fingerprint, m.last_export_revision "
+                      "FROM alloc_engineers e, alloc_meta m WHERE e.id=? AND m.id=1", (engineer_id,)).fetchone()
+    if key_pending_sync(row, row["last_export_revision"]):
+        previous = row["key_previous_fingerprint"]
+    else:
+        old = key_summary(old_line)
+        previous = old["fingerprint"] if old else None
+    con.execute("UPDATE alloc_engineers SET key_updated_revision=?,key_updated_by=?,key_previous_fingerprint=? WHERE id=?",
+                (revision, by, previous, engineer_id))
 
 
 # ---------------------------------------------------------------- persistence helpers
@@ -219,7 +233,8 @@ def engineer_json(row, nodes, last_export_revision=None):
             "keyType": key["type"] if key else None, "active": bool(row["active"]), "nodes": nodes,
             "nodeHistory": _history(row), "createdAt": iso(row["created_at"]), "updatedAt": iso(row["updated_at"]),
             "account": account, "keyPendingSync": key_pending_sync(row, last_export_revision),
-            "keyUpdatedBy": row["key_updated_by"], "keyUpdatedRevision": row["key_updated_revision"]}
+            "keyUpdatedBy": row["key_updated_by"], "keyUpdatedRevision": row["key_updated_revision"],
+            "keyPreviousFingerprint": row["key_previous_fingerprint"]}
 
 
 def self_engineer_json(con, row):
@@ -227,6 +242,7 @@ def self_engineer_json(con, row):
     nodes = sorted((r["name"] for r in con.execute("SELECT name FROM alloc_nodes WHERE engineer_id=?", (row["id"],)).fetchall()),
                    key=node_number)
     meta = con.execute("SELECT last_export_revision FROM alloc_meta WHERE id=1").fetchone()
+    account = con.execute("SELECT password_change_required_at FROM users WHERE id=?", (row["user_id"],)).fetchone()
     key = None
     if row["ssh_pubkey"]:
         try:
@@ -236,7 +252,8 @@ def self_engineer_json(con, row):
             summary = key_summary(row["ssh_pubkey"])
             key = {"type": summary["type"], "bits": None, "fingerprint": summary["fingerprint"]} if summary else None
     return {"username": row["username"], "displayName": row["display_name"], "active": bool(row["active"]), "nodes": nodes,
-            "key": key, "keyPendingSync": key_pending_sync(row, meta["last_export_revision"]), "keyUpdatedBy": row["key_updated_by"]}
+            "key": key, "keyPendingSync": key_pending_sync(row, meta["last_export_revision"]), "keyUpdatedBy": row["key_updated_by"],
+            "passwordChangeRequired": bool(account and account["password_change_required_at"] is not None)}
 
 
 def _snapshot(con):
@@ -360,6 +377,7 @@ def build_export(con, now=None):
                         "is synced normally.")
     last_export = meta["last_export_revision"] or 0
     key_changes = [{"username": e["username"], "fingerprint": (key_summary(e["ssh_pubkey"]) or {}).get("fingerprint"),
+                    "previousFingerprint": e["key_previous_fingerprint"],
                     "updatedBy": e["key_updated_by"], "revision": e["key_updated_revision"]}
                    for e in engineers if e["active"] and e["ssh_pubkey"] and key_pending_sync(e, last_export)]
     if key_changes:
@@ -461,6 +479,12 @@ NOT_ENGINEER = "這個帳號沒有連結工程師。 (This account is not linked
 KEY_TAKES_EFFECT = ("已收到新公鑰。管理員下次匯出 engineers.yaml 並同步到機器後才會生效，在那之前請繼續使用舊的金鑰。 "
                     "(Key received. It takes effect after the administrator's next export and sync; until then keep "
                     "using your current key.)")
+PASSWORD_CHANGE_REQUIRED = ("請先到 /account/security 變更管理員給你的臨時密碼，再更新 SSH 公鑰。 "
+                            "(Change the password your administrator gave you at /account/security before updating your SSH key.)")
+FINGERPRINT_CONFIRMATION = ("這次匯出包含工程師自行更新的公鑰：請先透過其他管道（電話／當面／公司通訊）向工程師確認新指紋，"
+                            "再勾選確認（fingerprintsConfirmed: true）。 (This export includes keys engineers submitted "
+                            "themselves: confirm each new fingerprint with the engineer through another channel, then "
+                            "send fingerprintsConfirmed: true.)")
 TEMP_PASSWORD_BYTES = 18  # token_urlsafe(18) = 24 characters, within validate_password's 12..128
 
 
@@ -541,7 +565,7 @@ def attach_allocation(app, store, current_user, body_json, prefix):
                         "VALUES (?,?,?,?,?,?,?,?,?,?)", (engineer_id, cluster_id, username, email, display, key["line"] if key else None, True, "[]", now, now))
             revision = bump_revision(con, admin["id"])
             if key:
-                record_key_change(con, engineer_id, revision, "admin")
+                record_key_change(con, engineer_id, revision, "admin", None)
             store.audit(con, "alloc.engineer_create", admin["id"], engineer_id,
                         {"username": username, "clusterId": cluster_id, "email": email, "displayName": display,
                          "keyFingerprint": key["fingerprint"] if key else None, "revision": revision})
@@ -582,7 +606,7 @@ def attach_allocation(app, store, current_user, body_json, prefix):
                         (*[new for _, new in changes.values()], int(time.time()), engineer_id))
             revision = bump_revision(con, admin["id"])
             if "ssh_pubkey" in changes:
-                record_key_change(con, engineer_id, revision, "admin")
+                record_key_change(con, engineer_id, revision, "admin", changes["ssh_pubkey"][0])
             details = {"username": row["username"], "revision": revision}
             for column, (old, new) in changes.items():
                 if column == "ssh_pubkey":
@@ -734,14 +758,24 @@ def attach_allocation(app, store, current_user, body_json, prefix):
         revision = body.get("revision")
         if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
             _bad("revision must be the exported revision number.")
+        confirmed = flag(body, "fingerprintsConfirmed")
         with store.connect() as con:
             write_lock(con, admin, {})
             current = con.execute("SELECT revision, last_export_revision FROM alloc_meta WHERE id=1").fetchone()
             if revision > current["revision"]:
                 _bad("That revision does not exist yet.")
-            synced_keys = [r["username"] for r in con.execute(
-                "SELECT username FROM alloc_engineers WHERE key_updated_revision>? AND key_updated_revision<=? ORDER BY username",
-                (current["last_export_revision"] or 0, revision)).fetchall()]
+            changed = con.execute(
+                "SELECT username, ssh_pubkey, key_previous_fingerprint, key_updated_by FROM alloc_engineers "
+                "WHERE key_updated_revision>? AND key_updated_revision<=? ORDER BY username",
+                (current["last_export_revision"] or 0, revision)).fetchall()
+            synced_keys = [r["username"] for r in changed]
+            # A key an engineer submitted is only as trustworthy as their portal account: the
+            # administrator confirms the new fingerprint with them out of band before it ships.
+            engineer_changes = [{"username": r["username"], "from": r["key_previous_fingerprint"],
+                                 "to": (key_summary(r["ssh_pubkey"]) or {}).get("fingerprint")}
+                                for r in changed if r["key_updated_by"] == "engineer"]
+            if engineer_changes and not confirmed:
+                _bad(FINGERPRINT_CONFIRMATION, "fingerprint_confirmation_required", 409)
             # An older download marked late never lowers the recorded export.
             recorded = max(revision, current["last_export_revision"] or 0)
             con.execute("UPDATE alloc_meta SET last_export_revision=?,last_export_at=? WHERE id=1", (recorded, int(time.time())))
@@ -749,7 +783,8 @@ def attach_allocation(app, store, current_user, body_json, prefix):
             store.audit(con, "alloc.export", admin["id"], "revision:%d" % revision,
                         {"revision": revision, "currentRevision": current["revision"],
                          "excluded": [i["username"] for i in result["excluded"]], "missingKeys": result["missingKeys"],
-                         "pendingCleanup": [p["node"] for p in result["pendingCleanup"]], "keyChanges": synced_keys})
+                         "pendingCleanup": [p["node"] for p in result["pendingCleanup"]], "keyChanges": synced_keys,
+                         "engineerKeyChanges": engineer_changes, "fingerprintsConfirmed": confirmed})
             return respond(con)
 
     # ------------------------------------------------------------ engineer portal accounts (admin)
@@ -777,8 +812,9 @@ def attach_allocation(app, store, current_user, body_json, prefix):
                 if con.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone():
                     _bad(ACCOUNT_EXISTS.format(email=email), "account_exists", 409)
                 now = int(time.time())
-                con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
-                            (user_id, email, row["display_name"], encoded, "customer", now))
+                # The administrator knows this password, so the engineer must replace it before a key change.
+                con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at,password_change_required_at) "
+                            "VALUES (?,?,?,?,?,?,?)", (user_id, email, row["display_name"], encoded, "customer", now, now))
                 con.execute("UPDATE alloc_engineers SET user_id=?,updated_at=? WHERE id=?", (user_id, now, engineer_id))
                 # The export is unchanged, so the allocation revision is not bumped.
                 store.audit(con, "alloc.engineer_account_create", admin["id"], engineer_id,
@@ -831,6 +867,10 @@ def attach_allocation(app, store, current_user, body_json, prefix):
             _bad(NOT_ENGINEER, "not_engineer", 404)
         if not row["active"]:
             _bad(ENGINEER_INACTIVE, "engineer_inactive", 409)
+        account = store.find_user(user["email"])
+        if account is None or account["password_change_required_at"] is not None:
+            # Checked before the attempt counter: the administrator-issued password never sets a key.
+            _bad(PASSWORD_CHANGE_REQUIRED, "password_change_required", 403)
         current = body.get("currentPassword")
         if not isinstance(current, str) or not 1 <= len(current) <= 128:
             _bad("The current password is incorrect.", "invalid_current_password")
@@ -838,17 +878,18 @@ def attach_allocation(app, store, current_user, body_json, prefix):
         scope = "engineer-key:" + digest_token(user["id"])
         if not store.consume_attempt(scope):
             _bad("Too many attempts. Please try again in 15 minutes.", "rate_limited", 429)
-        account = store.find_user(user["email"])
-        valid = account is not None and await run_in_threadpool(verify_password, current, account["password_hash"])
+        valid = await run_in_threadpool(verify_password, current, account["password_hash"])
         if not valid:
             _bad("The current password is incorrect.", "invalid_current_password")
         store.clear_attempts(scope)
         with store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             # Re-check under the writer lock: the account, the link and the engineer may have changed.
-            state = con.execute("SELECT disabled_at FROM users WHERE id=?", (user["id"],)).fetchone()
+            state = con.execute("SELECT disabled_at, password_change_required_at FROM users WHERE id=?", (user["id"],)).fetchone()
             if not state or state["disabled_at"] is not None:
                 _bad("This account has been disabled. Contact support.", "account_disabled", 403)
+            if state["password_change_required_at"] is not None:
+                _bad(PASSWORD_CHANGE_REQUIRED, "password_change_required", 403)
             row = linked_engineer(con, user["id"])
             if not row:
                 _bad(NOT_ENGINEER, "not_engineer", 404)
@@ -859,7 +900,7 @@ def attach_allocation(app, store, current_user, body_json, prefix):
             key_duplicate(con, key["line"], row["id"])
             con.execute("UPDATE alloc_engineers SET ssh_pubkey=?,updated_at=? WHERE id=?", (key["line"], int(time.time()), row["id"]))
             revision = bump_revision(con, user["id"])
-            record_key_change(con, row["id"], revision, "engineer")
+            record_key_change(con, row["id"], revision, "engineer", row["ssh_pubkey"])
             old = key_summary(row["ssh_pubkey"])
             store.audit(con, "alloc.engineer_key_self_update", user["id"], row["id"],
                         {"username": row["username"], "keyFingerprint": {"from": old["fingerprint"] if old else None,

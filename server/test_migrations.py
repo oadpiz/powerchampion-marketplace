@@ -119,8 +119,9 @@ class MigrationTests(unittest.TestCase):
     def test_engineer_account_link_upgrade_and_downgrade(self):
         from server.store import Store
         store = Store(self.db.url)
-        added = {"user_id", "key_updated_revision", "key_updated_by"}
+        added = {"user_id", "key_updated_revision", "key_updated_by", "key_previous_fingerprint"}
         self.assertLessEqual(added, self._columns(store, "alloc_engineers"))
+        self.assertIn("password_change_required_at", self._columns(store, "users"))
         with store.connect() as con:
             con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
                         ("u1", "justin@oadpiz.com", "justin", "unused", "customer", 1))
@@ -135,6 +136,7 @@ class MigrationTests(unittest.TestCase):
         downgrade_to(self.db.url, "0003_node_allocation")
         self.assertEqual(self._versions(store), ["0003_node_allocation"])
         self.assertFalse(added & self._columns(store, "alloc_engineers"))
+        self.assertNotIn("password_change_required_at", self._columns(store, "users"))
         with store.connect() as con:
             self.assertEqual(con.execute("SELECT COUNT(*) FROM alloc_engineers").fetchone()[0], 5)
             self.assertEqual(con.execute("SELECT COUNT(*) FROM alloc_nodes WHERE engineer_id IS NOT NULL").fetchone()[0], 14)

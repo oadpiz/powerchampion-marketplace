@@ -1,36 +1,47 @@
 """Engineer SSH key self-service: admin-created linked accounts, GET/POST /me/engineer."""
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 import yaml
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from server.allocation import AllocationError, parse_public_key
 from server.test_accounts import BASE, PASSWORD
 from server.test_allocation import SEED, _AllocationCase, ed_key, openssh
 from server.testsupport import database_text, rows
 
-SELF_FIELDS = {"username", "displayName", "active", "nodes", "key", "keyPendingSync", "keyUpdatedBy"}
+SELF_FIELDS = {"username", "displayName", "active", "nodes", "key", "keyPendingSync", "keyUpdatedBy", "passwordChangeRequired"}
+CHOSEN = "engineer-chosen-password-456!"
 
 
 class _LinkedCase(_AllocationCase):
     def create_account(self, username, client=None):
         return self.post(client or self.admin_client, f"/admin/allocation/engineers/{self.engineer(username)['id']}/account", {})
 
-    def link(self, username):
-        """Create and link the engineer's account; return a client signed in with the temporary password."""
+    def link(self, username, change_password=True):
+        """Create and link the engineer's account and sign in with the temporary password. By
+        default the engineer then replaces it (required before any key change); `portal_password`
+        is whatever password the account has now."""
         r = self.create_account(username)
         self.assertEqual(r.status_code, 201, r.text)
         client = self.client()
-        login = self.post(client, "/auth/login", {"email": username + "@oadpiz.com", "password": r.json()["temporaryPassword"]})
+        temporary = r.json()["temporaryPassword"]
+        login = self.post(client, "/auth/login", {"email": username + "@oadpiz.com", "password": temporary})
         self.assertEqual(login.status_code, 200, login.text)
-        client.temporary_password = r.json()["temporaryPassword"]
+        client.temporary_password = client.portal_password = temporary
+        if change_password:
+            changed = self.post(client, "/password", {"currentPassword": temporary, "newPassword": CHOSEN + username})
+            self.assertEqual(changed.status_code, 200, changed.text)
+            client.portal_password = CHOSEN + username
         return client
 
     def me(self, client):
         return client.get(BASE + "/me/engineer")
 
     def submit(self, client, key, password=None):
-        return self.post(client, "/me/engineer/ssh-key", {"sshPubkey": key, "currentPassword": password or client.temporary_password})
+        return self.post(client, "/me/engineer/ssh-key", {"sshPubkey": key, "currentPassword": password or client.portal_password})
 
     def alloc_audit(self):
         return [e for e in rows(self.store, "audit_events") if e["action"].startswith("alloc.")]
@@ -153,7 +164,7 @@ class EngineerSelfServiceTests(_LinkedCase):
         data = r.json()
         self.assertEqual(set(data), SELF_FIELDS)
         self.assertEqual(data, {"username": "justin", "displayName": "justin", "active": True, "nodes": SEED["justin"],
-                                "key": None, "keyPendingSync": False, "keyUpdatedBy": None})
+                                "key": None, "keyPendingSync": False, "keyUpdatedBy": None, "passwordChangeRequired": False})
         for other in ('"mwind"', '"zhuling"', '"nati"', '"ll"', "b300-15", "b300-29", "@oadpiz.com", other_key.split(" ")[1]):
             self.assertNotIn(other, r.text)
         own = ed_key("justin@laptop")
@@ -193,9 +204,14 @@ class EngineerSelfServiceTests(_LinkedCase):
         entry = next(e for e in yaml.safe_load(exported["yaml"])["engineers"] if e["username"] == "justin")
         self.assertEqual(entry["ssh_pubkey"], key)
         self.assertEqual(exported["keyChanges"], [{"username": "justin", "fingerprint": justin["keyFingerprint"],
-                                                   "updatedBy": "engineer", "revision": revision + 1}])
+                                                   "previousFingerprint": None, "updatedBy": "engineer", "revision": revision + 1}])
         self.assertTrue(any("SSH key changed since the last export for justin (engineer" in w for w in exported["warnings"]))
-        self.mark(exported["revision"])
+        refused = self.post(self.admin_client, "/admin/allocation/export/mark", {"revision": exported["revision"]})
+        self.assertEqual((refused.status_code, refused.json()["error"]), (409, "fingerprint_confirmation_required"))
+        self.assertTrue(self.engineer("justin")["keyPendingSync"])
+        confirmed = self.post(self.admin_client, "/admin/allocation/export/mark",
+                              {"revision": exported["revision"], "fingerprintsConfirmed": True})
+        self.assertEqual(confirmed.status_code, 200, confirmed.text)
         self.assertFalse(self.engineer("justin")["keyPendingSync"])
         self.assertFalse(self.me(client).json()["keyPendingSync"])
         self.assertEqual(self.export()["keyChanges"], [])
@@ -272,7 +288,7 @@ class EngineerSelfServiceTests(_LinkedCase):
     def link(self, username):
         client = super().link(username)
         self._passwords = getattr(self, "_passwords", {})
-        self._passwords[self.engineer(username)["account"]["userId"]] = client.temporary_password
+        self._passwords[self.engineer(username)["account"]["userId"]] = client.portal_password
         return client
 
     def test_inactive_engineer_cannot_update(self):
@@ -301,7 +317,7 @@ class EngineerSelfServiceTests(_LinkedCase):
         for bad in ("sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIA== yubikey",
                     rsa2048, 'from="10.0.0.1" ' + valid, "command=\"/bin/sh\" " + valid, valid + "\n" + ed_key(),
                     "", "ssh-ed25519 AAAA... CHANGE_ME", None, 7):
-            r = self.post(client, "/me/engineer/ssh-key", {"sshPubkey": bad, "currentPassword": client.temporary_password})
+            r = self.post(client, "/me/engineer/ssh-key", {"sshPubkey": bad, "currentPassword": client.portal_password})
             self.assertEqual(r.status_code, 400, repr(bad))
         self.assertIsNone(self.engineer("justin")["sshPubkey"])
         self.assertEqual(self.submit(client, valid).status_code, 200, "invalid keys must not use up the password budget")
@@ -311,7 +327,7 @@ class EngineerSelfServiceTests(_LinkedCase):
         mwind = self.link("mwind")
         mwind_id = self.engineer("mwind")["id"]
         key = ed_key("justin")
-        r = self.post(justin, "/me/engineer/ssh-key", {"sshPubkey": key, "currentPassword": justin.temporary_password,
+        r = self.post(justin, "/me/engineer/ssh-key", {"sshPubkey": key, "currentPassword": justin.portal_password,
                                                        "engineerId": mwind_id, "username": "mwind"})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()["engineer"]["username"], "justin")
@@ -322,8 +338,181 @@ class EngineerSelfServiceTests(_LinkedCase):
         self.assertEqual(self.post(justin, f"/admin/allocation/engineers/{mwind_id}", {"sshPubkey": ed_key()}).status_code, 403)
         self.assertEqual(justin.get(BASE + "/admin/allocation").status_code, 403)
         # and another account's password does not work
-        r = self.submit(justin, ed_key(), password=mwind.temporary_password)
+        r = self.submit(justin, ed_key(), password=mwind.portal_password)
         self.assertEqual(r.status_code, 400)
+
+
+class PasswordChangeRequiredTests(_LinkedCase):
+    """A: an administrator-issued password can never set a production SSH key."""
+
+    def attempts(self):
+        return [r for r in rows(self.store, "login_attempts") if r["scope"].startswith("engineer-key:")]
+
+    def test_temporary_password_must_be_changed_first(self):
+        client = self.link("justin", change_password=False)
+        self.assertTrue(self.me(client).json()["passwordChangeRequired"])
+        for _ in range(7):  # more than the attempt budget: refused before the counter
+            r = self.submit(client, ed_key())
+            self.assertEqual((r.status_code, r.json()["error"]), (403, "password_change_required"))
+        self.assertIn("/account/security", r.json()["detail"])
+        self.assertIn("請先到", r.json()["detail"])
+        self.assertEqual(self.attempts(), [])
+        self.assertIsNone(self.engineer("justin")["sshPubkey"])
+        self.assertNotIn("password_change_required", client.get(BASE + "/session").text)
+        changed = self.post(client, "/password", {"currentPassword": client.temporary_password, "newPassword": CHOSEN})
+        self.assertEqual(changed.status_code, 200)
+        self.assertFalse(self.me(client).json()["passwordChangeRequired"])
+        self.assertIsNone(next(u for u in rows(self.store, "users") if u["email"] == "justin@oadpiz.com")["password_change_required_at"])
+        self.assertEqual(self.submit(client, ed_key(), password=CHOSEN).status_code, 200)
+
+    def test_admin_password_reset_requires_a_new_change(self):
+        client = self.link("justin")
+        user_id = self.engineer("justin")["account"]["userId"]
+        reset = self.post(self.admin_client, f"/admin/customers/{user_id}/reset-password", {"newPassword": "admin-issued-password-789"})
+        self.assertEqual(reset.status_code, 200, reset.text)
+        self.assertIsNotNone(next(u for u in rows(self.store, "users") if u["id"] == user_id)["password_change_required_at"])
+        self.assertEqual(self.me(client).status_code, 401, "a reset signs the user out")
+        client = self.client()
+        self.assertEqual(self.post(client, "/auth/login", {"email": "justin@oadpiz.com", "password": "admin-issued-password-789"}).status_code, 200)
+        self.assertTrue(self.me(client).json()["passwordChangeRequired"])
+        r = self.submit(client, ed_key(), password="admin-issued-password-789")
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "password_change_required"))
+        self.post(client, "/password", {"currentPassword": "admin-issued-password-789", "newPassword": CHOSEN})
+        self.assertEqual(self.submit(client, ed_key(), password=CHOSEN).status_code, 200)
+
+    def test_marker_is_rechecked_under_the_writer_lock(self):
+        client = self.link("justin")
+        user_id = self.engineer("justin")["account"]["userId"]
+        original = self.store.clear_attempts
+
+        def reset_then_clear(scope):
+            with self.store.connect() as con:
+                con.execute("UPDATE users SET password_change_required_at=? WHERE id=?", (1700000000, user_id))
+            original(scope)
+
+        with mock.patch.object(self.store, "clear_attempts", side_effect=reset_then_clear):
+            r = self.submit(client, ed_key())
+        self.assertEqual((r.status_code, r.json()["error"]), (403, "password_change_required"))
+        self.assertIsNone(self.engineer("justin")["sshPubkey"])
+
+
+class FingerprintConfirmationTests(_LinkedCase):
+    """B: an engineer-submitted key ships only after the admin confirms its fingerprint out of band."""
+
+    def mark_with(self, revision, **extra):
+        return self.post(self.admin_client, "/admin/allocation/export/mark", {"revision": revision, **extra})
+
+    def test_old_and_new_fingerprints_and_required_confirmation(self):
+        original = ed_key("justin@old")
+        self.set_key("justin", original)
+        self.mark()
+        old_fp = self.engineer("justin")["keyFingerprint"]
+        client = self.link("justin")
+        self.assertEqual(self.submit(client, ed_key("first")).status_code, 200)
+        before_engineer = self.revision() - 1
+        final = ed_key("second")
+        self.assertEqual(self.submit(client, final).status_code, 200)
+        justin = self.engineer("justin")
+        new_fp = justin["keyFingerprint"]
+        # two changes between exports keep the fingerprint the machines still have as "from"
+        self.assertEqual((justin["keyPreviousFingerprint"], justin["keyUpdatedBy"]), (old_fp, "engineer"))
+        exported = self.export()
+        self.assertEqual([(c["previousFingerprint"], c["fingerprint"]) for c in exported["keyChanges"]], [(old_fp, new_fp)])
+        # a late mark of a revision before the engineer's change needs no confirmation
+        self.assertEqual(self.mark_with(before_engineer).status_code, 200)
+        self.assertTrue(self.engineer("justin")["keyPendingSync"])
+        for extra in ({}, {"fingerprintsConfirmed": False}):
+            r = self.mark_with(exported["revision"], **extra)
+            self.assertEqual((r.status_code, r.json()["error"]), (409, "fingerprint_confirmation_required"))
+            self.assertIn("確認新指紋", r.json()["detail"])
+        self.assertEqual(self.mark_with(exported["revision"], fingerprintsConfirmed="yes").status_code, 400)
+        self.assertTrue(self.engineer("justin")["keyPendingSync"])
+        r = self.mark_with(exported["revision"], fingerprintsConfirmed=True)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertFalse(self.engineer("justin")["keyPendingSync"])
+        details = json.loads(self.audit("alloc.export")[-1]["details"])
+        self.assertTrue(details["fingerprintsConfirmed"])
+        self.assertEqual(details["engineerKeyChanges"], [{"username": "justin", "from": old_fp, "to": new_fp}])
+        # the next change starts from the key that was just exported
+        self.assertEqual(self.submit(client, ed_key("third")).status_code, 200)
+        self.assertEqual(self.engineer("justin")["keyPreviousFingerprint"], new_fp)
+
+    def test_admin_only_changes_need_no_confirmation(self):
+        self.set_key("justin", ed_key())
+        r = self.mark_with(self.revision())
+        self.assertEqual(r.status_code, 200, r.text)
+        details = json.loads(self.audit("alloc.export")[-1]["details"])
+        self.assertEqual((details["engineerKeyChanges"], details["fingerprintsConfirmed"]), ([], False))
+
+
+class PlaceholderCommentTests(_LinkedCase):
+    """C: a CHANGE_ME comment would make render.py treat a real key as the missing-key placeholder."""
+
+    def test_change_me_in_the_comment_is_refused_on_both_paths(self):
+        client = self.link("justin")
+        blob = ed_key().split(" ")[1]
+        for comment in ("CHANGE_ME", "change_me", "laptop-Change_Me", "x CHANGE_ME y"):
+            line = "ssh-ed25519 " + blob + " " + comment
+            with self.assertRaises(AllocationError, msg=comment):
+                parse_public_key(line)
+            r = self.submit(client, line)
+            self.assertEqual(r.status_code, 400, comment)
+            self.assertIn("CHANGE_ME", r.json()["detail"])
+            r = self.post(self.admin_client, "/admin/allocation/engineers/" + self.engineer("mwind")["id"], {"sshPubkey": line})
+            self.assertEqual(r.status_code, 400, comment)
+        self.assertIsNone(self.engineer("justin")["sshPubkey"])
+        self.assertIsNone(self.engineer("mwind")["sshPubkey"])
+        self.assertEqual(parse_public_key("ssh-ed25519 " + blob + " change-me")["comment"], "change-me")
+
+
+class ConcurrencyTests(_LinkedCase):
+    """F: concurrent requests (adapted from the 2026-10-21 review)."""
+
+    def race(self, calls):
+        start = threading.Barrier(len(calls))
+
+        def run(call):
+            start.wait(timeout=15)
+            return call()
+
+        with ThreadPoolExecutor(len(calls)) as pool:
+            return list(pool.map(run, calls))
+
+    def test_concurrent_wrong_passwords_throttle(self):
+        client = self.link("justin")
+        key = ed_key()
+        statuses = [r.status_code for r in self.race([lambda: self.submit(client, key, "wrong-password-xxxxx")] * 20)]
+        self.assertEqual((statuses.count(400), statuses.count(429)), (5, 15), statuses)
+        self.assertEqual(self.submit(client, key).status_code, 429, "the right password is blocked too")
+        self.assertIsNone(self.engineer("justin")["sshPubkey"])
+
+    def test_two_engineers_same_key_concurrently(self):
+        justin, mwind = self.link("justin"), self.link("mwind")
+        for _ in range(5):
+            key = ed_key()
+            results = self.race([lambda: self.submit(justin, key), lambda: self.submit(mwind, key)])
+            self.assertEqual(sorted(r.status_code for r in results), [200, 409], [r.text for r in results])
+            holders = [e for e in rows(self.store, "alloc_engineers")
+                       if e["ssh_pubkey"] and e["ssh_pubkey"].split(" ")[1] == key.split(" ")[1]]
+            self.assertEqual(len(holders), 1)
+
+    def test_integrity_error_branch(self):
+        """A signup that commits between the email check and the INSERT still gives account_exists."""
+        from server import db as dbmod
+        original = dbmod.Connection.execute
+        store = self.store
+
+        def execute(con, sql, params=()):
+            if sql.startswith("INSERT INTO users (id,email,name,password_hash,role,created_at") and params and params[1] == "justin@oadpiz.com":
+                raise store.IntegrityError("simulated unique violation")
+            return original(con, sql, params)
+
+        with mock.patch.object(dbmod.Connection, "execute", execute):
+            r = self.create_account("justin")
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "account_exists"))
+        self.assertIsNone(self.engineer("justin")["account"])
+        self.assertEqual(self.audit("alloc.engineer_account_create"), [])
+        self.assertNotIn("justin@oadpiz.com", [u["email"] for u in rows(self.store, "users")])
 
 
 if __name__ == "__main__":
