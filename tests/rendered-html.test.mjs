@@ -571,7 +571,7 @@ test("server-renders the model platform tools and all model detail routes", asyn
       assert.match(html, /Ready when you are/);
     }
   }
-  for (const id of ["glm-5.2-fp8", "qwen3-vl-30b", "flux-schnell", "chroma1-hd", "whisper-large-v3", "indextts2", "bge-m3", "bge-reranker-v2-m3"]) {
+  for (const id of ["glm-5.2-fp8", "glm-5.3-flash-uncensored", "qwen3-vl-30b", "flux-schnell", "chroma1-hd", "whisper-large-v3", "indextts2", "bge-m3", "bge-reranker-v2-m3"]) {
     const response = await render(`/models/${id}`);
     assert.equal(response.status, 200, id);
     const html = await response.text();

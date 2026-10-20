@@ -165,6 +165,8 @@ export const INTERNATIONAL_CONTENT: Record<
     },
     modelDescriptions: {
       "glm-5.2-fp8": "對話、推理與程式開發，適合文字助理及開發工作流程。",
+      "glm-5.3-flash-uncensored":
+        "快速文字對話，適用於研究、紅隊測試與創作。未內建內容過濾，使用須遵守服務條款。",
       "qwen3-vl-30b": "圖片、圖表與文件理解，可用於 OCR 與視覺問答。",
       "flux-schnell": "快速文生圖，適合創意探索與行銷素材初稿。",
       "chroma1-hd": "高解析度圖像生成，適合需要豐富細節的視覺內容。",
@@ -420,6 +422,8 @@ export const INTERNATIONAL_CONTENT: Record<
     modelDescriptions: {
       "glm-5.2-fp8":
         "会話、推論、コード生成。テキストアシスタントや開発ワークフローに。",
+      "glm-5.3-flash-uncensored":
+        "高速なテキスト対話。研究、レッドチーミング、創作向け。コンテンツフィルタは組み込まれていません。ご利用は利用規約に従います。",
       "qwen3-vl-30b":
         "画像、グラフ、文書の理解。OCR や画像に関する質問への回答に。",
       "flux-schnell":
@@ -682,6 +686,8 @@ export const INTERNATIONAL_CONTENT: Record<
     modelDescriptions: {
       "glm-5.2-fp8":
         "대화, 추론, 코드 생성. 텍스트 도우미와 개발 워크플로에 활용합니다.",
+      "glm-5.3-flash-uncensored":
+        "빠른 텍스트 대화. 연구, 레드팀 테스트, 창작에 활용합니다. 콘텐츠 필터가 내장되어 있지 않으며 이용약관에 따라 사용해야 합니다.",
       "qwen3-vl-30b":
         "이미지, 차트, 문서 이해. OCR과 이미지 관련 질의응답에 활용합니다.",
       "flux-schnell":

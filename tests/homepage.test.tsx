@@ -5,6 +5,7 @@ import Home from "../app/page";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 import { InternationalSite } from "../components/international-site";
+import { MODEL_CATALOG } from "../lib/models";
 
 function renderHome() {
   return render(
@@ -37,6 +38,11 @@ describe("model-first Power Champion homepage", () => {
     expect(document.body).not.toHaveTextContent(
       /8 live models|99\.99%|Token access launching soon/,
     );
+    // The model count is derived from the catalog, never hard-coded.
+    expect(
+      screen.getByRole("link", { name: `Explore all ${MODEL_CATALOG.length} models` }),
+    ).toBeInTheDocument();
+    expect(MODEL_CATALOG.some((model) => model.id === "glm-5.3-flash-uncensored")).toBe(true);
   });
 
   it("filters model capabilities and keeps each billing unit explicit", async () => {

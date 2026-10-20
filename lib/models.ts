@@ -67,6 +67,33 @@ export const MODEL_CATALOG: ModelDefinition[] = [
     region: "TH",
   },
   {
+    id: "glm-5.3-flash-uncensored",
+    name: "GLM 5.3 Flash Uncensored",
+    modelId: "glm-5.3-flash-uncensored",
+    categories: ["reasoning", "general"],
+    context: "33K",
+    speed: "Fast",
+    inputPerMillion: 0.30,
+    outputPerMillion: 1.00,
+    available: true,
+    tagline: {
+      en: "Fast GLM-5.3 Flash fine-tune. No built-in content filtering; use is subject to the Terms.",
+      zh: "快速的 GLM-5.3 Flash 微調模型。未內建內容過濾，使用須遵守服務條款。",
+    },
+    maxOutput: "33K",
+    features: { tools: false, structuredOutput: false, reasoning: true, streaming: true },
+    provenance: {
+      status: "live",
+      label: { en: "Live", zh: "已上線" },
+      licenseHref: null,
+    },
+    servingRole: {
+      en: "GLM-5.3 Flash community fine-tune with safety refusals removed, for research, red-teaming, and creative work. No built-in content filtering; use is subject to the Terms.",
+      zh: "GLM-5.3 Flash 社群微調版本，已移除安全拒答，適用於研究、紅隊測試與創作。未內建內容過濾，使用須遵守服務條款。",
+    },
+    region: "TH",
+  },
+  {
     id: "qwen3-vl-30b",
     name: "Qwen3-VL 30B",
     modelId: "qwen3-vl-30b",

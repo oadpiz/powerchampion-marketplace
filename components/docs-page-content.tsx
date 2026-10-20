@@ -94,7 +94,7 @@ export function DocsPageContent({ gateway }: Props) {
       <section aria-labelledby="endpoints-title" className="docs-quick-start docs-endpoints">
         <h2 id="endpoints-title">{locale === "en" ? "Available endpoints" : "可用端點"}</h2>
         <dl className="docs-values">
-          <div><dt>POST /v1/chat/completions</dt><dd>{locale === "en" ? "Chat, reasoning, coding (GLM 5.2 FP8, Qwen3-VL 30B)" : "對話、推理、程式開發（GLM 5.2 FP8、Qwen3-VL 30B）"}</dd></div>
+          <div><dt>POST /v1/chat/completions</dt><dd>{locale === "en" ? "Chat, reasoning, coding (GLM 5.2 FP8, GLM 5.3 Flash Uncensored, Qwen3-VL 30B)" : "對話、推理、程式開發（GLM 5.2 FP8、GLM 5.3 Flash Uncensored、Qwen3-VL 30B）"}</dd></div>
           <div><dt>POST /v1/images/generations</dt><dd>{locale === "en" ? "Text-to-image (Flux Schnell, Chroma1 HD)" : "文生圖（Flux Schnell、Chroma1 HD）"}</dd></div>
           <div><dt>POST /v1/audio/transcriptions</dt><dd>{locale === "en" ? "Speech-to-text (Whisper Large v3)" : "語音轉文字（Whisper Large v3）"}</dd></div>
           <div><dt>POST /v1/audio/speech</dt><dd>{locale === "en" ? "Text-to-speech (IndexTTS2)" : "文字轉語音（IndexTTS2）"}</dd></div>
