@@ -13,7 +13,7 @@ EXPECTED_TABLES = {
     "runtime_tasks", "runtime_references", "runtime_events", "runtime_instructions",
     "runtime_approvals", "runtime_artifacts", "alloc_engineers", "alloc_nodes", "alloc_meta",
 }
-HEAD = "0003_node_allocation"
+HEAD = "0004_engineer_accounts"
 
 
 class MigrationTests(unittest.TestCase):
@@ -115,6 +115,35 @@ class MigrationTests(unittest.TestCase):
         upgrade_to_head(self.db.url)
         with store.connect() as con:
             self.assertEqual(con.execute("SELECT COUNT(*) FROM alloc_nodes").fetchone()[0], 16)
+
+    def test_engineer_account_link_upgrade_and_downgrade(self):
+        from server.store import Store
+        store = Store(self.db.url)
+        added = {"user_id", "key_updated_revision", "key_updated_by"}
+        self.assertLessEqual(added, self._columns(store, "alloc_engineers"))
+        with store.connect() as con:
+            con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
+                        ("u1", "justin@oadpiz.com", "justin", "unused", "customer", 1))
+            con.execute("UPDATE alloc_engineers SET user_id='u1',key_updated_revision=1,key_updated_by='engineer' WHERE username='justin'")
+        # one account stands for at most one engineer; the link must point at a real user
+        for sql in ("UPDATE alloc_engineers SET user_id='u1' WHERE username='mwind'",
+                    "UPDATE alloc_engineers SET user_id='nobody' WHERE username='mwind'",
+                    "UPDATE alloc_engineers SET key_updated_by='someone' WHERE username='mwind'"):
+            with self.assertRaises(store.IntegrityError, msg=sql):
+                with store.connect() as con:
+                    con.execute(sql)
+        downgrade_to(self.db.url, "0003_node_allocation")
+        self.assertEqual(self._versions(store), ["0003_node_allocation"])
+        self.assertFalse(added & self._columns(store, "alloc_engineers"))
+        with store.connect() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM alloc_engineers").fetchone()[0], 5)
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM alloc_nodes WHERE engineer_id IS NOT NULL").fetchone()[0], 14)
+            self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "justin@oadpiz.com")
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        with store.connect() as con:
+            row = con.execute("SELECT user_id, key_updated_revision, key_updated_by FROM alloc_engineers WHERE username='justin'").fetchone()
+            self.assertEqual(tuple(row), (None, None, None))
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":
