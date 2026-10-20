@@ -170,9 +170,9 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 - Migration `0003_node_allocation`（啟動時自動套用）新增 `alloc_engineers`、`alloc_nodes`（含待清理欄位 `pending_cleanup_revision`／`pending_cleanup_engineer_id`）、單列表 `alloc_meta`（分配版本號 `revision`、owner email、上次匯出的版本與時間），並在 `audit_events` 加上可為空的 `details` 欄位（JSON，記錄變更前→後）。`server/import_sqlite.py`（A1 的 SQLite→Postgres 搬遷工具）刻意不搬 `alloc_*`：它的來源早於這些表，目標端由 migration 自行種子；要搬分配就匯出 `engineers.yaml` 再輸入。
 - 同一個 migration 寫入 2026-10-20 的分配作為種子（不需要另跑指令），內容等於當天的 `access/engineers.yaml`：業務 b300-14、b300-31；justin（eng1）b300-11..13；mwind（eng2）b300-15、16、22；zhuling（eng3）b300-23..25；nati（eng4）b300-26..28；ll（eng5）b300-29、30；保留 0 台；owner email `zhuling@oadpiz.com`。工程師 email 為 `<username>@oadpiz.com`，全部**還沒有 SSH 公鑰**；`revision` 從 1 開始。
-- Migration `0004_engineer_accounts` 在 `alloc_engineers` 加上 `user_id`（連結的入口網站帳號，FK `users.id`、UNIQUE：一個帳號最多代表一位工程師）、`key_updated_revision`（公鑰最後一次變更時的分配版本）與 `key_updated_by`（`admin`／`engineer`）。`key_updated_revision` 大於上次匯出的版本時，這把公鑰是「待同步」。migration 之前存的公鑰沒有紀錄，視為已同步。
+- Migration `0004_engineer_accounts` 在 `alloc_engineers` 加上 `user_id`（連結的入口網站帳號，FK `users.id`、UNIQUE：一個帳號最多代表一位工程師）、`key_updated_revision`（公鑰最後一次變更時的分配版本）、`key_updated_by`（`admin`／`engineer`）與 `key_previous_fingerprint`（上次匯出時機器上那把公鑰的指紋；兩次匯出之間改好幾次，仍保留最早的「舊」指紋），並在 `users` 加上 `password_change_required_at`（管理員發的密碼尚未被使用者換掉）。`key_updated_revision` 大於上次匯出的版本時，這把公鑰是「待同步」。migration 之前存的公鑰沒有紀錄，視為已同步。
 - 每位工程師有一個 **cluster id**（`eng1`…）：它是匯出檔裡的 `id`，也是 render.py 給 Prometheus target 的 `owner` 標籤與 `ssh-config --engineer` 的參數，所以建立後固定不變；新增的工程師自動拿下一個號碼（`eng6`…）。
-- 每次寫入（新增／修改／停用／啟用工程師、改節點、改 owner email）都在同一個交易裡把 `revision` 加 1，並寫一筆稽核：`alloc.engineer_create`、`alloc.engineer_update`、`alloc.engineer_deactivate`、`alloc.engineer_reactivate`、`alloc.node_assign`（目標＝節點名；含確認旗標與待清理資訊）、`alloc.owner_update`，以及工程師自行更新公鑰的 `alloc.engineer_key_self_update`（actor＝工程師的帳號）；記錄匯出（`POST …/export/mark`）寫 `alloc.export`（目標 `revision:N`，不加版本號，`details.keyChanges` 列出這次匯出涵蓋的公鑰變更）。建立／解除工程師登入帳號（`alloc.engineer_account_create`、`alloc.engineer_account_unlink`）不影響匯出檔，所以**不加版本號**，但同樣寫稽核。與現值相同的寫入不算變更，不寫稽核。公鑰在稽核裡只記 SHA256 指紋（`from`→`to`），臨時密碼與公鑰原文都不會進稽核。
+- 每次寫入（新增／修改／停用／啟用工程師、改節點、改 owner email）都在同一個交易裡把 `revision` 加 1，並寫一筆稽核：`alloc.engineer_create`、`alloc.engineer_update`、`alloc.engineer_deactivate`、`alloc.engineer_reactivate`、`alloc.node_assign`（目標＝節點名；含確認旗標與待清理資訊）、`alloc.owner_update`，以及工程師自行更新公鑰的 `alloc.engineer_key_self_update`（actor＝工程師的帳號）；記錄匯出（`POST …/export/mark`）寫 `alloc.export`（目標 `revision:N`，不加版本號，`details.keyChanges` 列出這次匯出涵蓋的公鑰變更，`details.engineerKeyChanges` 是其中工程師自行送出的 `{username, from, to}`，`details.fingerprintsConfirmed` 記錄管理員是否勾選了指紋確認）。建立／解除工程師登入帳號（`alloc.engineer_account_create`、`alloc.engineer_account_unlink`）不影響匯出檔，所以**不加版本號**，但同樣寫稽核。與現值相同的寫入不算變更，不寫稽核。公鑰在稽核裡只記 SHA256 指紋（`from`→`to`），臨時密碼與公鑰原文都不會進稽核。
 - **並行保護**：每個寫入都可帶 `expected_revision`（後台一律帶）；與目前版本不同時回 409 `revision_conflict`「資料已被其他管理員更新，請重新整理」。寫入在資料庫寫鎖內會重新確認呼叫者仍是啟用中的管理員。
 
 ### 規則（API 與後台相同）
@@ -243,11 +243,17 @@ bash bin/b300-monitoring-update.sh apply
 公鑰會變成正式 GPU 節點與跳板機的 SSH 登入，所以身分必須可靠。入口網站的註冊是開放的、不驗證 email，**「email 相同」不能當作身分證明**。因此只有管理員替工程師建立並連結的帳號，才能設定那位工程師的公鑰；新公鑰也要等管理員下次匯出並同步才會生效，這一步仍是人工把關。
 
 1. 管理員在「機台分配」的工程師列表按「建立登入帳號」（`POST /admin/allocation/engineers/{id}/account`）。portal 以工程師的 email 建一個 `customer` 角色的帳號（不新增角色；客戶自助發 API 金鑰預設關閉，見 `PC_CUSTOMER_KEY_ISSUANCE`），並連結到這位工程師。伺服器產生的**臨時密碼只在這次回應顯示一次**（只存雜湊，不進稽核），後台跳出視窗可複製。該 email 已經有帳號時回 409 `account_exists`，**不會自動連結**（可能是別人搶先用這個 email 註冊）：請改用工程師另一個 email，或查明該帳號後再處理。停用中的工程師不能建帳號（409 `engineer_inactive`）；已連結的回 409 `account_linked`。
-2. 管理員私下把 email 與臨時密碼交給工程師。工程師登入後先到 `/account/security` 變更密碼，再到 `/account/ssh-key`（帳號導覽「SSH 公鑰」，只有已連結的帳號看得到）貼上公鑰、輸入目前密碼送出。頁面顯示他自己的節點、目前公鑰的指紋與狀態（尚未提供／待同步／已同步），不會顯示公鑰原文，也看不到其他工程師。
+2. 管理員私下把 email 與臨時密碼交給工程師。臨時密碼建立時就帶有「必須變更密碼」標記（`users.password_change_required_at`）；管理員在「客戶」重設密碼時也會設這個標記。標記存在時 `POST /me/engineer/ssh-key` 一律回 403 `password_change_required`（在嘗試次數計數之前檢查，寫鎖內再確認一次），`/account/ssh-key` 的表單停用並提示先到「安全性」改密碼；`POST /password` 成功後清掉標記。也就是說，管理員知道的密碼永遠不能設定正式機器的公鑰。工程師登入後先到 `/account/security` 變更密碼，再到 `/account/ssh-key`（帳號導覽「SSH 公鑰」，只有已連結的帳號看得到）貼上公鑰、輸入目前密碼送出。頁面顯示他自己的節點、目前公鑰的指紋與狀態（尚未提供／待同步／已同步），不會顯示公鑰原文，也看不到其他工程師。
 3. 送出時的檢查與管理員路徑相同（`parse_public_key`：ed25519、ecdsa、≥3072 位元 RSA，不接受 `sk-*`、選項前綴；同一把公鑰不能給兩個人，409 `engineer_conflict`），另外要重新驗證目前密碼（錯誤 400 `invalid_current_password`），每個帳號 15 分鐘內最多 5 次嘗試（429 `rate_limited`）。寫入在資料庫寫鎖內重新確認帳號未停用、仍連結、工程師仍啟用，加版本號，記 `key_updated_by='engineer'`，寫 `alloc.engineer_key_self_update`（指紋 from→to）。回應說明「管理員下次匯出並同步後才會生效」。
-4. 後台該工程師的公鑰欄出現「工程師已更新公鑰，待匯出同步」，匯出面板也會列出待同步的公鑰。管理員照平常匯出 `engineers.yaml` 並跑 4.6、4.7；記錄匯出後狀態變成已同步。
+4. 後台該工程師的公鑰欄出現「工程師已更新公鑰，待匯出同步」，匯出面板列出待同步的公鑰（舊指紋 → 新指紋）。**匯出前要驗證送出的人真的是工程師本人**（帳號密碼可能外洩）：透過其他管道（電話／當面／公司通訊）請工程師唸出他電腦上 `ssh-keygen -lf ~/.ssh/id_ed25519.pub` 的指紋，與新指紋比對，然後勾選「已透過其他管道（電話／當面／公司通訊）向工程師確認新指紋」才能匯出。後端同樣把關：匯出範圍內有工程師送出的公鑰時，`POST …/export/mark` 必須帶 `fingerprintsConfirmed: true`，否則回 409 `fingerprint_confirmation_required`；只有管理員改的公鑰不需要確認。接著照平常跑 4.6、4.7；記錄匯出後狀態變成已同步。
+5. 不寄通知信：入口網站目前沒有寄信功能，工程師或管理員都不會因公鑰變更收到 email。可列為後續改善（例如公鑰變更時通知工程師的信箱，讓帳號被盜用時本人會知道）。
 
-「解除連結」（`…/account/unlink`）只拿掉連結，帳號本身不刪除也不停用（需要時到「客戶」停用），已存的公鑰與節點不變。解除後同一個 email 已經有帳號，所以不能再按「建立登入帳號」重新連結。臨時密碼遺失時，到「客戶」用管理員重設密碼。
+「解除連結」（`…/account/unlink`）只拿掉連結，帳號本身不刪除也不停用（需要時到「客戶」停用），已存的公鑰與節點不變。臨時密碼遺失時，到「客戶」用管理員重設密碼（之後工程師要再改一次密碼才能送公鑰）。`parse_public_key` 拒絕註解含 `CHANGE_ME`（不分大小寫）的公鑰：render.py 會把這種公鑰當成「還沒有公鑰」的佔位。
+
+已知限制（目前不處理）：
+
+- **解除連結是單向的**：解除後那個 email 仍有入口網站帳號，「建立登入帳號」會回 409 `account_exists`，不會重新連結。誤解除時要改用工程師另一個沒有帳號的 email（先在「編輯」改工程師的 email，再建立帳號）。
+- **「已同步」只表示「包含在最近一次記錄的匯出裡」**，不代表已經套用到機器：portal 不連機器，看不到 4.6、4.7 有沒有跑完。`POST …/export/mark` 也相信管理員送來的版本號（後台會送剛下載的那個版本）；手動呼叫時送錯版本，狀態就會不準。
 
 ### API（皆需管理員，非管理員 403、未登入 401）
 
@@ -262,20 +268,20 @@ bash bin/b300-monitoring-update.sh apply
 | `POST /admin/allocation/nodes/{name}` | `{role: "selling" \| "engineer" \| "reserved", engineerId?, note?, confirm_selling_change?, confirm_node_synced?}` |
 | `POST /admin/allocation/owner` | `{ownerEmail}` |
 | `GET /admin/allocation/export` | 唯讀，見上 |
-| `POST /admin/allocation/export/mark` | `{revision}`，記錄已匯出的版本 |
+| `POST /admin/allocation/export/mark` | `{revision, fingerprintsConfirmed?}`，記錄已匯出的版本；範圍內有工程師送出的公鑰時 `fingerprintsConfirmed` 必須是 `true`（否則 409 `fingerprint_confirmation_required`） |
 
-寫入都可帶 `expected_revision`；成功都回傳完整的最新狀態（含新的 `revision`）。狀態裡每位工程師另有 `account`（`{userId, email, disabled}` 或 `null`）、`keyPendingSync`、`keyUpdatedBy`、`keyUpdatedRevision`。
+寫入都可帶 `expected_revision`；成功都回傳完整的最新狀態（含新的 `revision`）。狀態裡每位工程師另有 `account`（`{userId, email, disabled}` 或 `null`）、`keyPendingSync`、`keyUpdatedBy`、`keyUpdatedRevision`、`keyPreviousFingerprint`；匯出回應的 `keyChanges` 也帶 `previousFingerprint`。
 
 工程師自助（任何已登入帳號都可呼叫，但只有已連結的帳號會成功）：
 
 | Route | 用途 |
 | --- | --- |
-| `GET /me/engineer` | 未連結回 404 `not_engineer`；已連結回自己的 `username`、`displayName`、`active`、`nodes`、`key`（`{type, bits, fingerprint}` 或 `null`）、`keyPendingSync`、`keyUpdatedBy` |
-| `POST /me/engineer/ssh-key` | `{sshPubkey, currentPassword}`；見上節 |
+| `GET /me/engineer` | 未連結回 404 `not_engineer`；已連結回自己的 `username`、`displayName`、`active`、`nodes`、`key`（`{type, bits, fingerprint}` 或 `null`）、`keyPendingSync`、`keyUpdatedBy`、`passwordChangeRequired` |
+| `POST /me/engineer/ssh-key` | `{sshPubkey, currentPassword}`；密碼尚未變更時 403 `password_change_required`；見上節 |
 
 ### 回滾
 
-- 只退工程師自助（`0004_engineer_accounts`）：舊映像不認得這個 revision，先用新映像把 schema 降到 `0003_node_allocation`（下面的指令把最後的版本換成 `'0003_node_allocation'`）。這只刪掉三個新欄位（帳號連結與公鑰變更紀錄），工程師、公鑰與已建立的入口網站帳號都保留。
+- 只退工程師自助（`0004_engineer_accounts`）：舊映像不認得這個 revision，先用新映像把 schema 降到 `0003_node_allocation`（下面的指令把最後的版本換成 `'0003_node_allocation'`）。這只刪掉新欄位（帳號連結、公鑰變更紀錄、`users.password_change_required_at`），工程師、公鑰與已建立的入口網站帳號都保留。
 - 只退程式：分配表不影響其他功能，但**舊映像不認得 revision `0003_node_allocation`**（啟動時會拋 `Can't locate revision '0003_node_allocation'` 並不斷重啟），必須先用新映像降級 schema。
 - 降級 schema 到 `0002_users_disabled_at`（在 `powerchampion-portal` 容器的 Terminal，Bash）：
 
