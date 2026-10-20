@@ -314,7 +314,10 @@ class PendingCleanupTests(_AllocationCase):
         self.assertEqual([p["node"] for p in result["pendingCleanup"]], ["b300-29", "b300-30"])
         self.assertTrue(any("Pending cleanup: b300-29 (was ll), b300-30 (was ll)" in w for w in result["warnings"]))
         self.assertIn("#   b300-29: was ll (since revision", result["yaml"])
-        self.assertEqual(result["excluded"], [])
+        self.assertEqual(result["excluded"], [{"username": "ll", "reason": "尚未提供公鑰"}])
+        self.assertNotIn("ll", [e["username"] for e in yaml.safe_load(result["yaml"])["engineers"]])
+        self.set_key("ll", ed_key())
+        result = self.export()
         self.assertTrue(any(w.startswith("ll: 此工程師目前沒有節點，同步後會移除其跳板機帳號與節點帳號") and "pending cleanup on b300-29, b300-30" in w
                             for w in result["warnings"]))
         ll = next(e for e in yaml.safe_load(result["yaml"])["engineers"] if e["username"] == "ll")
@@ -537,12 +540,46 @@ class ExportTests(_AllocationCase):
             con.execute("UPDATE alloc_meta SET owner_email=NULL WHERE id=1")
         result = self.export()
         parsed = yaml.safe_load(result["yaml"])
-        self.assertEqual(next(e for e in parsed["engineers"] if e["username"] == "ll")["nodes"], [])
-        self.assertEqual(result["excluded"], [])
+        self.assertNotIn("ll", [e["username"] for e in parsed["engineers"]])
+        self.assertEqual(result["excluded"], [{"username": "ll", "reason": "尚未提供公鑰"}])
         self.assertEqual(parsed["owner"]["email"], "CHANGE_ME@your-mail-domain")
         self.assertFalse(result["renderReady"])
         self.assertFalse(result["monitoringReady"])
         self.assertTrue(any("Owner email" in w for w in result["warnings"]))
+
+    def test_keyless_engineer_without_nodes_is_left_out_so_strict_check_passes(self):
+        keys = self.ready()
+        r = self.post(self.admin_client, "/admin/allocation/engineers", {"username": "kim", "email": "kim@oadpiz.com"})
+        self.assertEqual(r.status_code, 201, r.text)
+        result = self.export()
+        parsed = yaml.safe_load(result["yaml"])
+        self.assertNotIn("kim", [e["username"] for e in parsed["engineers"]])
+        self.assertEqual(result["excluded"], [{"username": "kim", "reason": "尚未提供公鑰"}])
+        self.assertIn("#   kim: 尚未提供公鑰", result["yaml"])
+        self.assertEqual(result["missingKeys"], [])
+        self.assertTrue(result["renderReady"])
+        self.assertEqual(len(parsed["engineers"]), len(keys))
+        if RENDER.is_file():
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "engineers.yaml"
+                path.write_text(result["yaml"])
+                check = self.render(path, "check")
+                self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_engineer_with_a_key_but_no_nodes_stays_present_with_no_nodes(self):
+        self.ready()
+        for node in SEED["ll"]:
+            self.assign(node, {"role": "reserved"})
+        result = self.export()
+        ll = next(e for e in yaml.safe_load(result["yaml"])["engineers"] if e["username"] == "ll")
+        self.assertEqual((ll["state"], ll["nodes"]), ("present", []))
+        self.assertTrue(ll["ssh_pubkey"].startswith("ssh-ed25519 "))
+        self.assertEqual(result["excluded"], [])
+        self.assertTrue(result["renderReady"])
+        # the key that made ll exportable can be replaced but never cleared
+        r = self.post(self.admin_client, "/admin/allocation/engineers/" + self.engineer("ll")["id"], {"sshPubkey": None})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("cannot be cleared", r.json()["detail"])
 
     def test_inactive_engineer_is_exported_absent_on_every_node_they_held(self):
         self.ready()

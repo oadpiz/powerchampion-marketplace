@@ -196,7 +196,8 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 - **沒有公鑰的工程師照樣匯出，`ssh_pubkey` 是 `"ssh-ed25519 AAAA... CHANGE_ME"`**，回應帶警告與 `missingKeys`。這是 render.py 的現行規則：監控指令（`targets`、`summary`、`relay-map`、`access-emails`）與 `check --allow-missing-keys` 接受缺公鑰；建帳號（`check`、`bastion-tsv`、playbook）只要有任何一位 present 工程師缺公鑰就整個拒絕。所以 Grafana／Prometheus 可以先同步，帳號要等五把公鑰到齊。回應的 `monitoringReady`／`renderReady` 分別表示兩者是否會過。
 - **停用的工程師**匯出為 `state: absent`，`nodes` 是他曾經被分配過的全部節點（`node_history`），讓 playbook 移除帳號；已變成業務的節點會被略過（render.py 禁止），回應會提醒要手動清除。沒有任何可列節點的停用工程師不匯出。
-- 啟用中但沒有節點的工程師照樣匯出（`nodes: []`、`state: present`）：render.py 接受，同步後會移除其跳板機帳號與節點帳號，只留 Grafana 登入。匯出回應會帶警告「此工程師目前沒有節點，同步後會移除其跳板機帳號與節點帳號」，節點還在待清理時一併列出。
+- 啟用中、沒有節點**也還沒有公鑰**的工程師不匯出，列在 `excluded`（原因「尚未提供公鑰」）與檔頭註解：他不可能有過帳號（存好的公鑰不能清空），若帶 CHANGE_ME 匯出反而會讓嚴格的 `render.py check` 擋下所有同步。
+- 啟用中、沒有節點但**有公鑰**的工程師照樣匯出（`nodes: []`、`state: present`）：render.py 接受，同步後會移除其跳板機帳號與節點帳號，只留 Grafana 登入。匯出回應會帶警告「此工程師目前沒有節點，同步後會移除其跳板機帳號與節點帳號」，節點還在待清理時一併列出。
 - `owner.email`（Grafana Admin、Cloudflare Access）在匯出面板修改；清空時檔案帶 `CHANGE_ME@your-mail-domain`，render.py 會拒絕。
 - `selling.vllm_ports` 與 `engineer_vllm_ports` 是 ops 擁有的設定，portal 用 `server/allocation.py` 裡的常數（抄自 2026-10-20 的 engineers.yaml）。cluster repo 改了這些埠，要同步改常數。
 - API：`GET /api/portal/admin/allocation/export` 是唯讀的，回 JSON（`filename`、`yaml`、`revision`、`generatedAt`、`warnings`、`excluded`、`missingKeys`、`pendingCleanup`、`renderReady`、`monitoringReady`），後台據此下載成 `engineers.yaml`，接著呼叫 `POST /api/portal/admin/allocation/export/mark`（`{revision}`）記錄「已匯出到哪個版本」並寫 `alloc.export`；記錄只會往前，不會被較舊的版本蓋回去。在 portal 容器內直接打服務可加 `?format=yaml` 拿純文字（`Content-Disposition: attachment; filename="engineers.yaml"`）；BFF 不轉送這個參數。

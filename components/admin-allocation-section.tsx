@@ -574,6 +574,12 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
                   ? ` 監控可以同步（check --allow-missing-keys）；${result.missingKeys.join("、")} 還沒有公鑰，建帳號（4.6、4.7）會被拒絕。`
                   : ` Monitoring can sync (check --allow-missing-keys); ${result.missingKeys.join(", ")} have no key yet, so account creation (4.6, 4.7) refuses.`)}
           </p>
+          {result.excluded.length > 0 && (
+            <p className="portal-hint">
+              {zh ? "未匯出：" : "Not exported: "}
+              {result.excluded.map((item) => `${item.username}（${item.reason}）`).join(zh ? "、" : ", ")}
+            </p>
+          )}
           {result.warnings.length > 0 && (
             <ul className="portal-note">
               {result.warnings.map((warning) => (
@@ -778,6 +784,8 @@ export function AdminAllocationSection() {
                             <br />
                             <small>{engineer.keyType}</small>
                           </>
+                        ) : engineer.active && engineer.nodes.length === 0 ? (
+                          <span className="portal-badge">{zh ? "尚未提供公鑰（沒有節點，不會匯出）" : "No key yet (no nodes, not exported)"}</span>
                         ) : (
                           <span className="portal-badge">{zh ? "尚未設定公鑰（匯出為 CHANGE_ME）" : "No key yet (exported as CHANGE_ME)"}</span>
                         )}

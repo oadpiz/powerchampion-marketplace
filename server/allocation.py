@@ -282,6 +282,13 @@ def build_export(con, now=None):
     for e in engineers:
         user = e["username"]
         if e["active"]:
+            if not owned[e["id"]] and not e["ssh_pubkey"]:
+                # No nodes and no key: never had an account (a saved key cannot be cleared), so
+                # there is nothing to remove, and a CHANGE_ME key would block every strict check.
+                excluded.append({"username": user, "reason": "尚未提供公鑰"})
+                warnings.append(f"{user}: 尚未提供公鑰且沒有節點，不會匯出 (no key and no nodes yet: left out of the file "
+                                "so the strict render.py check still passes).")
+                continue
             if not owned[e["id"]]:
                 # render.py accepts an active engineer with nodes: [] (only the Grafana login
                 # remains); exporting them is what lets the sync remove the jump and node accounts.
