@@ -13,7 +13,11 @@ import { MODEL_CATALOG, type ModelDefinition } from "../lib/models";
 import { CREDIT_PACKS, calculateUsageCost } from "../lib/pricing";
 import { COMPANY_SOURCES } from "../lib/company";
 
-type Props = { language: InternationalLanguage; section: InternationalSection };
+type Props = {
+  language: InternationalLanguage;
+  section: InternationalSection;
+  featuredTextModelId?: string;
+};
 type Copy = (typeof INTERNATIONAL_CONTENT)[InternationalLanguage];
 
 function Arrow() {
@@ -388,7 +392,7 @@ function Company({
   );
 }
 
-export function InternationalSite({ language, section }: Props) {
+export function InternationalSite({ language, section, featuredTextModelId }: Props) {
   const copy = INTERNATIONAL_CONTENT[language];
   const page = copy.pages[section];
   return (
@@ -432,7 +436,7 @@ export function InternationalSite({ language, section }: Props) {
         </div>
       </header>
       {section === "" ? (
-        <HomeContent language={language} />
+        <HomeContent language={language} featuredTextModelId={featuredTextModelId} />
       ) : section === "agent-platform" ? (
         <AgentPlatformContent language={language} />
       ) : (

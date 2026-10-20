@@ -7,19 +7,21 @@ import { SiteShell } from "../components/site-shell";
 import { InternationalSite } from "../components/international-site";
 import { MODEL_CATALOG } from "../lib/models";
 
-function renderHome() {
+async function renderHome() {
+  // The homepage reads live gateway status on the server; keep tests offline.
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+  const page = await Home();
+  vi.unstubAllGlobals();
   return render(
     <LocaleProvider>
-      <SiteShell>
-        <Home />
-      </SiteShell>
+      <SiteShell>{page}</SiteShell>
     </LocaleProvider>,
   );
 }
 
 describe("model-first Power Champion homepage", () => {
-  it("prioritizes model discovery and documentation, retaining enterprise infrastructure", () => {
-    renderHome();
+  it("prioritizes model discovery and documentation, retaining enterprise infrastructure", async () => {
+    await renderHome();
     const hero = screen.getByRole("region", {
       name: "One API.Every possibility.",
     });
@@ -47,7 +49,7 @@ describe("model-first Power Champion homepage", () => {
 
   it("filters model capabilities and keeps each billing unit explicit", async () => {
     const user = userEvent.setup();
-    renderHome();
+    await renderHome();
     expect(
       within(screen.getByRole("article", { name: "GLM 5.2 FP8" })).getByText(
         "/ 1M input tokens",
@@ -86,7 +88,7 @@ describe("model-first Power Champion homepage", () => {
     const writeText = vi
       .spyOn(navigator.clipboard, "writeText")
       .mockResolvedValue();
-    renderHome();
+    await renderHome();
     await user.click(screen.getByRole("button", { name: "cURL" }));
     expect(
       screen.getByRole("region", { name: "cURL integration example" }),
@@ -108,7 +110,7 @@ describe("model-first Power Champion homepage", () => {
     const writeText = vi
       .spyOn(navigator.clipboard, "writeText")
       .mockRejectedValue(new Error("denied"));
-    renderHome();
+    await renderHome();
     await user.click(screen.getByRole("button", { name: "Copy code" }));
     expect(
       screen.getByText("Copy unavailable. Select and copy the code above."),
@@ -118,7 +120,7 @@ describe("model-first Power Champion homepage", () => {
 
   it("localizes model discovery and both services into Traditional Chinese", async () => {
     const user = userEvent.setup();
-    const view = renderHome();
+    const view = await renderHome();
     await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
     expect(within(screen.getByRole("navigation", { name: "Website language" })).getByRole("link", { name: "繁體中文" })).toHaveAttribute("href", "/zh-Hant");
     view.unmount();
