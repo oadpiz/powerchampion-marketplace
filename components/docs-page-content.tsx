@@ -49,6 +49,13 @@ export function DocsPageContent({ gateway }: Props) {
         <h1 id="docs-title">{copy.docs.title}</h1>
         <p>{copy.docs.lead}</p>
         <p className="docs-notice">{locale === "en" ? "Deployed — the endpoint below is live; current model availability is shown on the status page" : "已部署 — 下方端點皆為正式端點；目前模型可用性請見狀態頁"}</p>
+        <p className="docs-reference-link">
+          <a href="/docs/api">
+            {locale === "en" ? "Full API reference" : "完整 API 參考手冊"}
+            <span aria-hidden="true"> →</span>
+          </a>
+          <span>{locale === "en" ? "Every endpoint, limit, price, and error code in one page." : "所有端點、限制、價格與錯誤碼，一頁看完。"}</span>
+        </p>
       </section>
 
       <section aria-labelledby="public-preview-title" className="docs-quick-start">

@@ -55,6 +55,10 @@ const routeMetadata = {
     title: "Documentation | Power Champion",
     description: "Quick start for the OpenAI-compatible API at b300.powerchampion.ai — cURL, Python, and JavaScript examples.",
   },
+  "/docs/api": {
+    title: "API Reference | Power Champion",
+    description: "Full reference for the b300 OpenAI-compatible API: endpoints and limits, models and prices, keys and rate limits, prepaid billing, errors and retries.",
+  },
   "/trust": {
     title: "Trust and Service Policies | Power Champion",
     description: "Understand Power Champion service responsibilities, data handling, API access, and published company information.",
@@ -94,7 +98,7 @@ const routeMetadata = {
 };
 
 const routes = [
-  "/", "/solutions", "/models", "/pricing", "/infrastructure", "/docs", "/trust",
+  "/", "/solutions", "/models", "/pricing", "/infrastructure", "/docs", "/docs/api", "/trust",
   "/status", "/company", "/contact", "/console", "/faq", "/terms", "/privacy", "/data-retention",
 ];
 
@@ -531,6 +535,7 @@ test("server-renders docs and the live console", async () => {
   assert.match(docsHtml, /Deployed — the endpoint below is live/i);
   assert.match(docsHtml, /Protected access/i);
   assert.match(docsHtml, /\u00abredacted:sk-\u2026\u00bb/i);
+  assert.match(docsHtml, /<a href="\/docs\/api">Full API reference/);
 
   const consoleResponse = await render("/console");
   const consoleHtml = await consoleResponse.text();
@@ -602,4 +607,21 @@ test("server-renders each administration section and rejects unknown ones", asyn
   }
   assert.equal((await render("/admin/not-a-section")).status, 404);
   assert.equal((await render("/admin/keys/extra")).status, 404);
+});
+
+test("server-renders the full API reference", async () => {
+  const response = await render("/docs/api");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /<h1[^>]*>API reference<\/h1>/);
+  assert.equal((html.match(/<main[ >]/g) ?? []).length, 1);
+  assert.match(html, /aria-label="On this page"/);
+  for (const heading of ["Quick start", "Models and prices", "Authentication, keys and rate limits", "Endpoint reference", "Billing and balance", "Errors, retries and best practices", "Support"]) {
+    assert.match(html, new RegExp(`<h2[^>]*>${escaped(heading)}</h2>`), heading);
+  }
+  for (const id of ["glm-5.2-fp8", "glm-5.3-flash-uncensored", "qwen3-vl-30b", "bge-m3", "bge-reranker-v2-m3", "flux-schnell", "chroma1-hd", "indextts2", "whisper-large-v3"]) {
+    assert.match(html, new RegExp(`<code>${escaped(id)}</code>`), id);
+  }
+  assert.match(html, /Video generation is not available yet/);
+  assert.doesNotMatch(html, /平台優化建議|勿對外/);
 });

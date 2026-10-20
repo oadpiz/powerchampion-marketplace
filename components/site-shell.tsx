@@ -18,7 +18,7 @@ import {
 } from "../lib/languages";
 
 type NavigationKey = keyof CopyDictionary["nav"];
-type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy" | "dataRetention";
+type FooterDestinationKey = NavigationKey | "about" | "terms" | "privacy" | "dataRetention" | "apiReference";
 
 const primaryDestinations: readonly [NavigationKey, string][] = [
   ["models", "/models"],
@@ -45,6 +45,7 @@ const footerDestinationGroups: readonly {
       ["agents", "/agent-platform"],
       ["pricing", "/pricing"],
       ["docs", "/docs"],
+      ["apiReference", "/docs/api"],
       ["console", "/console"],
     ],
   },
@@ -87,6 +88,8 @@ function footerDestinationLabel(
   locale: Locale,
   key: FooterDestinationKey,
 ) {
+  if (key === "apiReference")
+    return locale === "en" ? "API reference" : "API 參考手冊";
   if (
     key === "about" ||
     key === "terms" ||
