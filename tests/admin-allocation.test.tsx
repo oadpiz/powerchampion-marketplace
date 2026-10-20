@@ -39,6 +39,7 @@ function seedState(): AllocationState {
     }),
     engineers: Object.keys(OWNERS).map((username) => ({
       id: engineerId(username),
+      clusterId: `eng${Object.keys(OWNERS).indexOf(username) + 1}`,
       username,
       email: `${username}@oadpiz.com`,
       displayName: username,
@@ -103,8 +104,9 @@ describe("admin node allocation section", () => {
     expect(within(b14).getByText("172.16.10.14")).toBeVisible();
     expect(within(b14).getByText("Selling")).toBeVisible();
     const engineers = screen.getByRole("table", { name: "Engineers" });
-    expect(within(engineers).getAllByText("No key yet (not exported)")).toHaveLength(4);
+    expect(within(engineers).getAllByText("No key yet (exported as CHANGE_ME)")).toHaveLength(4);
     expect(within(engineers).getByText("SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG")).toBeVisible();
+    expect(within(engineers).getByText("eng5")).toBeVisible();
   });
 
   it("asks for confirmation before a node leaves selling and sends the explicit flag", async () => {
@@ -218,6 +220,8 @@ describe("admin node allocation section", () => {
           warnings: ["justin: no SSH public key yet"],
           excluded: [{ username: "justin", reason: "no_ssh_pubkey" }],
           renderReady: false,
+          monitoringReady: true,
+          missingKeys: ["justin"],
         };
       },
     });
@@ -232,7 +236,7 @@ describe("admin node allocation section", () => {
     expect(await blob.text()).toBe("selling:\n  nodes: [b300-14, b300-31]\n");
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:engineers");
     expect(await screen.findByText(/Last export: revision 3/)).toBeVisible();
-    expect(screen.getByText(/will not pass render\.py check/)).toBeVisible();
+    expect(screen.getByText(/Monitoring can sync .*justin have no key yet/)).toBeVisible();
     expect(calls.filter((call) => call.path === "/admin/allocation/export")).toHaveLength(1);
   });
 });

@@ -19,6 +19,7 @@ type AllocationNode = {
 };
 type Engineer = {
   id: string;
+  clusterId: string;
   username: string;
   email: string;
   displayName: string;
@@ -52,20 +53,24 @@ type ExportResult = {
   warnings: string[];
   excluded: { username: string; reason: string; nodes?: string[] }[];
   renderReady: boolean;
+  monitoringReady: boolean;
+  missingKeys: string[];
 };
 type NodeDraft = { role: Role; engineerId: string; note: string };
 type EngineerDialog = { kind: "create" } | { kind: "edit"; engineer: Engineer };
 
-/** From ~/github/b300-cluster/docs/engineer-access-runbook.md (sections 1, 4.2, 4.4, 4.5, 4.7). One command per block. */
+/** From ~/github/b300-cluster/docs/engineer-access-runbook.md (2026-10-20: sections 1, 2, 4.2, 4.6, 4.7, 4.8). One command per block. */
 export const SYNC_STEPS: { zh: string; en: string; command: string }[] = [
-  { zh: "檢查匯出的檔案", en: "Validate the exported file", command: "python3 access/render.py check" },
-  { zh: "確認分配表", en: "Review the assignment table", command: "python3 access/render.py summary" },
+  { zh: "公鑰還沒到齊：只檢查 email／節點（監控用）", en: "Keys not all in yet: validate emails and nodes only (monitoring)", command: "python3 access/render.py check --allow-missing-keys" },
+  { zh: "公鑰到齊後：完整檢查（建帳號前必過）", en: "All keys in: full check (required before creating accounts)", command: "python3 access/render.py check" },
+  { zh: "第 2 節 Cloudflare Access 名單（email 有變時）", en: "Section 2 Cloudflare Access list (when emails change)", command: "python3 access/render.py access-emails" },
   { zh: "4.2 監控：本地檢查", en: "4.2 Monitoring: local check", command: "bash bin/b300-monitoring-update.sh check" },
+  { zh: "4.2 監控：準備映像（b300-31 不能連外）", en: "4.2 Monitoring: stage images (b300-31 has no internet)", command: "bash bin/b300-monitoring-update.sh images" },
   { zh: "4.2 監控：重產 Prometheus targets 並套用", en: "4.2 Monitoring: regenerate Prometheus targets and apply", command: "bash bin/b300-monitoring-update.sh apply" },
-  { zh: "4.4 跳板機帳號（bastion99 有 sudo 時）", en: "4.4 Bastion accounts (when bastion99 has sudo)", command: "~/.venvs/ansible/bin/ansible-playbook -i ansible/inventory.ini ansible/engineer-access.yml --tags bastion -K" },
-  { zh: "4.4 沒有 sudo：產生 TSV 交給 root（之後照 runbook 4.4 上傳與執行）", en: "4.4 Without sudo: render the TSV for root (then upload and run it per runbook 4.4)", command: "python3 access/render.py bastion-tsv --out out/bastion-engineers.tsv" },
-  { zh: "4.5 節點帳號（b300-14、b300-31 不會被碰到）", en: "4.5 Node accounts (selling nodes are never touched)", command: "~/.venvs/ansible/bin/ansible-playbook -i ansible/inventory.ini ansible/engineer-access.yml --tags nodes -K" },
-  { zh: "4.7 新工程師：產生他的 SSH 設定（id 換成對方的 username）", en: "4.7 New engineer: print their SSH config (replace the id with their username)", command: "python3 access/render.py ssh-config --engineer justin" },
+  { zh: "4.6 跳板機帳號（需全員公鑰；bastion99 有 sudo 時）", en: "4.6 Bastion accounts (all keys needed; when bastion99 has sudo)", command: "~/.venvs/ansible/bin/ansible-playbook -i ansible/inventory.ini ansible/engineer-access.yml --tags bastion -K" },
+  { zh: "4.6 沒有 sudo：產生 TSV 交給 root（之後照 runbook 4.6 上傳與執行）", en: "4.6 Without sudo: render the TSV for root (then upload and run it per runbook 4.6)", command: "python3 access/render.py bastion-tsv --out out/bastion-engineers.tsv" },
+  { zh: "4.7 節點帳號（需全員公鑰；b300-14、b300-31 不會被碰到）", en: "4.7 Node accounts (all keys needed; selling nodes are never touched)", command: "~/.venvs/ansible/bin/ansible-playbook -i ansible/inventory.ini ansible/engineer-access.yml --tags nodes -K" },
+  { zh: "4.8 交給工程師：他的 SSH 設定（eng1 換成對方的 cluster id）", en: "4.8 Hand-off: their SSH config (replace eng1 with their cluster id)", command: "python3 access/render.py ssh-config --engineer eng1" },
 ];
 
 function roleLabel(role: Role, zh: boolean): string {
@@ -471,8 +476,14 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
             {zh
               ? `已下載 engineers.yaml（版本 ${result.revision}，${result.generatedAt}）。`
               : `Downloaded engineers.yaml (revision ${result.revision}, ${result.generatedAt}).`}
-            {!result.renderReady &&
-              (zh ? " 這個檔案還過不了 render.py check，請看下列提醒。" : " This file will not pass render.py check yet; see below.")}
+            {!result.monitoringReady
+              ? zh
+                ? " 這個檔案還過不了 render.py，請看下列提醒。"
+                : " This file will not pass render.py yet; see below."
+              : !result.renderReady &&
+                (zh
+                  ? ` 監控可以同步（check --allow-missing-keys）；${result.missingKeys.join("、")} 還沒有公鑰，建帳號（4.6、4.7）會被拒絕。`
+                  : ` Monitoring can sync (check --allow-missing-keys); ${result.missingKeys.join(", ")} have no key yet, so account creation (4.6, 4.7) refuses.`)}
           </p>
           {result.warnings.length > 0 && (
             <ul className="portal-note">
@@ -486,8 +497,8 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
       <h3>{zh ? "同步到機器" : "Sync to the machines"}</h3>
       <p className="portal-hint">
         {zh
-          ? "在 Mac 上：先把 ~/github/b300-cluster/access/engineers.yaml 備份，再用下載的 engineers.yaml 覆蓋它。以下指令都在 ~/github/b300-cluster 目錄執行，一次貼一行（依 docs/engineer-access-runbook.md；換人或調整節點依序跑 4.2、4.4、4.5）。"
-          : "On the Mac: back up ~/github/b300-cluster/access/engineers.yaml, then replace it with the downloaded engineers.yaml. Run these in ~/github/b300-cluster, one line at a time (per docs/engineer-access-runbook.md; after a change run 4.2, 4.4 and 4.5 in order)."}
+          ? "在 Mac 上：先把 ~/github/b300-cluster/access/engineers.yaml 備份，再用下載的 engineers.yaml 覆蓋它。以下指令都在 ~/github/b300-cluster 目錄執行，一次貼一行（依 docs/engineer-access-runbook.md；換人或調整節點依序跑 4.2、4.6、4.7；標「生產・需 owner 核准」的步驟照 runbook 先取得核准）。"
+          : "On the Mac: back up ~/github/b300-cluster/access/engineers.yaml, then replace it with the downloaded engineers.yaml. Run these in ~/github/b300-cluster, one line at a time (per docs/engineer-access-runbook.md; after a change run 4.2, 4.6 and 4.7 in order; production steps need the owner's approval as the runbook says)."}
       </p>
       <ol>
         {SYNC_STEPS.map((step) => (
@@ -501,8 +512,8 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
       </ol>
       <p className="portal-hint">
         {zh
-          ? "業務節點不會開個人帳號，playbook 也不會碰它們：要把工程師的節點改成業務，先改成「保留」並同步一次（4.5 會移除帳號），再改成業務。"
-          : "Selling nodes never get personal accounts and the playbook never touches them: to turn an engineer's node into a selling node, set it to Reserved and sync once (4.5 removes the account), then make it Selling."}
+          ? "業務節點不會開個人帳號，playbook 也不會碰它們：要把工程師的節點改成業務，先改成「保留」並同步一次（4.7 會移除帳號），再改成業務。"
+          : "Selling nodes never get personal accounts and the playbook never touches them: to turn an engineer's node into a selling node, set it to Reserved and sync once (4.7 removes the account), then make it Selling."}
       </p>
     </section>
   );
@@ -598,8 +609,8 @@ export function AdminAllocationSection() {
             </div>
             <p className="portal-hint">
               {zh
-                ? "還沒有 SSH 公鑰的工程師會列在這裡，但不會寫進匯出的 engineers.yaml（render.py 會拒絕沒有公鑰的帳號），他的節點在檔案裡會是未分配，直到貼上公鑰。停用的工程師會以 state: absent 匯出，下次同步時移除帳號。"
-                : "Engineers without an SSH public key stay listed here but are left out of the exported engineers.yaml (render.py rejects accounts without a key); their nodes are unassigned in the file until a key is saved. Deactivated engineers are exported as state: absent so the next sync removes their accounts."}
+                ? "還沒有 SSH 公鑰的工程師仍會匯出，公鑰欄位是 CHANGE_ME 佔位：監控（Grafana／Prometheus）可以先同步，但只要有人缺公鑰，建帳號的步驟（4.6、4.7）就會被 render.py 與 playbook 拒絕。停用的工程師以 state: absent 匯出，下次同步時移除帳號。cluster id（eng1…）是匯出檔的 id，也是 Prometheus 的 owner 標籤。"
+                : "Engineers without an SSH public key are still exported, with the CHANGE_ME key placeholder: monitoring (Grafana/Prometheus) can sync, but while anyone lacks a key, account creation (4.6, 4.7) is refused by render.py and the playbook. Deactivated engineers are exported as state: absent so the next sync removes their accounts. The cluster id (eng1…) is the id in the exported file and the Prometheus owner label."}
             </p>
             <ErrorLine message={message} />
             <div className="portal-table-wrap">
@@ -608,6 +619,7 @@ export function AdminAllocationSection() {
                 <thead>
                   <tr>
                     <th scope="col">{zh ? "帳號" : "Username"}</th>
+                    <th scope="col">Cluster id</th>
                     <th scope="col">Email</th>
                     <th scope="col">{zh ? "顯示名稱" : "Display name"}</th>
                     <th scope="col">{zh ? "公鑰指紋" : "Key fingerprint"}</th>
@@ -620,6 +632,9 @@ export function AdminAllocationSection() {
                   {state.engineers.map((engineer) => (
                     <tr key={engineer.id}>
                       <th scope="row">{engineer.username}</th>
+                      <td>
+                        <code>{engineer.clusterId}</code>
+                      </td>
                       <td>{engineer.email}</td>
                       <td>{engineer.displayName}</td>
                       <td>
@@ -630,7 +645,7 @@ export function AdminAllocationSection() {
                             <small>{engineer.keyType}</small>
                           </>
                         ) : (
-                          <span className="portal-badge">{zh ? "尚未設定公鑰（不會匯出）" : "No key yet (not exported)"}</span>
+                          <span className="portal-badge">{zh ? "尚未設定公鑰（匯出為 CHANGE_ME）" : "No key yet (exported as CHANGE_ME)"}</span>
                         )}
                       </td>
                       <td>{engineer.nodes.length ? engineer.nodes.join(", ") : "—"}</td>
