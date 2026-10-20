@@ -38,8 +38,16 @@ type Engineer = {
   keyPendingSync?: boolean;
   keyUpdatedBy?: "admin" | "engineer" | null;
   keyUpdatedRevision?: number | null;
+  /** The fingerprint the machines had at the last export (null: no key then). */
+  keyPreviousFingerprint?: string | null;
 };
-type KeyChange = { username: string; fingerprint: string | null; updatedBy: "admin" | "engineer" | null; revision: number };
+type KeyChange = {
+  username: string;
+  fingerprint: string | null;
+  previousFingerprint?: string | null;
+  updatedBy: "admin" | "engineer" | null;
+  revision: number;
+};
 export type AllocationState = {
   revision: number;
   ownerEmail: string | null;
@@ -79,6 +87,8 @@ const DISPLAY_NAME = /^[\p{L}\p{N}][\p{L}\p{N}_ .-]{0,63}$/u;
 const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
 const SYNC_CONFIRM_ZH = "我已依手冊 4.7 執行節點同步，且確認該節點已無工程師帳號";
 const SYNC_CONFIRM_EN = "I ran the node sync (runbook 4.7) and confirmed no engineer account remains on this node";
+const FINGERPRINT_CONFIRM_ZH = "已透過其他管道（電話／當面／公司通訊）向工程師確認新指紋";
+const FINGERPRINT_CONFIRM_EN = "I confirmed each new fingerprint with the engineer through another channel (phone, in person, company chat)";
 type EngineerDialog = { kind: "create" } | { kind: "edit"; engineer: Engineer };
 
 /** From ~/github/b300-cluster/docs/engineer-access-runbook.md (2026-10-20: sections 1, 2, 4.2, 4.6, 4.7, 4.8). One command per block. */
@@ -546,8 +556,8 @@ function TemporaryPasswordDialog({
       )}
       <p className="portal-hint">
         {zh
-          ? "請透過私下管道交給工程師，並請他：1) 用這組 email 與臨時密碼登入；2) 立刻到 /account/security 變更密碼；3) 到 /account/ssh-key 送出自己的 SSH 公鑰。公鑰要等你下次匯出 engineers.yaml 並同步（4.6、4.7）後才會生效。"
-          : "Give it to the engineer privately and ask them to: 1) sign in with this email and the temporary password; 2) change the password right away at /account/security; 3) submit their own SSH public key at /account/ssh-key. The key takes effect only after your next export of engineers.yaml and sync (4.6, 4.7)."}
+          ? "請透過私下管道交給工程師，並請他：1) 用這組 email 與臨時密碼登入；2) 立刻到 /account/security 變更密碼；3) 到 /account/ssh-key 送出自己的 SSH 公鑰（變更密碼前不能送出）。匯出前請透過其他管道向工程師確認新指紋；公鑰要等你下次匯出 engineers.yaml 並同步（4.6、4.7）後才會生效。"
+          : "Give it to the engineer privately and ask them to: 1) sign in with this email and the temporary password; 2) change the password right away at /account/security; 3) submit their own SSH public key at /account/ssh-key (not possible until the password is changed). Confirm the new fingerprint with them through another channel before you export; the key takes effect only after your next export of engineers.yaml and sync (4.6, 4.7)."}
       </p>
     </AdminDialog>
   );
@@ -560,6 +570,9 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [result, setResult] = useState<ExportResult | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  // Engineer-submitted key changes found in an export that was held back for confirmation.
+  const [heldBack, setHeldBack] = useState<KeyChange[]>([]);
 
   async function saveOwner() {
     setBusy(true);
@@ -582,15 +595,29 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
     setMessage(null);
     try {
       const exported = await portalRequest<ExportResult>("/admin/allocation/export");
+      const engineerChanges = (exported.keyChanges ?? []).filter((change) => change.updatedBy === "engineer");
+      if (engineerChanges.length > 0 && !confirmed) {
+        // Never hand out an engineer-submitted key before its fingerprint is confirmed.
+        setHeldBack(engineerChanges);
+        setMessage(
+          zh
+            ? "這次匯出包含工程師自行更新的公鑰：請先向工程師確認新指紋並勾選確認，再匯出。"
+            : "This export includes keys engineers submitted themselves: confirm the new fingerprints with them and tick the confirmation, then export.",
+        );
+        setBusy(false);
+        return;
+      }
       downloadText(exported.filename || "engineers.yaml", exported.yaml);
       setResult(exported);
       // The download itself is read-only; recording it (and its revision) is a separate write.
       onStateChange(
         await portalRequest<AllocationState>("/admin/allocation/export/mark", {
           method: "POST",
-          body: JSON.stringify({ revision: exported.revision }),
+          body: JSON.stringify({ revision: exported.revision, ...(confirmed && { fingerprintsConfirmed: true }) }),
         }),
       );
+      setConfirmed(false);
+      setHeldBack([]);
     } catch (reason: unknown) {
       setMessage(errorText(reason, locale));
     }
@@ -599,11 +626,13 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
 
   const unsynced = state.lastExport === null || state.lastExport.revision !== state.revision;
   const pendingKeys = state.engineers.filter((engineer) => engineer.active && engineer.keyPendingSync && engineer.keyFingerprint);
+  const needsConfirmation = heldBack.length > 0 || pendingKeys.some((engineer) => engineer.keyUpdatedBy === "engineer");
+  const none = zh ? "（無）" : "(none)";
   return (
     <section className="portal-panel" aria-labelledby="allocation-export">
       <div className="portal-panel-heading">
         <h2 id="allocation-export">{zh ? "匯出與同步" : "Export and sync"}</h2>
-        <button type="button" className="portal-button" disabled={busy} onClick={exportFile}>
+        <button type="button" className="portal-button" disabled={busy || (needsConfirmation && !confirmed)} onClick={exportFile}>
           {zh ? "匯出 engineers.yaml" : "Export engineers.yaml"}
         </button>
       </div>
@@ -638,6 +667,8 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
               <li key={engineer.id}>
                 {engineer.username}
                 {zh ? "：" : ": "}
+                <code>{engineer.keyPreviousFingerprint ?? none}</code>
+                {" → "}
                 <code>{engineer.keyFingerprint}</code>
                 {zh ? "（" : " ("}
                 {engineer.keyUpdatedBy === "engineer" ? (zh ? "工程師自行更新" : "updated by the engineer") : zh ? "管理員更新" : "updated by an administrator"}
@@ -646,6 +677,25 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
             ))}
           </ul>
         </div>
+      )}
+      {heldBack.length > 0 && (
+        <ul className="portal-note" aria-label={zh ? "待確認的工程師公鑰" : "Engineer keys to confirm"}>
+          {heldBack.map((change) => (
+            <li key={change.username}>
+              {change.username}
+              {zh ? "：" : ": "}
+              <code>{change.previousFingerprint ?? none}</code>
+              {" → "}
+              <code>{change.fingerprint}</code>
+            </li>
+          ))}
+        </ul>
+      )}
+      {needsConfirmation && (
+        <label className="portal-field">
+          <input type="checkbox" checked={confirmed} disabled={busy} onChange={(event) => setConfirmed(event.target.checked)} />
+          {zh ? FINGERPRINT_CONFIRM_ZH : FINGERPRINT_CONFIRM_EN}
+        </label>
       )}
       <div className="portal-inline-form">
         <label className="portal-field">
@@ -673,16 +723,15 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
                   : ` ${result.missingKeys.join(", ")} have no key yet: render.py lists them as pending and the syncs (4.6, 4.7) create no account for them; everyone else is synced normally.`)}
           </p>
           {result.keyChanges && result.keyChanges.length > 0 && (
-            <p className="portal-hint">
-              {zh ? "這次匯出包含的公鑰變更：" : "Key changes in this export: "}
-              {result.keyChanges
-                .map((change) =>
-                  zh
-                    ? `${change.username}（${change.updatedBy === "engineer" ? "工程師" : "管理員"}，版本 ${change.revision}）`
-                    : `${change.username} (${change.updatedBy === "engineer" ? "engineer" : "admin"}, revision ${change.revision})`,
-                )
-                .join(zh ? "、" : ", ")}
-            </p>
+            <ul className="portal-hint" aria-label={zh ? "這次匯出包含的公鑰變更" : "Key changes in this export"}>
+              {result.keyChanges.map((change) => (
+                <li key={change.username}>
+                  {zh
+                    ? `${change.username}：${change.previousFingerprint ?? none} → ${change.fingerprint ?? none}（${change.updatedBy === "engineer" ? "工程師" : "管理員"}，版本 ${change.revision}）`
+                    : `${change.username}: ${change.previousFingerprint ?? none} → ${change.fingerprint ?? none} (${change.updatedBy === "engineer" ? "engineer" : "admin"}, revision ${change.revision})`}
+                </li>
+              ))}
+            </ul>
           )}
           {result.excluded.length > 0 && (
             <p className="portal-hint">

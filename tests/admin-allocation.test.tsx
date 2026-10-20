@@ -226,7 +226,7 @@ describe("admin node allocation section", () => {
           monitoringReady: true,
           missingKeys: ["justin"],
           pendingCleanup: [],
-          keyChanges: [{ username: "nati", fingerprint: "SHA256:abc", updatedBy: "engineer", revision: 3 }],
+          keyChanges: [{ username: "nati", fingerprint: "SHA256:abc", previousFingerprint: "SHA256:old", updatedBy: "admin", revision: 3 }],
         };
       },
     });
@@ -242,7 +242,8 @@ describe("admin node allocation section", () => {
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:engineers");
     expect(await screen.findByText(/Last export: revision 3/)).toBeVisible();
     expect(screen.getByText(/justin have no key yet: render\.py lists them as pending/)).toBeVisible();
-    expect(screen.getByText(/Key changes in this export: nati \(engineer, revision 3\)/)).toBeVisible();
+    expect(within(screen.getByRole("list", { name: "Key changes in this export" })).getByText("nati: SHA256:old → SHA256:abc (admin, revision 3)")).toBeVisible();
+    expect(screen.queryByRole("checkbox", { name: /confirmed each new fingerprint/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/--allow-missing-keys/)).not.toBeInTheDocument();
     expect(calls.filter((call) => call.path === "/admin/allocation/export")).toHaveLength(1);
     expect(calls.find((call) => call.path === "/admin/allocation/export/mark")).toEqual({
@@ -417,14 +418,77 @@ describe("admin node allocation section", () => {
   it("flags keys the engineer changed since the last export", async () => {
     const state = seedState();
     state.lastExport = { revision: 2, at: "2026-10-20T09:00:00Z" };
-    state.engineers[3] = { ...state.engineers[3], keyPendingSync: true, keyUpdatedBy: "engineer", keyUpdatedRevision: 3 };
-    stubPortal({ "GET /admin/allocation": () => state });
+    state.engineers[3] = {
+      ...state.engineers[3],
+      keyPendingSync: true,
+      keyUpdatedBy: "engineer",
+      keyUpdatedRevision: 3,
+      keyPreviousFingerprint: "SHA256:previous",
+    };
+    const calls = stubPortal({ "GET /admin/allocation": () => state });
     wrap();
     const row = (await screen.findByRole("rowheader", { name: "nati" })).closest("tr")!;
     expect(within(row).getByText("Engineer updated the key; pending export and sync")).toBeVisible();
     const pending = screen.getByRole("list", { name: "Keys pending sync" });
     expect(within(pending).getByText(/nati/)).toBeVisible();
     expect(within(pending).getByText(/updated by the engineer/)).toBeVisible();
+    expect(within(pending).getByText("SHA256:previous")).toBeVisible();
     expect(screen.getAllByText(/pending export and sync/)).toHaveLength(1);
+    // an engineer-made change blocks the export until the fingerprint confirmation is ticked
+    const exportButton = screen.getByRole("button", { name: "Export engineers.yaml" });
+    expect(exportButton).toBeDisabled();
+    await userEvent.setup().click(screen.getByRole("checkbox", { name: /confirmed each new fingerprint/ }));
+    expect(exportButton).toBeEnabled();
+    expect(calls.some((call) => call.path.startsWith("/admin/allocation/export"))).toBe(false);
+  });
+
+  it("holds back an export with engineer keys until the fingerprints are confirmed", async () => {
+    const user = userEvent.setup();
+    const original = { createObjectURL: URL.createObjectURL, revokeObjectURL: URL.revokeObjectURL };
+    Object.assign(URL, { createObjectURL: vi.fn().mockReturnValue("blob:x"), revokeObjectURL: vi.fn() });
+    onTestFinished(() => {
+      Object.assign(URL, original);
+    });
+    const downloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(this.download);
+    });
+    const calls = stubPortal({
+      "GET /admin/allocation": () => seedState(),
+      "GET /admin/allocation/export": () => ({
+        filename: "engineers.yaml",
+        yaml: "engineers: []\n",
+        revision: 3,
+        generatedAt: "2026-10-21T09:00:00Z",
+        warnings: [],
+        excluded: [],
+        renderReady: true,
+        monitoringReady: true,
+        missingKeys: [],
+        pendingCleanup: [],
+        keyChanges: [{ username: "nati", fingerprint: "SHA256:new", previousFingerprint: null, updatedBy: "engineer", revision: 3 }],
+      }),
+      "POST /admin/allocation/export/mark": () => ({ ...seedState(), lastExport: { revision: 3, at: "2026-10-21T09:00:00Z" } }),
+    });
+    wrap();
+    // the loaded state was stale (no pending key), so the export itself reveals the engineer change
+    await user.click(await screen.findByRole("button", { name: "Export engineers.yaml" }));
+    expect(await screen.findByText(/This export includes keys engineers submitted themselves/)).toBeVisible();
+    const held = screen.getByRole("list", { name: "Engineer keys to confirm" });
+    expect(within(held).getByText("(none)")).toBeVisible();
+    expect(within(held).getByText("SHA256:new")).toBeVisible();
+    expect(downloads).toEqual([]);
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    expect(screen.getByRole("button", { name: "Export engineers.yaml" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: /confirmed each new fingerprint with the engineer/ }));
+    await user.click(screen.getByRole("button", { name: "Export engineers.yaml" }));
+    expect(await screen.findByText(/Last export: revision 3/)).toBeVisible();
+    expect(downloads).toEqual(["engineers.yaml"]);
+    expect(calls.find((call) => call.method === "POST")).toEqual({
+      method: "POST",
+      path: "/admin/allocation/export/mark",
+      body: { revision: 3, fingerprintsConfirmed: true },
+    });
+    expect(screen.queryByRole("list", { name: "Engineer keys to confirm" })).not.toBeInTheDocument();
   });
 });

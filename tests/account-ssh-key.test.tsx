@@ -185,4 +185,34 @@ describe("account SSH key section", () => {
     expect(screen.getByText("No nodes assigned right now")).toBeVisible();
     expect(screen.queryByLabelText("SSH public key")).not.toBeInTheDocument();
   });
+
+  it("locks the form until an administrator-issued password is changed", async () => {
+    const calls = stubPortal({
+      "GET /session": () => ({ user: customer }),
+      "GET /me/engineer": () => engineer({ passwordChangeRequired: true }),
+    });
+    wrap("ssh-key");
+    const notice = (await screen.findByText(/issued by an administrator/)).closest("p")!;
+    expect(notice).toHaveAttribute("role", "status");
+    expect(within(notice).getByRole("link", { name: "Security" })).toHaveAttribute("href", "/account/security");
+    expect(screen.getByLabelText("SSH public key")).toBeDisabled();
+    expect(screen.getByLabelText("Current password")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Submit key" })).toBeDisabled();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("explains a password_change_required refusal", async () => {
+    const user = userEvent.setup();
+    stubPortal({
+      "GET /session": () => ({ user: customer }),
+      "GET /me/engineer": () => engineer({ passwordChangeRequired: false }),
+      "POST /me/engineer/ssh-key": () =>
+        Response.json({ error: "password_change_required", detail: "change it" }, { status: 403 }),
+    });
+    wrap("ssh-key");
+    await user.type(await screen.findByLabelText("SSH public key"), KEY);
+    await user.type(screen.getByLabelText("Current password"), "temporary-password-1234");
+    await user.click(screen.getByRole("button", { name: "Submit key" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Change the password your administrator gave you under Security/);
+  });
 });

@@ -60,6 +60,8 @@ type EngineerSelf = {
   key: { type: string; bits: number | null; fingerprint: string } | null;
   keyPendingSync: boolean;
   keyUpdatedBy: "admin" | "engineer" | null;
+  /** The password was issued by an administrator; no key change until the user replaces it. */
+  passwordChangeRequired?: boolean;
 };
 function isEngineerSelf(value: unknown): value is EngineerSelf {
   const item = value as EngineerSelf | null;
@@ -78,6 +80,10 @@ function sshKeyErrorText(error: unknown, locale: "en" | "zh"): string {
       return zh ? "這把公鑰已被其他工程師使用，請用你自己的金鑰。" : "Another engineer already uses this key. Use your own key.";
     if (error.code === "engineer_inactive")
       return zh ? "你的工程師身分已停用，無法更新公鑰。" : "Your engineer access is deactivated, so the key cannot be updated.";
+    if (error.code === "password_change_required")
+      return zh
+        ? "請先到「安全性」變更管理員給你的臨時密碼，再更新 SSH 公鑰。"
+        : "Change the password your administrator gave you under Security before updating your SSH key.";
     if (error.code === "not_engineer")
       return zh ? "這個帳號已不再連結工程師。" : "This account is no longer linked to an engineer.";
     if (error.code === "invalid_input" && error.message)
@@ -1113,6 +1119,17 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                   </p>
                 ) : (
                   <form className="portal-credit-form" onSubmit={submitSshKey}>
+                    {engineer.passwordChangeRequired && (
+                      <p className="portal-note" role="status">
+                        {zh
+                          ? "你目前的密碼是管理員發給你的臨時密碼。請先到 "
+                          : "Your current password was issued by an administrator. Change it under "}
+                        <Link href="/account/security">{zh ? "安全性" : "Security"}</Link>
+                        {zh
+                          ? " 變更密碼，才能送出 SSH 公鑰。"
+                          : " before you can submit an SSH key."}
+                      </p>
+                    )}
                     <p className="portal-muted">
                       {zh
                         ? "貼上公鑰檔（例如 ~/.ssh/id_ed25519.pub）裡的那一行。接受 ssh-ed25519、ecdsa 或 3072 位元以上的 ssh-rsa；不要加 from= 等選項。沒有金鑰的話可以用 ssh-keygen -t ed25519 產生。絕對不要貼私鑰。"
@@ -1126,7 +1143,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                         required
                         spellCheck={false}
                         autoComplete="off"
-                        disabled={busy}
+                        disabled={busy || engineer.passwordChangeRequired}
                         onChange={(event) => setSshKey(event.target.value)}
                       />
                     </label>
@@ -1137,7 +1154,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                         autoComplete="current-password"
                         value={sshKeyPassword}
                         required
-                        disabled={busy}
+                        disabled={busy || engineer.passwordChangeRequired}
                         onChange={(event) => setSshKeyPassword(event.target.value)}
                       />
                     </label>
@@ -1165,7 +1182,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
                     <div className="portal-actions">
                       <button
                         className="portal-button"
-                        disabled={busy || !sshKey.trim() || !sshKeyPassword}
+                        disabled={busy || engineer.passwordChangeRequired || !sshKey.trim() || !sshKeyPassword}
                       >
                         {busy
                           ? zh
