@@ -75,9 +75,14 @@ see below).
 
 Admin-only, under `/api/portal/admin/allocation`: `GET` (state), `POST /engineers`,
 `POST /engineers/{id}`, `POST /engineers/{id}/status`, `POST /nodes/{name}` (leaving
-`selling` needs `confirm_selling_change: true`, else 409 `selling_change_unconfirmed`),
-`POST /owner`, and `GET /export` (JSON with the `engineers.yaml` text; `?format=yaml`
-returns the file directly when calling the service itself). Implemented in
+`selling` needs `confirm_selling_change: true`, else 409 `selling_change_unconfirmed`;
+engineer -> selling is 409 `engineer_to_selling`; a reserved node that left an engineer
+becomes selling only after an export mark at or after that revision plus
+`confirm_node_synced: true`), `POST /owner`, the read-only `GET /export` (JSON with the
+`engineers.yaml` text; `?format=yaml` returns the file directly when calling the service
+itself) and `POST /export/mark` (`{revision}`, records the export). Every write accepts
+`expected_revision` (409 `revision_conflict` on mismatch). Exported text is restricted
+so ansible cannot evaluate templates from it. Implemented in
 `server/allocation.py`; schema and seed in migration `0003_node_allocation`, which also
 adds the nullable `audit_events.details` (JSON old->new). Audit actions: `alloc.*`.
 Operations, export rules and rollback: `docs/portal-operations.md` section "機台分配".

@@ -168,18 +168,27 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 ### 資料與 migration
 
-- Migration `0003_node_allocation`（啟動時自動套用）新增 `alloc_engineers`、`alloc_nodes`、單列表 `alloc_meta`（分配版本號 `revision`、owner email、上次匯出的版本與時間），並在 `audit_events` 加上可為空的 `details` 欄位（JSON，記錄變更前→後）。
+- Migration `0003_node_allocation`（啟動時自動套用）新增 `alloc_engineers`、`alloc_nodes`（含待清理欄位 `pending_cleanup_revision`／`pending_cleanup_engineer_id`）、單列表 `alloc_meta`（分配版本號 `revision`、owner email、上次匯出的版本與時間），並在 `audit_events` 加上可為空的 `details` 欄位（JSON，記錄變更前→後）。`server/import_sqlite.py`（A1 的 SQLite→Postgres 搬遷工具）刻意不搬 `alloc_*`：它的來源早於這些表，目標端由 migration 自行種子；要搬分配就匯出 `engineers.yaml` 再輸入。
 - 同一個 migration 寫入 2026-10-20 的分配作為種子（不需要另跑指令），內容等於當天的 `access/engineers.yaml`：業務 b300-14、b300-31；justin（eng1）b300-11..13；mwind（eng2）b300-15、16、22；zhuling（eng3）b300-23..25；nati（eng4）b300-26..28；ll（eng5）b300-29、30；保留 0 台；owner email `zhuling@oadpiz.com`。工程師 email 為 `<username>@oadpiz.com`，全部**還沒有 SSH 公鑰**；`revision` 從 1 開始。
 - 每位工程師有一個 **cluster id**（`eng1`…）：它是匯出檔裡的 `id`，也是 render.py 給 Prometheus target 的 `owner` 標籤與 `ssh-config --engineer` 的參數，所以建立後固定不變；新增的工程師自動拿下一個號碼（`eng6`…）。
-- 每次寫入（新增／修改／停用／啟用工程師、改節點、改 owner email）都在同一個交易裡把 `revision` 加 1，並寫一筆稽核：`alloc.engineer_create`、`alloc.engineer_update`、`alloc.engineer_deactivate`、`alloc.engineer_reactivate`、`alloc.node_assign`（目標＝節點名）、`alloc.owner_update`；匯出寫 `alloc.export`（目標 `revision:N`，不加版本號）。與現值相同的寫入不算變更，不寫稽核。公鑰在稽核裡只記 SHA256 指紋。
+- 每次寫入（新增／修改／停用／啟用工程師、改節點、改 owner email）都在同一個交易裡把 `revision` 加 1，並寫一筆稽核：`alloc.engineer_create`、`alloc.engineer_update`、`alloc.engineer_deactivate`、`alloc.engineer_reactivate`、`alloc.node_assign`（目標＝節點名；含確認旗標與待清理資訊）、`alloc.owner_update`；記錄匯出（`POST …/export/mark`）寫 `alloc.export`（目標 `revision:N`，不加版本號）。與現值相同的寫入不算變更，不寫稽核。公鑰在稽核裡只記 SHA256 指紋。
+- **並行保護**：每個寫入都可帶 `expected_revision`（後台一律帶）；與目前版本不同時回 409 `revision_conflict`「資料已被其他管理員更新，請重新整理」。寫入在資料庫寫鎖內會重新確認呼叫者仍是啟用中的管理員。
 
 ### 規則（API 與後台相同）
 
 - 帳號（username）沿用 `render.py` 的規則：`^[a-z_][a-z0-9_-]{0,31}$`（兩個字元的 `ll` 合法），保留字 `root`、`tku`、`bastion99`、`ubuntu`、`admin`、`daemon`、`bin`、`sys`、`sync`、`nobody`、`sshd`、`www-data`、`b300eng` 不可用。帳號是 Linux 使用者名稱，**建立後不可改**（要改就停用再新增）。email 存小寫、不可重複。新增時後台預設帳號＝email 的 local part。
-- SSH 公鑰：一行 OpenSSH 公鑰（ssh-ed25519、ecdsa-sha2-nistp256/384/521、3072 位元以上的 ssh-rsa），不能有 `from=` 等選項前綴；同一把公鑰不能給兩個人。存好後只能替換、不能清空（要收回權限請停用）。後台顯示 SHA256 指紋。
+- SSH 公鑰：一行 OpenSSH 公鑰（ssh-ed25519、ecdsa-sha2-nistp256/384/521、3072 位元以上的 ssh-rsa），不能有 `from=` 等選項前綴；同一把公鑰不能給兩個人。存好後只能替換、不能清空（要收回權限請停用）。後台顯示 SHA256 指紋與正規化後的公鑰。
+- **不讓模板進 ansible**：匯出的文字最後會變成 ansible 變數，ansible 會解析 `{{ }}`。因此 email 必須符合 `^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`（存小寫）；顯示名稱最多 64 字，只能用文字（含中日韓文字）、數字、空白與 `. - _`（`{ } % # : , " ' \` 與控制字元一律拒絕）；公鑰註解只保留 `[A-Za-z0-9@._+-]`，其他註解在儲存時直接拿掉。`note` 不會匯出，但同樣拒絕 `{{`、`{%`、`{#`。
 - 工程師節點必須指定一位**啟用中**的工程師；還有節點的工程師不能停用（409 `engineer_has_nodes`，先把節點改派）。
 - **離開業務需明確確認**：把業務節點改成其他角色時，API 要求 `confirm_selling_change: true`，否則回 409 `selling_change_unconfirmed`；後台會先跳確認視窗。只改業務節點的備註不需要確認。
-- 工程師節點直接改成業務時，回應會帶警告：playbook 永遠不碰業務節點，舊帳號會留在機器上。照 runbook，先改成「保留」並同步一次（4.7 會移除帳號），再改成業務。
+- **工程師節點不能直接改成業務**（409 `engineer_to_selling`「請先改為保留並完成節點同步，再改為業務」）：ansible 永遠不碰業務節點，所以帳號必須在節點還是「保留」時移除。完整流程：
+  1. 把節點改成「保留」。portal 記下這次變更的版本（`pending_cleanup_revision`）與原工程師，節點標成「待清理」（後台的待清理清單、匯出回應的 `pendingCleanup`、檔頭註解都會列出）。
+  2. 匯出 `engineers.yaml`（版本 ≥ 該版本；後台下載時會自動 `POST …/export/mark` 記錄）。
+  3. 在 cluster repo 執行節點同步（runbook 4.7）。依 cluster 端正在進行的修改，node play 會對所有非業務節點執行並移除不再分配的 b300eng 帳號；**這個修改上線前，保留節點上的帳號要手動確認或移除**。
+  4. 回到後台編輯該節點，選「業務」，勾選「我已依手冊 4.7 執行節點同步，且確認該節點已無工程師帳號」後儲存（API：`confirm_node_synced: true`）。最後匯出版本小於待清理版本時回 409 `node_cleanup_pending`；沒勾確認回 409 `node_sync_unconfirmed`。成功後清掉待清理標記並寫稽核。
+  5. 再匯出、同步一次，讓 `selling.nodes` 生效。
+  
+  待清理的保留節點改派給工程師時，待清理標記會清除（node play 會重新管理它）。從來沒有工程師的保留節點可直接改成業務。
 
 ### 匯出 `engineers.yaml`
 
@@ -187,10 +196,10 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 - **沒有公鑰的工程師照樣匯出，`ssh_pubkey` 是 `"ssh-ed25519 AAAA... CHANGE_ME"`**，回應帶警告與 `missingKeys`。這是 render.py 的現行規則：監控指令（`targets`、`summary`、`relay-map`、`access-emails`）與 `check --allow-missing-keys` 接受缺公鑰；建帳號（`check`、`bastion-tsv`、playbook）只要有任何一位 present 工程師缺公鑰就整個拒絕。所以 Grafana／Prometheus 可以先同步，帳號要等五把公鑰到齊。回應的 `monitoringReady`／`renderReady` 分別表示兩者是否會過。
 - **停用的工程師**匯出為 `state: absent`，`nodes` 是他曾經被分配過的全部節點（`node_history`），讓 playbook 移除帳號；已變成業務的節點會被略過（render.py 禁止），回應會提醒要手動清除。沒有任何可列節點的停用工程師不匯出。
-- 啟用中但沒有節點的工程師不匯出（render.py 不接受沒有節點的工程師），列在檔頭註解與回應的 `excluded`。
+- 啟用中但沒有節點的工程師不匯出（render.py 不接受沒有節點的工程師），列在檔頭註解與回應的 `excluded`；若他的節點還在待清理，`excluded` 項目帶 `pendingCleanup`，警告會提醒要跑節點同步。
 - `owner.email`（Grafana Admin、Cloudflare Access）在匯出面板修改；清空時檔案帶 `CHANGE_ME@your-mail-domain`，render.py 會拒絕。
 - `selling.vllm_ports` 與 `engineer_vllm_ports` 是 ops 擁有的設定，portal 用 `server/allocation.py` 裡的常數（抄自 2026-10-20 的 engineers.yaml）。cluster repo 改了這些埠，要同步改常數。
-- API：`GET /api/portal/admin/allocation/export` 回 JSON（`filename`、`yaml`、`revision`、`generatedAt`、`warnings`、`excluded`、`missingKeys`、`renderReady`、`monitoringReady`），後台據此下載成 `engineers.yaml`。在 portal 容器內直接打服務可加 `?format=yaml` 拿純文字（`Content-Disposition: attachment; filename="engineers.yaml"`）；BFF 不轉送這個參數。
+- API：`GET /api/portal/admin/allocation/export` 是唯讀的，回 JSON（`filename`、`yaml`、`revision`、`generatedAt`、`warnings`、`excluded`、`missingKeys`、`pendingCleanup`、`renderReady`、`monitoringReady`），後台據此下載成 `engineers.yaml`，接著呼叫 `POST /api/portal/admin/allocation/export/mark`（`{revision}`）記錄「已匯出到哪個版本」並寫 `alloc.export`；記錄只會往前，不會被較舊的版本蓋回去。在 portal 容器內直接打服務可加 `?format=yaml` 拿純文字（`Content-Disposition: attachment; filename="engineers.yaml"`）；BFF 不轉送這個參數。
 
 ### 同步到機器（runbook `docs/engineer-access-runbook.md`，2026-10-20 版）
 
@@ -238,11 +247,12 @@ bash bin/b300-monitoring-update.sh apply
 | `POST /admin/allocation/engineers` | `{username, email, displayName?, sshPubkey?}`，201 |
 | `POST /admin/allocation/engineers/{id}` | `{email?, displayName?, sshPubkey?}`；改 `username` 回 400 |
 | `POST /admin/allocation/engineers/{id}/status` | `{active: true \| false}` |
-| `POST /admin/allocation/nodes/{name}` | `{role: "selling" \| "engineer" \| "reserved", engineerId?, note?, confirm_selling_change?}` |
+| `POST /admin/allocation/nodes/{name}` | `{role: "selling" \| "engineer" \| "reserved", engineerId?, note?, confirm_selling_change?, confirm_node_synced?}` |
 | `POST /admin/allocation/owner` | `{ownerEmail}` |
-| `GET /admin/allocation/export` | 見上 |
+| `GET /admin/allocation/export` | 唯讀，見上 |
+| `POST /admin/allocation/export/mark` | `{revision}`，記錄已匯出的版本 |
 
-寫入成功都回傳完整的最新狀態（含新的 `revision`）。
+寫入都可帶 `expected_revision`；成功都回傳完整的最新狀態（含新的 `revision`）。
 
 ### 回滾
 
