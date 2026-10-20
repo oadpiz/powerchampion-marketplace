@@ -13,6 +13,11 @@ import {
   INTERNATIONAL_SECTIONS,
 } from "../../../lib/languages";
 import { metadataForLocalizedPage } from "../../../lib/metadata";
+import { pickFeaturedTextModel } from "../../../lib/featured-model";
+import { fetchGatewayStatus, type GatewayStatus } from "../../../lib/gateway-status";
+
+// Localized homepages feature the text model the gateway reports as online.
+export const revalidate = 60;
 
 type PageProps = {
   params: Promise<{ language: string; segments?: string[] }>;
@@ -86,6 +91,16 @@ export default async function InternationalPage({
   searchParams,
 }: PageProps) {
   const route = await resolvePage(params, searchParams);
+  let featuredTextModelId: string | undefined;
+  if (route.section === "") {
+    let gateway: GatewayStatus | null = null;
+    try {
+      gateway = await fetchGatewayStatus();
+    } catch {
+      gateway = null;
+    }
+    featuredTextModelId = pickFeaturedTextModel(gateway);
+  }
   const faq = route.section === ""
     ? faqPageJsonLd(`/${route.language}`, HOME_COPY[route.language].faqs.map(([question, answer]) => ({ question, answer })))
     : route.section === "agent-platform"
@@ -94,7 +109,7 @@ export default async function InternationalPage({
   return (
     <>
       {faq ? <JsonLd data={faq} /> : null}
-      <InternationalSite {...route} />
+      <InternationalSite {...route} featuredTextModelId={featuredTextModelId} />
     </>
   );
 }

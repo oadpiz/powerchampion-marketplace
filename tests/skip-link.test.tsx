@@ -2,10 +2,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import ConsolePage from "../app/console/page";
-import Home from "../app/page";
 import ModelsPage from "../app/models/page";
 import PricingPage from "../app/pricing/page";
 import { DocsPageContent } from "../components/docs-page-content";
+import { HomeContent } from "../components/home-content";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
 
@@ -26,7 +26,7 @@ describe("skip navigation", () => {
   });
 
   it.each([
-    ["home", Home],
+    ["home", () => <HomeContent />],
     ["models", ModelsPage],
     ["pricing", PricingPage],
     ["docs", () => <DocsPageContent gateway={null} />],

@@ -449,6 +449,9 @@ test("server-renders route-specific launch boundaries and protected facts", asyn
 
   const docsHtml = await (await render("/docs")).text();
   assert.match(docsHtml, /Deployed — the endpoint below is live/i);
+  assert.doesNotMatch(docsHtml, /Release gates|docs-release-gates/);
+  assert.match(docsHtml, /class="docs-status-line"[\s\S]{0,300}?href="\/status"/);
+  assert.match(docsHtml, /Service status: \d+ of \d+ models online|Check current service status/);
   assert.match(docsHtml, /\u00abredacted:sk-\u2026\u00bb/i);
 
   const contactHtml = await (await render("/contact")).text();
@@ -571,7 +574,7 @@ test("server-renders the model platform tools and all model detail routes", asyn
       assert.match(html, /Ready when you are/);
     }
   }
-  for (const id of ["glm-5.2-fp8", "qwen3-vl-30b", "flux-schnell", "chroma1-hd", "whisper-large-v3", "indextts2", "bge-m3", "bge-reranker-v2-m3"]) {
+  for (const id of ["glm-5.2-fp8", "glm-5.3-flash-uncensored", "qwen3-vl-30b", "flux-schnell", "chroma1-hd", "whisper-large-v3", "indextts2", "bge-m3", "bge-reranker-v2-m3"]) {
     const response = await render(`/models/${id}`);
     assert.equal(response.status, 200, id);
     const html = await response.text();

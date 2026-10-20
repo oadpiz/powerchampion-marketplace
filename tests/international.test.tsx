@@ -116,7 +116,7 @@ describe("indexable international marketing", () => {
         ).toContain(LANGUAGE_NAMES[language]);
         expect(doc.querySelector('a[href="/platform"]')).toBeTruthy();
         expect(doc.body.textContent).not.toMatch(
-          /99\.99%|8 live models|1000\+/,
+          /99\.99%|8 live models|1000\+|全 8 モデル|전체 8개|全部 8 個/,
         );
       }
     });

@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { MODEL_CATALOG, type ModelDefinition } from "../lib/models";
+import { DEFAULT_FEATURED_TEXT_MODEL_ID } from "../lib/featured-model";
 import {
   HOME_COPY,
   type HomeCategory,
@@ -20,11 +21,11 @@ import { PromoMotionRoot } from "./promo-motion";
 import { AgentShowcase } from "./agent-showcase";
 
 type CodeLanguage = "Python" | "cURL";
-function codeSamples(prompt: string): Record<CodeLanguage, string> {
+function codeSamples(prompt: string, modelId: string): Record<CodeLanguage, string> {
   const content = JSON.stringify(prompt);
   return {
-    Python: `from openai import OpenAI\n\nclient = OpenAI(\n    base_url="https://b300.powerchampion.ai/v1",\n    api_key="YOUR_API_KEY"\n)\n\nresponse = client.chat.completions.create(\n    model="glm-5.2-fp8",\n    messages=[{\n        "role": "user",\n        "content": ${content}\n    }]\n)\n\nprint(response.choices[0].message.content)`,
-    cURL: `curl https://b300.powerchampion.ai/v1/chat/completions \\\n  -H "Authorization: Bearer $POWERCHAMPION_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "glm-5.2-fp8",\n    "messages": [{\n      "role": "user",\n      "content": ${content}\n    }]\n  }'`,
+    Python: `from openai import OpenAI\n\nclient = OpenAI(\n    base_url="https://b300.powerchampion.ai/v1",\n    api_key="YOUR_API_KEY"\n)\n\nresponse = client.chat.completions.create(\n    model="${modelId}",\n    messages=[{\n        "role": "user",\n        "content": ${content}\n    }]\n)\n\nprint(response.choices[0].message.content)`,
+    cURL: `curl https://b300.powerchampion.ai/v1/chat/completions \\\n  -H "Authorization: Bearer $POWERCHAMPION_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "model": "${modelId}",\n    "messages": [{\n      "role": "user",\n      "content": ${content}\n    }]\n  }'`,
   };
 }
 
@@ -115,7 +116,10 @@ function ModelCard({
   );
 }
 
-export function HomeContent({ language }: { language?: HomeLanguage } = {}) {
+export function HomeContent({
+  language,
+  featuredTextModelId = DEFAULT_FEATURED_TEXT_MODEL_ID,
+}: { language?: HomeLanguage; featuredTextModelId?: string } = {}) {
   const { locale } = useLocale();
   const activeLanguage = language ?? (locale === "zh" ? "zh-Hant" : "en");
   const copy = HOME_COPY[activeLanguage];
@@ -126,12 +130,13 @@ export function HomeContent({ language }: { language?: HomeLanguage } = {}) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
     "idle",
   );
-  const samples = codeSamples(copy.samplePrompt);
+  const samples = codeSamples(copy.samplePrompt, featuredTextModelId);
   const categories = (Object.keys(copy.categories) as HomeCategory[]).map(
     (id) => ({ id, label: copy.categories[id] }),
   );
+  // The text slot follows live status; vision, image and audio stay fixed.
   const featuredIds = [
-    "glm-5.2-fp8",
+    featuredTextModelId,
     "qwen3-vl-30b",
     "flux-schnell",
     "whisper-large-v3",
@@ -171,6 +176,7 @@ export function HomeContent({ language }: { language?: HomeLanguage } = {}) {
     >
       <BrandHero
         language={activeLanguage}
+        featuredTextModelId={featuredTextModelId}
         motionPaused={motionPaused}
         onToggleMotion={() => setMotionPaused((value) => !value)}
       />
