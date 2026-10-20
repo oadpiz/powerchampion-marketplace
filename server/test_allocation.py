@@ -507,15 +507,21 @@ class ExportTests(_AllocationCase):
         self.assertEqual({u for u, k in keys.items() if k == "ssh-ed25519 AAAA... CHANGE_ME"}, {"justin", "mwind", "zhuling", "ll"})
         self.assertEqual(result["excluded"], [])
         self.assertEqual(result["missingKeys"], ["justin", "mwind", "zhuling", "ll"])
-        self.assertTrue(any("justin" in w and "CHANGE_ME" in w for w in result["warnings"]))
-        self.assertFalse(result["renderReady"])
+        self.assertTrue(any("justin" in w and "CHANGE_ME" in w and "pending" in w for w in result["warnings"]))
+        # render.py treats a CHANGE_ME key as pending: check passes, no account is created for them.
+        self.assertTrue(result["renderReady"])
         self.assertTrue(result["monitoringReady"])
 
     def test_with_every_key_the_export_is_complete(self):
         keys = self.ready()
         result = self.export()
         self.assertTrue(result["renderReady"])
-        self.assertEqual(result["warnings"], [])
+        self.assertEqual(len(result["warnings"]), 1, result["warnings"])
+        self.assertIn("SSH key changed since the last export", result["warnings"][0])
+        self.assertEqual([c["username"] for c in result["keyChanges"]], list(SEED))
+        self.mark()
+        result = self.export()
+        self.assertEqual((result["warnings"], result["keyChanges"]), ([], []))
         parsed = yaml.safe_load(result["yaml"])
         self.assertEqual(parsed["engineers"], [
             {"id": "eng%d" % (i + 1), "username": u, "name": u, "email": u + "@oadpiz.com", "ssh_pubkey": keys[u], "nodes": n, "state": "present"}
@@ -617,9 +623,15 @@ class ExportTests(_AllocationCase):
             seed.write_text(self.export()["yaml"])
             monitoring = self.render(seed, "check", "--allow-missing-keys")
             self.assertEqual(monitoring.returncode, 0, monitoring.stdout + monitoring.stderr)
-            strict = self.render(seed, "check")
-            self.assertEqual(strict.returncode, 1, "account creation must refuse while keys are missing")
-            self.assertIn("ssh_pubkey is a placeholder", strict.stderr)
+            # render.py (2026-10-21): a CHANGE_ME key makes that engineer "pending"; check passes
+            # with a warning and no account is created for them. --require-all-keys is the old rule.
+            check = self.render(seed, "check")
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+            self.assertIn("pending, no SSH key yet", check.stderr)
+            self.assertRegex(check.stdout, r"is valid \(5 pending: eng1, eng2, eng3, eng4, eng5\)")
+            strict = self.render(seed, "check", "--require-all-keys")
+            self.assertEqual(strict.returncode, 1, "--require-all-keys must refuse while keys are missing")
+            self.assertIn("ssh_pubkey is still the placeholder", strict.stderr)
             self.ready()
             full = Path(tmp) / "full.yaml"
             full.write_text(self.export()["yaml"])
