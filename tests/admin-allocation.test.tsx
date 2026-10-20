@@ -222,10 +222,11 @@ describe("admin node allocation section", () => {
           generatedAt: "2026-10-20T09:00:00Z",
           warnings: ["justin: no SSH public key yet"],
           excluded: [{ username: "justin", reason: "no_ssh_pubkey" }],
-          renderReady: false,
+          renderReady: true,
           monitoringReady: true,
           missingKeys: ["justin"],
           pendingCleanup: [],
+          keyChanges: [{ username: "nati", fingerprint: "SHA256:abc", updatedBy: "engineer", revision: 3 }],
         };
       },
     });
@@ -240,7 +241,9 @@ describe("admin node allocation section", () => {
     expect(await blob.text()).toBe("selling:\n  nodes: [b300-14, b300-31]\n");
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:engineers");
     expect(await screen.findByText(/Last export: revision 3/)).toBeVisible();
-    expect(screen.getByText(/Monitoring can sync .*justin have no key yet/)).toBeVisible();
+    expect(screen.getByText(/justin have no key yet: render\.py lists them as pending/)).toBeVisible();
+    expect(screen.getByText(/Key changes in this export: nati \(engineer, revision 3\)/)).toBeVisible();
+    expect(screen.queryByText(/--allow-missing-keys/)).not.toBeInTheDocument();
     expect(calls.filter((call) => call.path === "/admin/allocation/export")).toHaveLength(1);
     expect(calls.find((call) => call.path === "/admin/allocation/export/mark")).toEqual({
       method: "POST",
@@ -331,5 +334,97 @@ describe("admin node allocation section", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText(/資料已被其他管理員更新，請重新整理/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Reload" })).toBeVisible();
+  });
+
+  it("creates a linked portal account and shows the temporary password once", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const linked = seedState();
+    linked.engineers[4] = { ...linked.engineers[4], account: { userId: "u".repeat(32), email: "ll@oadpiz.com", disabled: false } };
+    const calls = stubPortal({
+      "GET /admin/allocation": () => seedState(),
+      [`POST /admin/allocation/engineers/${engineerId("ll")}/account`]: () => ({
+        ...linked,
+        changed: true,
+        account: { userId: "u".repeat(32), email: "ll@oadpiz.com" },
+        temporaryPassword: "Temp-Password-Shown-Once-123",
+      }),
+    });
+    wrap();
+    await user.click(await screen.findByRole("button", { name: "Create portal account for ll" }));
+    const dialog = await screen.findByRole("dialog", { name: "Portal account created for ll" });
+    expect(within(dialog).getByText("Temp-Password-Shown-Once-123")).toBeVisible();
+    expect(within(dialog).getByText(/Sign-in email: ll@oadpiz\.com/)).toBeVisible();
+    expect(within(dialog).getByText(/change the password right away at \/account\/security/)).toBeVisible();
+    expect(within(dialog).getByText(/\/account\/ssh-key/)).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "Copy password" }));
+    expect(writeText).toHaveBeenCalledWith("Temp-Password-Shown-Once-123");
+    expect(within(dialog).getByRole("button", { name: "Copied" })).toBeVisible();
+    expect(calls.find((call) => call.method === "POST")).toEqual({
+      method: "POST",
+      path: `/admin/allocation/engineers/${engineerId("ll")}/account`,
+      body: { expected_revision: 3 },
+    });
+    await user.click(within(dialog).getByRole("button", { name: "I have given it to the engineer" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Temp-Password-Shown-Once-123")).not.toBeInTheDocument();
+    const row = screen.getByRole("rowheader", { name: "ll" }).closest("tr")!;
+    expect(within(row).getAllByText(/ll@oadpiz\.com/)).toHaveLength(2); // engineer email + linked account
+    expect(within(row).getByRole("button", { name: "Unlink ll's portal account" })).toBeVisible();
+    expect(within(row).queryByRole("button", { name: /Create portal account/ })).not.toBeInTheDocument();
+  });
+
+  it("shows why an existing account is not linked", async () => {
+    const user = userEvent.setup();
+    const detail = "justin@oadpiz.com 已經有入口網站帳號，基於安全不會自動連結。 (justin@oadpiz.com already has a portal account. It is not linked automatically.)";
+    stubPortal({
+      "GET /admin/allocation": () => seedState(),
+      [`POST /admin/allocation/engineers/${engineerId("justin")}/account`]: () =>
+        Response.json({ error: "account_exists", detail }, { status: 409 }),
+    });
+    wrap();
+    await user.click(await screen.findByRole("button", { name: "Create portal account for justin" }));
+    expect(await screen.findByText(detail)).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("unlinks a portal account only after confirmation", async () => {
+    const user = userEvent.setup();
+    const linked = () => {
+      const state = seedState();
+      state.engineers[3] = { ...state.engineers[3], account: { userId: "u".repeat(32), email: "nati@oadpiz.com", disabled: true } };
+      return state;
+    };
+    const calls = stubPortal({
+      "GET /admin/allocation": linked,
+      [`POST /admin/allocation/engineers/${engineerId("nati")}/account/unlink`]: () => ({ ...seedState(), changed: true }),
+    });
+    wrap();
+    const row = (await screen.findByRole("rowheader", { name: "nati" })).closest("tr")!;
+    expect(within(row).getByText("Account disabled")).toBeVisible();
+    await user.click(within(row).getByRole("button", { name: "Unlink nati's portal account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Unlink nati's portal account?" });
+    expect(within(dialog).getByText(/not deleted or disabled/)).toBeVisible();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Unlink" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(calls.find((call) => call.method === "POST")?.path).toBe(`/admin/allocation/engineers/${engineerId("nati")}/account/unlink`);
+    const after = screen.getByRole("rowheader", { name: "nati" }).closest("tr")!;
+    expect(within(after).getByRole("button", { name: "Create portal account for nati" })).toBeVisible();
+  });
+
+  it("flags keys the engineer changed since the last export", async () => {
+    const state = seedState();
+    state.lastExport = { revision: 2, at: "2026-10-20T09:00:00Z" };
+    state.engineers[3] = { ...state.engineers[3], keyPendingSync: true, keyUpdatedBy: "engineer", keyUpdatedRevision: 3 };
+    stubPortal({ "GET /admin/allocation": () => state });
+    wrap();
+    const row = (await screen.findByRole("rowheader", { name: "nati" })).closest("tr")!;
+    expect(within(row).getByText("Engineer updated the key; pending export and sync")).toBeVisible();
+    const pending = screen.getByRole("list", { name: "Keys pending sync" });
+    expect(within(pending).getByText(/nati/)).toBeVisible();
+    expect(within(pending).getByText(/updated by the engineer/)).toBeVisible();
+    expect(screen.getAllByText(/pending export and sync/)).toHaveLength(1);
   });
 });

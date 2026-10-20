@@ -32,7 +32,14 @@ type Engineer = {
   nodes: string[];
   createdAt: string | null;
   updatedAt: string | null;
+  /** The portal account an administrator created and linked; only it may set this key itself. */
+  account?: { userId: string; email: string; disabled: boolean } | null;
+  /** The key changed after the last recorded export, so the machines do not have it yet. */
+  keyPendingSync?: boolean;
+  keyUpdatedBy?: "admin" | "engineer" | null;
+  keyUpdatedRevision?: number | null;
 };
+type KeyChange = { username: string; fingerprint: string | null; updatedBy: "admin" | "engineer" | null; revision: number };
 export type AllocationState = {
   revision: number;
   ownerEmail: string | null;
@@ -48,6 +55,9 @@ export type AllocationState = {
   pendingCleanup: PendingCleanup[];
   warnings?: string[];
   sshPubkey?: string | null;
+  /** Only in the response that created an engineer's portal account; shown once. */
+  temporaryPassword?: string;
+  account?: { userId: string; email: string };
 };
 type ExportResult = {
   filename: string;
@@ -60,6 +70,7 @@ type ExportResult = {
   monitoringReady: boolean;
   missingKeys: string[];
   pendingCleanup: PendingCleanup[];
+  keyChanges?: KeyChange[];
 };
 type NodeDraft = { role: Role; engineerId: string; note: string; synced: boolean };
 
@@ -72,15 +83,14 @@ type EngineerDialog = { kind: "create" } | { kind: "edit"; engineer: Engineer };
 
 /** From ~/github/b300-cluster/docs/engineer-access-runbook.md (2026-10-20: sections 1, 2, 4.2, 4.6, 4.7, 4.8). One command per block. */
 export const SYNC_STEPS: { zh: string; en: string; command: string }[] = [
-  { zh: "公鑰還沒到齊：只檢查 email／節點（監控用）", en: "Keys not all in yet: validate emails and nodes only (monitoring)", command: "python3 access/render.py check --allow-missing-keys" },
-  { zh: "公鑰到齊後：完整檢查（建帳號前必過）", en: "All keys in: full check (required before creating accounts)", command: "python3 access/render.py check" },
+  { zh: "完整檢查（缺公鑰的工程師列為 pending 警告，不擋同步）", en: "Full check (engineers without a key are listed as pending warnings; they do not block the sync)", command: "python3 access/render.py check" },
   { zh: "第 2 節 Cloudflare Access 名單（email 有變時）", en: "Section 2 Cloudflare Access list (when emails change)", command: "python3 access/render.py access-emails" },
   { zh: "4.2 監控：本地檢查", en: "4.2 Monitoring: local check", command: "bash bin/b300-monitoring-update.sh check" },
   { zh: "4.2 監控：準備映像（b300-31 不能連外）", en: "4.2 Monitoring: stage images (b300-31 has no internet)", command: "bash bin/b300-monitoring-update.sh images" },
   { zh: "4.2 監控：重產 Prometheus targets 並套用", en: "4.2 Monitoring: regenerate Prometheus targets and apply", command: "bash bin/b300-monitoring-update.sh apply" },
-  { zh: "4.6 跳板機帳號（需全員公鑰；bastion99 有 sudo 時）", en: "4.6 Bastion accounts (all keys needed; when bastion99 has sudo)", command: "~/.venvs/ansible/bin/ansible-playbook -i ansible/inventory.ini ansible/engineer-access.yml --tags bastion -K" },
+  { zh: "4.6 跳板機帳號（缺公鑰的工程師略過；bastion99 有 sudo 時）", en: "4.6 Bastion accounts (engineers without a key are skipped; when bastion99 has sudo)", command: "~/.venvs/ansible/bin/ansible-playbook -i ansible/inventory.ini ansible/engineer-access.yml --tags bastion -K" },
   { zh: "4.6 沒有 sudo：產生 TSV 交給 root（之後照 runbook 4.6 上傳與執行）", en: "4.6 Without sudo: render the TSV for root (then upload and run it per runbook 4.6)", command: "python3 access/render.py bastion-tsv --out out/bastion-engineers.tsv" },
-  { zh: "4.7 節點帳號（需全員公鑰；b300-14、b300-31 不會被碰到）", en: "4.7 Node accounts (all keys needed; selling nodes are never touched)", command: "~/.venvs/ansible/bin/ansible-playbook -i ansible/inventory.ini ansible/engineer-access.yml --tags nodes -K" },
+  { zh: "4.7 節點帳號（缺公鑰的工程師略過；b300-14、b300-31 不會被碰到）", en: "4.7 Node accounts (engineers without a key are skipped; selling nodes are never touched)", command: "~/.venvs/ansible/bin/ansible-playbook -i ansible/inventory.ini ansible/engineer-access.yml --tags nodes -K" },
   { zh: "4.8 交給工程師：他的 SSH 設定（eng1 換成對方的 cluster id）", en: "4.8 Hand-off: their SSH config (replace eng1 with their cluster id)", command: "python3 access/render.py ssh-config --engineer eng1" },
 ];
 
@@ -477,6 +487,72 @@ function NodeRow({
   );
 }
 
+function keyPendingLabel(engineer: Engineer, zh: boolean): string {
+  return engineer.keyUpdatedBy === "engineer"
+    ? zh
+      ? "工程師已更新公鑰，待匯出同步"
+      : "Engineer updated the key; pending export and sync"
+    : zh
+      ? "公鑰已更新，待匯出同步"
+      : "Key updated; pending export and sync";
+}
+
+function TemporaryPasswordDialog({
+  username,
+  email,
+  password,
+  onClose,
+}: {
+  username: string;
+  email: string;
+  password: string;
+  onClose: () => void;
+}) {
+  const zh = useLocale().locale === "zh";
+  const [copied, setCopied] = useState<"idle" | "copied" | "error">("idle");
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopied("copied");
+    } catch {
+      setCopied("error");
+    }
+  }
+  return (
+    <AdminDialog
+      title={zh ? `已建立 ${username} 的登入帳號` : `Portal account created for ${username}`}
+      confirmLabel={zh ? "我已交給工程師" : "I have given it to the engineer"}
+      onConfirm={onClose}
+      onClose={onClose}
+      dismissible={false}
+    >
+      <p className="portal-note">
+        {zh
+          ? `登入 email：${email}。下方臨時密碼只會顯示這一次，關閉後無法再次查看（忘記時請到「客戶」重設密碼）。`
+          : `Sign-in email: ${email}. The temporary password below is shown only once and cannot be viewed again after you close this (reset it under Customers if it is lost).`}
+      </p>
+      <div className="portal-secret">
+        <code>{password}</code>
+      </div>
+      <div className="portal-actions">
+        <button type="button" className="portal-button-secondary" onClick={copy}>
+          {copied === "copied" ? (zh ? "已複製" : "Copied") : zh ? "複製密碼" : "Copy password"}
+        </button>
+      </div>
+      {copied === "error" && (
+        <p className="portal-error" role="alert">
+          {zh ? "無法自動複製，請手動選取上方密碼。" : "Copy is unavailable; select the password above manually."}
+        </p>
+      )}
+      <p className="portal-hint">
+        {zh
+          ? "請透過私下管道交給工程師，並請他：1) 用這組 email 與臨時密碼登入；2) 立刻到 /account/security 變更密碼；3) 到 /account/ssh-key 送出自己的 SSH 公鑰。公鑰要等你下次匯出 engineers.yaml 並同步（4.6、4.7）後才會生效。"
+          : "Give it to the engineer privately and ask them to: 1) sign in with this email and the temporary password; 2) change the password right away at /account/security; 3) submit their own SSH public key at /account/ssh-key. The key takes effect only after your next export of engineers.yaml and sync (4.6, 4.7)."}
+      </p>
+    </AdminDialog>
+  );
+}
+
 function ExportPanel({ state, onStateChange }: { state: AllocationState; onStateChange: (state: AllocationState) => void }) {
   const locale = useLocale().locale;
   const zh = locale === "zh";
@@ -522,6 +598,7 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
   }
 
   const unsynced = state.lastExport === null || state.lastExport.revision !== state.revision;
+  const pendingKeys = state.engineers.filter((engineer) => engineer.active && engineer.keyPendingSync && engineer.keyFingerprint);
   return (
     <section className="portal-panel" aria-labelledby="allocation-export">
       <div className="portal-panel-heading">
@@ -549,6 +626,27 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
             : "The current assignment has not been exported; the machines still have the last synced state."}
         </p>
       )}
+      {pendingKeys.length > 0 && (
+        <div className="portal-note" role="status">
+          <p>
+            {zh
+              ? "以下工程師的公鑰在上次匯出後有變更，匯出並執行跳板機（4.6）與節點（4.7）同步後才會生效："
+              : "These engineers' keys changed since the last export; they take effect after you export and run the bastion (4.6) and node (4.7) syncs:"}
+          </p>
+          <ul aria-label={zh ? "待同步的公鑰" : "Keys pending sync"}>
+            {pendingKeys.map((engineer) => (
+              <li key={engineer.id}>
+                {engineer.username}
+                {zh ? "：" : ": "}
+                <code>{engineer.keyFingerprint}</code>
+                {zh ? "（" : " ("}
+                {engineer.keyUpdatedBy === "engineer" ? (zh ? "工程師自行更新" : "updated by the engineer") : zh ? "管理員更新" : "updated by an administrator"}
+                {zh ? "）" : ")"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="portal-inline-form">
         <label className="portal-field">
           {zh ? "Owner email（Grafana Admin、Cloudflare Access）" : "Owner email (Grafana Admin, Cloudflare Access)"}
@@ -569,11 +667,23 @@ function ExportPanel({ state, onStateChange }: { state: AllocationState; onState
               ? zh
                 ? " 這個檔案還過不了 render.py，請看下列提醒。"
                 : " This file will not pass render.py yet; see below."
-              : !result.renderReady &&
+              : result.missingKeys.length > 0 &&
                 (zh
-                  ? ` 監控可以同步（check --allow-missing-keys）；${result.missingKeys.join("、")} 還沒有公鑰，建帳號（4.6、4.7）會被拒絕。`
-                  : ` Monitoring can sync (check --allow-missing-keys); ${result.missingKeys.join(", ")} have no key yet, so account creation (4.6, 4.7) refuses.`)}
+                  ? ` ${result.missingKeys.join("、")} 還沒有公鑰：render.py 會列為 pending，同步（4.6、4.7）不會為他們建帳號，其他人照常同步。`
+                  : ` ${result.missingKeys.join(", ")} have no key yet: render.py lists them as pending and the syncs (4.6, 4.7) create no account for them; everyone else is synced normally.`)}
           </p>
+          {result.keyChanges && result.keyChanges.length > 0 && (
+            <p className="portal-hint">
+              {zh ? "這次匯出包含的公鑰變更：" : "Key changes in this export: "}
+              {result.keyChanges
+                .map((change) =>
+                  zh
+                    ? `${change.username}（${change.updatedBy === "engineer" ? "工程師" : "管理員"}，版本 ${change.revision}）`
+                    : `${change.username} (${change.updatedBy === "engineer" ? "engineer" : "admin"}, revision ${change.revision})`,
+                )
+                .join(zh ? "、" : ", ")}
+            </p>
+          )}
           {result.excluded.length > 0 && (
             <p className="portal-hint">
               {zh ? "未匯出：" : "Not exported: "}
@@ -624,6 +734,8 @@ export function AdminAllocationSection() {
   const [message, setMessage] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [issued, setIssued] = useState<{ username: string; email: string; password: string } | null>(null);
+  const [unlinking, setUnlinking] = useState<Engineer | null>(null);
   const state = override ?? resource.data;
 
   function applyState(next: AllocationState) {
@@ -651,6 +763,41 @@ export function AdminAllocationSection() {
       );
     } catch (reason: unknown) {
       setMessage(errorText(reason, locale));
+    }
+    setBusyId(null);
+  }
+
+  async function createAccount(engineer: Engineer) {
+    setBusyId(engineer.id);
+    setMessage(null);
+    try {
+      const next = await portalRequest<AllocationState>(`/admin/allocation/engineers/${encodeURIComponent(engineer.id)}/account`, {
+        method: "POST",
+        body: JSON.stringify({ expected_revision: state?.revision }),
+      });
+      const password = next.temporaryPassword;
+      applyState({ ...next, temporaryPassword: undefined });
+      if (password) setIssued({ username: engineer.username, email: next.account?.email ?? engineer.email, password });
+    } catch (reason: unknown) {
+      setMessage(errorText(reason, locale));
+    }
+    setBusyId(null);
+  }
+
+  async function unlinkAccount(engineer: Engineer) {
+    setBusyId(engineer.id);
+    setMessage(null);
+    try {
+      applyState(
+        await portalRequest<AllocationState>(`/admin/allocation/engineers/${encodeURIComponent(engineer.id)}/account/unlink`, {
+          method: "POST",
+          body: JSON.stringify({ expected_revision: state?.revision }),
+        }),
+      );
+      setUnlinking(null);
+    } catch (reason: unknown) {
+      setMessage(errorText(reason, locale));
+      setUnlinking(null);
     }
     setBusyId(null);
   }
@@ -749,8 +896,8 @@ export function AdminAllocationSection() {
             </div>
             <p className="portal-hint">
               {zh
-                ? "還沒有 SSH 公鑰的工程師仍會匯出，公鑰欄位是 CHANGE_ME 佔位：監控（Grafana／Prometheus）可以先同步，但只要有人缺公鑰，建帳號的步驟（4.6、4.7）就會被 render.py 與 playbook 拒絕。停用的工程師以 state: absent 匯出，下次同步時移除帳號。cluster id（eng1…）是匯出檔的 id，也是 Prometheus 的 owner 標籤。"
-                : "Engineers without an SSH public key are still exported, with the CHANGE_ME key placeholder: monitoring (Grafana/Prometheus) can sync, but while anyone lacks a key, account creation (4.6, 4.7) is refused by render.py and the playbook. Deactivated engineers are exported as state: absent so the next sync removes their accounts. The cluster id (eng1…) is the id in the exported file and the Prometheus owner label."}
+                ? "還沒有 SSH 公鑰的工程師仍會匯出，公鑰欄位是 CHANGE_ME 佔位：render.py 視為 pending（check 通過但會警告），監控照常包含他，同步（4.6、4.7）不會為他建帳號，其他人不受影響。停用的工程師以 state: absent 匯出，下次同步時移除帳號。cluster id（eng1…）是匯出檔的 id，也是 Prometheus 的 owner 標籤。「建立登入帳號」會用工程師的 email 開一個入口網站帳號並連結，工程師登入後可在 /account/ssh-key 自行送出公鑰；新公鑰要等你下次匯出並同步後才會生效。"
+                : "Engineers without an SSH public key are still exported, with the CHANGE_ME key placeholder: render.py treats them as pending (check passes with a warning), monitoring includes them, and the syncs (4.6, 4.7) create no account for them; nobody else is affected. Deactivated engineers are exported as state: absent so the next sync removes their accounts. The cluster id (eng1…) is the id in the exported file and the Prometheus owner label. “Create portal account” opens a portal account for the engineer's email and links it, so the engineer can submit their own key at /account/ssh-key; a new key takes effect only after your next export and sync."}
             </p>
             <ErrorLine message={message} />
             <div className="portal-table-wrap">
@@ -763,6 +910,7 @@ export function AdminAllocationSection() {
                     <th scope="col">Email</th>
                     <th scope="col">{zh ? "顯示名稱" : "Display name"}</th>
                     <th scope="col">{zh ? "公鑰指紋" : "Key fingerprint"}</th>
+                    <th scope="col">{zh ? "登入帳號" : "Portal account"}</th>
                     <th scope="col">{zh ? "節點" : "Nodes"}</th>
                     <th scope="col">{zh ? "狀態" : "Status"}</th>
                     <th scope="col">{zh ? "操作" : "Actions"}</th>
@@ -783,11 +931,52 @@ export function AdminAllocationSection() {
                             <code>{engineer.keyFingerprint}</code>
                             <br />
                             <small>{engineer.keyType}</small>
+                            {engineer.keyPendingSync && (
+                              <>
+                                <br />
+                                <span className="portal-badge">{keyPendingLabel(engineer, zh)}</span>
+                              </>
+                            )}
                           </>
                         ) : engineer.active && engineer.nodes.length === 0 ? (
                           <span className="portal-badge">{zh ? "尚未提供公鑰（沒有節點，不會匯出）" : "No key yet (no nodes, not exported)"}</span>
                         ) : (
                           <span className="portal-badge">{zh ? "尚未設定公鑰（匯出為 CHANGE_ME）" : "No key yet (exported as CHANGE_ME)"}</span>
+                        )}
+                      </td>
+                      <td>
+                        {engineer.account ? (
+                          <>
+                            {engineer.account.email}
+                            {engineer.account.disabled && (
+                              <>
+                                <br />
+                                <span className="portal-badge">{zh ? "帳號已停用" : "Account disabled"}</span>
+                              </>
+                            )}
+                            <br />
+                            <button
+                              type="button"
+                              className="portal-text-button"
+                              disabled={busyId === engineer.id}
+                              aria-label={zh ? `解除 ${engineer.username} 的登入帳號連結` : `Unlink ${engineer.username}'s portal account`}
+                              onClick={() => setUnlinking(engineer)}
+                            >
+                              {zh ? "解除連結" : "Unlink"}
+                            </button>
+                          </>
+                        ) : engineer.active ? (
+                          <button
+                            type="button"
+                            className="portal-text-button"
+                            disabled={busyId === engineer.id}
+                            aria-label={zh ? `為 ${engineer.username} 建立登入帳號` : `Create portal account for ${engineer.username}`}
+                            onClick={() => void createAccount(engineer)}
+                          >
+                            {zh ? "建立登入帳號" : "Create portal account"}
+                          </button>
+                        ) : (
+                          "—"
                         )}
                       </td>
                       <td>{engineer.nodes.length ? engineer.nodes.join(", ") : "—"}</td>
@@ -824,6 +1013,31 @@ export function AdminAllocationSection() {
             </div>
           </section>
           <ExportPanel key={state.ownerEmail ?? ""} state={state} onStateChange={applyState} />
+          {issued && (
+            <TemporaryPasswordDialog
+              username={issued.username}
+              email={issued.email}
+              password={issued.password}
+              onClose={() => setIssued(null)}
+            />
+          )}
+          {unlinking && (
+            <AdminDialog
+              title={zh ? `解除 ${unlinking.username} 的登入帳號連結？` : `Unlink ${unlinking.username}'s portal account?`}
+              confirmLabel={zh ? "解除連結" : "Unlink"}
+              cancelLabel={zh ? "取消" : "Cancel"}
+              onConfirm={() => void unlinkAccount(unlinking)}
+              onClose={() => setUnlinking(null)}
+              inFlight={busyId === unlinking.id}
+              danger
+            >
+              <p>
+                {zh
+                  ? `${unlinking.account?.email ?? unlinking.email} 將不能再更新 ${unlinking.username} 的 SSH 公鑰。帳號本身不會被刪除或停用（需要時請到「客戶」停用），已存的公鑰與節點也不變。`
+                  : `${unlinking.account?.email ?? unlinking.email} will no longer be able to update ${unlinking.username}'s SSH key. The account itself is not deleted or disabled (disable it under Customers if needed), and the saved key and nodes stay as they are.`}
+              </p>
+            </AdminDialog>
+          )}
           {dialog && (
             <EngineerFormDialog
               dialog={dialog}
