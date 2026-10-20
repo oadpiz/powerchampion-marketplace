@@ -62,8 +62,9 @@ describe("Model detail pages", () => {
 
   it("switches product actions, endpoint descriptions, and billing units to Traditional Chinese", async () => {
     const user = userEvent.setup();
-    act(() => window.history.replaceState({}, "", `/models/${MODEL_CATALOG[2].id}`));
-    render(<LocaleProvider><LanguagePicker /><ModelDetailContent model={MODEL_CATALOG[2]} /></LocaleProvider>);
+    const imageModel = MODEL_CATALOG.find((model) => model.id === "flux-schnell")!;
+    act(() => window.history.replaceState({}, "", `/models/${imageModel.id}`));
+    render(<LocaleProvider><LanguagePicker /><ModelDetailContent model={imageModel} /></LocaleProvider>);
     await user.click(screen.getByRole("button", { name: "Language: English" }));
     await user.click(screen.getByRole("button", { name: "繁體中文" }));
     expect(screen.getByRole("link", { name: "串接此模型" })).toBeInTheDocument();

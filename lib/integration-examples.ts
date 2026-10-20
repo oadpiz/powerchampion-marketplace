@@ -20,6 +20,7 @@ export const DEFAULT_INTEGRATION_INPUTS: IntegrationInputs = {
 
 const MODEL_INTEGRATIONS: Record<string, { kind: IntegrationKind; endpoint: string }> = {
   "glm-5.2-fp8": { kind: "chat", endpoint: "/chat/completions" },
+  "glm-5.3-flash-uncensored": { kind: "chat", endpoint: "/chat/completions" },
   "qwen3-vl-30b": { kind: "vision", endpoint: "/chat/completions" },
   "flux-schnell": { kind: "image", endpoint: "/images/generations" },
   "chroma1-hd": { kind: "image", endpoint: "/images/generations" },

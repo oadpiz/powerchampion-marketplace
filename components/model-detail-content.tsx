@@ -20,6 +20,13 @@ const MODEL_GUIDES: Record<string, {
     useCases: [["Coding assistants", "程式開發助理"], ["Bilingual customer support", "雙語客服"], ["Multi-step reasoning", "多步驟推理"]],
     integrationNote: ["Use the chat-completions format. Streaming, tool use, reasoning, and structured output are listed in this model’s catalog capabilities.", "使用 Chat Completions 格式。此模型的目錄能力包含串流、工具呼叫、推理與結構化輸出。"],
   },
+  "glm-5.3-flash-uncensored": {
+    endpoint: "/v1/chat/completions",
+    input: ["Messages & instructions", "訊息與指令"],
+    output: ["Text", "文字"],
+    useCases: [["Research and red-teaming", "研究與紅隊測試"], ["Creative writing", "創意寫作"], ["Fast text chat", "快速文字對話"]],
+    integrationNote: ["Use the chat-completions format with a 32,768-token context. This model has no built-in content filtering; use is subject to the Terms, and you are responsible for any filtering your application needs.", "使用 Chat Completions 格式，上下文 32,768 tokens。此模型未內建內容過濾，使用須遵守服務條款；應用程式所需的過濾機制需由您自行處理。"],
+  },
   "qwen3-vl-30b": {
     endpoint: "/v1/chat/completions",
     input: ["Text & images", "文字與圖片"],

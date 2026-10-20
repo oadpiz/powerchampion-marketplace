@@ -4,7 +4,7 @@ import { metadataForRoute } from "../../lib/metadata";
 
 export const metadata = metadataForRoute("/docs");
 
-// Release gates track the gateway's live status rather than a static claim.
+// The service-status line summarizes the gateway's live status.
 export const revalidate = 60;
 
 export default async function DocsPage() {

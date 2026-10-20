@@ -16,6 +16,7 @@ afterEach(() => act(() => window.history.replaceState({}, "", "/")));
 
 const EXPECTED_MODEL_RATES = [
   { name: "GLM 5.2 FP8", input: "0.93", output: "3.00" },
+  { name: "GLM 5.3 Flash Uncensored", input: "0.30", output: "1.00" },
   { name: "Qwen3-VL 30B", input: "0.30", output: "1.20" },
   { name: "Flux Schnell", input: "0.01", output: "0.00" },
   { name: "Chroma1 HD", input: "0.01", output: "0.00" },

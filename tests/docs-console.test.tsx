@@ -2,11 +2,11 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CodeSamples } from "../components/code-samples";
-import { modelFeatureGateState } from "../components/docs-page-content";
-import { DocsPageContent } from "../components/docs-page-content";
+import { DocsPageContent, summarizeModelStatus } from "../components/docs-page-content";
 import { ConsoleView } from "../components/console-view";
 import { LocaleProvider } from "../components/locale-provider";
 import { SiteShell } from "../components/site-shell";
+import type { GatewayStatus } from "../lib/gateway-status";
 import { metadata as docsMetadata } from "../app/docs/page";
 import ConsolePage, { metadata as consoleMetadata } from "../app/console/page";
 
@@ -21,33 +21,59 @@ describe("CodeSamples", () => {
     expect(screen.getByRole("link", { name: /request yours by email/i })).toHaveAttribute("href", "#protected-access-title");
   });
 
-  it("shows all release gates with their readiness state", () => {
-    render(<LocaleProvider><DocsPageContent gateway={null} /></LocaleProvider>);
+  it("replaces the release gates with one live service-status line", () => {
+    const gateway: GatewayStatus = {
+      status: "warn",
+      summary: "Partial availability",
+      updated: 0,
+      uptime_window_days: 30,
+      models: [
+        { id: "glm-5.3-flash-uncensored", name: null, ready: true, context_length: 32768, uptime: 0.9 },
+        { id: "glm-5.2-fp8", name: null, ready: false, context_length: 131072, uptime: 0.7 },
+        { id: "bge-m3", name: null, ready: false, context_length: 8192, uptime: 0.7 },
+      ],
+    };
+    render(<LocaleProvider><DocsPageContent gateway={gateway} /></LocaleProvider>);
 
-    const gatesList = document.querySelector(".docs-release-gates ul");
-    expect(gatesList).not.toBeNull();
-    const items = Array.from(gatesList!.querySelectorAll("li"));
-    expect(items).toHaveLength(6);
-    for (const item of items) {
-      const label = item.textContent?.replace(/\s+/g, " ").trim();
-      // With no gateway evidence, gates must read "Not verified" — not ready.
-      expect(label).toMatch(/^(Streaming|Usage accounting|Tool use|Structured output|Provider manifest|Operational status): Not verified$/);
-    }
+    expect(document.querySelector(".docs-release-gates")).toBeNull();
+    expect(screen.queryByText(/Release gates/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Service status: 1 of 3 models online")).toBeVisible();
+    expect(screen.getByRole("link", { name: /View status page/ })).toHaveAttribute("href", "/status");
   });
 
-  it("fails closed when inference, model availability, or a feature prerequisite is missing", () => {
-    const enabledModel = { available: true, features: { streaming: true, tools: true, structuredOutput: true, reasoning: true } };
-    const unavailableModel = { ...enabledModel, available: false };
-    const missingStreaming = { ...enabledModel, features: { ...enabledModel.features, streaming: false } };
+  it("shows a neutral status link without numbers when the gateway is unavailable", () => {
+    render(<LocaleProvider><DocsPageContent gateway={null} /></LocaleProvider>);
 
-    expect(modelFeatureGateState("not-ready", [enabledModel], "streaming")).toBe("not-ready");
-    expect(modelFeatureGateState("ready", [unavailableModel], "tools")).toBe("not-ready");
-    expect(modelFeatureGateState("ready", [missingStreaming], "streaming")).toBe("not-ready");
-    expect(modelFeatureGateState("ready", [enabledModel], "structuredOutput")).toBe("ready");
-    // Unverified/degraded inference passes through as-is instead of being
-    // masked behind a definitive not-ready (or a false ready) claim.
-    expect(modelFeatureGateState("unknown", [enabledModel], "streaming")).toBe("unknown");
-    expect(modelFeatureGateState("degraded", [enabledModel], "streaming")).toBe("degraded");
+    const line = document.querySelector(".docs-status-line");
+    expect(line).not.toBeNull();
+    expect(line?.textContent).not.toMatch(/\d/);
+    expect(screen.getByRole("link", { name: /Check current service status/ })).toHaveAttribute("href", "/status");
+  });
+
+  it("localizes the service-status line into Traditional Chinese", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/docs");
+    const gateway = { status: "ok", summary: "", updated: 0, uptime_window_days: 30, models: [
+      { id: "glm-5.2-fp8", name: null, ready: true, context_length: null, uptime: null },
+      { id: "bge-m3", name: null, ready: true, context_length: null, uptime: null },
+    ] } satisfies GatewayStatus;
+    render(<LocaleProvider><SiteShell><DocsPageContent gateway={gateway} /></SiteShell></LocaleProvider>);
+
+    await user.click(within(screen.getByRole("banner")).getByRole("button", { name: "Language: English" }));
+    await user.click(screen.getByRole("button", { name: "繁體中文" }));
+
+    expect(screen.getByText("服務狀態：2 個模型中有 2 個上線")).toBeVisible();
+    expect(screen.getByRole("link", { name: /查看狀態頁/ })).toHaveAttribute("href", "/status");
+  });
+
+  it("summarizes online models only from a usable status feed", () => {
+    expect(summarizeModelStatus(null)).toBeNull();
+    expect(summarizeModelStatus({ models: [] })).toBeNull();
+    expect(summarizeModelStatus({} as GatewayStatus)).toBeNull();
+    expect(summarizeModelStatus({ models: [
+      { id: "a", name: null, ready: true, context_length: null, uptime: null },
+      { id: "b", name: null, ready: false, context_length: null, uptime: null },
+    ] })).toEqual({ online: 1, total: 2 });
   });
 
   it("has truthful docs metadata", () => {
