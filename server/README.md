@@ -71,6 +71,17 @@ Enabling an account does not restore revoked keys, and while the account is
 disabled its keys cannot be re-enabled individually either (409 `account_disabled`,
 see below).
 
+### Node allocation routes (機台分配)
+
+Admin-only, under `/api/portal/admin/allocation`: `GET` (state), `POST /engineers`,
+`POST /engineers/{id}`, `POST /engineers/{id}/status`, `POST /nodes/{name}` (leaving
+`selling` needs `confirm_selling_change: true`, else 409 `selling_change_unconfirmed`),
+`POST /owner`, and `GET /export` (JSON with the `engineers.yaml` text; `?format=yaml`
+returns the file directly when calling the service itself). Implemented in
+`server/allocation.py`; schema and seed in migration `0003_node_allocation`, which also
+adds the nullable `audit_events.details` (JSON old->new). Audit actions: `alloc.*`.
+Operations, export rules and rollback: `docs/portal-operations.md` section "機台分配".
+
 ### Gateway admin routes (A2b)
 
 All require an administrator and live under `/api/portal`. They return 503
