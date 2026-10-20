@@ -21,6 +21,7 @@ describe("Model detail pages", () => {
     ["chroma1-hd", "/v1/images/generations", "$0.01", "per image"],
     ["whisper-large-v3", "/v1/audio/transcriptions", "$0.01", "per minute of audio"],
     ["indextts2", "/v1/audio/speech", "$0.03", "per minute of audio"],
+    ["wan2.2-ti2v-5b-720p", "/v1/videos", "$0.05", "per second of video"],
     ["bge-m3", "/v1/embeddings", "$0.02", "per 1M input tokens"],
     ["bge-reranker-v2-m3", "/v1/rerank", "$0.02", "per 1M input tokens"],
   ])("links %s to its documented endpoint and billing unit", (id, endpoint, rate, unit) => {

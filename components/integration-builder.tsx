@@ -42,8 +42,8 @@ export function IntegrationBuilder({
   const languageInfo = LANGUAGES.find((item) => item.id === language)!;
   const installCommand =
     language === "python"
-      ? `python -m pip install ${kind === "rerank" ? "httpx" : "openai"}`
-      : language === "javascript" && kind !== "rerank"
+      ? `python -m pip install ${kind === "rerank" || kind === "video" ? "httpx" : "openai"}`
+      : language === "javascript" && kind !== "rerank" && kind !== "video"
         ? "npm install openai"
         : "";
 
@@ -211,6 +211,14 @@ export function IntegrationBuilder({
                 spellCheck={false}
               />
             </>
+          )}
+          {kind === "video" && (
+            <p className="integration-callout">
+              {t(
+                "Video jobs are asynchronous: the request returns a job ID, you poll its status about every 5 seconds, then download the MP4. Clips are 1–10 seconds and billed per second of output video.",
+                "影片生成為非同步任務：請求會回傳任務 ID，約每 5 秒輪詢一次狀態，完成後下載 MP4。影片長度 1–10 秒，依輸出影片秒數計費。",
+              )}
+            </p>
           )}
           {kind === "speech" && (
             <p className="integration-callout">

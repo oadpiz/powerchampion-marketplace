@@ -62,6 +62,13 @@ const MODEL_GUIDES: Record<string, {
     useCases: [["Product narration", "產品旁白"], ["Audio content workflows", "音訊內容製作"], ["Consistent brand voices", "一致的品牌語音"]],
     integrationNote: ["Reference audio is required for this voice model. Use recordings you have permission to use, and review the speech example before integrating.", "此語音模型需要參考音訊。請使用已取得使用授權的錄音，並先查看文件中的語音範例。"],
   },
+  "wan2.2-ti2v-5b-720p": {
+    endpoint: "/v1/videos",
+    input: ["Text prompt, optionally with one image", "文字提示，可附一張圖片"],
+    output: ["MP4 video, 1280×704 at 24 fps", "MP4 影片，1280×704、24 fps"],
+    useCases: [["Short product and social clips", "產品與社群短片"], ["Animating a still image", "讓靜態圖片動起來"], ["Storyboard and concept previews", "分鏡與概念預覽"]],
+    integrationNote: ["Jobs are asynchronous: submit with POST /v1/videos, poll GET /v1/videos/{id}, then download the MP4 from the content URL. Clips are 1–10 seconds; resolution and frame rate are fixed. Billing is per second of output video on the actual length, and failed or timed-out jobs are not charged.", "任務採非同步流程：以 POST /v1/videos 提交、輪詢 GET /v1/videos/{id}，完成後從內容網址下載 MP4。影片長度 1–10 秒，解析度與幀率固定。依實際輸出影片秒數計費，失敗或逾時的任務不收費。"],
+  },
   "bge-m3": {
     endpoint: "/v1/embeddings",
     input: ["Text", "文字"],
@@ -91,12 +98,13 @@ export function ModelDetailContent({ model }: { model: ModelDefinition }) {
   const isChat = guide.endpoint === "/v1/chat/completions";
   const isImage = model.categories.includes("image");
   const isAudio = model.categories.includes("audio");
-  const isToken = !isImage && !isAudio;
+  const isVideo = model.categories.includes("video");
+  const isToken = !isImage && !isAudio && !isVideo;
   const isEmbedding = model.categories.includes("embedding");
-  const unit = isImage ? tr("per image", "每張圖片") : isAudio ? tr("per minute of audio", "每分鐘音訊") : tr("per 1M input tokens", "每百萬輸入 Token");
+  const unit = isImage ? tr("per image", "每張圖片") : isAudio ? tr("per minute of audio", "每分鐘音訊") : isVideo ? tr("per second of video", "每秒影片") : tr("per 1M input tokens", "每百萬輸入 Token");
   const related = MODEL_CATALOG.filter((entry) => entry.id !== model.id && entry.categories.some((category) => model.categories.includes(category))).slice(0, 2);
   const integrationsUrl = `/integrations?model=${encodeURIComponent(model.id)}`;
-  const outputLabel = ({ "1 image": tr("1 image", "1 張圖片"), transcript: tr("Transcript", "逐字稿"), audio: tr("Audio", "音訊"), vector: tr("Vector", "向量"), scores: tr("Scores", "分數") } as Record<string, string>)[model.maxOutput] ?? model.maxOutput;
+  const outputLabel = ({ "1 image": tr("1 image", "1 張圖片"), "10 s video": tr("10 seconds of video", "10 秒影片"), transcript: tr("Transcript", "逐字稿"), audio: tr("Audio", "音訊"), vector: tr("Vector", "向量"), scores: tr("Scores", "分數") } as Record<string, string>)[model.maxOutput] ?? model.maxOutput;
 
   async function copyModelId() {
     try {

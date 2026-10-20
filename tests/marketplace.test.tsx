@@ -83,8 +83,12 @@ describe("ModelMarketplace", () => {
 
       const isImage = model.categories.includes("image");
       const isAudio = model.categories.includes("audio") || model.id.includes("whisper") || model.id.includes("indextts2");
+      const isVideo = model.categories.includes("video");
 
-      if (isImage) {
+      if (isVideo) {
+        const inputRate = `$${model.inputPerMillion.toFixed(2)} per second of video`;
+        expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
+      } else if (isImage) {
         const inputRate = `$${model.inputPerMillion.toFixed(2)} per image`;
         expect(within(row).getByText((_, element) => normalizedText(element!) === inputRate)).toBeVisible();
       } else if (isAudio) {

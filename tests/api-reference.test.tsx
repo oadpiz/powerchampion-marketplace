@@ -29,6 +29,7 @@ const SECTION_IDS = [
   "text-apis",
   "images",
   "audio",
+  "video",
   "billing",
   "rate-limits",
   "errors",
@@ -46,11 +47,12 @@ const HEADINGS = {
     "6. Completions, embeddings and reranking APIs",
     "7. Image generation API",
     "8. Text-to-speech and speech recognition APIs",
-    "9. Billing: credit, balance and usage",
-    "10. Rate limits and quotas",
-    "11. Error handling",
-    "12. Best practices and security",
-    "13. Appendix",
+    "9. Video generation API",
+    "10. Billing: credit, balance and usage",
+    "11. Rate limits and quotas",
+    "12. Error handling",
+    "13. Best practices and security",
+    "14. Appendix",
   ],
   zh: [
     "1. 概覽",
@@ -61,11 +63,12 @@ const HEADINGS = {
     "6. 文字補全、向量與重排序 API",
     "7. 圖片生成 API",
     "8. 語音合成與語音辨識 API",
-    "9. 帳務：儲值、餘額與用量",
-    "10. 限流與配額",
-    "11. 錯誤處理",
-    "12. 最佳實務與安全建議",
-    "13. 附錄",
+    "9. 影片生成 API",
+    "10. 帳務：儲值、餘額與用量",
+    "11. 限流與配額",
+    "12. 錯誤處理",
+    "13. 最佳實務與安全建議",
+    "14. 附錄",
   ],
 } as const;
 
@@ -127,7 +130,7 @@ describe("API developer guide page", () => {
   beforeEach(() => window.history.replaceState({}, "", "/docs/api"));
   afterEach(() => localStorage.removeItem("pc-locale"));
 
-  it("renders the English guide with all 13 sections, a table of contents, and all nine models", () => {
+  it("renders the English guide with all 14 sections, a table of contents, and all nine models", () => {
     renderPage();
 
     expect(screen.getByRole("heading", { level: 1, name: "Power Champion API Developer Guide" })).toBeVisible();
@@ -237,13 +240,19 @@ describe("API developer guide page", () => {
     for (const marker of INTERNAL_MARKERS) expect(container.textContent).not.toMatch(marker);
   });
 
-  it("lists video generation as unsupported without publishing a video price", () => {
+  it("documents video generation with its per-second price and no longer lists it as unsupported", () => {
     renderPage();
     expect(screen.getByRole("heading", { level: 3, name: "B. Not currently supported" })).toBeVisible();
-    expect(screen.getByText("Video generation.")).toBeVisible();
+    expect(screen.queryByText("Video generation.")).not.toBeInTheDocument();
     for (const locale of ["en", "zh"] as const) {
-      const text = JSON.stringify(API_REFERENCE_COPY[locale]);
-      expect(text).not.toMatch(/per (?:second|minute) of video|每(?:秒|分鐘)影片/);
+      const copy = API_REFERENCE_COPY[locale];
+      const notSupported = copy.sections.flatMap((section) => section.blocks)
+        .find((block) => block.kind === "h3" && block.id === "not-supported");
+      expect(notSupported).toBeDefined();
+      const text = JSON.stringify(copy.sections.find((section) => section.id === "video"));
+      expect(text).toContain("US$0.05");
+      expect(text).toContain("wan2.2-ti2v-5b-720p");
+      expect(JSON.stringify(copy.sections.find((section) => section.id === "appendix"))).not.toMatch(/"(?:Video generation\.|影片生成。)"/);
     }
   });
 

@@ -31,7 +31,8 @@ describe("model structured data", () => {
       expect(price.unitText).toBe(
         model.categories.includes("image") ? "image"
           : model.categories.includes("audio") ? "minute of audio"
-            : "1M input tokens",
+            : model.categories.includes("video") ? "second of video"
+              : "1M input tokens",
       );
       expect(data.offers.availability).toBe(
         model.available ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",

@@ -7,6 +7,7 @@ export type ModelCategory =
   | "vision"
   | "image"
   | "audio"
+  | "video"
   | "embedding";
 
 export type ModelFeatures = {
@@ -225,6 +226,35 @@ export const MODEL_CATALOG: ModelDefinition[] = [
     servingRole: {
       en: "Text-to-speech with voice cloning capabilities.",
       zh: "文字轉語音與語音克隆。",
+    },
+    region: "TH",
+  },
+  {
+    id: "wan2.2-ti2v-5b-720p",
+    name: "Wan 2.2 TI2V-5B 720p",
+    modelId: "wan2.2-ti2v-5b-720p",
+    categories: ["video"],
+    context: "—",
+    speed: "Deep",
+    // Per-unit media rate, same convention as image and audio models: the
+    // per-second price is stored in inputPerMillion (US$0.05 per output second).
+    inputPerMillion: 0.05,
+    outputPerMillion: 0,
+    available: true,
+    tagline: {
+      en: "Text-to-video and image-to-video. 1280×704 at 24 fps, 1–10 second clips through an async job API.",
+      zh: "文生影片與圖生影片，1280×704、24 fps，單支 1–10 秒，以非同步任務 API 提供。",
+    },
+    maxOutput: "10 s video",
+    features: { tools: false, structuredOutput: false, reasoning: false, streaming: false },
+    provenance: {
+      status: "live",
+      label: { en: "Live", zh: "已上線" },
+      licenseHref: null,
+    },
+    servingRole: {
+      en: "Short text-to-video and image-to-video clips from the open-weight Wan 2.2 TI2V-5B model (Apache-2.0).",
+      zh: "以開放權重的 Wan 2.2 TI2V-5B（Apache-2.0）生成短影片，支援文生影片與圖生影片。",
     },
     region: "TH",
   },

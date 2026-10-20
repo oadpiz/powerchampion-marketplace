@@ -29,7 +29,9 @@ function ModelPrice({ model, copy }: { model: ModelDefinition; copy: Copy }) {
     ? copy.catalog.image
     : model.categories.includes("audio")
       ? copy.catalog.minute
-      : copy.catalog.million;
+      : model.categories.includes("video")
+        ? copy.catalog.second
+        : copy.catalog.million;
   const hasTokenOutput = model.outputPerMillion > 0;
   return (
     <div className="intl-model-price">

@@ -49,8 +49,8 @@ describe("working model platform", () => {
 
   it("estimates images separately and rejects invalid amounts", () => {
     const image = MODEL_CATALOG.find((model) => model.id === "flux-schnell")!;
-    expect(estimateModelCost(image, { input: NaN, output: NaN, images: 100, minutes: NaN })).toBe(1);
-    expect(estimateModelCost(image, { input: 0, output: 0, images: -1, minutes: 0 })).toBeNull();
+    expect(estimateModelCost(image, { input: NaN, output: NaN, images: 100, minutes: NaN, seconds: NaN })).toBe(1);
+    expect(estimateModelCost(image, { input: 0, output: 0, images: -1, minutes: 0, seconds: 0 })).toBeNull();
   });
 
   it("shows an unavailable gateway honestly without blocking exploration", () => {

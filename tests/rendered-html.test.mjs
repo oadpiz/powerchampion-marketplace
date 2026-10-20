@@ -516,6 +516,8 @@ test("server-renders the model marketplace", async () => {
   assert.match(html, /Choose the mind for the task/i);
   assert.match(html, /Search models/i);
   assert.match(html, /Qwen/i);
+  assert.match(html, /Wan 2\.2 TI2V-5B 720p/);
+  assert.match(html, /\$0\.05(?:<!-- -->)? (?:<span[^>]*>)?(?:<!-- -->)?per second of video/);
 });
 
 test("server-renders prepaid pricing without payment fields", async () => {
@@ -528,6 +530,8 @@ test("server-renders prepaid pricing without payment fields", async () => {
   assert.doesNotMatch(html, /<input[^>]+(?:card|payment|billing)/i);
   assert.match(html, /Estimate usage/i);
   assert.match(html, /Model rates/i);
+  assert.match(html, /Wan 2\.2 TI2V-5B 720p/);
+  assert.match(html, /<strong>\$0\.05<\/strong>(?:<!-- -->)? (?:<!-- -->)?per second of video/);
 });
 
 test("server-renders docs and the live console", async () => {
@@ -635,11 +639,12 @@ test("server-renders the full API developer guide", async () => {
     ["text-apis", "6. Completions, embeddings and reranking APIs"],
     ["images", "7. Image generation API"],
     ["audio", "8. Text-to-speech and speech recognition APIs"],
-    ["billing", "9. Billing: credit, balance and usage"],
-    ["rate-limits", "10. Rate limits and quotas"],
-    ["errors", "11. Error handling"],
-    ["best-practices", "12. Best practices and security"],
-    ["appendix", "13. Appendix"],
+    ["video", "9. Video generation API"],
+    ["billing", "10. Billing: credit, balance and usage"],
+    ["rate-limits", "11. Rate limits and quotas"],
+    ["errors", "12. Error handling"],
+    ["best-practices", "13. Best practices and security"],
+    ["appendix", "14. Appendix"],
   ];
   for (const [id, heading] of sections) {
     assert.match(html, new RegExp(`<h2 id="${id}"[^>]*>${escaped(heading)}</h2>`), heading);
@@ -652,6 +657,7 @@ test("server-renders the full API developer guide", async () => {
   assert.match(html, /Prepaid balance exhausted/);
   assert.match(html, /<h3 id="check-order"[^>]*>Check order<\/h3>/);
   assert.match(html, /RETRYABLE = \{429, 502, 503\}/);
-  assert.match(html, /Video generation\./);
+  assert.doesNotMatch(html, /<li>Video generation\.<\/li>/);
+  assert.match(html, /POST \/v1\/videos/);
   assert.doesNotMatch(html, /平台優化建議|勿對外|api-audit/);
 });

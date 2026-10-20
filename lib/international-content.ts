@@ -45,6 +45,7 @@ type InternationalContent = {
     million: string;
     image: string;
     minute: string;
+    second: string;
     detailNote: string;
   };
   workflows: { title: string; lead: string; items: Story[] };
@@ -172,6 +173,8 @@ export const INTERNATIONAL_CONTENT: Record<
       "chroma1-hd": "高解析度圖像生成，適合需要豐富細節的視覺內容。",
       "whisper-large-v3": "將音訊轉為文字，用於逐字稿、字幕與可搜尋紀錄。",
       indextts2: "搭配有權使用的參考音檔，產生文字轉語音內容。",
+      "wan2.2-ti2v-5b-720p":
+        "以文字或一張圖片生成 1–10 秒的短影片，採非同步任務 API。",
       "bge-m3": "建立多語言嵌入向量，支援語意搜尋與檢索增強生成。",
       "bge-reranker-v2-m3": "依查詢重新排序文件，改善檢索結果的相關性。",
     },
@@ -188,6 +191,7 @@ export const INTERNATIONAL_CONTENT: Record<
       million: "每百萬詞元",
       image: "每張圖像",
       minute: "每分鐘音訊",
+      second: "每秒影片",
       detailNote: "完整模型規格與程式碼範例提供英文及繁體中文。",
     },
     workflows: {
@@ -432,6 +436,8 @@ export const INTERNATIONAL_CONTENT: Record<
       "whisper-large-v3":
         "音声をテキストに変換。文字起こし、字幕、検索可能な記録に。",
       indextts2: "使用権限のある参照音声を使い、テキストから音声を生成。",
+      "wan2.2-ti2v-5b-720p":
+        "テキスト、またはテキストと 1 枚の画像から 1〜10 秒の短い動画を生成。非同期ジョブ API で利用します。",
       "bge-m3": "多言語の埋め込みベクトルを生成。意味検索や RAG の検索処理に。",
       "bge-reranker-v2-m3":
         "クエリに応じて文書を再ランキングし、検索結果の関連性を改善。",
@@ -449,6 +455,7 @@ export const INTERNATIONAL_CONTENT: Record<
       million: "100 万トークンあたり",
       image: "画像 1 枚あたり",
       minute: "音声 1 分あたり",
+      second: "動画 1 秒あたり",
       detailNote:
         "詳細なモデル仕様とコード例は英語と繁体字中国語で提供しています。",
     },
@@ -698,6 +705,8 @@ export const INTERNATIONAL_CONTENT: Record<
         "음성을 텍스트로 변환. 전사, 자막, 검색 가능한 기록을 만듭니다.",
       indextts2:
         "사용 권한이 있는 참조 음성을 이용해 텍스트를 음성으로 변환합니다.",
+      "wan2.2-ti2v-5b-720p":
+        "텍스트 또는 텍스트와 이미지 한 장으로 1~10초 길이의 짧은 영상을 생성합니다. 비동기 작업 API로 제공됩니다.",
       "bge-m3":
         "다국어 임베딩 벡터 생성. 의미 검색과 RAG의 검색 단계에 활용합니다.",
       "bge-reranker-v2-m3":
@@ -716,6 +725,7 @@ export const INTERNATIONAL_CONTENT: Record<
       million: "100만 토큰당",
       image: "이미지 1장당",
       minute: "음성 1분당",
+      second: "영상 1초당",
       detailNote:
         "전체 모델 사양과 코드 예제는 영어와 번체 중국어로 제공됩니다.",
     },

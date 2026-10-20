@@ -22,6 +22,7 @@ const EXPECTED_MODEL_RATES = [
   { name: "Chroma1 HD", input: "0.01", output: "0.00" },
   { name: "Whisper Large v3", input: "0.01", output: "0.00" },
   { name: "IndexTTS2", input: "0.03", output: "0.00" },
+  { name: "Wan 2.2 TI2V-5B 720p", input: "0.05", output: "0.00" },
   { name: "BGE-M3", input: "0.02", output: "0.00" },
   { name: "BGE Reranker v2-m3", input: "0.02", output: "0.00" },
 ] as const;
@@ -326,10 +327,11 @@ describe("PricingPage", () => {
 
       const cells = within(row!).getAllByRole("cell");
       const name = model.name;
-      const isPerUse = /Flux|Chroma|Whisper|IndexTTS/i.test(name);
+      const isPerUse = /Flux|Chroma|Whisper|IndexTTS|Wan/i.test(name);
       if (isPerUse) {
         expect(cells).toHaveLength(2);
-        expect(normalizedText(cells[1])).toBe(`$${model.input} per ${/Whisper|IndexTTS/i.test(name) ? "minute of audio" : "image"}`);
+        const unit = /Wan/i.test(name) ? "second of video" : /Whisper|IndexTTS/i.test(name) ? "minute of audio" : "image";
+        expect(normalizedText(cells[1])).toBe(`$${model.input} per ${unit}`);
       } else {
         expect(cells).toHaveLength(3);
         expect(normalizedText(cells[1])).toBe(`$${model.input} per 1M input`);
@@ -358,7 +360,7 @@ describe("PricingPage", () => {
     expect(table.querySelector("tbody")).not.toBeNull();
     expect(within(table).getAllByRole("columnheader")).toHaveLength(3);
     expect(table.querySelectorAll("tbody tr")).toHaveLength(EXPECTED_MODEL_RATES.length);
-    const perUseCount = EXPECTED_MODEL_RATES.filter((m) => /Flux|Chroma|Whisper|IndexTTS/i.test(m.name)).length;
+    const perUseCount = EXPECTED_MODEL_RATES.filter((m) => /Flux|Chroma|Whisper|IndexTTS|Wan/i.test(m.name)).length;
     expect(table.querySelectorAll("tbody td")).toHaveLength(EXPECTED_MODEL_RATES.length * 3 - perUseCount);
   });
 
@@ -429,6 +431,8 @@ describe("PricingPage", () => {
         expect(within(row).getByText("每張圖像")).toBeVisible();
       } else if (/Whisper|IndexTTS/.test(model.name)) {
         expect(within(row).getByText("每分鐘音訊")).toBeVisible();
+      } else if (/Wan/.test(model.name)) {
+        expect(within(row).getByText("每秒影片")).toBeVisible();
       } else {
         expect(within(row).getByText("每百萬詞元")).toBeVisible();
         if (Number(model.output) > 0) expect(within(row).getByText(`US$${model.output}`)).toBeVisible();

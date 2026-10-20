@@ -89,6 +89,7 @@ export function DocsPageContent({ gateway }: Props) {
           <div><dt>POST /v1/images/generations</dt><dd>{locale === "en" ? "Text-to-image (Flux Schnell, Chroma1 HD)" : "文生圖（Flux Schnell、Chroma1 HD）"}</dd></div>
           <div><dt>POST /v1/audio/transcriptions</dt><dd>{locale === "en" ? "Speech-to-text (Whisper Large v3)" : "語音轉文字（Whisper Large v3）"}</dd></div>
           <div><dt>POST /v1/audio/speech</dt><dd>{locale === "en" ? "Text-to-speech (IndexTTS2)" : "文字轉語音（IndexTTS2）"}</dd></div>
+          <div><dt>POST /v1/videos</dt><dd>{locale === "en" ? "Text- and image-to-video, asynchronous jobs (Wan 2.2 TI2V-5B)" : "文生影片與圖生影片，非同步任務（Wan 2.2 TI2V-5B）"}</dd></div>
           <div><dt>POST /v1/embeddings</dt><dd>{locale === "en" ? "Embeddings for RAG (BGE-M3)" : "RAG 嵌入向量（BGE-M3）"}</dd></div>
           <div><dt>POST /v1/rerank</dt><dd>{locale === "en" ? "Document reranking (BGE Reranker v2-m3)" : "文件重排（BGE Reranker v2-m3）"}</dd></div>
           <div><dt>GET /v1/models</dt><dd>{locale === "en" ? "List available models" : "列出可用模型"}</dd></div>
