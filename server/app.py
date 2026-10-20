@@ -21,6 +21,7 @@ from .security import clean_name, digest_token, normalize_email, password_hash, 
 from .settings import Settings
 from .store import Store, credit_json, iso, key_json, user_json
 from .runtime_api import attach_runtime
+from .allocation import attach_allocation
 
 COOKIE_NAME = "pc_portal_session"
 PREFIX = "/api/portal"
@@ -68,6 +69,15 @@ def credit_cents(value):
         return int(amount * 100)
     except (ValueError, InvalidOperation, OverflowError):
         fail("invalid_input", "Enter a USD amount from 10 to 10,000 with at most two decimal places.")
+
+
+def audit_details(value):
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except ValueError:
+        return None
 
 
 def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=None, runtime_tools=None):
@@ -908,9 +918,10 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         current_user(request, admin=True)
         with store.connect() as con:
             rows = con.execute("SELECT a.*,u.email FROM audit_events a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC,a.id DESC LIMIT 200").fetchall()
-        return {"events": [{"id": row["id"], "action": row["action"], "actorEmail": row["email"], "targetId": row["target_id"], "createdAt": iso(row["created_at"])} for row in rows]}
+        return {"events": [{"id": row["id"], "action": row["action"], "actorEmail": row["email"], "targetId": row["target_id"], "createdAt": iso(row["created_at"]), "details": audit_details(row["details"])} for row in rows]}
 
     attach_runtime(application, store, settings, agents, current_user, body_json, runtime_model, runtime_tools)
+    attach_allocation(application, store, current_user, body_json, PREFIX)
     return application
 
 
