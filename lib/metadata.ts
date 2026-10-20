@@ -89,7 +89,7 @@ export const ROUTE_METADATA = {
   },
   "/docs/api": {
     title: "API Reference | Power Champion",
-    description: "Full reference for the b300 OpenAI-compatible API: endpoints and limits, models and prices, keys and rate limits, prepaid billing, errors and retries.",
+    description: "Power Champion API developer guide: authentication and keys, models and prices, chat, embeddings, image and speech endpoints, prepaid billing, rate limits and error handling.",
   },
   "/trust": {
     title: "Trust and Service Policies | Power Champion",

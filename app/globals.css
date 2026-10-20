@@ -715,7 +715,8 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .api-ref-back a:hover, .api-ref-section a:hover { color: var(--cyan); }
 .api-ref-toc { margin: 0 0 3.5rem; border-block: 1px solid var(--line); padding: 1.25rem 0; }
 .api-ref-toc h2 { margin: 0 0 .85rem; color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; }
-.api-ref-toc ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: .35rem 1.5rem; margin: 0; padding-left: 1.25rem; color: var(--muted); }
+/* Section titles carry their own numbers, so the list markers are hidden. */
+.api-ref-toc ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: .35rem 1.5rem; margin: 0; padding-left: 0; list-style: none; color: var(--muted); }
 .api-ref-toc a { color: var(--ink); text-decoration: none; line-height: 1.8; }
 .api-ref-toc a:hover { color: var(--cyan); text-decoration: underline; text-underline-offset: .25rem; }
 .api-ref-section { margin-top: 4rem; min-width: 0; }
@@ -734,6 +735,7 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .api-ref-table-scroll:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
 .api-ref-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: .9rem; }
 .api-ref-models { min-width: 980px; }
+.api-ref-models.api-ref-models-compact { min-width: 640px; }
 .api-ref-table th, .api-ref-table td { padding: .8rem 1rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; line-height: 1.55; }
 .api-ref-table thead th { color: var(--muted); font-family: var(--font-geist-mono), monospace; font-size: .8125rem; font-weight: 500; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
 .api-ref-table tbody th { color: var(--ink); font-weight: 500; }

@@ -3,7 +3,6 @@
 import { Fragment, useState, type ReactNode } from "react";
 import {
   API_REFERENCE_COPY,
-  API_REFERENCE_MODELS,
   type ApiReferenceBlock,
   type ApiReferenceCopy,
 } from "../lib/api-reference";
@@ -14,11 +13,14 @@ type Props = {
   gateway: GatewayStatus | null;
 };
 
-const TOKEN = /(`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
+const TOKEN = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
 
-/** Render `code` spans and [label](href) links inside plain copy strings. */
+/** Render **bold**, `code` spans and [label](href) links inside plain copy strings. */
 export function renderInline(text: string): ReactNode {
   return text.split(TOKEN).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={index}>{renderInline(part.slice(2, -2))}</strong>;
+    }
     if (part.startsWith("`") && part.endsWith("`") && part.length > 1) {
       return <code key={index}>{part.slice(1, -1)}</code>;
     }
@@ -73,27 +75,36 @@ function ScrollTable({ label, hint, children }: { label: string; hint: string; c
   );
 }
 
-function ModelsTable({ text, gateway, hint }: { text: ApiReferenceCopy["models"]; gateway: GatewayStatus | null; hint: string }) {
+function ModelsTable({
+  block,
+  text,
+  gateway,
+  hint,
+}: {
+  block: Extract<ApiReferenceBlock, { kind: "models" }>;
+  text: ApiReferenceCopy["models"];
+  gateway: GatewayStatus | null;
+  hint: string;
+}) {
   const live = new Map((gateway?.models ?? []).map((model) => [model.id, model.ready]));
-  const { locale } = useLocale();
   return (
     <>
-      <ScrollTable hint={hint} label={text.label}>
-        <table className="api-ref-table api-ref-models">
+      <ScrollTable hint={hint} label={block.label}>
+        <table className={`api-ref-table api-ref-models${block.wide ? "" : " api-ref-models-compact"}`}>
           <thead>
-            <tr>{text.head.map((cell) => <th key={cell} scope="col">{cell}</th>)}</tr>
+            <tr>
+              {block.head.map((cell) => <th key={cell} scope="col">{cell}</th>)}
+              <th scope="col">{text.statusHead}</th>
+            </tr>
           </thead>
           <tbody>
-            {API_REFERENCE_MODELS.map((model) => {
-              const ready = live.get(model.id);
+            {block.rows.map((row) => {
+              const ready = live.get(row.id);
               const state = ready === true ? "online" : ready === false ? "offline" : "unknown";
               return (
-                <tr key={model.id}>
-                  <th scope="row"><code>{model.id}</code></th>
-                  <td>{model.use[locale]}</td>
-                  <td><code>{model.endpoint}</code></td>
-                  <td>{model.price[locale]}</td>
-                  <td>{model.notes[locale]}</td>
+                <tr key={row.id}>
+                  <th scope="row"><code>{row.id}</code></th>
+                  {row.cells.map((cell, index) => <td key={index}>{renderInline(cell)}</td>)}
                   <td><span className={`api-ref-state api-ref-state-${state}`}>{text[state]}</span></td>
                 </tr>
               );
@@ -101,7 +112,7 @@ function ModelsTable({ text, gateway, hint }: { text: ApiReferenceCopy["models"]
           </tbody>
         </table>
       </ScrollTable>
-      <p className="api-ref-table-note">{gateway ? text.liveNote : text.fallbackNote}</p>
+      {block.statusNote ? <p className="api-ref-table-note">{gateway ? text.liveNote : text.fallbackNote}</p> : null}
     </>
   );
 }
@@ -121,7 +132,7 @@ function Block({ block, copy, gateway }: { block: ApiReferenceBlock; copy: ApiRe
     case "code":
       return <CodeBlock code={block.code} label={block.label} />;
     case "models":
-      return <ModelsTable gateway={gateway} hint={copy.tableScrollHint} text={copy.models} />;
+      return <ModelsTable block={block} gateway={gateway} hint={copy.tableScrollHint} text={copy.models} />;
     case "table":
       return (
         <ScrollTable hint={copy.tableScrollHint} label={block.label}>
@@ -154,7 +165,7 @@ export function ApiReferenceContent({ gateway }: Props) {
         <p className="eyebrow">{copy.kicker}</p>
         <h1 id="api-ref-title">{copy.title}</h1>
         <p>{copy.lead}</p>
-        <p className="docs-notice">{copy.asOf}</p>
+        <p className="docs-notice">{copy.version}</p>
         <p className="api-ref-back"><a href="/docs">← {copy.backToDocs}</a></p>
       </section>
 

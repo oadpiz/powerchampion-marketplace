@@ -57,7 +57,7 @@ const routeMetadata = {
   },
   "/docs/api": {
     title: "API Reference | Power Champion",
-    description: "Full reference for the b300 OpenAI-compatible API: endpoints and limits, models and prices, keys and rate limits, prepaid billing, errors and retries.",
+    description: "Power Champion API developer guide: authentication and keys, models and prices, chat, embeddings, image and speech endpoints, prepaid billing, rate limits and error handling.",
   },
   "/trust": {
     title: "Trust and Service Policies | Power Champion",
@@ -612,19 +612,40 @@ test("server-renders each administration section and rejects unknown ones", asyn
   assert.equal((await render("/admin/keys/extra")).status, 404);
 });
 
-test("server-renders the full API reference", async () => {
+test("server-renders the full API developer guide", async () => {
   const response = await render("/docs/api");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /<h1[^>]*>API reference<\/h1>/);
+  assert.match(html, /<h1[^>]*>Power Champion API Developer Guide<\/h1>/);
+  assert.match(html, /Version 1\.0 · 2026-10-20/);
   assert.equal((html.match(/<main[ >]/g) ?? []).length, 1);
   assert.match(html, /aria-label="On this page"/);
-  for (const heading of ["Quick start", "Models and prices", "Authentication, keys and rate limits", "Endpoint reference", "Billing and balance", "Errors, retries and best practices", "Support"]) {
-    assert.match(html, new RegExp(`<h2[^>]*>${escaped(heading)}</h2>`), heading);
+  const sections = [
+    ["overview", "1. Overview"],
+    ["quick-start", "2. Quick start"],
+    ["auth", "3. Authentication and key management"],
+    ["models", "4. Model catalog and pricing"],
+    ["chat", "5. Chat API"],
+    ["text-apis", "6. Completions, embeddings and reranking APIs"],
+    ["images", "7. Image generation API"],
+    ["audio", "8. Text-to-speech and speech recognition APIs"],
+    ["billing", "9. Billing: credit, balance and usage"],
+    ["rate-limits", "10. Rate limits and quotas"],
+    ["errors", "11. Error handling"],
+    ["best-practices", "12. Best practices and security"],
+    ["appendix", "13. Appendix"],
+  ];
+  for (const [id, heading] of sections) {
+    assert.match(html, new RegExp(`<h2 id="${id}"[^>]*>${escaped(heading)}</h2>`), heading);
+    assert.match(html, new RegExp(`<a href="#${id}">${escaped(heading)}</a>`), `TOC: ${heading}`);
   }
   for (const id of ["glm-5.2-fp8", "glm-5.3-flash-uncensored", "qwen3-vl-30b", "bge-m3", "bge-reranker-v2-m3", "flux-schnell", "chroma1-hd", "indextts2", "whisper-large-v3"]) {
     assert.match(html, new RegExp(`<code>${escaped(id)}</code>`), id);
   }
-  assert.match(html, /Video generation is not available yet/);
-  assert.doesNotMatch(html, /平台優化建議|勿對外/);
+  assert.match(html, /up to 25 MB/);
+  assert.match(html, /Prepaid balance exhausted/);
+  assert.match(html, /<h3 id="check-order"[^>]*>Check order<\/h3>/);
+  assert.match(html, /RETRYABLE = \{429, 502, 503\}/);
+  assert.match(html, /Video generation\./);
+  assert.doesNotMatch(html, /平台優化建議|勿對外|api-audit/);
 });
