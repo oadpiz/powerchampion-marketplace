@@ -95,6 +95,9 @@ class SeedAndStateTests(_AllocationCase):
         self.assertEqual((state["summary"]["selling"], state["summary"]["engineer"], state["summary"]["reserved"]), (2, 14, 0))
         self.assertEqual({p["username"]: p["nodes"] for p in state["summary"]["perEngineer"]}, {u: len(n) for u, n in SEED.items()})
         self.assertEqual(state["revision"], 1)
+        self.assertEqual([e["clusterId"] for e in state["engineers"]], ["eng1", "eng2", "eng3", "eng4", "eng5"])
+        self.assertEqual([e["username"] for e in state["engineers"]], list(SEED))
+        self.assertEqual(state["ownerEmail"], "zhuling@oadpiz.com")
 
     def test_non_admin_and_anonymous_are_refused(self):
         customer = self.client()
@@ -240,7 +243,7 @@ class SellingGuardTests(_AllocationCase):
         r = self.assign("b300-30", {"role": "selling"})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(len(r.json()["warnings"]), 1)
-        self.assertIn("4.5", r.json()["warnings"][0])
+        self.assertIn("4.7", r.json()["warnings"][0])
 
 
 class AuditAndRevisionTests(_AllocationCase):
@@ -275,7 +278,7 @@ class AuditAndRevisionTests(_AllocationCase):
         self.assertIsNone(update["keyFingerprint"]["from"])
         self.assertTrue(update["keyFingerprint"]["to"].startswith("SHA256:"))
         owner = json.loads(self.audit("alloc.owner_update")[0]["details"])
-        self.assertEqual(owner["ownerEmail"], {"from": None, "to": "owner@oadpiz.com"})
+        self.assertEqual(owner["ownerEmail"], {"from": "zhuling@oadpiz.com", "to": "owner@oadpiz.com"})
         node = self.node("b300-13")
         self.assertEqual(node["updatedBy"], "admin@example.test")
         listing = self.admin_client.get(BASE + "/admin/audit").json()["events"]
@@ -300,55 +303,76 @@ class AuditAndRevisionTests(_AllocationCase):
 
 class ExportTests(_AllocationCase):
     def ready(self):
-        self.post(self.admin_client, "/admin/allocation/owner", {"ownerEmail": "owner@oadpiz.com"})
         keys = {}
         for username in SEED:
             keys[username] = ed_key(username + "@laptop")
             self.set_key(username, keys[username])
         return keys
 
-    def test_round_trip_matches_the_cluster_file_shape(self):
-        keys = self.ready()
+    def test_seed_export_equals_the_cluster_file(self):
         result = self.export()
         self.assertEqual(result["filename"], "engineers.yaml")
-        self.assertTrue(result["renderReady"])
-        self.assertEqual(result["warnings"], [])
         parsed = yaml.safe_load(result["yaml"])
         fixture = yaml.safe_load(FIXTURE.read_text())
         self.assertEqual(shape(parsed), shape(fixture))
         self.assertEqual(list(parsed), list(fixture), "top-level key order")
         self.assertEqual(list(parsed["engineers"][0]), list(fixture["engineers"][0]), "engineer field order")
-        self.assertEqual(parsed["selling"], fixture["selling"])
-        self.assertEqual(parsed["engineer_vllm_ports"], fixture["engineer_vllm_ports"])
-        self.assertEqual(parsed["owner"], {"email": "owner@oadpiz.com"})
-        self.assertEqual([e["nodes"] for e in parsed["engineers"]], [e["nodes"] for e in fixture["engineers"]])
-        self.assertEqual(parsed["engineers"], [
-            {"id": u, "username": u, "name": u, "email": u + "@oadpiz.com", "ssh_pubkey": keys[u], "nodes": n, "state": "present"}
-            for u, n in SEED.items()])
+        self.assertEqual(parsed, fixture, "the seeded state exports exactly the 2026-10-20 engineers.yaml")
+        self.assertEqual([e["id"] for e in parsed["engineers"]], ["eng1", "eng2", "eng3", "eng4", "eng5"])
         self.assertIn("# revision: %d" % result["revision"], result["yaml"])
         self.assertIn("# generated_at: " + result["generatedAt"], result["yaml"])
         raw = self.admin_client.get(BASE + "/admin/allocation/export?format=yaml")
         self.assertEqual(raw.headers["content-disposition"], 'attachment; filename="engineers.yaml"')
         self.assertEqual(yaml.safe_load(raw.text), parsed)
 
-    def test_engineers_without_a_key_are_listed_but_not_exported(self):
-        self.post(self.admin_client, "/admin/allocation/owner", {"ownerEmail": "owner@oadpiz.com"})
+    def test_engineers_without_a_key_carry_the_placeholder_and_a_warning(self):
         self.set_key("nati", ed_key())
         result = self.export()
         parsed = yaml.safe_load(result["yaml"])
-        self.assertEqual([e["username"] for e in parsed["engineers"]], ["nati"])
-        self.assertEqual({i["username"] for i in result["excluded"]}, {"justin", "mwind", "zhuling", "ll"})
-        self.assertTrue(all(i["reason"] == "no_ssh_pubkey" for i in result["excluded"]))
-        self.assertTrue(any("justin" in w and "no SSH public key" in w for w in result["warnings"]))
-        self.assertIn("#   justin: no_ssh_pubkey (b300-11, b300-12, b300-13 stay unassigned)", result["yaml"])
-        self.assertTrue(result["renderReady"])
+        keys = {e["username"]: e["ssh_pubkey"] for e in parsed["engineers"]}
+        self.assertEqual(set(keys), set(SEED))
+        self.assertTrue(keys["nati"].startswith("ssh-ed25519 "))
+        self.assertEqual({u for u, k in keys.items() if k == "ssh-ed25519 AAAA... CHANGE_ME"}, {"justin", "mwind", "zhuling", "ll"})
+        self.assertEqual(result["excluded"], [])
+        self.assertEqual(result["missingKeys"], ["justin", "mwind", "zhuling", "ll"])
+        self.assertTrue(any("justin" in w and "CHANGE_ME" in w for w in result["warnings"]))
+        self.assertFalse(result["renderReady"])
+        self.assertTrue(result["monitoringReady"])
 
-    def test_nothing_exportable_and_no_owner_is_flagged(self):
+    def test_with_every_key_the_export_is_complete(self):
+        keys = self.ready()
+        result = self.export()
+        self.assertTrue(result["renderReady"])
+        self.assertEqual(result["warnings"], [])
+        parsed = yaml.safe_load(result["yaml"])
+        self.assertEqual(parsed["engineers"], [
+            {"id": "eng%d" % (i + 1), "username": u, "name": u, "email": u + "@oadpiz.com", "ssh_pubkey": keys[u], "nodes": n, "state": "present"}
+            for i, (u, n) in enumerate(SEED.items())])
+
+    def test_new_engineers_get_the_next_cluster_id(self):
+        r = self.post(self.admin_client, "/admin/allocation/engineers", {"username": "kim", "email": "kim@oadpiz.com"})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertEqual(self.engineer("kim")["clusterId"], "eng6")
+        self.assign("b300-30", {"role": "engineer", "engineerId": self.engineer("kim")["id"]})
+        entry = next(e for e in yaml.safe_load(self.export()["yaml"])["engineers"] if e["username"] == "kim")
+        self.assertEqual((entry["id"], entry["nodes"]), ("eng6", ["b300-30"]))
+
+    def test_engineer_without_nodes_and_missing_owner_are_flagged(self):
+        for username, nodes in SEED.items():
+            if username != "ll":
+                continue
+            for node in nodes:
+                self.assign(node, {"role": "reserved"})
+        with self.store.connect() as con:
+            con.execute("UPDATE alloc_meta SET owner_email=NULL WHERE id=1")
         result = self.export()
         parsed = yaml.safe_load(result["yaml"])
-        self.assertEqual(parsed["engineers"], [])
+        self.assertNotIn("ll", [e["username"] for e in parsed["engineers"]])
+        self.assertEqual(result["excluded"], [{"username": "ll", "reason": "no_nodes"}])
+        self.assertIn("#   ll: no_nodes", result["yaml"])
         self.assertEqual(parsed["owner"]["email"], "CHANGE_ME@your-mail-domain")
         self.assertFalse(result["renderReady"])
+        self.assertFalse(result["monitoringReady"])
         self.assertTrue(any("Owner email" in w for w in result["warnings"]))
 
     def test_inactive_engineer_is_exported_absent_on_every_node_they_held(self):
@@ -359,7 +383,7 @@ class ExportTests(_AllocationCase):
         self.assertEqual(self.post(self.admin_client, f"/admin/allocation/engineers/{ll}/status", {"active": False}).status_code, 200)
         parsed = yaml.safe_load(self.export()["yaml"])
         entry = next(e for e in parsed["engineers"] if e["username"] == "ll")
-        self.assertEqual(entry["state"], "absent")
+        self.assertEqual((entry["id"], entry["state"]), ("eng5", "absent"))
         self.assertEqual(entry["nodes"], ["b300-29", "b300-30"])
         nati = next(e for e in parsed["engineers"] if e["username"] == "nati")
         self.assertEqual(nati["nodes"], ["b300-26", "b300-27", "b300-28", "b300-29"])
@@ -376,19 +400,29 @@ class ExportTests(_AllocationCase):
         self.assertTrue(any("b300-29" in w and "selling" in w for w in result["warnings"]))
         self.assertEqual(yaml.safe_load(result["yaml"])["selling"]["nodes"], ["b300-14", "b300-29", "b300-31"])
 
+    def render(self, path, *args):
+        return subprocess.run([sys.executable, str(RENDER), *args, "--data", str(path)], capture_output=True, text=True, timeout=60)
+
     def test_render_py_accepts_the_export(self):
         if not RENDER.is_file():
             self.skipTest("cluster render.py not available at " + str(RENDER))
-        self.ready()
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "engineers.yaml"
-            path.write_text(self.export()["yaml"])
-            check = subprocess.run([sys.executable, str(RENDER), "check", "--data", str(path)], capture_output=True, text=True, timeout=60)
+            seed = Path(tmp) / "seed.yaml"
+            seed.write_text(self.export()["yaml"])
+            monitoring = self.render(seed, "check", "--allow-missing-keys")
+            self.assertEqual(monitoring.returncode, 0, monitoring.stdout + monitoring.stderr)
+            strict = self.render(seed, "check")
+            self.assertEqual(strict.returncode, 1, "account creation must refuse while keys are missing")
+            self.assertIn("ssh_pubkey is a placeholder", strict.stderr)
+            self.ready()
+            full = Path(tmp) / "full.yaml"
+            full.write_text(self.export()["yaml"])
+            check = self.render(full, "check")
             self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
             self.assertIn("is valid", check.stdout)
-            summary = subprocess.run([sys.executable, str(RENDER), "summary", "--data", str(path)], capture_output=True, text=True, timeout=60)
+            summary = self.render(full, "summary")
             self.assertEqual(summary.returncode, 0, summary.stderr)
-            self.assertRegex(summary.stdout, r"b300-29\s+172\.16\.10\.29\s+engineer\s+ll")
+            self.assertRegex(summary.stdout, r"b300-29\s+172\.16\.10\.29\s+engineer\s+eng5")
             self.assertRegex(summary.stdout, r"b300-14\s+172\.16\.10\.14\s+selling")
 
 

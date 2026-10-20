@@ -2,8 +2,9 @@
 
 Seeds the 2026-10-20 assignment of the 16 b300 GPU nodes (2 selling, 14 across
 5 engineers, 0 reserved) so the portal starts from
-the same state as the cluster's access/engineers.yaml. Engineers start without an
-SSH public key; an administrator pastes one in /admin/allocation.
+the same state as the cluster's access/engineers.yaml, including its engineer ids (eng1..eng5,
+the Prometheus `owner` label) and owner email. Engineers start without an SSH
+public key; an administrator pastes one in /admin/allocation.
 
 Downgrade drops the three alloc_* tables (their data is lost; export
 engineers.yaml first if you need it) and audit_events.details.
@@ -28,7 +29,8 @@ depends_on = None
 # when application code changes later).
 NODE_NUMBERS = (11, 12, 13, 14, 15, 16, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31)
 SELLING = ("b300-14", "b300-31")
-ENGINEERS = (
+OWNER_EMAIL = "zhuling@oadpiz.com"  # owner.email in engineers.yaml (2026-10-20)
+ENGINEERS = (  # in eng1..eng5 order; the cluster id is "eng<position>"
     ("justin", "justin@oadpiz.com", ("b300-11", "b300-12", "b300-13")),
     ("mwind", "mwind@oadpiz.com", ("b300-15", "b300-16", "b300-22")),
     ("zhuling", "zhuling@oadpiz.com", ("b300-23", "b300-24", "b300-25")),
@@ -42,6 +44,8 @@ def upgrade():
     engineers = op.create_table(
         "alloc_engineers",
         sa.Column("id", sa.Text(), primary_key=True),
+        # The id written to engineers.yaml (render.py uses it as the Prometheus owner label).
+        sa.Column("cluster_id", sa.Text(), nullable=False, unique=True),
         sa.Column("username", sa.Text(), nullable=False, unique=True),
         sa.Column("email", sa.Text(), nullable=False, unique=True),
         sa.Column("display_name", sa.Text(), nullable=False),
@@ -82,7 +86,7 @@ def upgrade():
     engineer_rows, owner = [], {}
     for index, (username, email, owned) in enumerate(ENGINEERS):
         engineer_id = uuid.uuid4().hex
-        engineer_rows.append({"id": engineer_id, "username": username, "email": email, "display_name": username,
+        engineer_rows.append({"id": engineer_id, "cluster_id": "eng%d" % (index + 1), "username": username, "email": email, "display_name": username,
                               "ssh_pubkey": None, "active": True, "node_history": json.dumps(list(owned)),
                               # distinct created_at keeps the seed order (= the old eng1..eng5 order)
                               "created_at": now + index, "updated_at": now + index})
@@ -96,7 +100,7 @@ def upgrade():
         node_rows.append({"name": name, "ip": "172.16.10.%d" % number, "role": role, "engineer_id": owner.get(name),
                           "note": "", "updated_at": now, "updated_by": None})
     op.bulk_insert(nodes, node_rows)
-    op.bulk_insert(meta, [{"id": 1, "revision": 1, "owner_email": None, "updated_at": now, "updated_by": None,
+    op.bulk_insert(meta, [{"id": 1, "revision": 1, "owner_email": OWNER_EMAIL, "updated_at": now, "updated_by": None,
                            "last_export_revision": None, "last_export_at": None}])
 
 

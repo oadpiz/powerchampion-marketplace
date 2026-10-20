@@ -34,6 +34,10 @@ RESERVED_USERNAMES = frozenset({"root", "tku", "bastion99", "ubuntu", "admin", "
                                 "nobody", "sshd", "www-data", "b300eng"})
 PLACEHOLDER = "CHANGE_ME"
 PLACEHOLDER_EMAIL = "CHANGE_ME@your-mail-domain"
+# render.py's placeholder for a key that has not arrived yet: accepted by its monitoring
+# commands and `check --allow-missing-keys`, refused by account creation (bastion, playbook).
+PLACEHOLDER_KEY = "ssh-ed25519 AAAA... CHANGE_ME"
+CLUSTER_ID = re.compile(r"^eng([0-9]{1,6})$")
 # Ops-owned parts of engineers.yaml that the portal does not manage. Copied verbatim from
 # ~/github/b300-cluster/access/engineers.yaml (2026-10-20); see docs/portal-operations.md.
 SELLING_VLLM_PORTS = {"b300-31": [8016, 8017, 8019, 8026], "b300-14": [8017]}
@@ -169,7 +173,7 @@ def _history(row) -> list:
 
 def engineer_json(row, nodes):
     key = key_summary(row["ssh_pubkey"])
-    return {"id": row["id"], "username": row["username"], "email": row["email"], "displayName": row["display_name"],
+    return {"id": row["id"], "clusterId": row["cluster_id"], "username": row["username"], "email": row["email"], "displayName": row["display_name"],
             "sshPubkey": row["ssh_pubkey"], "keyFingerprint": key["fingerprint"] if key else None,
             "keyType": key["type"] if key else None, "active": bool(row["active"]), "nodes": nodes,
             "nodeHistory": _history(row), "createdAt": iso(row["created_at"]), "updatedAt": iso(row["updated_at"])}
@@ -236,7 +240,7 @@ def build_export(con, now=None):
     for n in nodes:
         if n["engineer_id"]:
             owned[n["engineer_id"]].append(n["name"])
-    warnings, excluded, entries = [], [], []
+    warnings, excluded, entries, missing_keys = [], [], [], []
     for e in engineers:
         user = e["username"]
         if e["active"]:
@@ -245,10 +249,7 @@ def build_export(con, now=None):
                 warnings.append(f"{user}: active but has no nodes, so it is left out (render.py rejects an engineer without nodes).")
                 continue
             if not e["ssh_pubkey"]:
-                excluded.append({"username": user, "reason": "no_ssh_pubkey", "nodes": owned[e["id"]]})
-                warnings.append(f"{user}: no SSH public key yet, so it is left out and {', '.join(owned[e['id']])} "
-                                "stay unassigned in the file until a key is saved.")
-                continue
+                missing_keys.append(user)
             entries.append((e, owned[e["id"]], "present"))
         else:
             history = [n for n in _history(e) if n not in selling]
@@ -261,12 +262,16 @@ def build_export(con, now=None):
                 warnings.append(f"{user}: inactive and never had a non-selling node, so there is nothing to offboard; left out.")
                 continue
             entries.append((e, sorted(history, key=node_number), "absent"))
+    if missing_keys:
+        warnings.append(f"No SSH public key yet for {', '.join(missing_keys)}: exported with the CHANGE_ME key placeholder. "
+                        "Monitoring works (render.py check --allow-missing-keys, targets, access-emails), but account "
+                        "creation (bastion 4.6, node playbook 4.7) refuses until every present engineer has a key.")
     owner_email = meta["owner_email"] or PLACEHOLDER_EMAIL
     if not meta["owner_email"]:
         warnings.append("Owner email is not set: the file carries the CHANGE_ME placeholder and render.py check refuses it until you set one.")
     if not entries:
-        warnings.append("No engineer can be exported yet (each needs an SSH public key and at least one node); "
-                        "render.py check refuses an empty engineers list.")
+        warnings.append("No engineer can be exported (an active engineer needs at least one node); "
+                        "render.py refuses an empty engineers list.")
     vllm_ports = {n: SELLING_VLLM_PORTS[n] for n in SELLING_VLLM_PORTS if n in selling}
     for n in selling:
         if n not in vllm_ports:
@@ -285,6 +290,8 @@ def build_export(con, now=None):
         "# Read by: ansible/engineer-access.yml, access/render.py, bin/b300-bastion-access.sh",
         "# and docs/engineer-access-runbook.md. Selling nodes never get personal accounts; a node",
         "# belongs to at most one engineer; offboarding is state: absent (keep the entry).",
+        "# A CHANGE_ME ssh_pubkey means the key has not arrived: monitoring may run, account",
+        "# creation refuses (render.py check --allow-missing-keys vs check).",
     ]
     if excluded:
         lines.append("#")
@@ -308,8 +315,9 @@ def build_export(con, now=None):
     else:
         lines.append("engineers:")
         for e, node_list, state in entries:
-            item = {"id": e["username"], "username": e["username"], "name": e["display_name"], "email": e["email"],
-                    "ssh_pubkey": e["ssh_pubkey"] or "", "nodes": node_list, "state": state}
+            item = {"id": e["cluster_id"], "username": e["username"], "name": e["display_name"], "email": e["email"],
+                    "ssh_pubkey": e["ssh_pubkey"] or (PLACEHOLDER_KEY if state == "present" else ""),
+                    "nodes": node_list, "state": state}
             document["engineers"].append(item)
             lines += [f"  - id: {_scalar(item['id'])}", f"    username: {_scalar(item['username'])}",
                       f"    name: {_scalar(item['name'])}", f"    email: {_scalar(item['email'])}",
@@ -319,7 +327,8 @@ def build_export(con, now=None):
     _self_check(text, document)
     return {"document": document, "yaml": text, "warnings": warnings, "excluded": excluded,
             "revision": meta["revision"], "generatedAt": generated,
-            "renderReady": bool(entries) and bool(meta["owner_email"])}
+            "renderReady": bool(entries) and bool(meta["owner_email"]) and not missing_keys,
+            "monitoringReady": bool(entries) and bool(meta["owner_email"]), "missingKeys": missing_keys}
 
 
 def _self_check(text, document):
@@ -385,11 +394,14 @@ def attach_allocation(app, store, current_user, body_json, prefix):
             unique_or_conflict(con, "email", email)
             if key:
                 key_duplicate(con, key["line"])
-            con.execute("INSERT INTO alloc_engineers (id,username,email,display_name,ssh_pubkey,active,node_history,created_at,updated_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)", (engineer_id, username, email, display, key["line"] if key else None, True, "[]", now, now))
+            numbers = [int(m.group(1)) for r in con.execute("SELECT cluster_id FROM alloc_engineers").fetchall()
+                       if (m := CLUSTER_ID.fullmatch(r["cluster_id"]))]
+            cluster_id = "eng%d" % (max(numbers, default=0) + 1)
+            con.execute("INSERT INTO alloc_engineers (id,cluster_id,username,email,display_name,ssh_pubkey,active,node_history,created_at,updated_at) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?)", (engineer_id, cluster_id, username, email, display, key["line"] if key else None, True, "[]", now, now))
             revision = bump_revision(con, admin["id"])
             store.audit(con, "alloc.engineer_create", admin["id"], engineer_id,
-                        {"username": username, "email": email, "displayName": display,
+                        {"username": username, "clusterId": cluster_id, "email": email, "displayName": display,
                          "keyFingerprint": key["fingerprint"] if key else None, "revision": revision})
             from fastapi.responses import JSONResponse
             return JSONResponse(respond(con, engineerId=engineer_id), status_code=201)
@@ -515,7 +527,7 @@ def attach_allocation(app, store, current_user, body_json, prefix):
             if node["role"] == "engineer" and role == "selling":
                 warnings.append(f"{name} was {old_engineer['username'] if old_engineer else 'an engineer'}'s node. The node playbook "
                                 "never touches selling nodes, so that account stays on it: per the runbook, first export with "
-                                f"{name} reserved and run the node playbook (4.5), then make it selling.")
+                                f"{name} reserved and run the node playbook (4.7), then make it selling.")
             return respond(con, changed=True, warnings=warnings)
 
     @app.post(base + "/owner")
@@ -544,10 +556,11 @@ def attach_allocation(app, store, current_user, body_json, prefix):
             con.execute("UPDATE alloc_meta SET last_export_revision=?,last_export_at=? WHERE id=1", (result["revision"], now))
             store.audit(con, "alloc.export", admin["id"], "revision:%d" % result["revision"],
                         {"revision": result["revision"], "excluded": [i["username"] for i in result["excluded"]],
-                         "renderReady": result["renderReady"]})
+                         "renderReady": result["renderReady"], "missingKeys": result["missingKeys"]})
         if request.query_params.get("format") == "yaml":
             return PlainTextResponse(result["yaml"], media_type="application/yaml",
                                      headers={"Content-Disposition": 'attachment; filename="engineers.yaml"'})
         return {"filename": "engineers.yaml", "yaml": result["yaml"], "revision": result["revision"],
                 "generatedAt": result["generatedAt"], "warnings": result["warnings"], "excluded": result["excluded"],
-                "renderReady": result["renderReady"]}
+                "renderReady": result["renderReady"], "monitoringReady": result["monitoringReady"],
+                "missingKeys": result["missingKeys"]}
