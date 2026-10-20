@@ -11,8 +11,9 @@ EXPECTED_TABLES = {
     "users", "sessions", "gateway_keys", "key_reservations", "credit_requests", "audit_events",
     "login_attempts", "trial_sessions", "trial_requests", "agents", "agent_versions",
     "runtime_tasks", "runtime_references", "runtime_events", "runtime_instructions",
-    "runtime_approvals", "runtime_artifacts",
+    "runtime_approvals", "runtime_artifacts", "alloc_engineers", "alloc_nodes", "alloc_meta",
 }
+HEAD = "0003_node_allocation"
 
 
 class MigrationTests(unittest.TestCase):
@@ -40,7 +41,8 @@ class MigrationTests(unittest.TestCase):
         upgrade_to_head(self.db.url)
         with sqlite3.connect(self.db.path) as con:
             names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'")}
-        self.assertEqual(len(names), 13, names)
+        # 13 legacy indexes + alloc_nodes_engineer (0003)
+        self.assertEqual(len(names), 14, names)
 
     def test_store_on_pre_alembic_sqlite_keeps_data(self):
         if self.db.backend != "sqlite":
@@ -61,7 +63,7 @@ class MigrationTests(unittest.TestCase):
             store = Store(path)
             with store.connect() as con:
                 self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "u1@example.test")
-                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], ["0002_users_disabled_at"])
+                self.assertEqual([r[0] for r in con.execute("SELECT version_num FROM alembic_version").fetchall()], [HEAD])
 
     def _columns(self, store, table):
         with store.connect() as con:
@@ -77,7 +79,7 @@ class MigrationTests(unittest.TestCase):
     def test_downgrade_to_baseline_round_trips(self):
         from server.store import Store
         store = Store(self.db.url)
-        self.assertEqual(self._versions(store), ["0002_users_disabled_at"])
+        self.assertEqual(self._versions(store), [HEAD])
         self.assertIn("disabled_at", self._columns(store, "users"))
         with store.connect() as con:
             con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at,disabled_at) VALUES (?,?,?,?,?,?,?)",
@@ -88,10 +90,31 @@ class MigrationTests(unittest.TestCase):
         with store.connect() as con:
             self.assertEqual(con.execute("SELECT email FROM users WHERE id='u1'").fetchone()[0], "u1@example.test")
         upgrade_to_head(self.db.url)
-        self.assertEqual(self._versions(store), ["0002_users_disabled_at"])
+        self.assertEqual(self._versions(store), [HEAD])
         self.assertIn("disabled_at", self._columns(store, "users"))
         with store.connect() as con:
             self.assertIsNone(con.execute("SELECT disabled_at FROM users WHERE id='u1'").fetchone()[0])
+
+    def test_node_allocation_seed_and_downgrade(self):
+        from server.store import Store
+        store = Store(self.db.url)
+        with store.connect() as con:
+            nodes = {r["name"]: r for r in con.execute("SELECT * FROM alloc_nodes").fetchall()}
+            engineers = {r["id"]: r["username"] for r in con.execute("SELECT * FROM alloc_engineers").fetchall()}
+            self.assertEqual(con.execute("SELECT revision FROM alloc_meta WHERE id=1").fetchone()[0], 1)
+        self.assertEqual(len(nodes), 16)
+        self.assertEqual(sorted(n for n, r in nodes.items() if r["role"] == "selling"), ["b300-14", "b300-31"])
+        self.assertEqual([n for n, r in nodes.items() if r["role"] == "reserved"], [])
+        self.assertEqual(sorted(engineers.values()), ["justin", "ll", "mwind", "nati", "zhuling"])
+        self.assertEqual(sorted(n for n, r in nodes.items() if engineers.get(r["engineer_id"]) == "ll"), ["b300-29", "b300-30"])
+        self.assertIn("details", self._columns(store, "audit_events"))
+        downgrade_to(self.db.url, "0002_users_disabled_at")
+        self.assertEqual(self._versions(store), ["0002_users_disabled_at"])
+        self.assertFalse({"alloc_engineers", "alloc_nodes", "alloc_meta"} & set(self.db.table_names()))
+        self.assertNotIn("details", self._columns(store, "audit_events"))
+        upgrade_to_head(self.db.url)
+        with store.connect() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM alloc_nodes").fetchone()[0], 16)
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":

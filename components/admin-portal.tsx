@@ -14,6 +14,7 @@ import {
   PortalError,
   type PortalUser,
 } from "../lib/portal-client";
+import { AdminAllocationSection } from "./admin-allocation-section";
 import { AdminGatewaySection } from "./admin-gateway-section";
 import { AdminKeysSection } from "./admin-keys-section";
 import { AdminUsageSection } from "./admin-usage-section";
@@ -31,6 +32,7 @@ export type AdminSection =
   | "keys"
   | "usage"
   | "gateway"
+  | "allocation"
   | "credits"
   | "audit";
 type Overview = {
@@ -1051,6 +1053,12 @@ export function AdminPortal({
     { section: "usage", href: "/admin/usage", en: "Usage", zh: "用量" },
     { section: "gateway", href: "/admin/gateway", en: "Gateway", zh: "閘道" },
     {
+      section: "allocation",
+      href: "/admin/allocation",
+      en: "Node allocation",
+      zh: "機台分配",
+    },
+    {
       section: "credits",
       href: "/admin/credits",
       en: "Credit requests",
@@ -1121,6 +1129,7 @@ export function AdminPortal({
           {section === "keys" && <AdminKeysSection />}
           {section === "usage" && <AdminUsageSection />}
           {section === "gateway" && <AdminGatewaySection />}
+          {section === "allocation" && <AdminAllocationSection />}
           {section === "credits" && <CreditsSection />}
           {section === "audit" && <AuditSection />}
         </>

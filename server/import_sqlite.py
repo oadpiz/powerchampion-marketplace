@@ -15,6 +15,9 @@ from server.db import Database
 from server.store import Store
 
 # Parents before children (foreign keys); alembic_version is never copied.
+# alloc_* (機台分配, migration 0003) are deliberately not copied: this tool is for the A1
+# SQLite -> Postgres cutover, whose sources predate them, and Store() seeds them on the target.
+# Move an allocation between databases by exporting engineers.yaml and re-entering it.
 ORDER = [
     "users", "sessions", "gateway_keys", "key_reservations", "credit_requests", "audit_events",
     "login_attempts", "trial_sessions", "trial_requests", "agents", "agent_versions",

@@ -1,0 +1,74 @@
+# B300 engineer access: single source of truth.
+# Read by: ansible/engineer-access.yml, access/render.py (Prometheus targets,
+# bastion TSV), bin/b300-bastion-access.sh (via the rendered TSV), and the
+# runbook docs/engineer-access-runbook.md.
+#
+# Rules (enforced by access/render.py and by the playbook's validation play):
+# - Selling nodes never get personal accounts.
+# - A node belongs to at most one engineer.
+# - While any field of a "present" engineer still contains CHANGE_ME, every
+#   script refuses to run.
+# - Offboarding: set "state: absent" (keep the entry) and re-run the playbook
+#   and the bastion script. Delete the entry only after that has run.
+
+selling:
+  nodes: [b300-14, b300-31]
+  # Per selling node: ports where a vLLM server exposes /metrics and must stay up
+  # (job "vllm", VllmDown alert). From sell-panel config.yaml backend_url + the
+  # b300-tunnel forwards (origin/main 64701ed), enabled models only:
+  #   b300-31:8016 glm-5.2-fp8, :8026 qwen3-vl-30b (LLMs on vLLM)
+  #   b300-31:8017 bge-m3, :8019 bge-reranker-v2-m3 (embedding/rerank; vLLM ASSUMED, verify)
+  #   b300-14:8017 glm-5.3-flash-uncensored (gateway port 8117)
+  # Not vLLM, deliberately not listed: 8018/8022 image, 8023 tts, 8025 whisper, 8027 video.
+  # Verify before relying on alerts (runbook section 5): curl -s localhost:<port>/metrics | grep -c '^vllm:'
+  vllm_ports:
+    b300-31: [8016, 8017, 8019, 8026]
+    b300-14: [8017]
+
+# Grafana Admin and Cloudflare Access owner (in addition to the engineers).
+owner:
+  email: zhuling@oadpiz.com   # also engineer eng3; same person, one Access policy entry
+
+# Ports an engineer may serve vLLM on; all are scraped by Prometheus.
+engineer_vllm_ports: [8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007]
+
+engineers:
+  - id: eng1
+    username: justin
+    name: justin
+    email: justin@oadpiz.com
+    ssh_pubkey: "ssh-ed25519 AAAA... CHANGE_ME"
+    nodes: [b300-11, b300-12, b300-13]
+    state: present
+
+  - id: eng2
+    username: mwind
+    name: mwind
+    email: mwind@oadpiz.com
+    ssh_pubkey: "ssh-ed25519 AAAA... CHANGE_ME"
+    nodes: [b300-15, b300-16, b300-22]
+    state: present
+
+  - id: eng3
+    username: zhuling
+    name: zhuling
+    email: zhuling@oadpiz.com
+    ssh_pubkey: "ssh-ed25519 AAAA... CHANGE_ME"
+    nodes: [b300-23, b300-24, b300-25]
+    state: present
+
+  - id: eng4
+    username: nati
+    name: nati
+    email: nati@oadpiz.com
+    ssh_pubkey: "ssh-ed25519 AAAA... CHANGE_ME"
+    nodes: [b300-26, b300-27, b300-28]
+    state: present
+
+  - id: eng5
+    username: ll
+    name: ll
+    email: ll@oadpiz.com
+    ssh_pubkey: "ssh-ed25519 AAAA... CHANGE_ME"
+    nodes: [b300-29, b300-30]
+    state: present

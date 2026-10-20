@@ -10,6 +10,7 @@ const NAV = [
   { href: "/admin/keys", en: "API keys", zh: "金鑰" },
   { href: "/admin/usage", en: "Usage", zh: "用量" },
   { href: "/admin/gateway", en: "Gateway", zh: "閘道" },
+  { href: "/admin/allocation", en: "Node allocation", zh: "機台分配" },
   { href: "/admin/credits", en: "Credit requests", zh: "儲值申請" },
   { href: "/admin/audit", en: "Audit log", zh: "操作紀錄" },
 ] as const;
