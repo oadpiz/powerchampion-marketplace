@@ -1264,7 +1264,7 @@ const EN: ApiReferenceCopy = {
         { kind: "h3", id: "json-output", text: "JSON output" },
         { kind: "p", text: "`response_format: {\"type\": \"json_object\"}` asks the model to output valid JSON only. Describe the fields in your prompt as well. When you need strict fields, use `json_schema` instead (supported only by glm-5.2-fp8 and qwen3-vl-30b)." },
         { kind: "h3", id: "reasoning", text: "Reasoning models" },
-        { kind: "p", text: "glm-5.2-fp8 and glm-5.3-flash-uncensored support reasoning. The thinking process can consume `max_tokens` and counts toward output token usage. If a response has an empty `content` and `finish_reason` is `length`, raise `max_tokens`." },
+        { kind: "p", text: "glm-5.2-fp8 and glm-5.3-flash-uncensored support reasoning. The thinking process may use up part of `max_tokens` and may count toward output token usage. If a response has an empty `content` and `finish_reason` is `length`, raise `max_tokens`." },
         { kind: "h3", id: "vision", text: "Image input" },
         { kind: "p", text: "Use `qwen3-vl-30b` and put `image_url` entries in the `content` array, up to 4 images per request. Sending images as `data:` base64 is recommended." },
         { kind: "code", label: "python", code: EN_CODE.pythonVision },
@@ -1432,7 +1432,7 @@ const EN: ApiReferenceCopy = {
           head: ["Endpoint", "Returns", "Notes"],
           rows: [
             ["`GET /dashboard/billing/subscription`", "`plan.remaining_usd`", "Remaining balance; excludes reservations for in-flight requests, so it may read slightly high"],
-            ["`GET /dashboard/billing/usage`", "`total_usage`, `total_usage_nano_usd`", "Cumulative lifetime spend (USD); date ranges are not supported"],
+            ["`GET /dashboard/billing/usage`", "`total_usage`, `total_usage_nano_usd`", "Cumulative historical spend (USD); date ranges are not supported"],
           ],
         },
         { kind: "code", label: "bash", code: EN_CODE.curlSubscription },
