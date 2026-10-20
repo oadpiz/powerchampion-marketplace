@@ -178,7 +178,7 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 - 帳號（username）沿用 `render.py` 的規則：`^[a-z_][a-z0-9_-]{0,31}$`（兩個字元的 `ll` 合法），保留字 `root`、`tku`、`bastion99`、`ubuntu`、`admin`、`daemon`、`bin`、`sys`、`sync`、`nobody`、`sshd`、`www-data`、`b300eng` 不可用。帳號是 Linux 使用者名稱，**建立後不可改**（要改就停用再新增）。email 存小寫、不可重複。新增時後台預設帳號＝email 的 local part。
 - SSH 公鑰：一行 OpenSSH 公鑰（ssh-ed25519、ecdsa-sha2-nistp256/384/521、3072 位元以上的 ssh-rsa），不能有 `from=` 等選項前綴；同一把公鑰不能給兩個人。存好後只能替換、不能清空（要收回權限請停用）。後台顯示 SHA256 指紋與正規化後的公鑰。
-- **不讓模板進 ansible**：匯出的文字最後會變成 ansible 變數，ansible 會解析 `{{ }}`。因此 email 必須符合 `^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`（存小寫）；顯示名稱最多 64 字，只能用文字（含中日韓文字）、數字、空白與 `. - _`（`{ } % # : , " ' \` 與控制字元一律拒絕）；公鑰註解只保留 `[A-Za-z0-9@._+-]`，其他註解在儲存時直接拿掉。`note` 不會匯出，但同樣拒絕 `{{`、`{%`、`{#`。
+- **不讓模板進 ansible**：匯出的文字最後會變成 ansible 變數，ansible 會解析 `{{ }}`。因此 email 必須符合 `^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`（存小寫）；顯示名稱最多 64 字，以文字或數字開頭（同 render.py 的 NAME_RE），只能用文字（含中日韓文字）、數字、空白與 `. - _`（`{ } % # : , " ' \` 與控制字元一律拒絕）；公鑰註解只保留 `[A-Za-z0-9@._+-]`，其他註解在儲存時直接拿掉。`note` 不會匯出，但同樣拒絕 `{{`、`{%`、`{#`。
 - 工程師節點必須指定一位**啟用中**的工程師；還有節點的工程師不能停用（409 `engineer_has_nodes`，先把節點改派）。
 - **離開業務需明確確認**：把業務節點改成其他角色時，API 要求 `confirm_selling_change: true`，否則回 409 `selling_change_unconfirmed`；後台會先跳確認視窗。只改業務節點的備註不需要確認。
 - **工程師節點不能直接改成業務**（409 `engineer_to_selling`「請先改為保留並完成節點同步，再改為業務」）：ansible 永遠不碰業務節點，所以帳號必須在節點還是「保留」時移除。完整流程：
@@ -196,7 +196,7 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 
 - **沒有公鑰的工程師照樣匯出，`ssh_pubkey` 是 `"ssh-ed25519 AAAA... CHANGE_ME"`**，回應帶警告與 `missingKeys`。這是 render.py 的現行規則：監控指令（`targets`、`summary`、`relay-map`、`access-emails`）與 `check --allow-missing-keys` 接受缺公鑰；建帳號（`check`、`bastion-tsv`、playbook）只要有任何一位 present 工程師缺公鑰就整個拒絕。所以 Grafana／Prometheus 可以先同步，帳號要等五把公鑰到齊。回應的 `monitoringReady`／`renderReady` 分別表示兩者是否會過。
 - **停用的工程師**匯出為 `state: absent`，`nodes` 是他曾經被分配過的全部節點（`node_history`），讓 playbook 移除帳號；已變成業務的節點會被略過（render.py 禁止），回應會提醒要手動清除。沒有任何可列節點的停用工程師不匯出。
-- 啟用中但沒有節點的工程師不匯出（render.py 不接受沒有節點的工程師），列在檔頭註解與回應的 `excluded`；若他的節點還在待清理，`excluded` 項目帶 `pendingCleanup`，警告會提醒要跑節點同步。
+- 啟用中但沒有節點的工程師照樣匯出（`nodes: []`、`state: present`）：render.py 接受，同步後會移除其跳板機帳號與節點帳號，只留 Grafana 登入。匯出回應會帶警告「此工程師目前沒有節點，同步後會移除其跳板機帳號與節點帳號」，節點還在待清理時一併列出。
 - `owner.email`（Grafana Admin、Cloudflare Access）在匯出面板修改；清空時檔案帶 `CHANGE_ME@your-mail-domain`，render.py 會拒絕。
 - `selling.vllm_ports` 與 `engineer_vllm_ports` 是 ops 擁有的設定，portal 用 `server/allocation.py` 裡的常數（抄自 2026-10-20 的 engineers.yaml）。cluster repo 改了這些埠，要同步改常數。
 - API：`GET /api/portal/admin/allocation/export` 是唯讀的，回 JSON（`filename`、`yaml`、`revision`、`generatedAt`、`warnings`、`excluded`、`missingKeys`、`pendingCleanup`、`renderReady`、`monitoringReady`），後台據此下載成 `engineers.yaml`，接著呼叫 `POST /api/portal/admin/allocation/export/mark`（`{revision}`）記錄「已匯出到哪個版本」並寫 `alloc.export`；記錄只會往前，不會被較舊的版本蓋回去。在 portal 容器內直接打服務可加 `?format=yaml` 拿純文字（`Content-Disposition: attachment; filename="engineers.yaml"`）；BFF 不轉送這個參數。

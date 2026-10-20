@@ -64,7 +64,7 @@ type ExportResult = {
 type NodeDraft = { role: Role; engineerId: string; note: string; synced: boolean };
 
 /** Mirrors the server: exported text must not be able to carry an ansible/Jinja template. */
-const DISPLAY_NAME = /^[\p{L}\p{N}_ .-]{1,64}$/u;
+const DISPLAY_NAME = /^[\p{L}\p{N}][\p{L}\p{N}_ .-]{0,63}$/u;
 const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
 const SYNC_CONFIRM_ZH = "我已依手冊 4.7 執行節點同步，且確認該節點已無工程師帳號";
 const SYNC_CONFIRM_EN = "I ran the node sync (runbook 4.7) and confirmed no engineer account remains on this node";
@@ -164,8 +164,8 @@ function EngineerFormDialog({
     if (displayName.trim() && !DISPLAY_NAME.test(displayName.trim())) {
       setMessage(
         zh
-          ? "顯示名稱最多 64 字，只能用文字、數字、空白與 . - _（不可用 { } % # : , 引號或反斜線）。"
-          : "Use at most 64 letters, digits, spaces, . - or _ for the display name (no { } % # : , quotes or backslash).",
+          ? "顯示名稱最多 64 字，以文字或數字開頭，只能用文字、數字、空白與 . - _（不可用 { } % # : , 引號或反斜線）。"
+          : "Use at most 64 letters, digits, spaces, . - or _ for the display name, starting with a letter or digit (no { } % # : , quotes or backslash).",
       );
       return;
     }
@@ -208,6 +208,11 @@ function EngineerFormDialog({
       </label>
       <label className="portal-field">
         {zh ? "帳號（Linux 使用者名稱，建立後不可改）" : "Username (Linux account, fixed once created)"}
+        <small>
+          {zh
+            ? "帳號名稱不可與跳板機或節點上既有的非工程師帳號相同；同步腳本會拒絕接管既有帳號。"
+            : "The username must not match an existing non-engineer account on the bastion or the nodes; the sync scripts refuse to take over an existing account."}
+        </small>
         <input
           value={username}
           maxLength={32}

@@ -49,7 +49,8 @@ NOTE_MAX = 200
 # Everything exported ends up in ansible vars, and ansible evaluates Jinja in strings.
 # Exported text is therefore restricted to template-free character sets.
 EMAIL = re.compile(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")
-DISPLAY_NAME = re.compile(r"^[\w .-]{1,64}$")  # \w: Unicode letters/digits (incl. CJK) and _
+# render.py NAME_RE: first character a Unicode letter/digit (not _), then \w, space, . or -.
+DISPLAY_NAME = re.compile(r"^[^\W_][\w .-]{0,63}$")
 KEY_COMMENT = re.compile(r"^[A-Za-z0-9@._+-]{1,100}$")
 TEMPLATE_MARKERS = ("{{", "{%", "{#")
 
@@ -98,7 +99,7 @@ def validate_display_name(value, fallback: str) -> str:
     if value is None or (isinstance(value, str) and not value.strip()):
         return fallback
     if not isinstance(value, str) or not DISPLAY_NAME.fullmatch(value.strip()):
-        _bad("Use a display name of at most 64 letters, digits, spaces, . - or _ (CJK allowed; no { } % # : , quotes or backslash).")
+        _bad("Use a display name of at most 64 letters, digits, spaces, . - or _, starting with a letter or digit (CJK allowed; no { } % # : , quotes or backslash).")
     return reject_template(value.strip(), "display name")
 
 
@@ -282,14 +283,11 @@ def build_export(con, now=None):
         user = e["username"]
         if e["active"]:
             if not owned[e["id"]]:
-                item = {"username": user, "reason": "no_nodes"}
-                if user in pending_by_engineer:
-                    item["pendingCleanup"] = pending_by_engineer[user]
-                excluded.append(item)
-                warnings.append(f"{user}: active but has no nodes, so it is left out (render.py rejects an engineer without nodes)"
-                                + (f"; their account on {', '.join(pending_by_engineer[user])} is pending cleanup: run the node sync (4.7)."
-                                   if user in pending_by_engineer else "."))
-                continue
+                # render.py accepts an active engineer with nodes: [] (only the Grafana login
+                # remains); exporting them is what lets the sync remove the jump and node accounts.
+                warnings.append(f"{user}: 此工程師目前沒有節點，同步後會移除其跳板機帳號與節點帳號 "
+                                "(no nodes: the sync removes the jump and node accounts; the Grafana login stays)"
+                                + (f"; pending cleanup on {', '.join(pending_by_engineer[user])}." if user in pending_by_engineer else "."))
             if not e["ssh_pubkey"]:
                 missing_keys.append(user)
             entries.append((e, owned[e["id"]], "present"))

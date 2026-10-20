@@ -314,10 +314,11 @@ class PendingCleanupTests(_AllocationCase):
         self.assertEqual([p["node"] for p in result["pendingCleanup"]], ["b300-29", "b300-30"])
         self.assertTrue(any("Pending cleanup: b300-29 (was ll), b300-30 (was ll)" in w for w in result["warnings"]))
         self.assertIn("#   b300-29: was ll (since revision", result["yaml"])
-        self.assertEqual(result["excluded"], [{"username": "ll", "reason": "no_nodes", "pendingCleanup": ["b300-29", "b300-30"]}])
-        self.assertTrue(any(w.startswith("ll: active but has no nodes") and "pending cleanup" in w for w in result["warnings"]))
-        self.assertIn("#   ll: no_nodes (pending cleanup on b300-29, b300-30)", result["yaml"])
-        self.assertNotIn("ll", [e["username"] for e in yaml.safe_load(result["yaml"])["engineers"]])
+        self.assertEqual(result["excluded"], [])
+        self.assertTrue(any(w.startswith("ll: 此工程師目前沒有節點，同步後會移除其跳板機帳號與節點帳號") and "pending cleanup on b300-29, b300-30" in w
+                            for w in result["warnings"]))
+        ll = next(e for e in yaml.safe_load(result["yaml"])["engineers"] if e["username"] == "ll")
+        self.assertEqual((ll["state"], ll["nodes"]), ("present", []))
 
 
 class InjectionTests(_AllocationCase):
@@ -356,11 +357,13 @@ class InjectionTests(_AllocationCase):
 
     def test_display_names_allow_letters_digits_cjk_and_dot_dash_underscore(self):
         justin = self.engineer("justin")["id"]
-        for name in ("Justin Lin", "林小明", "j.lin-2_x", "a" * 64):
+        for name in ("Justin Lin", "林小明", "朱玲 Zhu-Ling", "j.lin-2_x", "a" * 64):
             r = self.post(self.admin_client, "/admin/allocation/engineers/" + justin, {"displayName": name})
             self.assertEqual(r.status_code, 200, (name, r.text))
             self.assertEqual(self.engineer("justin")["displayName"], name)
-        self.assertEqual(self.post(self.admin_client, "/admin/allocation/engineers/" + justin, {"displayName": "a" * 65}).status_code, 400)
+        for name in ("a" * 65, "_x", "-x", ".x", " x"):
+            r = self.post(self.admin_client, "/admin/allocation/engineers/" + justin, {"displayName": name})
+            self.assertEqual(r.status_code, 400 if name != " x" else 200, name)
 
 
 class ConcurrencyTests(_AllocationCase):
@@ -534,9 +537,8 @@ class ExportTests(_AllocationCase):
             con.execute("UPDATE alloc_meta SET owner_email=NULL WHERE id=1")
         result = self.export()
         parsed = yaml.safe_load(result["yaml"])
-        self.assertNotIn("ll", [e["username"] for e in parsed["engineers"]])
-        self.assertEqual(result["excluded"], [{"username": "ll", "reason": "no_nodes", "pendingCleanup": ["b300-29", "b300-30"]}])
-        self.assertIn("#   ll: no_nodes (pending cleanup on b300-29, b300-30)", result["yaml"])
+        self.assertEqual(next(e for e in parsed["engineers"] if e["username"] == "ll")["nodes"], [])
+        self.assertEqual(result["excluded"], [])
         self.assertEqual(parsed["owner"]["email"], "CHANGE_ME@your-mail-domain")
         self.assertFalse(result["renderReady"])
         self.assertFalse(result["monitoringReady"])
