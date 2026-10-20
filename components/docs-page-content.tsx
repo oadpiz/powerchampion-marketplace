@@ -1,7 +1,5 @@
 "use client";
 
-import { MODEL_CATALOG } from "../lib/models";
-import { TRUST_CONTENT, deriveGatewayReadiness, isReady, type ReadinessState } from "../lib/trust";
 import type { GatewayStatus } from "../lib/gateway-status";
 import { CodeSamples } from "./code-samples";
 import { useLocale } from "./locale-provider";
@@ -9,20 +7,13 @@ import { useLocale } from "./locale-provider";
 const BASE_URL = "https://b300.powerchampion.ai/v1";
 const DEMO_KEY = "«redacted:sk-…»";
 
-type ModelFeatureGate = "streaming" | "tools" | "structuredOutput";
-
-export function modelFeatureGateState(
-  inference: ReadinessState,
-  models: ReadonlyArray<Pick<(typeof MODEL_CATALOG)[number], "available" | "features">>,
-  feature: ModelFeatureGate,
-): ReadinessState {
-  // An unverified/degraded inference signal is passed through as-is — the
-  // gate must not claim "ready" on unverified input, nor mask "unknown"
-  // behind a definitive "not-ready".
-  if (!isReady(inference)) return inference;
-  return models.length > 0 && models.every((model) => model.available && model.features[feature])
-    ? "ready"
-    : "not-ready";
+/** Online/total model counts from the live gateway feed, or null when unavailable. */
+export function summarizeModelStatus(gateway: Pick<GatewayStatus, "models"> | null | undefined) {
+  if (!gateway || !Array.isArray(gateway.models) || gateway.models.length === 0) return null;
+  return {
+    online: gateway.models.filter((model) => model?.ready === true).length,
+    total: gateway.models.length,
+  };
 }
 
 type Props = {
@@ -31,16 +22,15 @@ type Props = {
 
 export function DocsPageContent({ gateway }: Props) {
   const { copy, locale } = useLocale();
-  const readiness = TRUST_CONTENT[locale].status.states;
-  const derived = deriveGatewayReadiness(gateway);
-  const releaseGates = [
-    { id: "streaming", label: locale === "en" ? "Streaming" : "串流", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "streaming") },
-    { id: "usage", label: locale === "en" ? "Usage accounting" : "用量計算", state: derived.usageAccounting },
-    { id: "tools", label: locale === "en" ? "Tool use" : "工具呼叫", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "tools") },
-    { id: "structured", label: locale === "en" ? "Structured output" : "結構化輸出", state: modelFeatureGateState(derived.inference, MODEL_CATALOG, "structuredOutput") },
-    { id: "manifest", label: locale === "en" ? "Provider manifest" : "供應商 Manifest", state: derived.manifest },
-    { id: "status", label: locale === "en" ? "Operational status" : "營運狀態", state: derived.inference },
-  ] as const;
+  const modelStatus = summarizeModelStatus(gateway);
+  const statusSummary = modelStatus
+    ? locale === "en"
+      ? `Service status: ${modelStatus.online} of ${modelStatus.total} models online`
+      : `服務狀態：${modelStatus.total} 個模型中有 ${modelStatus.online} 個上線`
+    : null;
+  const statusLinkLabel = modelStatus
+    ? locale === "en" ? "View status page" : "查看狀態頁"
+    : locale === "en" ? "Check current service status" : "查看目前服務狀態";
 
   return (
     <main className="docs-page" id="main-content">
@@ -84,12 +74,13 @@ export function DocsPageContent({ gateway }: Props) {
         </dl>
       </section>
 
-      <section aria-labelledby="release-gates-title" className="docs-quick-start docs-release-gates">
-        <h2 id="release-gates-title">{locale === "en" ? "Release gates" : "發布門檻"}</h2>
-        <ul>
-          {releaseGates.map((gate) => <li key={gate.id}>{gate.label}: {readiness[gate.state]}</li>)}
-        </ul>
-      </section>
+      <p className="docs-status-line">
+        {statusSummary ? <span>{statusSummary}</span> : null}
+        <a href="/status">
+          {statusLinkLabel}
+          <span aria-hidden="true"> →</span>
+        </a>
+      </p>
 
       <section aria-labelledby="endpoints-title" className="docs-quick-start docs-endpoints">
         <h2 id="endpoints-title">{locale === "en" ? "Available endpoints" : "可用端點"}</h2>

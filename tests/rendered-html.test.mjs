@@ -449,6 +449,9 @@ test("server-renders route-specific launch boundaries and protected facts", asyn
 
   const docsHtml = await (await render("/docs")).text();
   assert.match(docsHtml, /Deployed — the endpoint below is live/i);
+  assert.doesNotMatch(docsHtml, /Release gates|docs-release-gates/);
+  assert.match(docsHtml, /class="docs-status-line"[\s\S]{0,300}?href="\/status"/);
+  assert.match(docsHtml, /Service status: \d+ of \d+ models online|Check current service status/);
   assert.match(docsHtml, /\u00abredacted:sk-\u2026\u00bb/i);
 
   const contactHtml = await (await render("/contact")).text();
