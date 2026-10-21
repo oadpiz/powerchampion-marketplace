@@ -2,11 +2,16 @@
 PC_PORTAL_TEST_DATABASE_URL is set (see scripts/test_backend_postgres.sh)."""
 import asyncio
 import os
+import tempfile
 import threading
+import unittest
 from pathlib import Path
+
+from fastapi.testclient import TestClient
 
 from server.db import Database
 from server.gateway import GatewayError
+from server.settings import Settings
 
 
 def fresh_database(tmpdir: str) -> str:
@@ -121,3 +126,53 @@ class FakeGateway:
 
     async def set_maintenance(self, model_id, message):
         self._maybe_fail(); self.maintenance.append((model_id, message)); return {"id": model_id, "maintenance_message": message or None}
+
+
+ORIGIN = "http://localhost:3010"
+BASE = "/api/portal"
+PASSWORD = "customer-test-password-123!"
+
+
+class PortalCase(unittest.TestCase):
+    """Shared fixture; holds no tests so subclasses do not re-run each other's cases."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.settings = Settings(db_path=fresh_database(self.directory.name), allowed_origins=(ORIGIN,))
+        self.gateway = FakeGateway()
+        # Imported here: server.app builds a module-level app on import, which plain helpers do not need.
+        from server.app import create_app
+
+        self.app = create_app(self.settings, gateway=self.gateway)
+        self.store = self.app.state.store
+        self.clients = []
+
+    def tearDown(self):
+        for client in self.clients:
+            client.close()
+        self.directory.cleanup()
+
+    def client(self):
+        client = TestClient(self.app, base_url=ORIGIN)
+        self.clients.append(client)
+        return client
+
+    def post(self, client, path, data):
+        return client.post(BASE + path, json=data, headers={"Origin": ORIGIN})
+
+    def register(self, client, email):
+        response = self.post(client, "/auth/register", {"email": email, "name": "Test", "password": PASSWORD})
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()["user"]
+
+    def admin(self, email="admin@example.test"):
+        self.store.create_user(email, "Admin", PASSWORD, role="admin")
+        client = self.client()
+        self.assertEqual(self.post(client, "/auth/login", {"email": email, "password": PASSWORD}).status_code, 200)
+        return client
+
+    def audit(self, action):
+        return [e for e in rows(self.store, "audit_events") if e["action"] == action]
+
+    def user_id(self, email):
+        return next(u["id"] for u in rows(self.store, "users") if u["email"] == email)
