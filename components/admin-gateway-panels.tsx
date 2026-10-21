@@ -47,11 +47,11 @@ const TERMINAL_STATES = ["done", "error", "failed"];
 const POLL_MS = 5000;
 const MAX_POLLS = 60;
 
-const asRecord = (value: unknown): Record<string, unknown> | null =>
+export const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
-const pick = (record: Record<string, unknown>, keys: string[]): unknown =>
+export const pick = (record: Record<string, unknown>, keys: string[]): unknown =>
   keys.map((key) => record[key]).find((value) => value !== undefined && value !== null);
 const finite = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;

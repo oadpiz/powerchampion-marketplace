@@ -16,6 +16,7 @@ import {
   type GatewayOverview,
   type Job,
 } from "./admin-gateway-panels";
+import { FleetEvents, FleetPanel } from "./admin-fleet-panel";
 import { GatewayNotConnected, ResourceState, usePortalResource } from "./admin-resource";
 import { useLocale } from "./locale-provider";
 
@@ -31,6 +32,7 @@ export function AdminGatewaySection() {
   const [confirmOp, setConfirmOp] = useState<{ node: string; action: string } | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState(false);
+  const [fleetModel, setFleetModel] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const jobCounter = useRef(0);
 
@@ -138,6 +140,17 @@ export function AdminGatewaySection() {
                                 <button type="button" className="portal-text-button" aria-label={zh ? `${model.id} 的維護訊息` : `Maintenance message for ${model.id}`} onClick={() => setMaintenance(model)}>
                                   {zh ? "維護訊息" : "Maintenance"}
                                 </button>
+                                <button
+                                  type="button"
+                                  className="portal-text-button"
+                                  aria-label={zh ? `${model.id} 的 fleet 控制` : `Fleet controls for ${model.id}`}
+                                  // The gateway's fleet {model_id} is a single path segment.
+                                  disabled={model.id.includes("/")}
+                                  title={model.id.includes("/") ? (zh ? "fleet 路由不支援含 / 的模型 id" : "Fleet routes do not support model ids that contain /") : undefined}
+                                  onClick={() => setFleetModel(model.id)}
+                                >
+                                  Fleet
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -149,6 +162,8 @@ export function AdminGatewaySection() {
                   <p className="portal-empty">{zh ? "閘道沒有模型。" : "The gateway has no models."}</p>
                 )}
               </section>
+              {fleetModel !== null && <FleetPanel key={fleetModel} modelId={fleetModel} onClose={() => setFleetModel(null)} />}
+              <FleetEvents models={models.map((model) => model.id).filter((id) => !id.includes("/"))} />
               <section className="portal-panel">
                 <h2>{zh ? "節點" : "Nodes"}</h2>
                 {data.errors.nodes || !data.nodes ? (
