@@ -130,7 +130,7 @@ python -c "from alembic import command; from server.migrate import _config; from
 
 ## 連接閘道（A2b）
 
-A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／節點。未設定 `PC_GATEWAY_ADMIN_TOKEN` 時，`/admin/keys`、`/admin/usage`、`/admin/gateway` 顯示「閘道尚未連線（PC_GATEWAY_ADMIN_TOKEN 未設定）」，客戶與帳號功能不受影響。後台導覽順序（A2c 起）：總覽、客戶、金鑰、兌換碼、用量、閘道、人設、機台分配、儲值申請、操作紀錄。
+A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／節點。未設定 `PC_GATEWAY_ADMIN_TOKEN` 時，`/admin/keys`、`/admin/usage`、`/admin/gateway` 顯示「閘道尚未連線（PC_GATEWAY_ADMIN_TOKEN 未設定）」，客戶與帳號功能不受影響。後台導覽順序：總覽、客戶、金鑰、兌換碼、用量、閘道、人設、機台分配、工程師、儲值申請、操作紀錄。
 
 ### 部署前
 
@@ -326,6 +326,51 @@ python -c "from alembic import command; from server.migrate import _config; from
 ```
 
 降級會刪掉三張 `alloc_*` 表（分配、工程師公鑰、版本號都會消失）與 `audit_events.details`（稽核列本身保留）。降級前先匯出一次 `engineers.yaml` 留底。再次升級會重建種子分配（不是降級前的資料）。
+
+## 工程師（唯讀）
+
+`/admin/engineers`（後台導覽「工程師」，在「機台分配」之後）每位工程師一列：分配到的節點與 SSH 金鑰狀態、最後互動式登入、目前 GPU 用量（張數與顯存）、與他本人或他的節點有關且正在 firing 的告警、最近 10 筆部署標記（14 天內），以及已用他的名字篩好的 Grafana 連結。**這一頁不顯示指令紀錄**：指令紀錄留在節點上，用 `sudo b300-activity` 查。頁面沒有任何寫入動作，讀取也不寫稽核。
+
+資料流：
+
+```
+瀏覽器（admin）
+  │  same-origin cookie pc_portal_session
+  ▼
+BFF  app/api/portal/[...path]/route.ts      GET /api/portal/admin/engineers（regex 白名單，只放 GET、不轉送 query）
+  ▼
+portal FastAPI  server/admin_engineers.py   管理員限定
+  │   ├─ DB：alloc_engineers / alloc_nodes / alloc_meta（名冊、節點、金鑰狀態；不帶公鑰原文、email、帳號）
+  │  HTTPS + X-Admin-Token（PC_GATEWAY_ADMIN_TOKEN）
+  ▼
+閘道 sell-panel  GET /api/engineers/activity   30 s 快取；Grafana Viewer token（B300_GRAFANA_READ_TOKEN）
+  ▼
+b300-grafana-tunnel → Grafana（b300-31）→ Prometheus、annotations（b300-mark 的部署標記）
+```
+
+狀態與處理（名冊在每一種狀態下都會顯示）：
+
+| 狀態 | 意義 | 處理 |
+|---|---|---|
+| 閘道尚未連線 | portal 沒有 `PC_GATEWAY_ADMIN_TOKEN`，不呼叫閘道 | 設定 portal 的閘道 token |
+| 閘道版本尚未支援工程師活動 | 閘道回 404（`gateway_outdated`） | 先部署含 `/api/engineers/activity` 的閘道 |
+| 無法從閘道取得工程師活動 | `gateway_error`；代碼 `gateway_auth_failed` 表示 portal 的閘道 token 被拒 | 依代碼檢查 portal 設定或閘道狀態 |
+| 閘道尚未設定 Grafana 讀取權杖 | 閘道的 `B300_GRAFANA_READ_TOKEN` 為空 | 照 b300-cluster runbook §4.4b 建 Viewer token，加到 Dokploy 閘道的 Environment |
+| Grafana 讀取權杖被拒 | token 過期或被撤銷（`grafana_auth_failed`） | 照 runbook §4.4b 輪換 token |
+| 監控資料暫時無法取得 | Grafana／tunnel 連不到（`monitoring_unavailable`） | 檢查 b300-grafana-tunnel 與 Grafana |
+| 部分監控資料無法取得 | `partial`：Prometheus 或 annotations 其中之一失敗 | 失敗的欄位顯示「—」，其他照常 |
+| 顯示 N 秒前的資料 | 這次刷新失敗，閘道回 300 s 內的舊資料；或資料超過 300 s | 監控恢復後自動更新 |
+| 資料過多，已截斷 | 超過上限或有不合格的標籤被丟掉 | 只影響顯示筆數 |
+
+欄位的意思：
+
+- **SSH 金鑰「已同步」**＝在金鑰變更後，管理員已在「機台分配」標記過匯出。這**不代表**節點上的 `authorized_keys` 已逐台驗證過。「待同步」＝金鑰在上次標記匯出之後變更過；「未提供」＝沒有公鑰。
+- **最後互動式登入**只計配了 pty 的 SSH 登入（讀節點的 `/var/log/lastlog`）。`ssh host cmd`、VS Code Remote、scp/sftp 不會更新；從未登入顯示「—」。
+- **部署標記**依 relay 從來源 IP 推出的 `owner`（`engN`，等於工程師的 cluster id）歸屬；標記上的使用者是節點上的 `$USER`，可以自己宣稱，未驗證時加「未驗證」徽章。部署標記要 relay 有 Editor token（b300-cluster runbook §4.4），在那之前清單是空的。
+- **告警**取 Prometheus 正在 firing 的告警：帶 username 的歸給該工程師，帶 node 的歸給分配到該節點的工程師。販售節點由閘道先濾掉。
+- **監控標籤與分配不一致**：Prometheus 的 `engineer` 標籤和這裡的分配不同，通常是匯出還沒套用到機器。
+- 停用的工程師也列出，以灰色顯示。對不到名冊的資料（tku、root、`uid_N`、未分配節點的告警、對不到 owner 的部署）放在「未對應的資料」。
+- Grafana 連結的網址由 `PC_GRAFANA_URL` 決定（預設 `https://grafana.powerchampion.ai`，設為空字串則不顯示連結）。
 
 ## 串接正式服務前
 
