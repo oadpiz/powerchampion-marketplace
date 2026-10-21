@@ -866,7 +866,8 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_engineer_activity_rejects_a_wrong_shape(self):
         for broken in (dict(self.ACTIVITY, nodes={"b300-11": {}}), dict(self.ACTIVITY, deploys=None),
                        {k: v for k, v in self.ACTIVITY.items() if k != "alerts"}, dict(self.ACTIVITY, status="weird"),
-                       {k: v for k, v in self.ACTIVITY.items() if k != "status"}):
+                       {k: v for k, v in self.ACTIVITY.items() if k != "status"}, dict(self.ACTIVITY, status=["ok"]),
+                       dict(self.ACTIVITY, status={"ok": 1})):
             with self.subTest(broken=broken):
                 with self.transport(lambda _, broken=broken: httpx.Response(200, json=broken)):
                     with self.assertRaises(GatewayError) as caught:

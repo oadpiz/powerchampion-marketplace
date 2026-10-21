@@ -336,6 +336,7 @@ class GatewayAdapter:
     # _strip_secrets: the portal builds its response from an explicit field allowlist instead.
     async def engineer_activity(self):
         value = await self._request("GET", "/api/engineers/activity")
-        if any(not isinstance(value.get(name), list) for name in ACTIVITY_LISTS) or value.get("status") not in ACTIVITY_STATUSES:
+        status = value.get("status")
+        if any(not isinstance(value.get(name), list) for name in ACTIVITY_LISTS) or not isinstance(status, str) or status not in ACTIVITY_STATUSES:
             raise GatewayError("invalid_response")
         return value

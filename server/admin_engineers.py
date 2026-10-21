@@ -31,6 +31,11 @@ MODEL = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
 ERROR_CODE = re.compile(r"^[a-z0-9_]{1,32}$")
 SEVERITIES = ("critical", "warning", "info", "other")
 ERROR_SOURCES = ("prometheus", "annotations")
+# Deploy text is the engineer's own one-line note. Addresses and credential-looking values are masked so the
+# page never shows an IP, a token or a --key argument even if someone typed one into `b300-mark`.
+IPV4 = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?::[0-9]{1,5})?\b")
+IPV6 = re.compile(r"(?<![0-9A-Za-z:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![0-9A-Za-z:])")
+SECRET = re.compile(r"(?i)\b(?:sk-|glsa_|ghp_|xox[abp]-|bearer\s+)\S+|(?<![\w-])--?[a-z-]*(?:key|token|password|secret)[a-z-]*(?:[= ]\S+)?")
 
 
 class _Dropped(Exception):
@@ -68,13 +73,31 @@ def _flag(value):
     return value
 
 
+def _ipv6(match):
+    # "::" or five or more colons: an IPv6 address, not a clock time such as 12:30:45.
+    text = match.group(0)
+    return "[address]" if "::" in text or text.count(":") >= 5 else text
+
+
+def _masked(value):
+    return SECRET.sub("[redacted]", IPV6.sub(_ipv6, IPV4.sub("[address]", value)))
+
+
 def _plain_text(value):
     if not isinstance(value, str):
         return ""
-    return UNSAFE_TEXT.sub("", value.split("\n", 1)[0])[:TEXT_MAX]
+    return _masked(UNSAFE_TEXT.sub("", value.split("\n", 1)[0])[:TEXT_MAX])[:TEXT_MAX]
 
 
-def _parse(items, parser, flags):
+def _model(value):
+    model = _text(value, MODEL, required=False)
+    # A model id is a name like qwen3-8b or org/Model:tag, never a URL or an address.
+    return None if model is None or "//" in model or _masked(model) != model else model
+
+
+def _parse(items, parser, flags, dropped=None):
+    """Valid rows; a dropped row sets truncated, and its (node, username) goes to `dropped` when both are strings,
+    so that node shows "no data" instead of a false zero."""
     parsed = []
     for item in items if isinstance(items, list) else []:
         try:
@@ -83,6 +106,8 @@ def _parse(items, parser, flags):
             parsed.append(parser(item))
         except _Dropped:
             flags["truncated"] = True
+            if dropped is not None and isinstance(item, dict) and isinstance(item.get("node"), str) and isinstance(item.get("username"), str):
+                dropped.add((item["node"], item["username"]))
     return parsed
 
 
@@ -116,7 +141,7 @@ def _deploy(item):
     port = item.get("port")
     return {"id": _count(item.get("id"), required=False), "at": _number(item.get("at")), "node": _text(item.get("node"), NODE, required=False),
             "owner": _text(item.get("owner"), OWNER, required=False), "user": _text(item.get("user"), USERNAME, required=False),
-            "verified": item.get("verified") is True, "model": _text(item.get("model"), MODEL, required=False),
+            "verified": item.get("verified") is True, "model": _model(item.get("model")),
             "port": None if port is None else int(_number(port, 1, 65535)), "text": _plain_text(item.get("text"))}
 
 
@@ -185,7 +210,9 @@ def _activity_summary(activity, failure, configured):
             # than STALE_AFTER_S is shown as stale whatever the flag says.
             "stale": activity.get("stale") is True or (age is not None and age > STALE_AFTER_S),
             "generatedAt": safe_iso(activity.get("generated_at")), "ageSeconds": None if age is None else round(age, 1),
-            "errors": {k: errors[k] for k in ERROR_SOURCES if isinstance(errors.get(k), str) and ERROR_CODE.fullmatch(errors[k])},
+            # A source the gateway reports as failed stays failed even when its code is unexpected.
+            "errors": {k: errors[k] if isinstance(errors[k], str) and ERROR_CODE.fullmatch(errors[k]) else "unknown"
+                       for k in ERROR_SOURCES if errors.get(k) is not None},
             "error": None, "truncated": activity.get("truncated") is True}
 
 
@@ -199,7 +226,8 @@ def compose(state, activity, failure, configured, grafana_url):
     summary = _activity_summary(activity, failure, configured)
     usable = summary["status"] in ("ok", "partial") and activity is not None
     flags = {"truncated": False}
-    data = {name: _parse(activity.get(name) if usable else [], parser, flags)
+    dropped = {"gpu_usage": set(), "logins": set()}
+    data = {name: _parse(activity.get(name) if usable else [], parser, flags, dropped.get(name))
             for name, parser in (("nodes", _node), ("gpu_usage", _usage), ("logins", _login), ("alerts", _alert), ("deploys", _deploy))}
     summary["truncated"] = summary["truncated"] or flags["truncated"]
     # GPU and login columns are "—" (null) when Prometheus data did not arrive; 0 only when it did.
@@ -221,16 +249,20 @@ def compose(state, activity, failure, configured, grafana_url):
         for name in names:
             prom = prom_nodes.get(name)
             used, login = usage.get((name, username)), logins.get((name, username))
+            # A row the gateway sent but that failed validation is "no data" for this node, not a zero.
+            usage_known = prometheus_ok and (name, username) not in dropped["gpu_usage"]
+            login_known = prometheus_ok and (name, username) not in dropped["logins"]
             claimed_usage.add((name, username))
             claimed_logins.add((name, username))
             nodes.append({"name": name, "up": prom["up"] if prom else None, "gpuCount": prom["gpu_count"] if prom else None,
                           "collector": _collector(prom), "labelEngineer": prom["engineer"] if prom else None,
                           "labelMatches": (prom["engineer"] == username) if prom else None,
-                          "gpusInUse": used["gpus"] if used else (0 if prometheus_ok else None),
-                          "processes": used["processes"] if used else (0 if prometheus_ok else None),
-                          "memoryBytes": used["memory_bytes"] if used else (0 if prometheus_ok else None),
+                          "gpusInUse": used["gpus"] if used else (0 if usage_known else None),
+                          "processes": used["processes"] if used else (0 if usage_known else None),
+                          "memoryBytes": used["memory_bytes"] if used else (0 if usage_known else None),
                           "lastLoginAt": safe_iso(login["last_login"]) if login else None,
-                          "sessions": login["sessions"] if login and login["sessions"] is not None else (0 if prometheus_ok else None)})
+                          "sessions": login["sessions"] if login and login["sessions"] is not None else (0 if login_known else None)})
+        usage_total = prometheus_ok and not any((n, username) in dropped["gpu_usage"] for n in names)
         login_times = [login["last_login"] for login in (logins.get((n, username)) for n in names) if login and login["last_login"] is not None]
         alerts = []
         for alert in data["alerts"]:
@@ -247,8 +279,8 @@ def compose(state, activity, failure, configured, grafana_url):
             "grafanaUrl": _grafana_url(grafana_url, username),
             "lastLoginAt": safe_iso(max(login_times)) if login_times else None,
             "loggedIn": any((n["sessions"] or 0) > 0 for n in nodes) if prometheus_ok else None,
-            "gpusInUse": sum(n["gpusInUse"] or 0 for n in nodes) if prometheus_ok else None,
-            "memoryBytes": sum(n["memoryBytes"] or 0 for n in nodes) if prometheus_ok else None,
+            "gpusInUse": sum(n["gpusInUse"] or 0 for n in nodes) if usage_total else None,
+            "memoryBytes": sum(n["memoryBytes"] or 0 for n in nodes) if usage_total else None,
             "nodes": nodes, "alerts": alerts, "deploys": [_deploy_json(d) for d in deploys]})
     engineers.sort(key=_engineer_order)
 
@@ -282,7 +314,11 @@ def attach_admin_engineers(application, ctx):
                 activity = await ctx.gateway.engineer_activity()
             except GatewayError as error:
                 failure = error
+            except (TypeError, ValueError, KeyError, AttributeError):
+                # A malformed payload must never take the roster down with it.
+                activity, failure = None, GatewayError("invalid_response")
             else:
-                if not isinstance(activity, dict) or activity.get("status") not in ACTIVITY_STATUSES:
+                status = activity.get("status") if isinstance(activity, dict) else None
+                if not isinstance(status, str) or status not in ACTIVITY_STATUSES:
                     activity, failure = None, GatewayError("invalid_response")
         return compose(state, activity, failure, configured, ctx.settings.grafana_url)

@@ -259,6 +259,27 @@ class EngineersRouteTests(PortalCase):
         self.assertEqual((body["activity"]["status"], body["activity"]["error"]), ("gateway_error", "invalid_response"))
         self.assertEqual(len(body["engineers"]), 5)
 
+    def test_malformed_status_never_takes_the_roster_down(self):
+        for status in (["ok"], {"a": 1}, None, 3):
+            with self.subTest(status=status):
+                self.gateway.activity_value = activity(status=status)
+                body = self.get()
+                self.assertEqual((body["activity"]["status"], body["activity"]["error"]), ("gateway_error", "invalid_response"))
+                self.assertEqual(len(body["engineers"]), 5)
+
+    def test_unknown_error_code_still_counts_as_failed(self):
+        self.gateway.activity_value = activity(status="partial", errors={"prometheus": "Bad Value!", "annotations": ["x"]})
+        body = self.get()
+        self.assertEqual(body["activity"]["errors"], {"prometheus": "unknown", "annotations": "unknown"})
+        justin = self.engineer(body, "justin")
+        self.assertEqual((justin["gpusInUse"], justin["loggedIn"]), (None, None))
+
+    def test_stale_ok_with_errors_keeps_the_error(self):
+        self.gateway.activity_value = activity(status="ok", stale=True, age_s=90.0, errors={"prometheus": "http_401"})
+        activity_summary = self.get()["activity"]
+        self.assertEqual((activity_summary["status"], activity_summary["stale"], activity_summary["ageSeconds"], activity_summary["errors"]),
+                         ("ok", True, 90.0, {"prometheus": "http_401"}))
+
     def test_passes_through_gateway_status(self):
         for status in ("ok", "partial", "unconfigured", "auth_failed", "unavailable"):
             with self.subTest(status=status):
@@ -302,8 +323,11 @@ class EngineersRouteTests(PortalCase):
         body = self.get()
         self.assertTrue(body["activity"]["truncated"])
         self.assertEqual(body["unmatched"]["gpuUsage"], [])
-        self.assertEqual(self.engineer(body, "justin")["alerts"], [])
-        self.assertEqual(self.engineer(body, "justin")["gpusInUse"], 0)
+        justin = self.engineer(body, "justin")
+        self.assertEqual(justin["alerts"], [])
+        # The dropped justin@b300-11 row is "no data" for that node and the total, never a false zero.
+        self.assertEqual((justin["gpusInUse"], justin["memoryBytes"]), (None, None))
+        self.assertEqual([n["gpusInUse"] for n in justin["nodes"]], [None, 0, 0])
 
     def test_unmatched_lists_are_capped(self):
         self.gateway.activity_value = activity(
@@ -340,6 +364,18 @@ class EngineersRouteTests(PortalCase):
         justin = self.engineer(body, "justin")
         self.assertEqual(set(justin["alerts"][0]), {"alertname", "severity", "node", "gpu", "mountpoint", "username", "since", "reason"})
         self.assertEqual(set(justin["deploys"][0]), {"id", "at", "node", "user", "verified", "model", "port", "text"})
+
+    def test_deploy_text_and_model_never_carry_addresses_or_secrets(self):
+        self.gateway.activity_value = activity(deploys=[
+            deploy(1, "eng1", text="vllm serve --api-key sk-abc on 10.0.0.1:8000 via fe80::1:2 Bearer xyz at 12:30:45", model="http://10.1.2.3:8000"),
+            deploy(2, "eng1", at=1792600001.0, model="Qwen/Qwen3-8B:fp8", text="--token=glsa_abc")])
+        body = self.get()
+        newest, older = self.engineer(body, "justin")["deploys"]
+        self.assertEqual((newest["model"], newest["text"]), ("Qwen/Qwen3-8B:fp8", "[redacted]"))
+        self.assertEqual(older["model"], None)
+        self.assertEqual(older["text"], "vllm serve [redacted] on [address] via [address] [redacted] at 12:30:45")
+        for needle in ("sk-abc", "10.0.0.1", "10.1.2.3", "fe80", "xyz", "glsa_"):
+            self.assertNotIn(needle, json.dumps(body))
 
     def test_deploy_text_is_one_plain_line(self):
         self.gateway.activity_value = activity(deploys=[deploy(1, "eng1", text="first line\x1b[31m‮\nrelay detail: 172.16.10.11")])

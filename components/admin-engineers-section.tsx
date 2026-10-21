@@ -100,13 +100,24 @@ function gpuLabel(gpus: number | null, bytes: number | null, zh: boolean): strin
   return bytes === null ? count : `${count} · ${memoryLabel(bytes)}`;
 }
 
+const activityUsable = (status: ActivityStatus) => status === "ok" || status === "partial";
+
+/** Whether a source's data arrived (or older data is being shown), so an empty list really means "none". */
+function sourceKnown(activity: EngineersOverview["activity"], source: "prometheus" | "annotations") {
+  return activityUsable(activity.status) && (activity.stale || !activity.errors[source]);
+}
+
 function StatusArea({ data, zh }: { data: EngineersOverview; zh: boolean }) {
   const { activity } = data;
   const locale = zh ? "zh" : "en";
   const text = engineerActivityText(activity.status, locale) ?? "";
-  const sources: Record<string, string> = zh
-    ? { prometheus: "部分監控資料無法取得：GPU 用量、登入與告警", annotations: "部分監控資料無法取得：部署標記" }
-    : { prometheus: "Some monitoring data is unavailable: GPU usage, logins and alerts", annotations: "Some monitoring data is unavailable: deploy marks" };
+  const sources: Record<string, string> = activity.stale
+    ? zh
+      ? { prometheus: "最近一次更新失敗：GPU 用量、登入與告警", annotations: "最近一次更新失敗：部署標記" }
+      : { prometheus: "The latest refresh failed: GPU usage, logins and alerts", annotations: "The latest refresh failed: deploy marks" }
+    : zh
+      ? { prometheus: "部分監控資料無法取得：GPU 用量、登入與告警", annotations: "部分監控資料無法取得：部署標記" }
+      : { prometheus: "Some monitoring data is unavailable: GPU usage, logins and alerts", annotations: "Some monitoring data is unavailable: deploy marks" };
   let primary = null;
   if (activity.status === "gateway_unconfigured") primary = <GatewayNotConnected />;
   else if (activity.status === "unconfigured" || activity.status === "gateway_outdated")
@@ -114,22 +125,24 @@ function StatusArea({ data, zh }: { data: EngineersOverview; zh: boolean }) {
   else if (activity.status === "auth_failed") primary = <BlockError message={text} code="grafana_auth_failed" />;
   else if (activity.status === "unavailable") primary = <BlockError message={text} code="monitoring_unavailable" />;
   else if (activity.status === "gateway_error") primary = <BlockError message={text} code={activity.error ?? "unavailable"} />;
-  else if (activity.status === "partial" && !activity.stale)
-    primary = (
-      <>
-        {Object.entries(activity.errors).map(([source, code]) => (
-          <BlockError key={source} message={sources[source] ?? source} code={code} />
-        ))}
-      </>
-    );
+  // While older data is served the gateway keeps the old status (often "ok"), so errors are shown whenever present.
+  const errorBlocks = activityUsable(activity.status)
+    ? Object.entries(activity.errors).map(([source, code]) => <BlockError key={source} message={sources[source] ?? source} code={code} />)
+    : [];
+  const failedNow = Object.keys(activity.errors).length > 0;
   return (
     <>
       {primary}
+      {errorBlocks}
       {activity.stale && (
         <p className="portal-note" role="status">
-          {zh
-            ? `顯示 ${value(activity.ageSeconds)} 秒前的資料，監控目前連不到`
-            : `Showing data from ${value(activity.ageSeconds)} s ago; monitoring is unreachable right now`}
+          {failedNow
+            ? zh
+              ? `顯示 ${value(activity.ageSeconds)} 秒前的資料，監控目前連不到`
+              : `Showing data from ${value(activity.ageSeconds)} s ago; monitoring is unreachable right now`
+            : zh
+              ? `顯示 ${value(activity.ageSeconds)} 秒前的資料`
+              : `Showing data from ${value(activity.ageSeconds)} s ago`}
         </p>
       )}
       {activity.truncated && <p className="portal-note">{zh ? "資料過多，已截斷" : "Too much data; the lists were truncated"}</p>}
@@ -204,7 +217,7 @@ function DeployTable({ deploys, zh, caption, withOwner }: { deploys: EngineerDep
   );
 }
 
-function EngineerDetails({ engineer, zh }: { engineer: Engineer; zh: boolean }) {
+function EngineerDetails({ engineer, zh, alertsKnown, deploysKnown }: { engineer: Engineer; zh: boolean; alertsKnown: boolean; deploysKnown: boolean }) {
   const collectorLabel = (state: EngineerNode["collector"]) =>
     state === null ? "—" : state === "ok" ? "ok" : state === "stale" ? (zh ? "過時" : "stale") : zh ? "失敗" : "failed";
   return (
@@ -254,7 +267,9 @@ function EngineerDetails({ engineer, zh }: { engineer: Engineer; zh: boolean }) 
       )}
       <h3>{zh ? "告警" : "Alerts"}</h3>
       {engineer.alerts.length === 0 ? (
-        <p className="portal-note">{zh ? "沒有進行中的告警。" : "No firing alerts."}</p>
+        <p className="portal-note">
+          {alertsKnown ? (zh ? "沒有進行中的告警。" : "No firing alerts.") : zh ? "告警資料暫時無法取得。" : "Alert data is unavailable right now."}
+        </p>
       ) : (
         <div className="portal-table-wrap">
           <AlertTable alerts={engineer.alerts} zh={zh} withReason caption={zh ? `${engineer.username} 的告警` : `Alerts for ${engineer.username}`} />
@@ -262,7 +277,9 @@ function EngineerDetails({ engineer, zh }: { engineer: Engineer; zh: boolean }) 
       )}
       <h3>{zh ? "部署標記" : "Deploy marks"}</h3>
       {engineer.deploys.length === 0 ? (
-        <p className="portal-note">{zh ? "沒有部署標記。" : "No deploy marks."}</p>
+        <p className="portal-note">
+          {deploysKnown ? (zh ? "沒有部署標記。" : "No deploy marks.") : zh ? "部署標記暫時無法取得。" : "Deploy marks are unavailable right now."}
+        </p>
       ) : (
         <div className="portal-table-wrap">
           <DeployTable deploys={engineer.deploys} zh={zh} withOwner={false} caption={zh ? `${engineer.username} 的部署標記` : `Deploy marks of ${engineer.username}`} />
@@ -348,6 +365,8 @@ export function AdminEngineersSection() {
   const zh = locale === "zh";
   const resource = usePortalResource<EngineersOverview>("/admin/engineers");
   const data = resource.data;
+  const alertsKnown = data ? sourceKnown(data.activity, "prometheus") : false;
+  const deploysKnown = data ? sourceKnown(data.activity, "annotations") : false;
   return (
     <ResourceState {...resource}>
       {data && (
@@ -405,12 +424,16 @@ export function AdminEngineersSection() {
                       </td>
                       <td>{gpuLabel(engineer.gpusInUse, engineer.memoryBytes, zh)}</td>
                       <td>
-                        <span
-                          className={engineer.alerts.length > 0 ? "portal-badge admin-badge-alert" : "portal-badge"}
-                          aria-label={zh ? `${engineer.alerts.length} 個告警` : `${engineer.alerts.length} alerts`}
-                        >
-                          {engineer.alerts.length}
-                        </span>
+                        {alertsKnown || engineer.alerts.length > 0 ? (
+                          <span
+                            className={engineer.alerts.length > 0 ? "portal-badge admin-badge-alert" : "portal-badge"}
+                            aria-label={zh ? `${engineer.alerts.length} 個告警` : `${engineer.alerts.length} alerts`}
+                          >
+                            {engineer.alerts.length}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td>{latest ? `${dateLabel(latest.at, zh)} · ${value(latest.node)}` : "—"}</td>
                       <td>
@@ -424,7 +447,7 @@ export function AdminEngineersSection() {
                     </tr>
                     <tr>
                       <td colSpan={8}>
-                        <EngineerDetails engineer={engineer} zh={zh} />
+                        <EngineerDetails engineer={engineer} zh={zh} alertsKnown={alertsKnown} deploysKnown={deploysKnown} />
                       </td>
                     </tr>
                   </tbody>

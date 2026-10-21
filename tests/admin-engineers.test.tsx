@@ -122,7 +122,8 @@ describe("admin engineers section", () => {
     ["gateway_outdated", {}, "The gateway does not support engineer activity yet (deploy the gateway first)", null],
     ["gateway_error", { error: "gateway_auth_failed" }, "Engineer activity could not be loaded from the gateway", "gateway_auth_failed"],
     ["unconfigured", {}, "The gateway has no Grafana read token yet (B300_GRAFANA_READ_TOKEN), so the activity columns are empty.", null],
-    ["ok", { stale: true, ageSeconds: 120 }, "Showing data from 120 s ago; monitoring is unreachable right now", null],
+    ["ok", { stale: true, ageSeconds: 320 }, "Showing data from 320 s ago", null],
+    ["ok", { stale: true, ageSeconds: 120, errors: { annotations: "timeout" } }, "Showing data from 120 s ago; monitoring is unreachable right now", "timeout"],
     ["ok", { truncated: true }, "Too much data; the lists were truncated", null],
     ["partial", { errors: { prometheus: "http_5xx", annotations: "timeout" } }, "Some monitoring data is unavailable: GPU usage, logins and alerts", "http_5xx"],
   ])("shows the %s state %o and keeps the roster", async (status, extra, message, code) => {
@@ -130,6 +131,35 @@ describe("admin engineers section", () => {
     expect(screen.getByText(message, { exact: false })).toBeVisible();
     if (code) expect(screen.getAllByRole("alert").map((node) => node.querySelector("code")?.textContent)).toContain(code);
     expect(within(table).getAllByText(/^@/)).toHaveLength(5);
+  });
+
+  it.each([
+    ["en", "Showing data from 90 s ago; monitoring is unreachable right now", "The latest refresh failed: GPU usage, logins and alerts"],
+    ["zh", "顯示 90 秒前的資料，監控目前連不到", "最近一次更新失敗：GPU 用量、登入與告警"],
+  ])("warns about stale data with its age and error code even when the status is ok (%s)", async (locale, note, message) => {
+    localStorage.setItem("pc-locale", locale);
+    window.history.replaceState({}, "", "/admin/engineers");
+    const { table } = await renderWith(overview({}, { status: "ok", stale: true, ageSeconds: 90, errors: { prometheus: "http_401" } }));
+    await waitFor(() => expect(screen.getByText(note)).toBeVisible());
+    const alert = screen.getByText(message, { exact: false }).closest("[role=alert]") as HTMLElement;
+    expect(within(alert).getByText("http_401")).toBeVisible();
+    expect(within(rowOf(table, "justin")).getByText(locale === "zh" ? "2 張 · 80.0 GiB" : "2 GPUs · 80.0 GiB")).toBeVisible();
+  });
+
+  it("shows no data rather than none when a monitoring source failed", async () => {
+    const user = userEvent.setup();
+    const body = overview({}, { status: "partial", errors: { prometheus: "http_5xx", annotations: "timeout" } });
+    (body.engineers[1] as Record<string, unknown>).gpusInUse = null;
+    const { table } = await renderWith(body);
+    const mwind = rowOf(table, "mwind");
+    expect(within(mwind).queryByLabelText("0 alerts")).toBeNull();
+    expect(mwind.querySelectorAll("td")[5]).toHaveTextContent(/^—$/);
+    const summary = screen.getByText("Mwind: nodes and events");
+    await user.click(summary);
+    const details = summary.closest("details") as HTMLElement;
+    expect(within(details).getByText("Alert data is unavailable right now.")).toBeVisible();
+    expect(within(details).getByText("Deploy marks are unavailable right now.")).toBeVisible();
+    expect(screen.getByText("Some monitoring data is unavailable: deploy marks", { exact: false })).toBeVisible();
   });
 
   it("renders deploy text as text", async () => {

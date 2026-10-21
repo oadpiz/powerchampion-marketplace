@@ -329,7 +329,7 @@ python -c "from alembic import command; from server.migrate import _config; from
 
 ## 工程師（唯讀）
 
-`/admin/engineers`（後台導覽「工程師」，在「機台分配」之後）每位工程師一列：分配到的節點與 SSH 金鑰狀態、最後互動式登入、目前 GPU 用量（張數與顯存）、與他本人或他的節點有關且正在 firing 的告警、最近 10 筆部署標記（14 天內），以及已用他的名字篩好的 Grafana 連結。**這一頁不顯示指令紀錄**：指令紀錄留在節點上，用 `sudo b300-activity` 查。頁面沒有任何寫入動作，讀取也不寫稽核。
+`/admin/engineers`（後台導覽「工程師」，在「機台分配」之後）每位工程師一列：分配到的節點與 SSH 金鑰狀態、最後互動式登入、目前 GPU 用量（張數與顯存）、與他本人或他的節點有關且正在 firing 的告警、最近 10 筆部署標記（閘道只取 14 天內），以及已用他的名字篩好的 Grafana 連結。**這一頁不顯示指令紀錄**：指令紀錄留在節點上，用 `sudo b300-activity` 查。頁面沒有任何寫入動作，讀取也不寫稽核。
 
 資料流：
 
@@ -358,15 +358,15 @@ b300-grafana-tunnel → Grafana（b300-31）→ Prometheus、annotations（b300-
 | 閘道尚未設定 Grafana 讀取權杖 | 閘道的 `B300_GRAFANA_READ_TOKEN` 為空 | 照 b300-cluster runbook §4.4b 建 Viewer token，加到 Dokploy 閘道的 Environment |
 | Grafana 讀取權杖被拒 | token 過期或被撤銷（`grafana_auth_failed`） | 照 runbook §4.4b 輪換 token |
 | 監控資料暫時無法取得 | Grafana／tunnel 連不到（`monitoring_unavailable`） | 檢查 b300-grafana-tunnel 與 Grafana |
-| 部分監控資料無法取得 | `partial`：Prometheus 或 annotations 其中之一失敗 | 失敗的欄位顯示「—」，其他照常 |
-| 顯示 N 秒前的資料 | 這次刷新失敗，閘道回 300 s 內的舊資料；或資料超過 300 s | 監控恢復後自動更新 |
-| 資料過多，已截斷 | 超過上限或有不合格的標籤被丟掉 | 只影響顯示筆數 |
+| 部分監控資料無法取得 | `partial`：Prometheus 或 annotations 其中之一失敗（代碼不認得時顯示 `unknown`） | 失敗來源的欄位顯示「—」或「暫時無法取得」，其他照常 |
+| 顯示 N 秒前的資料 | 這次刷新失敗，閘道回 300 s 內的舊資料（`status` 維持舊值，例如 ok，錯誤代碼另外顯示）；或資料超過 300 s | 監控恢復後自動更新；代碼是 `http_401` 時照 runbook §4.4b 輪換 token |
+| 資料過多，已截斷 | 超過上限或有不合格的資料列被丟掉 | 被丟掉那一列所屬的節點顯示「—」而不是 0 |
 
 欄位的意思：
 
 - **SSH 金鑰「已同步」**＝在金鑰變更後，管理員已在「機台分配」標記過匯出。這**不代表**節點上的 `authorized_keys` 已逐台驗證過。「待同步」＝金鑰在上次標記匯出之後變更過；「未提供」＝沒有公鑰。
 - **最後互動式登入**只計配了 pty 的 SSH 登入（讀節點的 `/var/log/lastlog`）。`ssh host cmd`、VS Code Remote、scp/sftp 不會更新；從未登入顯示「—」。
-- **部署標記**依 relay 從來源 IP 推出的 `owner`（`engN`，等於工程師的 cluster id）歸屬；標記上的使用者是節點上的 `$USER`，可以自己宣稱，未驗證時加「未驗證」徽章。部署標記要 relay 有 Editor token（b300-cluster runbook §4.4），在那之前清單是空的。
+- **部署標記**依 relay 從來源 IP 推出的 `owner`（`engN`，等於工程師的 cluster id）歸屬；標記上的使用者是節點上的 `$USER`，可以自己宣稱，未驗證時加「未驗證」徽章。說明只取第一行，其中的 IP 位址與看起來像權杖或 `--key` 參數的字串會被遮成 `[address]`／`[redacted]`；模型名稱若像網址或位址則不顯示。部署標記要 relay 有 Editor token（b300-cluster runbook §4.4），在那之前清單是空的。
 - **告警**取 Prometheus 正在 firing 的告警：帶 username 的歸給該工程師，帶 node 的歸給分配到該節點的工程師。販售節點由閘道先濾掉。
 - **監控標籤與分配不一致**：Prometheus 的 `engineer` 標籤和這裡的分配不同，通常是匯出還沒套用到機器。
 - 停用的工程師也列出，以灰色顯示。對不到名冊的資料（tku、root、`uid_N`、未分配節點的告警、對不到 owner 的部署）放在「未對應的資料」。
