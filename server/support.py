@@ -4,6 +4,7 @@
 settings, current_user). Its methods read `self.gateway` / `self.settings` at call time:
 tests swap gateway attributes after the app is built."""
 import json
+import math
 import re
 import time
 import uuid
@@ -90,6 +91,16 @@ def gateway_error_code(error):
             return "gateway_auth_failed"
         return error.code
     return "unavailable"
+
+
+def safe_iso(value):
+    """iso() for a gateway-supplied epoch: only finite numbers in range, anything else is null."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    try:
+        return iso(value)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def usd_from_nano(value):
