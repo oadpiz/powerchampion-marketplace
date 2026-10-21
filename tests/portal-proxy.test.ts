@@ -128,6 +128,101 @@ describe("portal service boundary", () => {
     expect(fetchMock.mock.calls.at(-1)?.[1].body).toBeUndefined();
   });
 
+  it("proxies the persona, fleet, control-job and redeem administration routes to the exact upstream path", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    const get = [
+      "/admin/personas", "/admin/personas/abc123def456",
+      "/admin/gateway/fleet/events", "/admin/gateway/fleet/glm-5.2-fp8/status", "/admin/gateway/fleet/glm-5.2-fp8:fp8/timeline",
+      "/admin/gateway/control/jobs/0123456789abcdef", "/admin/redeem/codes", "/admin/redeem/codes/export",
+    ];
+    const post = [
+      "/admin/personas", "/admin/personas/abc123def456/revisions", "/admin/personas/abc123def456/activate", "/admin/personas/abc123def456/try",
+      ...["freeze", "resume", "candidate", "drain", "approve", "rollback"].map((action) => `/admin/gateway/fleet/glm-5.2-fp8/${action}`),
+      "/admin/redeem/codes", "/admin/redeem/codes/code_1-x/disable",
+    ];
+    for (const path of get) expect((await GET(request(path))).status).toBe(200);
+    for (const path of post) expect((await POST(request(path, "POST", {}))).status).toBe(200);
+    expect((await POST(request("/admin/gateway/fleet/glm-5.2-fp8/freeze", "POST"))).status).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(
+      [...get, ...post, "/admin/gateway/fleet/glm-5.2-fp8/freeze"].map((path) => `http://127.0.0.1:3020/api/portal${path}`),
+    );
+    expect(fetchMock.mock.calls.at(-1)?.[1].body).toBeUndefined();
+  });
+
+  it("forwards only valid persona revision and fleet event query parameters", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await GET(request("/admin/personas/abc123def456?rev=3&other=x"))).status).toBe(200);
+    expect((await GET(request("/admin/gateway/fleet/events?modelId=glm-5.2-fp8&limit=20&other=x"))).status).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "http://127.0.0.1:3020/api/portal/admin/personas/abc123def456?rev=3",
+      "http://127.0.0.1:3020/api/portal/admin/gateway/fleet/events?modelId=glm-5.2-fp8&limit=20",
+    ]);
+    for (const path of ["/admin/personas/abc123def456?rev=0", "/admin/personas/abc123def456?rev=abc", "/admin/gateway/fleet/events?limit=0",
+      "/admin/gateway/fleet/events?limit=1000", "/admin/gateway/fleet/events?modelId=a%2Fb"]) {
+      const response = await GET(request(path));
+      expect(response.status, path).toBe(400);
+      expect((await response.json()).error).toBe("invalid_input");
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses persona, fleet, control and redeem shapes outside the allowlist", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    for (const path of ["/admin/gateway/fleet/glm-5.2-fp8/delete", "/admin/gateway/fleet/a%2Fb/freeze", "/admin/gateway/fleet/%2e%2e/freeze",
+      "/admin/personas/x/delete", "/admin/personas//try", "/admin/redeem/codes/x/enable", "/admin/gateway/control/mode"]) {
+      expect((await POST(request(path, "POST", {}))).status, path).toBe(404);
+    }
+    expect((await DELETE(request("/admin/redeem/codes/x", "DELETE"))).status).toBe(404);
+    for (const path of ["/admin/gateway/control/switch", "/admin/gateway/control"]) expect((await GET(request(path))).status, path).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows larger persona revisions and redeem exports only on their own routes", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const big = { system: "x".repeat(150 * 1024) };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(Response.json({ rev: 2 }))));
+    expect((await POST(request("/admin/personas/abc123def456/revisions", "POST", big))).status).toBe(200);
+    expect((await POST(request("/admin/personas/abc123def456/activate", "POST", big))).status).toBe(413);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() => Promise.resolve(Response.json({ csv: "x".repeat(3 * 1024 * 1024) }))));
+    expect((await GET(request("/admin/redeem/codes/export"))).status).toBe(200);
+    expect((await GET(request("/admin/redeem/codes"))).status).toBe(502);
+  });
+
+  it("gives persona try a longer timeout than the other routes", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubEnv("PC_PORTAL_ORIGIN", "");
+      vi.stubGlobal("fetch", vi.fn().mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      })));
+      let settled = false;
+      const trying = POST(request("/admin/personas/abc123def456/try", "POST", { input: "x" })).then((response) => { settled = true; return response; });
+      await vi.advanceTimersByTimeAsync(20001);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(75000);
+      expect((await trying).status).toBe(504);
+      const listing = GET(request("/admin/personas"));
+      await vi.advanceTimersByTimeAsync(20001);
+      expect((await listing).status).toBe(504);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("passes route-specific 4xx errors through unchanged", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "fleet_not_managed", detail: "Not managed." }, { status: 404 })));
+    const response = await GET(request("/admin/gateway/fleet/bge-m3/status"));
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "fleet_not_managed", detail: "Not managed." });
+  });
+
   it("forwards a valid administrator usage month and rejects an invalid one", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", "");
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));

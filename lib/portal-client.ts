@@ -76,7 +76,27 @@ export function portalErrorCodeText(error: unknown, locale: "en" | "zh"): string
       ? "閘道拒絕了入口網站的管理權杖，請檢查 portal 服務的 PC_GATEWAY_ADMIN_TOKEN 設定。"
       : "The gateway rejected the portal's admin token. Check PC_GATEWAY_ADMIN_TOKEN on the portal service.";
   if (code === "unknown_action")
-    return locale === "zh" ? "此節點操作無法使用。" : "That node action is not available.";
+    return locale === "zh" ? "此操作無法使用。" : "That action is not available.";
+  if (code === "persona_not_found")
+    return locale === "zh" ? "找不到此人設或版本。" : "That persona or revision was not found.";
+  if (code === "fleet_not_managed")
+    return locale === "zh"
+      ? "此模型不由 fleet 控制器管理（control_managed 未開啟）。"
+      : "This model is not managed by the fleet controller (control_managed is off).";
+  if (code === "job_not_found")
+    return locale === "zh" ? "找不到這個工作。" : "That job was not found.";
+  if (code === "redeem_code_not_found")
+    return locale === "zh" ? "找不到此兌換碼，或它已經停用。" : "That code does not exist or is already disabled.";
+  if (code === "state_changed")
+    return locale === "zh"
+      ? "狀態在送出期間被其他操作改變了，請重新整理後確認。"
+      : "The state changed while your request was in flight. Refresh and check it.";
+  if (code === "key_limit")
+    return locale === "zh"
+      ? "此帳號的有效金鑰已達上限，請先停用一把。"
+      : "This account already has the maximum number of active keys. Disable one first.";
+  if (code === "target_not_customer")
+    return locale === "zh" ? "金鑰只能簽發給客戶帳號。" : "Keys can only be issued to customer accounts.";
   if (code === "key_not_found")
     return locale === "zh" ? "閘道上已找不到此 API 金鑰。" : "That API key no longer exists on the gateway.";
   if (code === "customer_not_found")
