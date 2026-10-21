@@ -8,6 +8,7 @@ import { CreditsSection } from "./admin-credits-section";
 import { CustomersSection } from "./admin-customers-section";
 import { AdminGatewaySection } from "./admin-gateway-section";
 import { AdminKeysSection } from "./admin-keys-section";
+import { AdminPersonasSection } from "./admin-personas-section";
 import { OverviewSection } from "./admin-overview-section";
 import { AdminUsageSection } from "./admin-usage-section";
 import { useLocale } from "./locale-provider";
@@ -19,6 +20,7 @@ export type AdminSection =
   | "keys"
   | "usage"
   | "gateway"
+  | "personas"
   | "allocation"
   | "credits"
   | "audit";
@@ -46,6 +48,7 @@ export function AdminPortal({
     { section: "keys", href: "/admin/keys", en: "API keys", zh: "金鑰" },
     { section: "usage", href: "/admin/usage", en: "Usage", zh: "用量" },
     { section: "gateway", href: "/admin/gateway", en: "Gateway", zh: "閘道" },
+    { section: "personas", href: "/admin/personas", en: "Personas", zh: "人設" },
     {
       section: "allocation",
       href: "/admin/allocation",
@@ -123,6 +126,7 @@ export function AdminPortal({
           {section === "keys" && <AdminKeysSection />}
           {section === "usage" && <AdminUsageSection />}
           {section === "gateway" && <AdminGatewaySection />}
+          {section === "personas" && <AdminPersonasSection />}
           {section === "allocation" && <AdminAllocationSection />}
           {section === "credits" && <CreditsSection />}
           {section === "audit" && <AuditSection />}

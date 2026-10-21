@@ -603,6 +603,7 @@ test("server-renders each administration section and rejects unknown ones", asyn
     ["/admin/keys", "API keys"],
     ["/admin/usage", "Usage"],
     ["/admin/gateway", "Gateway"],
+    ["/admin/personas", "Personas"],
     ["/admin/allocation", "Node allocation"],
   ]) {
     const response = await render(path);
