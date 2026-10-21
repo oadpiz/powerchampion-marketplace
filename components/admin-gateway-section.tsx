@@ -19,6 +19,9 @@ import {
 import { GatewayNotConnected, ResourceState, usePortalResource } from "./admin-resource";
 import { useLocale } from "./locale-provider";
 
+/** The gateway treats a missing or null flag as enabled, so only an explicit false is "disabled". */
+const isEnabled = (model: GatewayModel) => model.enabled !== false;
+
 export function AdminGatewaySection() {
   const locale = useLocale().locale;
   const zh = locale === "zh";
@@ -38,7 +41,7 @@ export function AdminGatewaySection() {
     try {
       await portalRequest(`/admin/gateway/models/${encodeURIComponent(model.id)}/toggle`, {
         method: "POST",
-        body: JSON.stringify({ enabled: !model.enabled }),
+        body: JSON.stringify({ enabled: !isEnabled(model) }),
       });
       resource.refresh();
     } catch (reason: unknown) {
@@ -51,7 +54,7 @@ export function AdminGatewaySection() {
 
   function startToggle(model: GatewayModel) {
     // Disabling cuts customers off, so it is confirmed; enabling stays one click.
-    if (model.enabled) setConfirmDisable(model);
+    if (isEnabled(model)) setConfirmDisable(model);
     else void toggleModel(model);
   }
 
@@ -124,13 +127,13 @@ export function AdminGatewaySection() {
                         {models.map((model) => (
                           <tr key={model.id}>
                             <td><code>{model.id}</code></td>
-                            <td>{model.enabled ? (zh ? "啟用" : "Enabled") : zh ? "停用" : "Disabled"}</td>
+                            <td>{isEnabled(model) ? (zh ? "啟用" : "Enabled") : zh ? "停用" : "Disabled"}</td>
                             <td>{model.maintenance_message || "—"}</td>
                             <td>{text(model.node)}</td>
                             <td>
                               <div className="portal-actions">
-                                <button type="button" className="portal-text-button" disabled={busy} aria-label={`${model.enabled ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"} ${model.id}`} onClick={() => startToggle(model)}>
-                                  {model.enabled ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"}
+                                <button type="button" className="portal-text-button" disabled={busy} aria-label={`${isEnabled(model) ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"} ${model.id}`} onClick={() => startToggle(model)}>
+                                  {isEnabled(model) ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"}
                                 </button>
                                 <button type="button" className="portal-text-button" aria-label={zh ? `${model.id} 的維護訊息` : `Maintenance message for ${model.id}`} onClick={() => setMaintenance(model)}>
                                   {zh ? "維護訊息" : "Maintenance"}

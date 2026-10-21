@@ -21,9 +21,9 @@ class RouteTableTests(PortalCase):
             for method in sorted(route.methods or ()):
                 if method == "HEAD":
                     continue
-                for client, status in ((customer, 403), (anonymous, 401)):
+                for client, status, code in ((customer, 403, "admin_required"), (anonymous, 401, "auth_required")):
                     response = client.request(method, path, json={}, headers={"Origin": ORIGIN})
-                    self.assertEqual(response.status_code, status, (method, route.path, response.text))
+                    self.assertEqual((response.status_code, response.json().get("error")), (status, code), (method, route.path, response.text))
                 checked += 1
         self.assertGreaterEqual(checked, 20)
 

@@ -36,6 +36,8 @@ def attach_admin_gateway(application, ctx):
             fail("customer_not_found", "Account not found.", 404)
         if target["disabled_at"]:
             fail("invalid_input", "This account is disabled.", 409)
+        if target["role"] != "customer":
+            fail("target_not_customer", "金鑰只能簽發給客戶帳號。 (Keys can only be issued to customer accounts.)", 409)
         ctx.require_gateway()
         row, created = await ctx.provision_key(user_id, label, prepaid, limits, admin["id"], "admin.key_issued")
         balance = created.get("balance_nano_usd")
@@ -147,6 +149,11 @@ def attach_admin_gateway(application, ctx):
                 # Re-enabling counts against the same per-account cap as issuing a new key.
                 reservation = ctx.store.reserve_key_slot(owner["user_id"])
                 if reservation is None:
+                    with ctx.store.connect() as con:
+                        current = con.execute("SELECT status FROM gateway_keys WHERE id=?", (owner["id"],)).fetchone()
+                    if current and current["status"] == "active":
+                        # A concurrent re-enable of this same key won; the requested state already holds.
+                        return {"ok": True}
                     fail("key_limit", "This account already has the maximum number of active keys. Disable one first.", 409)
         try:
             try:

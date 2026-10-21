@@ -136,7 +136,7 @@ class FakeGateway:
         model = next((m for m in self.state_value["models"] if m["id"] == model_id), None)
         if model is None:
             raise GatewayError("rejected", 404, "Model not found.")
-        model["enabled"] = not model["enabled"]
+        model["enabled"] = model.get("enabled") is False  # missing/None reads as enabled, as on the gateway
         self.toggled.append(model_id)
         return {"id": model_id, "enabled": model["enabled"]}
 

@@ -7,7 +7,8 @@ import { useLocale } from "./locale-provider";
 
 export type GatewayModel = {
   id: string;
-  enabled: boolean;
+  // The gateway treats a missing or null flag as enabled.
+  enabled?: boolean | null;
   maintenance_message?: string | null;
   node?: unknown;
 };

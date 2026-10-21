@@ -1017,6 +1017,21 @@ describe("admin gateway section", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("treats a model without an enabled flag as enabled", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/gateway": { ...overview, state: { models: [{ id: "legacy", enabled: null }, { id: "bare" }] } },
+      "POST /admin/gateway/models/legacy/toggle": { id: "legacy", enabled: false, changed: true },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    expect(await screen.findByRole("button", { name: "Disable bare" })).toBeVisible();
+    expect(screen.getAllByText("Enabled")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Disable legacy" }));
+    const dialog = await screen.findByRole("dialog", { name: "Disable model legacy?" });
+    await user.click(within(dialog).getByRole("button", { name: "Disable model" }));
+    await waitFor(() => expect(calls.find((call) => call.method === "POST")?.body).toEqual({ enabled: false }));
+  });
+
   it("sets and clears a maintenance message", async () => {
     const user = userEvent.setup();
     const calls = adminFetch({
