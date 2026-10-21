@@ -94,7 +94,9 @@ def _node(item):
 
 def _usage(item):
     return {"node": _text(item.get("node"), NODE), "username": _text(item.get("username"), USERNAME),
-            "gpus": _count(item.get("gpus")), "processes": _count(item.get("processes")), "memory_bytes": _count(item.get("memory_bytes"))}
+            # The gateway may send null for any of the three numbers (a query that returned no series).
+            "gpus": _count(item.get("gpus"), required=False), "processes": _count(item.get("processes"), required=False),
+            "memory_bytes": _count(item.get("memory_bytes"), required=False)}
 
 
 def _login(item):

@@ -151,6 +151,21 @@ class EngineersRouteTests(PortalCase):
         b13 = justin["nodes"][2]
         self.assertEqual((b13["up"], b13["collector"], b13["labelMatches"], b13["gpusInUse"]), (None, None, None, 0))
 
+    def test_null_usage_numbers_and_float_login_are_accepted(self):
+        self.gateway.activity_value = activity(
+            gpu_usage=[{"node": "b300-11", "username": "justin", "gpus": 2, "processes": None, "memory_bytes": None},
+                       {"node": "b300-12", "username": "justin", "gpus": None, "processes": 1, "memory_bytes": GIB},
+                       {"node": "b300-11", "username": "uid_1001", "gpus": None, "processes": None, "memory_bytes": None}],
+            logins=[{"node": "b300-11", "username": "justin", "last_login": 1792600000.5, "sessions": None}])
+        body = self.get()
+        self.assertFalse(body["activity"]["truncated"])
+        justin = self.engineer(body, "justin")
+        self.assertEqual((justin["gpusInUse"], justin["memoryBytes"]), (2, GIB))
+        self.assertEqual([(n["gpusInUse"], n["processes"], n["memoryBytes"]) for n in justin["nodes"][:2]], [(2, None, None), (None, 1, GIB)])
+        self.assertEqual(justin["nodes"][0]["sessions"], 0)
+        self.assertTrue(justin["lastLoginAt"].startswith("2026-10-21T16:26:40"))
+        self.assertEqual(body["unmatched"]["gpuUsage"], [{"node": "b300-11", "username": "uid_1001", "gpus": None, "processes": None, "memoryBytes": None}])
+
     def test_alert_matching_user_and_node_is_listed_once_as_user(self):
         self.gateway.activity_value = activity(alerts=[alert("GpuHeldIdle", node="b300-11", username="justin", gpu="1"),
                                                        alert("GpuHeldIdle", node="b300-26", username="justin", gpu="2")])
