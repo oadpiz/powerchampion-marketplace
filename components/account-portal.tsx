@@ -11,7 +11,7 @@ import {
 } from "../lib/portal-client";
 import { useLocale } from "./locale-provider";
 
-type Section = "overview" | "keys" | "usage" | "credits" | "security";
+type Section = "overview" | "keys" | "usage" | "credits" | "security" | "ssh-key";
 type Key = {
   id: string;
   label: string;
@@ -51,6 +51,46 @@ type Usage = {
   updatedAt: string | null;
 };
 type Credits = { requests: Credit[] };
+/** GET /me/engineer: only the signed-in engineer's own summary; the raw key is never sent. */
+type EngineerSelf = {
+  username: string;
+  displayName: string;
+  active: boolean;
+  nodes: string[];
+  key: { type: string; bits: number | null; fingerprint: string } | null;
+  keyPendingSync: boolean;
+  keyUpdatedBy: "admin" | "engineer" | null;
+  /** The password was issued by an administrator; no key change until the user replaces it. */
+  passwordChangeRequired?: boolean;
+};
+function isEngineerSelf(value: unknown): value is EngineerSelf {
+  const item = value as EngineerSelf | null;
+  return (
+    typeof item === "object" &&
+    item !== null &&
+    typeof item.username === "string" &&
+    Array.isArray(item.nodes) &&
+    typeof item.active === "boolean"
+  );
+}
+function sshKeyErrorText(error: unknown, locale: "en" | "zh"): string {
+  const zh = locale === "zh";
+  if (error instanceof PortalError) {
+    if (error.code === "engineer_conflict")
+      return zh ? "這把公鑰已被其他工程師使用，請用你自己的金鑰。" : "Another engineer already uses this key. Use your own key.";
+    if (error.code === "engineer_inactive")
+      return zh ? "你的工程師身分已停用，無法更新公鑰。" : "Your engineer access is deactivated, so the key cannot be updated.";
+    if (error.code === "password_change_required")
+      return zh
+        ? "請先到「安全性」變更管理員給你的臨時密碼，再更新 SSH 公鑰。"
+        : "Change the password your administrator gave you under Security before updating your SSH key.";
+    if (error.code === "not_engineer")
+      return zh ? "這個帳號已不再連結工程師。" : "This account is no longer linked to an engineer.";
+    if (error.code === "invalid_input" && error.message)
+      return zh ? `公鑰不符合要求：${error.message}` : error.message;
+  }
+  return portalErrorText(error, locale);
+}
 const NAV: { section: Section; href: string; en: string; zh: string }[] = [
   { section: "overview", href: "/account", en: "Overview", zh: "總覽" },
   { section: "keys", href: "/account/keys", en: "API keys", zh: "API 金鑰" },
@@ -62,6 +102,8 @@ const NAV: { section: Section; href: string; en: string; zh: string }[] = [
     zh: "儲值申請",
   },
   { section: "security", href: "/account/security", en: "Security", zh: "安全性" },
+  // Shown only when GET /me/engineer succeeds (an administrator linked this account).
+  { section: "ssh-key", href: "/account/ssh-key", en: "SSH key", zh: "SSH 公鑰" },
 ];
 const number = (value: number) => value.toLocaleString("en-US");
 const money = (value: number) =>
@@ -120,6 +162,17 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordCheck, setPasswordCheck] = useState<string | null>(null);
   const [passwordChanged, setPasswordChanged] = useState(false);
+  const [engineer, setEngineer] = useState<EngineerSelf | null>(null);
+  const [engineerStatus, setEngineerStatus] = useState<
+    "loading" | "linked" | "none" | "error"
+  >("loading");
+  const [engineerError, setEngineerError] = useState<unknown>(null);
+  const [sshKey, setSshKey] = useState("");
+  const [sshKeyPassword, setSshKeyPassword] = useState("");
+  const [sshKeyCheck, setSshKeyCheck] = useState<string | null>(null);
+  const [sshKeySaved, setSshKeySaved] = useState<"changed" | "same" | null>(
+    null,
+  );
   const dialog = useRef<HTMLDialogElement | null>(null);
   const mutationController = useRef<AbortController | null>(null);
   const mutationBusy = useRef(false);
@@ -140,7 +193,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
         });
         if (controller.signal.aborted) return;
         setUser(session.user);
-        if (section === "security") return;
+        if (section === "security" || section === "ssh-key") return;
         const path =
           section === "overview"
             ? "/overview"
@@ -167,6 +220,38 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
   }, [section, month, refresh]);
 
   useEffect(() => () => mutationController.current?.abort(), []);
+
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    const controller = new AbortController();
+    async function loadEngineer() {
+      setEngineerStatus("loading");
+      setEngineerError(null);
+      try {
+        const result = await portalRequest<unknown>("/me/engineer", {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        if (isEngineerSelf(result)) {
+          setEngineer(result);
+          setEngineerStatus("linked");
+        } else {
+          setEngineer(null);
+          setEngineerStatus("none");
+        }
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        setEngineer(null);
+        setEngineerError(cause);
+        setEngineerStatus(
+          cause instanceof PortalError && cause.status === 404 ? "none" : "error",
+        );
+      }
+    }
+    void loadEngineer();
+    return () => controller.abort();
+  }, [userId, refresh]);
 
   useEffect(() => {
     if (!revokeKey || !dialog.current) return;
@@ -286,6 +371,34 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
     }
   }
 
+  async function submitSshKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    setSshKeySaved(null);
+    setMutationError(null);
+    const value = sshKey.trim();
+    if (/PRIVATE KEY/i.test(value)) {
+      setSshKeyCheck(
+        zh
+          ? "這看起來是私鑰，沒有送出。請只貼公鑰（.pub 檔的那一行），私鑰不要給任何人。"
+          : "That looks like a private key, so it was not sent. Paste only the public key (the line in the .pub file); never share the private key.",
+      );
+      return;
+    }
+    setSshKeyCheck(null);
+    const result = await mutate<{ changed: boolean; engineer: unknown }>(
+      "/me/engineer/ssh-key",
+      "POST",
+      { sshPubkey: value, currentPassword: sshKeyPassword },
+    );
+    if (result) {
+      if (isEngineerSelf(result.engineer)) setEngineer(result.engineer);
+      setSshKey("");
+      setSshKeyPassword("");
+      setSshKeySaved(result.changed ? "changed" : "same");
+    }
+  }
+
   async function signOut() {
     const result = await mutate<{ ok: boolean }>("/auth/logout", "POST");
     if (result) {
@@ -349,7 +462,11 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
         className="portal-nav"
         aria-label={zh ? "帳號導覽" : "Account navigation"}
       >
-        {NAV.map((item) => (
+        {NAV.filter(
+          (item) =>
+            item.section !== "ssh-key" ||
+            (user !== null && engineerStatus === "linked"),
+        ).map((item) => (
           <Link
             key={item.section}
             href={item.href}
@@ -391,7 +508,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
           )}
         </section>
       )}
-      {mutationError !== null && !revokeKey && (
+      {mutationError !== null && !revokeKey && section !== "ssh-key" && (
         <p className="portal-error" role="alert">
           {portalErrorText(mutationError, locale)}
         </p>
@@ -891,6 +1008,197 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
             </div>
           </form>
         </section>
+      )}
+
+      {!loading && !error && user && section === "ssh-key" && (
+        <>
+          {engineerStatus === "loading" && (
+            <p className="portal-empty" role="status">
+              {zh ? "正在載入工程師資料…" : "Loading engineer information…"}
+            </p>
+          )}
+          {engineerStatus === "none" && (
+            <section className="portal-panel portal-empty">
+              <p>
+                {zh
+                  ? "這個帳號沒有連結 GPU 叢集工程師。工程師的登入帳號由管理員建立；如果你是工程師，請向管理員確認。"
+                  : "This account is not linked to a GPU-cluster engineer. Engineer sign-ins are created by an administrator; if you are an engineer, ask your administrator."}
+              </p>
+            </section>
+          )}
+          {engineerStatus === "error" && (
+            <section className="portal-panel portal-empty">
+              <p role="alert" className="portal-error">
+                {portalErrorText(engineerError, locale)}
+              </p>
+              <button
+                className="portal-button-secondary"
+                onClick={() => setRefresh((value) => value + 1)}
+              >
+                {zh ? "重新載入" : "Try again"}
+              </button>
+            </section>
+          )}
+          {engineerStatus === "linked" && engineer && (
+            <>
+              <section className="portal-panel" aria-labelledby="ssh-key-current">
+                <h2 id="ssh-key-current">
+                  {zh ? "目前的公鑰" : "Current key"}
+                </h2>
+                <dl className="portal-meta">
+                  <dt>{zh ? "叢集帳號" : "Cluster username"}</dt>
+                  <dd>
+                    <code>{engineer.username}</code>
+                  </dd>
+                  <dt>{zh ? "你的節點" : "Your nodes"}</dt>
+                  <dd>
+                    {engineer.nodes.length
+                      ? engineer.nodes.join(", ")
+                      : zh
+                        ? "目前沒有分配節點"
+                        : "No nodes assigned right now"}
+                  </dd>
+                  <dt>{zh ? "公鑰指紋" : "Key fingerprint"}</dt>
+                  <dd>
+                    {engineer.key ? (
+                      <>
+                        <code>{engineer.key.fingerprint}</code>{" "}
+                        <small>
+                          {engineer.key.type}
+                          {engineer.key.bits ? ` · ${engineer.key.bits} bits` : ""}
+                        </small>
+                      </>
+                    ) : zh ? (
+                      "尚未提供公鑰"
+                    ) : (
+                      "No key yet"
+                    )}
+                  </dd>
+                  <dt>{zh ? "狀態" : "Status"}</dt>
+                  <dd>
+                    <span className="portal-badge">
+                      {!engineer.key
+                        ? zh
+                          ? "尚未提供"
+                          : "Not provided"
+                        : engineer.keyPendingSync
+                          ? zh
+                            ? "待同步"
+                            : "Pending sync"
+                          : zh
+                            ? "已同步"
+                            : "Synced"}
+                    </span>
+                  </dd>
+                </dl>
+                <p className="portal-muted">
+                  {engineer.key && engineer.keyPendingSync
+                    ? zh
+                      ? "新公鑰已送出，管理員下次匯出 engineers.yaml 並同步到機器後才會生效；在那之前請繼續使用舊的金鑰。"
+                      : "Your new key is saved. It takes effect after the administrator's next export of engineers.yaml and sync to the machines; until then keep using your current key."
+                    : zh
+                      ? "「已同步」表示這把公鑰已包含在管理員最近一次匯出的 engineers.yaml。"
+                      : "“Synced” means this key is in the administrator's most recent engineers.yaml export."}
+                </p>
+              </section>
+              <section className="portal-panel" aria-labelledby="ssh-key-update">
+                <h2 id="ssh-key-update">
+                  {engineer.key
+                    ? zh
+                      ? "更換公鑰"
+                      : "Replace your key"
+                    : zh
+                      ? "提供公鑰"
+                      : "Add your key"}
+                </h2>
+                {!engineer.active ? (
+                  <p className="portal-note" role="status">
+                    {zh
+                      ? "你的工程師身分已停用，無法更新公鑰。"
+                      : "Your engineer access is deactivated, so the key cannot be updated."}
+                  </p>
+                ) : (
+                  <form className="portal-credit-form" onSubmit={submitSshKey}>
+                    {engineer.passwordChangeRequired && (
+                      <p className="portal-note" role="status">
+                        {zh
+                          ? "你目前的密碼是管理員發給你的臨時密碼。請先到 "
+                          : "Your current password was issued by an administrator. Change it under "}
+                        <Link href="/account/security">{zh ? "安全性" : "Security"}</Link>
+                        {zh
+                          ? " 變更密碼，才能送出 SSH 公鑰。"
+                          : " before you can submit an SSH key."}
+                      </p>
+                    )}
+                    <p className="portal-muted">
+                      {zh
+                        ? "貼上公鑰檔（例如 ~/.ssh/id_ed25519.pub）裡的那一行。接受 ssh-ed25519、ecdsa 或 3072 位元以上的 ssh-rsa；不要加 from= 等選項。沒有金鑰的話可以用 ssh-keygen -t ed25519 產生。絕對不要貼私鑰。"
+                        : "Paste the line from your public key file (for example ~/.ssh/id_ed25519.pub). Accepts ssh-ed25519, ecdsa, or ssh-rsa of 3072 bits or more, without options such as from=. To create one, run ssh-keygen -t ed25519. Never paste the private key."}
+                    </p>
+                    <label className="portal-field">
+                      {zh ? "SSH 公鑰" : "SSH public key"}
+                      <textarea
+                        rows={3}
+                        value={sshKey}
+                        required
+                        spellCheck={false}
+                        autoComplete="off"
+                        disabled={busy || engineer.passwordChangeRequired}
+                        onChange={(event) => setSshKey(event.target.value)}
+                      />
+                    </label>
+                    <label className="portal-field">
+                      {zh ? "目前密碼" : "Current password"}
+                      <input
+                        type="password"
+                        autoComplete="current-password"
+                        value={sshKeyPassword}
+                        required
+                        disabled={busy || engineer.passwordChangeRequired}
+                        onChange={(event) => setSshKeyPassword(event.target.value)}
+                      />
+                    </label>
+                    {sshKeyCheck && (
+                      <p className="portal-error" role="alert">
+                        {sshKeyCheck}
+                      </p>
+                    )}
+                    {mutationError !== null && (
+                      <p className="portal-error" role="alert">
+                        {sshKeyErrorText(mutationError, locale)}
+                      </p>
+                    )}
+                    {sshKeySaved && (
+                      <p className="portal-note" role="status">
+                        {sshKeySaved === "same"
+                          ? zh
+                            ? "這把公鑰跟目前的相同，沒有變更。"
+                            : "This is the same key as the current one; nothing changed."
+                          : zh
+                            ? "已收到新公鑰。管理員下次匯出並同步後才會生效。"
+                            : "Key received. It takes effect after the administrator's next export and sync."}
+                      </p>
+                    )}
+                    <div className="portal-actions">
+                      <button
+                        className="portal-button"
+                        disabled={busy || engineer.passwordChangeRequired || !sshKey.trim() || !sshKeyPassword}
+                      >
+                        {busy
+                          ? zh
+                            ? "處理中…"
+                            : "Please wait…"
+                          : zh
+                            ? "送出公鑰"
+                            : "Submit key"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </section>
+            </>
+          )}
+        </>
       )}
 
       {revokeKey && (

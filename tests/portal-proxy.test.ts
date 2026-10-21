@@ -164,14 +164,17 @@ describe("portal service boundary", () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
     vi.stubGlobal("fetch", fetchMock);
     const id = "b".repeat(32);
-    const get = ["/admin/allocation", "/admin/allocation/export"];
+    const get = ["/admin/allocation", "/admin/allocation/export", "/me/engineer"];
     const post = ["/admin/allocation/engineers", `/admin/allocation/engineers/${id}`, `/admin/allocation/engineers/${id}/status`,
-      "/admin/allocation/nodes/b300-14", "/admin/allocation/owner", "/admin/allocation/export/mark"];
+      `/admin/allocation/engineers/${id}/account`, `/admin/allocation/engineers/${id}/account/unlink`,
+      "/admin/allocation/nodes/b300-14", "/admin/allocation/owner", "/admin/allocation/export/mark", "/me/engineer/ssh-key"];
     for (const path of get) expect((await GET(request(path))).status).toBe(200);
     for (const path of post) expect((await POST(request(path, "POST", {}))).status).toBe(200);
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([...get, ...post].map((path) => `http://127.0.0.1:3020/api/portal${path}`));
     const blocked = ["/admin/allocation/nodes/b300-x", "/admin/allocation/nodes/other-1", "/admin/allocation/engineers/not-hex",
-      `/admin/allocation/engineers/${id}/delete`, "/admin/allocation/nodes/b300-14/extra", "/admin/allocation/nodes/..%2fowner"];
+      `/admin/allocation/engineers/${id}/delete`, "/admin/allocation/nodes/b300-14/extra", "/admin/allocation/nodes/..%2fowner",
+      `/admin/allocation/engineers/${id}/account/extra`, `/admin/allocation/engineers/${id}/unlink`, "/admin/allocation/engineers/not-hex/account",
+      "/me/engineer/ssh-key/extra", "/me/engineers", "/me/engineer/other", "/me", `/me/engineer/${id}`];
     for (const path of blocked) {
       expect((await POST(request(path, "POST", {}))).status).toBe(404);
       expect((await GET(request(path))).status).toBe(404);
@@ -179,6 +182,9 @@ describe("portal service boundary", () => {
     expect((await POST(request("/admin/allocation/export", "POST", {}))).status).toBe(404);
     expect((await GET(request("/admin/allocation/owner"))).status).toBe(404);
     expect((await GET(request("/admin/allocation/export/mark"))).status).toBe(404);
+    expect((await POST(request("/me/engineer", "POST", {}))).status).toBe(404);
+    expect((await GET(request("/me/engineer/ssh-key"))).status).toBe(404);
+    expect((await GET(request(`/admin/allocation/engineers/${id}/account`))).status).toBe(404);
     expect((await DELETE(request("/admin/allocation/nodes/b300-14", "DELETE"))).status).toBe(404);
     expect(fetchMock).toHaveBeenCalledTimes(get.length + post.length);
   });

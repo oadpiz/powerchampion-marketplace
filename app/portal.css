@@ -96,6 +96,20 @@
   color: var(--muted, #aaa69e);
   line-height: 1.75;
 }
+.portal-meta {
+  display: grid;
+  grid-template-columns: minmax(110px, max-content) 1fr;
+  gap: 10px 20px;
+  margin: 0 0 18px;
+  font-size: 13px;
+}
+.portal-meta dt {
+  color: var(--muted, #aaa69e);
+}
+.portal-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .portal-panel-heading {
   display: flex;
   justify-content: space-between;

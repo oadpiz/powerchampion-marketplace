@@ -316,7 +316,8 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         keep = digest_token(request.cookies.get(COOKIE_NAME, ""))
         with store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
-            con.execute("UPDATE users SET password_hash=? WHERE id=?", (encoded, user["id"]))
+            # The user chose this password, so an administrator-issued one no longer needs replacing.
+            con.execute("UPDATE users SET password_hash=?,password_change_required_at=NULL WHERE id=?", (encoded, user["id"]))
             con.execute("DELETE FROM sessions WHERE user_id=? AND token_hash<>?", (user["id"], keep))
             store.audit(con, "account.password_changed", user["id"], user["id"])
         return {"ok": True}
@@ -689,7 +690,8 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         with store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             row = admin_target(con, user_id, admin)
-            con.execute("UPDATE users SET password_hash=? WHERE id=?", (encoded, user_id))
+            # An administrator now knows this password: the user must replace it before an SSH key change.
+            con.execute("UPDATE users SET password_hash=?,password_change_required_at=? WHERE id=?", (encoded, int(time.time()), user_id))
             con.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
             con.execute("DELETE FROM login_attempts WHERE scope=?", ("login:" + digest_token(row["email"]),))
             store.audit(con, "admin.password_reset", admin["id"], user_id)
