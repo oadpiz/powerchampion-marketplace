@@ -1,8 +1,8 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import { GatewayNotConnected } from "./admin-keys-section";
 import {
+  GatewayNotConnected,
   ResourceState,
   dateLabel,
   ownerLabel,
