@@ -9,6 +9,7 @@ import { CustomersSection } from "./admin-customers-section";
 import { AdminGatewaySection } from "./admin-gateway-section";
 import { AdminKeysSection } from "./admin-keys-section";
 import { AdminPersonasSection } from "./admin-personas-section";
+import { AdminRedeemSection } from "./admin-redeem-section";
 import { OverviewSection } from "./admin-overview-section";
 import { AdminUsageSection } from "./admin-usage-section";
 import { useLocale } from "./locale-provider";
@@ -18,6 +19,7 @@ export type AdminSection =
   | "overview"
   | "customers"
   | "keys"
+  | "redeem"
   | "usage"
   | "gateway"
   | "personas"
@@ -46,6 +48,7 @@ export function AdminPortal({
       zh: "客戶",
     },
     { section: "keys", href: "/admin/keys", en: "API keys", zh: "金鑰" },
+    { section: "redeem", href: "/admin/redeem", en: "Redeem codes", zh: "兌換碼" },
     { section: "usage", href: "/admin/usage", en: "Usage", zh: "用量" },
     { section: "gateway", href: "/admin/gateway", en: "Gateway", zh: "閘道" },
     { section: "personas", href: "/admin/personas", en: "Personas", zh: "人設" },
@@ -124,6 +127,7 @@ export function AdminPortal({
             <CustomersSection currentUserId={session.data?.user.id} />
           )}
           {section === "keys" && <AdminKeysSection />}
+          {section === "redeem" && <AdminRedeemSection />}
           {section === "usage" && <AdminUsageSection />}
           {section === "gateway" && <AdminGatewaySection />}
           {section === "personas" && <AdminPersonasSection />}

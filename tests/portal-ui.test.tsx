@@ -103,6 +103,8 @@ describe("account portal", () => {
     expect(portalErrorText(new PortalError(409, "target_not_customer", "x"), "en")).toBe("Keys can only be issued to customer accounts.");
     expect(portalErrorText(new PortalError(409, "key_enable_in_progress", "x"), "zh")).toBe("另一個請求正在重新啟用這把金鑰，請稍後重新整理。");
     expect(portalErrorText(new PortalError(409, "key_enable_in_progress", "x"), "en")).toBe("Another request is re-enabling this key. Refresh in a moment.");
+    expect(portalErrorText(new PortalError(409, "redeem_issue_unconfirmed_recent", "x"), "zh")).toBe("最近一次以這個標籤產生兌換碼時閘道沒有確認結果，請先檢查並停用該標籤的兌換碼。");
+    expect(portalErrorText(new PortalError(409, "redeem_issue_unconfirmed_recent", "x"), "en")).toBe("A recent issue with this label was not confirmed. Check and disable the codes with this label first.");
     expect(portalErrorText(new PortalError(404, "key_not_found", "x"), "en")).toBe("That API key no longer exists on the gateway.");
     expect(portalErrorText(new PortalError(404, "customer_not_found", "x"), "en")).toBe("That account was not found.");
     expect(portalErrorText(new PortalError(503, "gateway_auth_failed", "x"), "en")).toBe("The gateway rejected the portal's admin token. Check PC_GATEWAY_ADMIN_TOKEN on the portal service.");
@@ -1136,6 +1138,6 @@ describe("admin navigation for gateway sections", () => {
     const labels = within(screen.getByRole("navigation", { name: /administration/i }))
       .getAllByRole("link")
       .map((link) => link.textContent);
-    expect(labels).toEqual(["Overview", "Customers", "API keys", "Usage", "Gateway", "Personas", "Node allocation", "Credit requests", "Audit log"]);
+    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Credit requests", "Audit log"]);
   });
 });

@@ -97,6 +97,10 @@ export function portalErrorCodeText(error: unknown, locale: "en" | "zh"): string
       : "This account already has the maximum number of active keys. Disable one first.";
   if (code === "key_enable_in_progress")
     return locale === "zh" ? "另一個請求正在重新啟用這把金鑰，請稍後重新整理。" : "Another request is re-enabling this key. Refresh in a moment.";
+  if (code === "redeem_issue_unconfirmed_recent")
+    return locale === "zh"
+      ? "最近一次以這個標籤產生兌換碼時閘道沒有確認結果，請先檢查並停用該標籤的兌換碼。"
+      : "A recent issue with this label was not confirmed. Check and disable the codes with this label first.";
   if (code === "target_not_customer")
     return locale === "zh" ? "金鑰只能簽發給客戶帳號。" : "Keys can only be issued to customer accounts.";
   if (code === "key_not_found")

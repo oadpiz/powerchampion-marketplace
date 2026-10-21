@@ -8,6 +8,7 @@ const NAV = [
   { href: "/admin", en: "Overview", zh: "總覽" },
   { href: "/admin/customers", en: "Customers", zh: "客戶" },
   { href: "/admin/keys", en: "API keys", zh: "金鑰" },
+  { href: "/admin/redeem", en: "Redeem codes", zh: "兌換碼" },
   { href: "/admin/usage", en: "Usage", zh: "用量" },
   { href: "/admin/gateway", en: "Gateway", zh: "閘道" },
   { href: "/admin/personas", en: "Personas", zh: "人設" },
