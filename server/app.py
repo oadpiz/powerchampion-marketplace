@@ -23,6 +23,7 @@ from .support import COOKIE_NAME, PREFIX, PortalContext, PortalError, body_json,
 from .admin_accounts import attach_admin_accounts
 from .admin_gateway import attach_admin_gateway
 from .admin_personas import attach_admin_personas
+from .admin_fleet import attach_admin_fleet
 from .runtime_api import attach_runtime
 from .allocation import attach_allocation
 
@@ -384,6 +385,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
     attach_admin_accounts(application, ctx)
     attach_admin_gateway(application, ctx)
     attach_admin_personas(application, ctx)
+    attach_admin_fleet(application, ctx)
     attach_runtime(application, store, settings, agents, current_user, body_json, runtime_model, runtime_tools)
     attach_allocation(application, store, current_user, body_json, PREFIX)
     return application
