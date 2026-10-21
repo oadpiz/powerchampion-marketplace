@@ -162,6 +162,35 @@ function portalErrorStatusText(error: unknown, locale: "en" | "zh"): string {
     : "The request could not be completed. Please try again later.";
 }
 
+/** Admin Engineers page: the message for an activity status (null when the status needs none). */
+export function engineerActivityText(status: string, locale: "en" | "zh"): string | null {
+  const zh = locale === "zh";
+  if (status === "unconfigured")
+    return zh
+      ? "閘道尚未設定 Grafana 讀取權杖（B300_GRAFANA_READ_TOKEN），活動欄位暫無資料。"
+      : "The gateway has no Grafana read token yet (B300_GRAFANA_READ_TOKEN), so the activity columns are empty.";
+  if (status === "auth_failed")
+    return zh ? "Grafana 讀取權杖被拒（過期或已撤銷）" : "Grafana rejected the read token (expired or revoked)";
+  if (status === "unavailable") return zh ? "監控資料暫時無法取得" : "Monitoring data is unavailable right now";
+  if (status === "gateway_outdated")
+    return zh
+      ? "閘道版本尚未支援工程師活動（請先部署閘道）"
+      : "The gateway does not support engineer activity yet (deploy the gateway first)";
+  if (status === "gateway_error") return zh ? "無法從閘道取得工程師活動" : "Engineer activity could not be loaded from the gateway";
+  return null;
+}
+
+/** Admin Engineers page: what each SSH key status means. "Synced" is a bookkeeping fact, not a check of the nodes. */
+export function engineerKeyStatusText(status: string, locale: "en" | "zh"): { label: string; title: string } {
+  const zh = locale === "zh";
+  const title = zh
+    ? "已同步＝在金鑰變更後已標記匯出，並未逐台驗證節點"
+    : "Synced = an export was marked after the key changed; the nodes were not checked one by one";
+  if (status === "synced") return { label: zh ? "已同步" : "Synced", title };
+  if (status === "pending") return { label: zh ? "待同步" : "Pending sync", title };
+  return { label: zh ? "未提供" : "Not provided", title };
+}
+
 export function safeAccountReturn(value: string | null): string {
   if (!value) return "/account";
   if (/^(?:\/account(?:\/(?:keys|usage|credits|security|ssh-key))?|\/admin(?:\/(?:customers|credits|audit))?|\/tasks|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)) return value;
