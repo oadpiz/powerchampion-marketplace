@@ -45,8 +45,18 @@ async def body_json(request, maximum=65536):
     return value
 
 
+# C0 and C1 controls, DEL, bidi embedding/override/isolate characters and lone surrogates (which cannot
+# be encoded as UTF-8 and would fail later, in the database or the gateway request).
+UNSAFE_TEXT = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069\ud800-\udfff]")
+
+
+def unsafe_text(value, allow=""):
+    """True when value contains a character from UNSAFE_TEXT other than those in allow (e.g. "\n\r\t")."""
+    return any(char not in allow for char in UNSAFE_TEXT.findall(value))
+
+
 def text_value(value, label, maximum, required=True):
-    if not isinstance(value, str) or len(value.strip()) > maximum or (required and not value.strip()) or any(ord(c) < 32 for c in value):
+    if not isinstance(value, str) or len(value.strip()) > maximum or (required and not value.strip()) or unsafe_text(value):
         fail("invalid_input", "Enter a valid " + label + ".")
     return value.strip()
 

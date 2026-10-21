@@ -64,8 +64,31 @@ class AdminRedeemTests(PortalCase):
         self.assertEqual(json.loads(self.audit("admin.redeem_codes_issue_unconfirmed")[0]["details"]), {"count": 3, "amountUsd": "5.00"})
         self.gateway.fail = False
         self.gateway.reject = 401
-        self.assertEqual(self.issue(admin).json()["error"], "gateway_auth_failed")
+        self.assertEqual(self.issue(admin, acknowledgeUnconfirmed=True).json()["error"], "gateway_auth_failed")
         self.assertEqual(len(self.audit("admin.redeem_codes_issue_unconfirmed")), 1)
+
+    def test_a_retry_after_an_unconfirmed_issue_needs_an_acknowledgement(self):
+        admin = self.admin()
+        self.gateway.fail = True
+        self.assertEqual(self.issue(admin).status_code, 503)
+        self.gateway.fail = False
+        r = self.issue(admin)
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "redeem_issue_unconfirmed_recent"))
+        self.assertEqual(self.issue(admin, acknowledgeUnconfirmed="yes").status_code, 422)
+        self.assertEqual(self.gateway.issued_codes, [])
+        self.assertEqual(self.issue(admin, label="Other").status_code, 201)
+        self.assertEqual(self.issue(admin, acknowledgeUnconfirmed=True).status_code, 201)
+        self.assertEqual(len(self.gateway.issued_codes), 6)
+        with self.store.connect() as con:
+            con.execute("UPDATE audit_events SET created_at=created_at-1801 WHERE action='admin.redeem_codes_issue_unconfirmed'")
+        self.assertEqual(self.issue(admin).status_code, 201)
+
+    def test_unsafe_label_characters_are_refused(self):
+        admin = self.admin()
+        for label in ("\\ud800", "a\\u202eb", "a\\u007fb", "a\\u0085b", "a\\u2066b"):
+            r = self.post_raw(admin, "/admin/redeem/codes", '{"amountUsd": 5, "count": 1, "label": "%s"}' % label)
+            self.assertEqual((r.status_code, r.json()["error"]), (400, "invalid_input"), label)
+        self.assertEqual(self.gateway.issued_codes, [])
 
     def test_list_projection_status_owner_and_cap(self):
         admin = self.admin()

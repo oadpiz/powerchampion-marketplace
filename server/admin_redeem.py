@@ -21,6 +21,7 @@ MAX_BATCH = 500
 MAX_EXPIRES_DAYS = 3650
 LIST_LIMIT = 1000
 UNCONFIRMED = ("unavailable", "invalid_response", "response_limit")
+UNCONFIRMED_WINDOW = 1800
 FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -103,10 +104,22 @@ def attach_admin_redeem(application, ctx):
             _invalid("Issue from 1 to 500 codes per batch.")
         # Required: the label is how a batch is reconciled later.
         label = text_value(body.get("label"), "batch label", 80)
+        acknowledged = body.get("acknowledgeUnconfirmed", False)
+        if not isinstance(acknowledged, bool):
+            _invalid("acknowledgeUnconfirmed must be true or false.")
         expires_days = body.get("expiresDays")
         if expires_days is not None and (isinstance(expires_days, bool) or not isinstance(expires_days, int) or not 1 <= expires_days <= MAX_EXPIRES_DAYS):
             _invalid("Expiry must be from 1 to 3,650 days, or none.")
         ctx.require_gateway()
+        if not acknowledged:
+            # After an unconfirmed issue, codes with this label may exist that nobody has seen. Retrying blindly
+            # would leave a second, live batch; the admin must check the list (and disable those) first.
+            with ctx.store.connect() as con:
+                recent = con.execute("SELECT COUNT(*) FROM audit_events WHERE action='admin.redeem_codes_issue_unconfirmed' AND target_id=? AND created_at>?",
+                                     (label, int(time.time()) - UNCONFIRMED_WINDOW)).fetchone()[0]
+            if recent:
+                fail("redeem_issue_unconfirmed_recent", "A recent issue with this label was not confirmed by the gateway. Check the list for codes with "
+                     "this label and disable them, then retry with acknowledgeUnconfirmed.", 409)
         amount_text = f"{amount:.2f}"
         try:
             codes = await ctx.gateway.issue_redeem_codes(amount_usd=amount, count=count, label=label, expires_days=expires_days)

@@ -37,7 +37,7 @@ def attach_admin_gateway(application, ctx):
         if target["disabled_at"]:
             fail("invalid_input", "This account is disabled.", 409)
         if target["role"] != "customer":
-            fail("target_not_customer", "金鑰只能簽發給客戶帳號。 (Keys can only be issued to customer accounts.)", 409)
+            fail("target_not_customer", "Keys can only be issued to customer accounts.", 409)
         ctx.require_gateway()
         row, created = await ctx.provision_key(user_id, label, prepaid, limits, admin["id"], "admin.key_issued")
         balance = created.get("balance_nano_usd")
@@ -147,13 +147,23 @@ def attach_admin_gateway(application, ctx):
                 fail("account_disabled", "Enable the account first.", 409)
             if owner and owner["status"] == "revoked":
                 # Re-enabling counts against the same per-account cap as issuing a new key.
-                reservation = ctx.store.reserve_key_slot(owner["user_id"])
+                # The tag marks the reservation as "re-enabling this key", visible to other workers too.
+                tag = "enable:" + key_id
+                reservation = ctx.store.reserve_key_slot(owner["user_id"], tag=tag)
                 if reservation is None:
                     with ctx.store.connect() as con:
+                        # Reservations first, key second: a re-enable that commits between the two reads then shows
+                        # up as "active" rather than vanishing from both.
+                        live = con.execute("SELECT id FROM key_reservations WHERE user_id=? AND created_at>?",
+                                           (owner["user_id"], int(time.time()) - 300)).fetchall()
                         current = con.execute("SELECT status FROM gateway_keys WHERE id=?", (owner["id"],)).fetchone()
+                    pending = any(row["id"].startswith(tag + ":") for row in live)
                     if current and current["status"] == "active":
-                        # A concurrent re-enable of this same key won; the requested state already holds.
+                        # A concurrent re-enable of this same key finished first; the requested state already holds.
                         return {"ok": True}
+                    if pending:
+                        # Another request is re-enabling this same key right now and holds the last slot.
+                        fail("key_enable_in_progress", "This key is being re-enabled by another request. Refresh in a moment.", 409)
                     fail("key_limit", "This account already has the maximum number of active keys. Disable one first.", 409)
         try:
             try:

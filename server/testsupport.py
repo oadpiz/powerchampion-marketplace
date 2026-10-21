@@ -61,6 +61,7 @@ class FakeGateway:
         self.fail = False
         self.reject = None
         self.create_delay = 0
+        self.disable_delay = 0
         self.issue_lock = threading.Lock()
         self.personas = {"p1": {"persona_id": "p1", "name": "Support", "created_at": 1.0, "active_rev": 1,
                                 "revisions": [{"rev": 1, "system": "Be kind.", "examples": [], "note": "first", "author": "admin", "created_at": 1.0}]}}
@@ -92,6 +93,8 @@ class FakeGateway:
         return result
 
     async def set_key_disabled(self, key_id, disabled):
+        if self.disable_delay:
+            await asyncio.sleep(self.disable_delay)
         self._maybe_fail()
         (self.disabled if disabled else self.enabled).append(key_id)
 
@@ -301,6 +304,10 @@ class PortalCase(unittest.TestCase):
 
     def post(self, client, path, data):
         return client.post(BASE + path, json=data, headers={"Origin": ORIGIN})
+
+    def post_raw(self, client, path, text):
+        """POST a JSON document given as text, e.g. one with a lone-surrogate escape that json= cannot encode."""
+        return client.post(BASE + path, content=text.encode("ascii"), headers={"Origin": ORIGIN, "Content-Type": "application/json"})
 
     def register(self, client, email):
         response = self.post(client, "/auth/register", {"email": email, "name": "Test", "password": PASSWORD})

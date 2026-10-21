@@ -67,7 +67,7 @@ class AdminPersonaTests(PortalCase):
         r = self.post(admin, "/admin/personas/p1/activate", {"rev": 9})
         self.assertEqual((r.status_code, r.json()["error"]), (404, "persona_not_found"))
         self.assertFalse([c for c in self.gateway.persona_calls if c[0] in ("try", "activate")])
-        self.assertEqual(self.audit("admin.persona_activated"), [])
+        self.assertEqual((self.audit("admin.persona_activated"), self.audit("admin.persona_try_started")), ([], []))
 
     def test_gateway_failures_map_and_are_not_audited(self):
         admin = self.admin()
@@ -81,7 +81,22 @@ class AdminPersonaTests(PortalCase):
         self.gateway.reject = None
         self.gateway.fail = True
         self.assertEqual(self.post(admin, "/admin/personas/p1/try", {"input": "x"}).json()["error"], "gateway_unavailable")
-        self.assertEqual([e for e in rows(self.store, "audit_events") if e["action"].startswith("admin.persona")], [])
+        # The attempt is recorded before the call (a timed-out try may still have used tokens); success is not.
+        self.assertEqual([e["action"] for e in rows(self.store, "audit_events") if e["action"].startswith("admin.persona")], ["admin.persona_try_started"])
+        self.assertEqual(self.details("admin.persona_try_started"), [{"revs": [None], "inputChars": 1, "maxTokens": 300}])
+
+    def test_unsafe_characters_are_refused_before_the_gateway(self):
+        admin = self.admin()
+        self.assertEqual(self.post_raw(admin, "/admin/personas", '{"name": "a\\ud800"}').status_code, 400)
+        self.assertEqual(self.post_raw(admin, "/admin/personas", '{"name": "a\\u202eb"}').status_code, 400)
+        good = '"examples": [], "note": "", "activate": false'
+        for system in ("a\\ud800", "a\\u007fb", "a\\u0085b", "a\\u2069b"):
+            r = self.post_raw(admin, "/admin/personas/p1/revisions", '{"system": "%s", %s}' % (system, good))
+            self.assertEqual(r.status_code, 422, system)
+        self.assertEqual(self.post_raw(admin, "/admin/personas/p1/revisions", '{"system": "line\\nnext\\ttab", %s}' % good).status_code, 200)
+        self.assertEqual(self.post_raw(admin, "/admin/personas/p1/try", '{"input": "\\udfff"}').status_code, 422)
+        self.assertFalse([c for c in self.gateway.persona_calls if c[0] in ("try", "create")])
+        self.assertEqual(self.audit("admin.persona_try_started"), [])
 
     def test_unconfigured_and_forbidden(self):
         admin = self.admin()

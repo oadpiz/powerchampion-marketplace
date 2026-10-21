@@ -7,7 +7,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from .gateway import PERSONA_ID
-from .support import PREFIX, body_json, fail, gateway_path, text_value
+from .support import PREFIX, body_json, fail, gateway_path, text_value, unsafe_text
 
 PERSONA_NOT_FOUND = ("persona_not_found", "This persona or revision does not exist.")
 MAX_SYSTEM = 32000
@@ -24,7 +24,7 @@ def _invalid(detail):
 
 
 def _no_controls(value, keep="\n\r\t"):
-    return not any(ord(c) < 32 and c not in keep for c in value)
+    return not unsafe_text(value, allow=keep)
 
 
 def _multiline(value, label, maximum):
@@ -131,7 +131,11 @@ def attach_admin_personas(application, ctx):
         temperature = body.get("temperature", 0.8)
         if isinstance(temperature, bool) or not isinstance(temperature, (int, float)) or not math.isfinite(temperature) or not 0 <= temperature <= 2:
             _invalid("Temperature must be a number from 0 to 2.")
-        # Spends model tokens, so it is audited like a write (sizes only, never the text).
+        # Spends model tokens, so it is audited like a write (sizes only, never the text). The attempt is
+        # recorded before the call: a try that times out on the way back may still have used tokens.
+        details = {"revs": revs, "inputChars": len(text), "maxTokens": max_tokens}
+        ctx.require_gateway()
+        ctx.audit("admin.persona_try_started", admin, persona_id, details)
         result = await ctx.gateway_call(ctx.gateway.try_persona, persona_id, text=text, revs=revs, max_tokens=max_tokens, temperature=temperature)
-        ctx.audit("admin.persona_tried", admin, persona_id, {"revs": revs, "inputChars": len(text), "maxTokens": max_tokens})
+        ctx.audit("admin.persona_tried", admin, persona_id, details)
         return result

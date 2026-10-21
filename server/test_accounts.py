@@ -1,5 +1,7 @@
 import json
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 from server.app import create_app
 from server.gateway import GatewayError
@@ -521,6 +523,40 @@ class AdminKeysTests(_PortalCase):
         self.assertEqual(rows(self.store, "key_reservations"), [])
         self.assertEqual(next(k for k in rows(self.store, "gateway_keys") if k["id"] == "local-x")["status"], "active")
 
+    def test_simultaneous_re_enables_of_the_same_key_report_in_progress_not_the_cap(self):
+        admin, other = self.admin(), self.admin("admin2@example.test")
+        user = self.register(self.client(), "a@example.test")
+        with self.store.connect() as con:
+            for n in range(19):
+                con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", ("local-%d" % n, user["id"], "gk-%d" % n, "k", "sk-%d" % n, "active", 1))
+            con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,?)", ("local-x", user["id"], "gk-x", "k", "sk-x", "revoked", 1, 2))
+        self.gateway.disable_delay = 0.6
+
+        def enable(client, wait):
+            time.sleep(wait)
+            return self.post(client, "/admin/keys/gk-x/disable", {"disabled": False})
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(enable, admin, 0)
+            second = executor.submit(enable, other, 0.2)
+            responses = [first.result(), second.result()]
+        self.assertEqual(responses[0].status_code, 200, responses[0].text)
+        self.assertEqual((responses[1].status_code, responses[1].json()["error"]), (409, "key_enable_in_progress"))
+        self.assertEqual(self.gateway.enabled, ["gk-x"])
+        self.assertEqual(len(self.audit("admin.key_enabled")), 1)
+        self.assertEqual(rows(self.store, "key_reservations"), [])
+        self.assertEqual(next(k for k in rows(self.store, "gateway_keys") if k["id"] == "local-x")["status"], "active")
+        # Once the first request has finished, the same request is simply "already enabled".
+        self.assertEqual(self.post(other, "/admin/keys/gk-x/disable", {"disabled": False}).status_code, 200)
+
+    def test_unsafe_characters_in_labels_are_refused(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        for label in ("\\ud800", "a\\u202eb", "a\\u007fb", "a\\u009fb"):
+            r = self.post_raw(admin, f"/admin/customers/{user['id']}/keys", '{"label": "%s", "prepaidUsd": 5}' % label)
+            self.assertEqual((r.status_code, r.json()["error"]), (400, "invalid_input"), label)
+        self.assertEqual(self.gateway.issued, [])
+
     def test_a_concurrent_re_enable_of_the_same_key_is_not_a_cap_error(self):
         admin = self.admin()
         user = self.register(self.client(), "a@example.test")
@@ -530,11 +566,11 @@ class AdminKeysTests(_PortalCase):
             con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,?)", ("local-x", user["id"], "gk-x", "k", "sk-x", "revoked", 1, 2))
         reserve = self.store.reserve_key_slot
 
-        def other_request_won(user_id, limit=20):
+        def other_request_won(user_id, limit=20, tag=None):
             # The other re-enable of gk-x finishes between this request's ownership read and its reservation.
             with self.store.connect() as con:
                 con.execute("UPDATE gateway_keys SET status='active',revoked_at=NULL WHERE id='local-x'")
-            return reserve(user_id, limit)
+            return reserve(user_id, limit, tag=tag)
 
         self.store.reserve_key_slot = other_request_won
         r = self.post(admin, "/admin/keys/gk-x/disable", {"disabled": False})

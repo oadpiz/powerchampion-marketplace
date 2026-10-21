@@ -814,6 +814,16 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(GatewayError):
                 await self.gateway.issue_redeem_codes(amount_usd=5, count=2, label="L")
 
+    async def test_only_the_redeem_listings_get_the_larger_response_cap(self):
+        row = {"code_id": "c", "nano_usd": 1, "label": "x" * 200, "created_at": 1.0, "created_by": "admin"}
+        big = [row] * 25000  # about 6.5 MB, above the default 4 MiB cap
+        with self.transport(lambda _: httpx.Response(200, json=big)):
+            self.assertEqual(len(await self.gateway.list_redeem_codes()), 25000)
+        with self.transport(lambda _: httpx.Response(200, json={"personas": big})):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.list_personas()
+        self.assertEqual(caught.exception.code, "response_limit")
+
     async def test_redeem_csv_requires_csv_and_the_known_header(self):
         header = "code_id,code_hash,nano_usd,label,created_at,created_by,redeemed_at,redeemed_by_key_id,disabled_at,expires_at\r\n"
         with self.transport(lambda _: httpx.Response(200, text=header + "c1,h,1000000000,L,1.0,admin,,,,\r\n", headers={"content-type": "text/csv; charset=utf-8"})):

@@ -29,6 +29,10 @@ CONTROL_JOB_FIELDS = ("id", "kind", "model_id", "state", "phase", "reason", "cre
 REDEEM_CSV_HEADER = ["code_id", "code_hash", "nano_usd", "label", "created_at", "created_by",
                      "redeemed_at", "redeemed_by_key_id", "disabled_at", "expires_at"]
 PERSONA_TRY_TIMEOUT = 90
+DEFAULT_MAX_BYTES = 4 * 1024 * 1024
+# The gateway lists every redeem code in one response (no pagination yet): about 230 bytes per code in
+# JSON, so 32 MiB covers roughly 140k codes. Gateway-side pagination is the follow-up.
+REDEEM_MAX_BYTES = 32 * 1024 * 1024
 
 
 class GatewayError(Exception):
@@ -75,7 +79,7 @@ class GatewayAdapter:
         self.settings = settings
         self.configured = bool(settings.gateway_admin_token)
 
-    async def _request(self, method, path, payload=None, *, timeout=15, expect="object"):
+    async def _request(self, method, path, payload=None, *, timeout=15, expect="object", max_bytes=DEFAULT_MAX_BYTES):
         if not self.configured:
             raise GatewayError("unconfigured")
         try:
@@ -84,7 +88,7 @@ class GatewayAdapter:
                                          headers={"X-Admin-Token": self.settings.gateway_admin_token, "Accept": "application/json"}) as response:
                     data = bytearray()
                     async for chunk in response.aiter_bytes():
-                        if len(data) + len(chunk) > 4 * 1024 * 1024:
+                        if len(data) + len(chunk) > max_bytes:
                             raise GatewayError("response_limit")
                         data.extend(chunk)
                     if 400 <= response.status_code < 500:
@@ -304,7 +308,7 @@ class GatewayAdapter:
         return codes
 
     async def list_redeem_codes(self):
-        return [item for item in await self._request("GET", "/api/redeem/codes", expect="array") if isinstance(item, dict)]
+        return [item for item in await self._request("GET", "/api/redeem/codes", expect="array", max_bytes=REDEEM_MAX_BYTES) if isinstance(item, dict)]
 
     async def disable_redeem_code(self, code_id):
         value = await self._request("POST", "/api/redeem/codes/" + _identifier(code_id, CODE_ID) + "/disable")
@@ -312,7 +316,7 @@ class GatewayAdapter:
             raise GatewayError("invalid_response")
 
     async def redeem_code_rows(self):
-        text = await self._request("GET", "/api/redeem/codes.csv", expect="csv")
+        text = await self._request("GET", "/api/redeem/codes.csv", expect="csv", max_bytes=REDEEM_MAX_BYTES)
         try:
             rows = list(csv.reader(io.StringIO(text)))
         except csv.Error:
