@@ -37,5 +37,27 @@ class KeyIssuanceSettingTests(unittest.TestCase):
             self.assertTrue(Settings.from_env().customer_key_issuance)
 
 
+class GrafanaUrlSettingTests(unittest.TestCase):
+    def test_default_and_env(self):
+        self.assertEqual(Settings().grafana_url, "https://grafana.powerchampion.ai")
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PC_GRAFANA_URL", None)
+            self.assertEqual(Settings.from_env().grafana_url, "https://grafana.powerchampion.ai")
+        with patch.dict(os.environ, {"PC_GRAFANA_URL": "https://grafana.example.test/"}, clear=False):
+            self.assertEqual(Settings.from_env().grafana_url, "https://grafana.example.test")
+
+    def test_empty_disables_the_link(self):
+        with patch.dict(os.environ, {"PC_GRAFANA_URL": ""}, clear=False):
+            self.assertEqual(Settings.from_env().grafana_url, "")
+        self.assertEqual(Settings(grafana_url="").grafana_url, "")
+
+    def test_rejects_unsafe_urls(self):
+        for url in ("http://grafana.example.test", "https://u:p@grafana.example.test", "https://grafana.example.test/?a=1",
+                    "https://grafana.example.test/#x", "https://grafana.example.test/sub", "javascript:alert(1)", "https://"):
+            with self.subTest(url=url):
+                with self.assertRaises(ValueError):
+                    Settings(grafana_url=url)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,7 @@
 """Shared helpers so every backend test runs on SQLite by default and on Postgres when
 PC_PORTAL_TEST_DATABASE_URL is set (see scripts/test_backend_postgres.sh)."""
 import asyncio
+import copy
 import os
 import tempfile
 import threading
@@ -72,6 +73,9 @@ class FakeGateway:
         self.job_value = {"id": "wf-1", "kind": "candidate", "model_id": "glm-5.2-fp8", "state": "awaiting_approval",
                           "phase": "ready", "reason": "", "created_at": 1.0, "updated_at": 2.0}
         self.redeem_codes, self.issued_codes, self.disabled_codes = [], [], []
+        self.activity_value = {"status": "ok", "stale": False, "generated_at": 1792607481.9, "age_s": 1.0, "errors": {}, "truncated": False,
+                               "nodes": [], "gpu_usage": [], "logins": [], "alerts": [], "deploys": []}
+        self.activity_calls = 0
 
     def _maybe_fail(self):
         if self.reject is not None:
@@ -271,6 +275,12 @@ class FakeGateway:
         self._maybe_fail()
         return [[r["code_id"], "hash-" + r["code_id"], str(r["nano_usd"]), r["label"], str(r["created_at"]), r["created_by"], "", "", "", ""]
                 for r in self.redeem_codes]
+
+    # engineers: the gateway's GET /api/engineers/activity payload
+    async def engineer_activity(self):
+        self._maybe_fail()
+        self.activity_calls += 1
+        return copy.deepcopy(self.activity_value)
 
 
 ORIGIN = "http://localhost:3010"

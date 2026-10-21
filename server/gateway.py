@@ -33,6 +33,8 @@ DEFAULT_MAX_BYTES = 4 * 1024 * 1024
 # The gateway lists every redeem code in one response (no pagination yet): about 230 bytes per code in
 # JSON, so 32 MiB covers roughly 140k codes. Gateway-side pagination is the follow-up.
 REDEEM_MAX_BYTES = 32 * 1024 * 1024
+ACTIVITY_STATUSES = frozenset({"ok", "partial", "unconfigured", "auth_failed", "unavailable"})
+ACTIVITY_LISTS = ("nodes", "gpu_usage", "logins", "alerts", "deploys")
 
 
 class GatewayError(Exception):
@@ -329,3 +331,11 @@ class GatewayAdapter:
         if not rows or rows[0] != REDEEM_CSV_HEADER or any(len(row) != len(REDEEM_CSV_HEADER) for row in rows[1:]):
             raise GatewayError("invalid_response")
         return rows[1:]
+
+    # engineers: read-only cluster activity (GPU usage, logins, alerts, deploy marks). Not passed through
+    # _strip_secrets: the portal builds its response from an explicit field allowlist instead.
+    async def engineer_activity(self):
+        value = await self._request("GET", "/api/engineers/activity")
+        if any(not isinstance(value.get(name), list) for name in ACTIVITY_LISTS) or value.get("status") not in ACTIVITY_STATUSES:
+            raise GatewayError("invalid_response")
+        return value
