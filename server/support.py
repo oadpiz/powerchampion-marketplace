@@ -183,13 +183,16 @@ class PortalContext:
         # Mirrors require_gateway(customer=True): whether POST /keys can succeed for a customer.
         return bool(self.gateway.configured and self.settings.customer_key_issuance)
 
-    async def gateway_call(self, call, *args):
+    async def gateway_call(self, call, *args, not_found=None, **kwargs):
+        """not_found=(code, detail) turns a gateway 404 into that route-specific error."""
         self.require_gateway()
         try:
-            return await call(*args)
+            return await call(*args, **kwargs)
         except GatewayError as error:
             if error.code == "invalid_identifier":
                 fail("invalid_input", "Check the model, node or job name.")
+            if not_found and error.code == "rejected" and error.status == 404:
+                fail(not_found[0], not_found[1], 404)
             gateway_fail(error)
         except ValueError:
             fail("invalid_input", "Check the request details.", 422)
