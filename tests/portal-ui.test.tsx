@@ -1133,6 +1133,7 @@ describe("admin navigation for gateway sections", () => {
     ["/admin/usage", "Usage"],
     ["/admin/gateway", "Gateway"],
     ["/admin/allocation", "Node allocation"],
+    ["/admin/engineers", "Engineers"],
   ])("marks %s as the current section", (pathname, name) => {
     wrap(<AdminShell pathname={pathname}><p>content</p></AdminShell>);
     expect(screen.getByRole("link", { name })).toHaveAttribute("aria-current", "page");
@@ -1140,6 +1141,6 @@ describe("admin navigation for gateway sections", () => {
     const labels = within(screen.getByRole("navigation", { name: /administration/i }))
       .getAllByRole("link")
       .map((link) => link.textContent);
-    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Credit requests", "Audit log"]);
+    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Credit requests", "Audit log"]);
   });
 });

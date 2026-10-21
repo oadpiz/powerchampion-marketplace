@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { PortalError, type PortalUser } from "../lib/portal-client";
 import { AdminAllocationSection } from "./admin-allocation-section";
+import { AdminEngineersSection } from "./admin-engineers-section";
 import { AuditSection } from "./admin-audit-section";
 import { CreditsSection } from "./admin-credits-section";
 import { CustomersSection } from "./admin-customers-section";
@@ -24,6 +25,7 @@ export type AdminSection =
   | "gateway"
   | "personas"
   | "allocation"
+  | "engineers"
   | "credits"
   | "audit";
 
@@ -58,6 +60,7 @@ export function AdminPortal({
       en: "Node allocation",
       zh: "機台分配",
     },
+    { section: "engineers", href: "/admin/engineers", en: "Engineers", zh: "工程師" },
     {
       section: "credits",
       href: "/admin/credits",
@@ -132,6 +135,7 @@ export function AdminPortal({
           {section === "gateway" && <AdminGatewaySection />}
           {section === "personas" && <AdminPersonasSection />}
           {section === "allocation" && <AdminAllocationSection />}
+          {section === "engineers" && <AdminEngineersSection />}
           {section === "credits" && <CreditsSection />}
           {section === "audit" && <AuditSection />}
         </>

@@ -606,6 +606,7 @@ test("server-renders each administration section and rejects unknown ones", asyn
     ["/admin/gateway", "Gateway"],
     ["/admin/personas", "Personas"],
     ["/admin/allocation", "Node allocation"],
+    ["/admin/engineers", "Engineers"],
   ]) {
     const response = await render(path);
     assert.equal(response.status, 200, path);
@@ -614,6 +615,7 @@ test("server-renders each administration section and rejects unknown ones", asyn
   assert.equal((await render("/admin/not-a-section")).status, 404);
   assert.equal((await render("/admin/keys/extra")).status, 404);
   assert.equal((await render("/admin/redeem/x")).status, 404);
+  assert.equal((await render("/admin/engineers/justin")).status, 404);
 });
 
 test("server-renders the full API developer guide", async () => {

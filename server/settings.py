@@ -27,6 +27,8 @@ class Settings:
     customer_key_issuance: bool = False
     runtime_enabled: bool = False
     runtime_encryption_key: str = field(default="", repr=False)
+    # Base of the cluster Grafana for the admin Engineers page links; "" hides the links.
+    grafana_url: str = "https://grafana.powerchampion.ai"
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -42,6 +44,10 @@ class Settings:
             raise ValueError("Trial request limits must be nonnegative globally and positive per session")
         if self.database_url and not self.database_url.startswith(("sqlite:///", "postgres://", "postgresql://", "postgresql+psycopg://")):
             raise ValueError("PC_PORTAL_DATABASE_URL must be a sqlite:/// or postgresql:// (or postgres://) URL")
+        if self.grafana_url:
+            grafana = urlsplit(self.grafana_url)
+            if grafana.scheme != "https" or not grafana.hostname or grafana.username or grafana.password or grafana.query or grafana.fragment or grafana.path not in ("", "/"):
+                raise ValueError("PC_GRAFANA_URL must be empty or an HTTPS origin without credentials, path or query")
 
     @property
     def resolved_database_url(self):
@@ -89,4 +95,5 @@ class Settings:
             customer_key_issuance=os.environ.get("PC_CUSTOMER_KEY_ISSUANCE", "0") == "1",
             runtime_enabled=os.environ.get("PC_RUNTIME_ENABLED", "0") == "1",
             runtime_encryption_key=os.environ.get("PC_RUNTIME_ENCRYPTION_KEY", ""),
+            grafana_url=os.environ.get("PC_GRAFANA_URL", "https://grafana.powerchampion.ai").strip().rstrip("/"),
         )

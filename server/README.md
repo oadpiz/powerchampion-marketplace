@@ -185,6 +185,35 @@ Size limits: the gateway lists every redeem code in one response, so the portal 
 for the redeem list and CSV (about 140k codes; other gateway calls keep 4 MiB), and the BFF passes
 an export of up to 6 MiB (roughly 40k codes). Gateway-side pagination is the follow-up.
 
+### Engineers overview (read-only)
+
+`GET /api/portal/admin/engineers` (admin; customers 403, anonymous 401; no write route, reads are not
+audited). One row per 機台分配 engineer, joined by username with the gateway's
+`GET /api/engineers/activity` (Grafana Viewer token on the gateway side):
+
+- Roster (always present, also when the gateway is down): `id`, `clusterId`, `username`, `displayName`,
+  `active`, `keyStatus` (`missing` / `pending` / `synced`), `keyFingerprint`, `keyType`, `grafanaUrl`.
+  "synced" only means an export was marked after the last key change; the nodes are not checked.
+- Activity: per assigned engineer node `up`, `gpuCount`, `collector` (`ok` ≤ 120 s / `stale` / `failed`),
+  `labelEngineer`/`labelMatches` (Prometheus `engineer` label vs. the allocation), the engineer's own
+  `gpusInUse`/`processes`/`memoryBytes`, last **interactive** (pty) login and `sessions`; firing alerts
+  by username (`reason: "user"`) or by assigned node (`"node"`); the last 10 deploy marks by the
+  relay-derived `owner` (`engN` = `clusterId`; the self-declared `user` is shown, never used to match;
+  the gateway keeps 14 days). Deploy `text` is one line with IP addresses and token-like values masked
+  (`[address]`, `[redacted]`); a `model` that looks like a URL or address is dropped.
+- `unmatched`: GPU usage and logins of users/nodes not on the roster (tku, root, `uid_N`), alerts on
+  unassigned nodes, deploys whose owner matches no engineer; 50 rows each.
+- `activity.status`: the gateway's `ok`, `partial`, `unconfigured` (no Grafana token), `auth_failed`,
+  `unavailable`, plus `gateway_unconfigured` (no `PC_GATEWAY_ADMIN_TOKEN`; the gateway is not called),
+  `gateway_outdated` (gateway answers 404: not deployed yet) and `gateway_error` (`activity.error` is
+  `gateway_auth_failed`, `unavailable`, `invalid_response`, `response_limit`, …). `stale` is true when the
+  gateway serves an older snapshot after a failed refresh (it then keeps the old `status` and reports the
+  current failure in `errors`, so the UI shows `errors` whatever the status), or when the data is more than
+  300 s old. An unrecognised error code is reported as `unknown`. A gateway row that fails validation is
+  dropped (`truncated`) and its node reads null ("—"), never 0.
+- Never in the response: command lines, process names, IPs/hosts, SSH key text, email, account, tokens.
+  Command history stays on the nodes (`sudo b300-activity`). Every field is copied through an allowlist.
+
 Operator-assisted recovery, after independently verifying the account owner:
 
 ```sh
@@ -213,6 +242,7 @@ this service. Registration establishes a portal account, not verified identity.
 | `PC_GATEWAY_DAILY_TOKEN_LIMIT` | `1000000`, positive daily token quota on newly issued gateway keys |
 | `PC_GATEWAY_RPM` | `60`, positive request limit on new keys |
 | `PC_GATEWAY_MAX_INFLIGHT` | `2`, positive concurrency limit on new keys |
+| `PC_GRAFANA_URL` | `https://grafana.powerchampion.ai`; HTTPS origin of the cluster Grafana for the Engineers page links (`/d/b300-engineers?var-engineer=<username>`). Empty hides the links |
 | `PC_RUNTIME_ENABLED` | `0`; opt-in background Agent tasks when set to `1` |
 | `PC_RUNTIME_ENCRYPTION_KEY` | Separate Fernet key for per-task model credentials; missing/invalid key leaves tasks unavailable |
 

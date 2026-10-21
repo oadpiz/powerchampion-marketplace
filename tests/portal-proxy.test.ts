@@ -307,6 +307,26 @@ describe("portal service boundary", () => {
     expect(fetchMock).toHaveBeenCalledTimes(get.length + post.length);
   });
 
+  it("proxies the read-only engineers overview as one exact GET without a query", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ engineers: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await GET(request("/admin/engineers"))).status).toBe(200);
+    expect((await GET(request("/admin/engineers?node=b300-11&cmd=1"))).status).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      "http://127.0.0.1:3020/api/portal/admin/engineers", "http://127.0.0.1:3020/api/portal/admin/engineers"]);
+    const blocked = ["/admin/engineers/", "/admin/engineers/justin", "/admin/engineers/activity", "/admin/engineersx",
+      "/admin/engineers/..%2fkeys", "/x/admin/engineers", "/admin/admin/engineers", "/xadmin/engineers",
+      "/admin/engineers%2f", "/admin/Engineers"];
+    for (const path of blocked) {
+      expect((await GET(request(path))).status, path).toBe(404);
+      expect((await POST(request(path, "POST", {}))).status, path).toBe(404);
+    }
+    expect((await POST(request("/admin/engineers", "POST", {}))).status).toBe(404);
+    expect((await DELETE(request("/admin/engineers", "DELETE"))).status).toBe(404);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("relays a gateway outage with its own error code instead of the generic service message", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", "");
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ error: "gateway_unavailable", detail: "internal gateway.example:9" }, { status: 503 })));

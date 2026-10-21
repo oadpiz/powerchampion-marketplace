@@ -849,6 +849,43 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(GatewayError):
                 await self.gateway.redeem_code_rows()
 
+    ACTIVITY = {"generated_at": 1792607481.9, "age_s": 3.1, "stale": False, "status": "ok", "errors": {}, "truncated": False,
+                "nodes": [], "gpu_usage": [], "logins": [], "alerts": [], "deploys": []}
+
+    async def test_engineer_activity_is_an_admin_get(self):
+        with self.transport(lambda _: httpx.Response(200, json=self.ACTIVITY)):
+            value = await self.gateway.engineer_activity()
+        self.assertEqual(value["status"], "ok")
+        request = self.requests[0]
+        self.assertEqual(request.method, "GET")
+        self.assertEqual(request.url.path, "/api/engineers/activity")
+        self.assertEqual(request.url.query, b"")
+        self.assertEqual(request.headers["X-Admin-Token"], "adapter-test-admin-token")
+        self.assertNotIn("adapter-test-admin-token", json.dumps(value))
+
+    async def test_engineer_activity_rejects_a_wrong_shape(self):
+        for broken in (dict(self.ACTIVITY, nodes={"b300-11": {}}), dict(self.ACTIVITY, deploys=None),
+                       {k: v for k, v in self.ACTIVITY.items() if k != "alerts"}, dict(self.ACTIVITY, status="weird"),
+                       {k: v for k, v in self.ACTIVITY.items() if k != "status"}, dict(self.ACTIVITY, status=["ok"]),
+                       dict(self.ACTIVITY, status={"ok": 1})):
+            with self.subTest(broken=broken):
+                with self.transport(lambda _, broken=broken: httpx.Response(200, json=broken)):
+                    with self.assertRaises(GatewayError) as caught:
+                        await self.gateway.engineer_activity()
+                self.assertEqual(caught.exception.code, "invalid_response")
+
+    async def test_engineer_activity_accepts_every_gateway_status(self):
+        for status in ("ok", "partial", "unconfigured", "auth_failed", "unavailable"):
+            with self.subTest(status=status):
+                with self.transport(lambda _, status=status: httpx.Response(200, json=dict(self.ACTIVITY, status=status))):
+                    self.assertEqual((await self.gateway.engineer_activity())["status"], status)
+
+    async def test_engineer_activity_on_an_older_gateway_is_a_404_rejection(self):
+        with self.transport(lambda _: httpx.Response(404, json={"detail": "Not Found"})):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.engineer_activity()
+        self.assertEqual((caught.exception.code, caught.exception.status), ("rejected", 404))
+
 
 if __name__ == "__main__":
     unittest.main()

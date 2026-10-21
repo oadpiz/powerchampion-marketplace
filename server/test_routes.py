@@ -13,7 +13,7 @@ class RouteTableTests(PortalCase):
         customer = self.client()
         self.register(customer, "route-check@example.test")
         anonymous = self.client()
-        checked = 0
+        checked, paths = 0, set()
         for route in self.app.routes:
             if not getattr(route, "path", "").startswith(BASE + "/admin"):
                 continue
@@ -25,7 +25,9 @@ class RouteTableTests(PortalCase):
                     response = client.request(method, path, json={}, headers={"Origin": ORIGIN})
                     self.assertEqual((response.status_code, response.json().get("error")), (status, code), (method, route.path, response.text))
                 checked += 1
+                paths.add(route.path)
         self.assertGreaterEqual(checked, 20)
+        self.assertIn(BASE + "/admin/engineers", paths)
 
 
 if __name__ == "__main__":

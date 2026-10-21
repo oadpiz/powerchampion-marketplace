@@ -13,6 +13,7 @@ const NAV = [
   { href: "/admin/gateway", en: "Gateway", zh: "閘道" },
   { href: "/admin/personas", en: "Personas", zh: "人設" },
   { href: "/admin/allocation", en: "Node allocation", zh: "機台分配" },
+  { href: "/admin/engineers", en: "Engineers", zh: "工程師" },
   { href: "/admin/credits", en: "Credit requests", zh: "儲值申請" },
   { href: "/admin/audit", en: "Audit log", zh: "操作紀錄" },
 ] as const;
