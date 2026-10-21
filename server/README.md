@@ -96,13 +96,13 @@ usage reads instead return an empty payload flagged `gatewayConfigured: false` /
 | Route | Purpose |
 | --- | --- |
 | `GET /admin/keys` | Gateway keys (with the owning portal account where known) and the config-defined `envKeys` |
-| `POST /admin/customers/{id}/keys` | `{label, prepaidUsd, dailyTokenLimit?, rpm?, maxInflight?}`. `prepaidUsd` must be above 0, at most 100000, with at most two decimals (else 422 `invalid_input`). 201 with the one-time `secret`; a disabled account is 409 |
-| `POST /admin/keys/{id}/disable` | `{disabled: true \| false}` on a gateway key; `false` re-enables it (audited as `admin.key_enabled`). Re-enabling a key whose local owner is disabled is 409 `account_disabled` ("Enable the account first.") with no gateway call and no audit; keys without a local owner are not checked |
+| `POST /admin/customers/{id}/keys` | `{label, prepaidUsd, dailyTokenLimit?, rpm?, maxInflight?}`. `prepaidUsd` must be above 0, at most 100000, with at most two decimals (else 422 `invalid_input`). 201 with the one-time `secret`; a disabled account is 409; a target whose role is not `customer` is 409 `target_not_customer` |
+| `POST /admin/keys/{id}/disable` | `{disabled: true \| false}` on a gateway key; `false` re-enables it (audited as `admin.key_enabled`). Re-enabling a key whose local owner is disabled is 409 `account_disabled` ("Enable the account first.") with no gateway call and no audit; keys without a local owner are not checked. Re-enabling an owned, revoked key takes a slot under the same 20-active-key cap as issuing one: a full account is 409 `key_limit`, a key that another request is re-enabling right now is 409 `key_enable_in_progress`, and a key that is already active again returns 200 |
 | `POST /admin/keys/{id}/limits` | Change `dailyTokenLimit`, `rpm`, `maxInflight` (at least one) |
 | `POST /admin/keys/{id}/balance` | `{addUsd}` or `{setUsd}` (exactly one) |
 | `GET /admin/usage?month=YYYY-MM` | Gateway usage report, month defaults to the current UTC month |
 | `GET /admin/gateway` | Models and nodes from `/api/state`; any `api_key`, key, token, secret or password string field is stripped server-side |
-| `POST /admin/gateway/models/{id}/toggle` | Enable or disable a model |
+| `POST /admin/gateway/models/{id}/toggle` | `{enabled: bool}` (else 422). Sets the requested state: reads `/api/state` first (a missing or null flag counts as enabled) and flips only when the state differs; returns `{id, enabled, changed}` and audits only a real flip, with details `{requested, enabled}`. The gateway has only a flip, so a change between the read and the flip is possible; it is reported as 409 `state_changed` (the flip is still audited). 404 `gateway_rejected` when `/api/state` has no such model |
 | `POST /admin/gateway/models/{id}/maintenance` | Set or clear the maintenance message (text, at most 300 characters) |
 | `POST /admin/gateway/nodes/{name}/ops/{action}` | `action` is one of `start`, `stop`, `restart`, `check`, `backup`, `fw-status` (else 400 `unknown_action`) |
 | `GET /admin/gateway/nodes/{name}/jobs/{job_id}` | Poll a node operation |
@@ -119,8 +119,13 @@ Gateway error codes: 503 `provider_not_configured` (no admin token),
 portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN." and no upstream
 text is passed on), `gateway_rejected`
 (the gateway answered 400, 404 or 409; its detail is passed through), 404
-`key_not_found`, 404 `customer_not_found`, 400 `unknown_action`, and 422/400
-`invalid_input` for bad bodies.
+`key_not_found`, 404 `customer_not_found`, 400 `unknown_action`, 409 `key_limit`,
+409 `key_enable_in_progress`, 409 `target_not_customer`, 409 `state_changed`, and 422/400
+`invalid_input` for bad bodies. Text fields refuse control characters (C0, DEL, C1), bidi
+embedding/override/isolate characters and lone surrogates; single-line fields (labels, names, notes)
+also refuse the invisible characters U+200B–U+200F, U+2060 and U+061C, while multi-line persona text
+(system prompt, examples, try input) allows tab, newline and carriage return. Lengths count code
+points, as the admin UI does.
 
 Audit actions written by these routes (actor = caller, target = affected
 account; never any password material): `account.password_changed`,
@@ -134,6 +139,51 @@ Audit actions for keys and the gateway (A2b): `admin.key_issued`,
 `key.revoked`, `key.revocation_needs_reconciliation` and
 `key.provisioning_needs_reconciliation` (a key was created at the gateway but
 could not be recorded or rolled back locally). No event stores a key secret.
+
+### Personas, fleet and redeem routes (A2c)
+
+All require an administrator (customers 403 `admin_required`, anonymous 401 `auth_required`) and live
+under `/api/portal`. Gateway errors map as above; the route-specific 404 codes are listed per route.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /admin/personas` | Persona list (`{gatewayConfigured, personas}`); unconfigured is 200 with `gatewayConfigured: false` |
+| `GET /admin/personas/{id}?rev=N` | One persona with its revisions; `rev` 1..10^9. 404 `persona_not_found` |
+| `POST /admin/personas` | `{name}` (1–80 characters). 201 `{persona_id}` |
+| `POST /admin/personas/{id}/revisions` | `{system, examples, note, activate}`: `system` ≤ 32000 characters, `examples` ≤ 50 `{user, assistant}` pairs of ≤ 4000 each, `note` one line ≤ 200, `activate` **required** bool (the gateway's "omitted = activate now" is not used). Body ≤ 196608 bytes (else 413). Returns `{rev}`. 404 `persona_not_found` |
+| `POST /admin/personas/{id}/activate` | `{rev}`. 404 `persona_not_found` |
+| `POST /admin/personas/{id}/try` | `{input (≤ 4000), revs (1–2 of null or a rev), maxTokens (1–1024, default 300), temperature (0–2, default 0.8)}`. Calls the model (spends tokens); 90 s adapter timeout, 95 s at the BFF. A try the gateway does not answer in time is 504 `gateway_timeout` (the model may still have run) |
+| `GET /admin/gateway/fleet/{model}/status`, `/timeline` | Fleet state and the workflow timeline. 404 `fleet_not_managed` when the model is not `control_managed` |
+| `GET /admin/gateway/fleet/events?modelId=&limit=` | Fleet capacity events; `limit` 1..500 (default 100) |
+| `POST /admin/gateway/fleet/{model}/{action}` | `action` ∈ `freeze`, `resume`, `candidate`, `drain`, `approve`, `rollback` (else 400 `unknown_action`); no body. freeze/resume return the capacity state; the others return `{job_id, state, phase}`. Conflicts are 409 `gateway_rejected` with the gateway's reason |
+| `GET /admin/gateway/control/jobs/{job}` | Poll a fleet workflow job (the only `/api/control` route the portal proxies). 404 `job_not_found` |
+| `GET /admin/redeem/codes` | Newest 1000 codes (whitelisted fields only), with `total`, `counts` per status and `truncated` |
+| `POST /admin/redeem/codes` | `{amountUsd (> 0, ≤ 1000, two decimals), count (1–500), label (required, ≤ 80), expiresDays? (1–3650), acknowledgeUnconfirmed?}`. 201 with the plaintext codes, once. 409 `redeem_issue_unconfirmed_recent` when the same label (compared after NFKC, case folding and whitespace collapsing) had an unconfirmed issue in the last 30 minutes and `acknowledgeUnconfirmed` is not `true`; an acknowledged issue records `acknowledgedUnconfirmed: true` in its audit details |
+| `POST /admin/redeem/codes/{id}/disable` | 404 `redeem_code_not_found` when missing or already disabled |
+| `GET /admin/redeem/codes/export` | `{filename, csv, rows}`: the gateway CSV (code hashes, no plaintext), with cells starting `= + - @`, tab or CR prefixed by `'` |
+
+Error codes added in A2c: `persona_not_found`, `fleet_not_managed`, `job_not_found`,
+`redeem_code_not_found`, `redeem_issue_unconfirmed_recent`, 504 `gateway_timeout` (persona try only),
+plus `state_changed`, `key_limit` and `key_enable_in_progress` above.
+
+Audit actions (A2c; details never contain persona text, try input, a redeem code or a token):
+`admin.persona_created` (`{name}`), `admin.persona_revision_saved` (`{rev, activate, systemChars, examples}`),
+`admin.persona_activated` (`{rev}`), `admin.persona_try_started` (written **before** the gateway call, so a try
+that times out but still spends tokens is recorded) and `admin.persona_tried` (after a success), both
+`{revs, inputChars, maxTokens}`; `admin.fleet_frozen`, `admin.fleet_resumed`, `admin.fleet_candidate_requested`,
+`admin.fleet_drain_requested`, `admin.fleet_approved`, `admin.fleet_rollback_requested` (target = model;
+`{jobId, state, phase}` or `{mode}`); `admin.redeem_codes_issued` (target = label;
+`{count, amountUsd, expiresDays, codeIds}`), `admin.redeem_codes_issue_unconfirmed` (target = label;
+`{count, amountUsd}`; the gateway did not confirm, so codes may exist that nobody saw),
+`admin.redeem_code_disabled` (target = code id), `admin.redeem_codes_exported` (`{rows}`).
+
+Redeem plaintext policy: a code exists in plaintext only in the gateway's issue response, this
+service's 201 response and the browser's one-time dialog. It is never written to the database,
+the audit log or a log line, and the list and CSV export carry only ids and hashes (tests assert all four).
+
+Size limits: the gateway lists every redeem code in one response, so the portal reads up to 32 MiB
+for the redeem list and CSV (about 140k codes; other gateway calls keep 4 MiB), and the BFF passes
+an export of up to 6 MiB (roughly 40k codes). Gateway-side pagination is the follow-up.
 
 Operator-assisted recovery, after independently verifying the account owner:
 

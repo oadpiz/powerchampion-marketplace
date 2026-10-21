@@ -18,15 +18,35 @@ const JOB = "[A-Za-z0-9._-]{1,128}";
 const MODEL = "[A-Za-z0-9._:%-]{1,160}";
 const NODE_ACTION = "(start|stop|restart|check|backup|fw-status)";
 const ALLOC_NODE = "b300-[0-9]{1,3}";
+const PERSONA = "[A-Za-z0-9_-]{1,64}";
+// The gateway's fleet {model_id} is a single path segment, so no slash (encoded or not) is allowed here.
+const FLEET_MODEL = "[A-Za-z0-9._:-]{1,128}";
+// In the path the browser encodes ":" as %3A (encodeURIComponent); the backend decodes it again.
+const FLEET_MODEL_PATH = "(?:[A-Za-z0-9._:-]|%3[Aa]){1,128}";
+const FLEET_ACTION = "(freeze|resume|candidate|drain|approve|rollback)";
+const CODE = "[A-Za-z0-9_-]{1,64}";
 const routes: Record<string, readonly RegExp[]> = {
-  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`), /^\/admin\/(keys|usage|gateway)$/, new RegExp(`^/admin/gateway/nodes/${NODE}/jobs/${JOB}$`), /^\/admin\/allocation(\/export)?$/, /^\/me\/engineer$/],
-  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/password$/, new RegExp(`^/admin/customers/${AGENT}/(status|role|reset-password)$`), /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`), new RegExp(`^/admin/customers/${AGENT}/keys$`), new RegExp(`^/admin/keys/${KEY}/(disable|limits|balance)$`), new RegExp(`^/admin/gateway/models/${MODEL}/(toggle|maintenance)$`), new RegExp(`^/admin/gateway/nodes/${NODE}/ops/${NODE_ACTION}$`), /^\/admin\/allocation\/(engineers|owner|export\/mark)$/, new RegExp(`^/admin/allocation/engineers/${AGENT}(/status|/account|/account/unlink)?$`), new RegExp(`^/admin/allocation/nodes/${ALLOC_NODE}$`), /^\/me\/engineer\/ssh-key$/],
+  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`), /^\/admin\/(keys|usage|gateway)$/, new RegExp(`^/admin/gateway/nodes/${NODE}/jobs/${JOB}$`), /^\/admin\/allocation(\/export)?$/, /^\/me\/engineer$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}$`), /^\/admin\/gateway\/fleet\/events$/, new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/(status|timeline)$`), new RegExp(`^/admin/gateway/control/jobs/${JOB}$`), /^\/admin\/redeem\/codes(\/export)?$/],
+  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/password$/, new RegExp(`^/admin/customers/${AGENT}/(status|role|reset-password)$`), /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`), new RegExp(`^/admin/customers/${AGENT}/keys$`), new RegExp(`^/admin/keys/${KEY}/(disable|limits|balance)$`), new RegExp(`^/admin/gateway/models/${MODEL}/(toggle|maintenance)$`), new RegExp(`^/admin/gateway/nodes/${NODE}/ops/${NODE_ACTION}$`), /^\/admin\/allocation\/(engineers|owner|export\/mark)$/, new RegExp(`^/admin/allocation/engineers/${AGENT}(/status|/account|/account/unlink)?$`), new RegExp(`^/admin/allocation/nodes/${ALLOC_NODE}$`), /^\/me\/engineer\/ssh-key$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}/(revisions|activate|try)$`), new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/${FLEET_ACTION}$`), /^\/admin\/redeem\/codes$/, new RegExp(`^/admin/redeem/codes/${CODE}/disable$`)],
   DELETE: [/^\/keys\/[a-zA-Z0-9_-]{1,80}$/, new RegExp(`^/agents/${AGENT}$`)],
 };
 /** Empty or dot segments, including ones hidden behind an encoded dot or an encoded slash, are never legitimate ids. */
 function traverses(path: string) {
   if (path.includes("//") || /%2e/i.test(path)) return true;
   return path.replace(/%(?:2f|5c)/gi, "/").split("/").slice(1).some((segment) => segment === "." || segment === "..");
+}
+const PERSONA_TRY = new RegExp(`^/admin/personas/${PERSONA}/try$`);
+const PERSONA_VIEW = new RegExp(`^/admin/personas/${PERSONA}$`);
+const PERSONA_REVISIONS = new RegExp(`^/admin/personas/${PERSONA}/revisions$`);
+/** A persona try runs the model for every compared revision; the portal's adapter allows 90 s for it. */
+function timeoutFor(path: string) {
+  return PERSONA_TRY.test(path) ? 95000 : 20000;
+}
+function requestLimitFor(path: string) {
+  return path === "/runtime/tasks" || PERSONA_REVISIONS.test(path) ? 196608 : 65536;
+}
+function responseLimitFor(path: string) {
+  return path === "/admin/redeem/codes/export" ? 6291456 : 2097152;
 }
 function failure(error: string, detail: string, status: number) {
   return Response.json({ error, detail }, { status, headers: RESPONSE_HEADERS });
@@ -82,11 +102,24 @@ async function proxy(request: Request) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return failure("invalid_input", "Choose a valid reporting month.", 400);
     target.searchParams.set("month", month);
   }
+  if (request.method === "GET" && PERSONA_VIEW.test(path) && url.searchParams.has("rev")) {
+    const rev = url.searchParams.get("rev") ?? "";
+    if (!/^[1-9][0-9]{0,8}$/.test(rev)) return failure("invalid_input", "Choose a valid revision.", 400);
+    target.searchParams.set("rev", rev);
+  }
+  if (path === "/admin/gateway/fleet/events") {
+    const modelId = url.searchParams.get("modelId");
+    const limit = url.searchParams.get("limit");
+    if (modelId !== null && !new RegExp(`^${FLEET_MODEL}$`).test(modelId)) return failure("invalid_input", "Choose a valid model.", 400);
+    if (limit !== null && !/^[1-9][0-9]{0,2}$/.test(limit)) return failure("invalid_input", "Choose a limit from 1 to 500.", 400);
+    if (modelId !== null) target.searchParams.set("modelId", modelId);
+    if (limit !== null) target.searchParams.set("limit", limit);
+  }
 
   let body: string | undefined;
   if (mutation && request.body) {
     try {
-      const text = await readBounded(request.body, path === "/runtime/tasks" ? 196608 : 65536);
+      const text = await readBounded(request.body, requestLimitFor(path));
       // Workerd represents even a bodyless POST/DELETE as a non-null stream.
       if (text.length) {
         if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return failure("invalid_input", "Send a JSON request.", 415);
@@ -106,13 +139,13 @@ async function proxy(request: Request) {
 
   const controller = new AbortController();
   const abort = () => controller.abort();
-  const timeout = setTimeout(abort, 20000);
+  const timeout = setTimeout(abort, timeoutFor(path));
   request.signal.addEventListener("abort", abort, { once: true });
   if (request.signal.aborted) controller.abort();
   try {
     const response = await fetch(target.href, { method: request.method, headers, body, redirect: "manual", cache: "no-store", signal: controller.signal });
     if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error("Unexpected service redirect"); }
-    const text = await readBounded(response.body, 2097152);
+    const text = await readBounded(response.body, responseLimitFor(path));
     const data: unknown = JSON.parse(text);
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new SyntaxError();
     if (response.status === 503 && "error" in data && data.error === "usage_pricing_incomplete") {
@@ -121,6 +154,10 @@ async function proxy(request: Request) {
     // The only upstream gateway 5xx codes the browser may see; the detail is rewritten so no gateway address or token can leak.
     if (response.status === 503 && "error" in data && data.error === "gateway_unavailable") {
       return failure("gateway_unavailable", "The API gateway is unavailable. Please try again later.", 503);
+    }
+    // A persona try the gateway did not answer in time: the model may still have run, so it is not a plain outage.
+    if (response.status === 504 && "error" in data && data.error === "gateway_timeout") {
+      return failure("gateway_timeout", "The gateway did not answer in time. The model may still have run and used tokens.", 504);
     }
     if (response.status === 503 && "error" in data && data.error === "gateway_auth_failed") {
       return failure("gateway_auth_failed", "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN.", 503);

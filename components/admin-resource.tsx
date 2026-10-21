@@ -147,3 +147,26 @@ export type GatewayOwner = { id: string; email: string; name: string };
 export function ownerLabel(owner: GatewayOwner | null, zh: boolean): string {
   return owner?.email || (zh ? "未歸屬" : "Unassigned");
 }
+
+export function GatewayNotConnected() {
+  const zh = useLocale().locale === "zh";
+  return (
+    <p className="portal-note" role="status">
+      {zh
+        ? "閘道尚未連線（PC_GATEWAY_ADMIN_TOKEN 未設定）"
+        : "Gateway not connected (PC_GATEWAY_ADMIN_TOKEN is not set)"}
+    </p>
+  );
+}
+
+/** Saves text as a file in the browser; nothing is sent to a server. */
+export function downloadText(filename: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}

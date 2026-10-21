@@ -105,8 +105,9 @@ class Store:
             con.execute("DELETE FROM login_attempts WHERE first_attempt<?", (now-86400,))
             return True
 
-    def reserve_key_slot(self, user_id, limit=20):
-        reservation = uuid.uuid4().hex
+    def reserve_key_slot(self, user_id, limit=20, tag=None):
+        """tag prefixes the reservation id ("<tag>:<uuid>") so other requests can see what it is for."""
+        reservation = (tag + ":" if tag else "") + uuid.uuid4().hex
         now = int(time.time())
         with self.connect() as con:
             con.execute("BEGIN IMMEDIATE")

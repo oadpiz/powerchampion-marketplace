@@ -11,6 +11,7 @@ import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from unittest.mock import patch
 
 import httpx
@@ -745,6 +746,108 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(r.method, r.url.path) for r in self.requests],
                          [("GET", "/api/keys"), ("GET", "/api/nodes"), ("GET", "/api/metrics"),
                           ("GET", "/api/nodes/b300-14/jobs/job.1")])
+
+    async def test_persona_contracts(self):
+        with self.transport(lambda _: httpx.Response(200, json={"personas": [{"persona_id": "abc123def456", "name": "S"}, "junk"]})):
+            listing = await self.gateway.list_personas()
+        self.assertEqual(listing["personas"], [{"persona_id": "abc123def456", "name": "S"}])
+        with self.transport(lambda _: httpx.Response(200, json={"persona": {"persona_id": "abc123def456"}, "revisions": []})):
+            await self.gateway.get_persona("abc123def456", 3)
+        self.assertTrue(str(self.requests[-1].url).endswith("/api/personas/abc123def456?rev=3"))
+        with self.transport(lambda _: httpx.Response(200, json={"rev": 4})):
+            rev = await self.gateway.save_persona_revision("abc123def456", system="s", examples=[{"user": "u", "assistant": "a"}], note="n", activate=False)
+        self.assertEqual(rev, 4)
+        self.assertEqual(json.loads(self.requests[-1].content), {"system": "s", "examples": [{"user": "u", "assistant": "a"}], "note": "n", "activate": False})
+        with self.assertRaises(GatewayError):
+            await self.gateway.get_persona("../x")
+        with self.transport(lambda _: httpx.Response(200, json={"rev": True})):
+            with self.assertRaises(GatewayError):
+                await self.gateway.save_persona_revision("abc123def456", system="", examples=[], note="", activate=True)
+
+    async def test_persona_try_gets_a_longer_timeout(self):
+        seen = []
+
+        def client(**kwargs):
+            seen.append(kwargs)
+            return self.real_client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"input": "x", "results": []})), **kwargs)
+
+        with patch("server.gateway.httpx.AsyncClient", side_effect=client):
+            await self.gateway.try_persona("abc123def456", text="x", revs=[None], max_tokens=300, temperature=0.8)
+        self.assertGreaterEqual(seen[0]["timeout"], 90)
+
+    async def test_fleet_actions_send_no_body_and_validate(self):
+        with self.transport(lambda _: httpx.Response(202, json={"job_id": "0123456789abcdef", "state": "queued", "phase": "queued"})):
+            value = await self.gateway.fleet_action("glm-5.2-fp8", "candidate")
+        self.assertEqual(self.requests[0].url.path, "/api/fleet/glm-5.2-fp8/candidate")
+        self.assertEqual(self.requests[0].content, b"")
+        self.assertEqual(value["job_id"], "0123456789abcdef")
+        for model, action in (("glm-5.2-fp8", "delete"), ("a/b", "freeze"), ("..", "freeze")):
+            with self.assertRaises(GatewayError):
+                await self.gateway.fleet_action(model, action)
+        with self.assertRaises(ValueError):
+            await self.gateway.fleet_events(limit=501)
+        with self.transport(lambda _: httpx.Response(409, json={"detail": "workflow already active"})):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.fleet_action("glm-5.2-fp8", "drain")
+        self.assertEqual((caught.exception.status, caught.exception.detail), (409, "workflow already active"))
+
+    async def test_control_job_is_projected(self):
+        job = {"id": "0123456789abcdef", "kind": "candidate", "model_id": "m", "state": "running", "phase": "warming", "reason": "",
+               "created_at": 1.0, "updated_at": 2.0, "route_before": {"x": {"enabled": True}}, "admin_token": "t"}
+        with self.transport(lambda _: httpx.Response(200, json=job)):
+            value = await self.gateway.control_job("0123456789abcdef")
+        self.assertEqual(set(value), {"id", "kind", "model_id", "state", "phase", "reason", "created_at", "updated_at"})
+        self.assertEqual(self.requests[0].url.path, "/api/control/jobs/0123456789abcdef")
+
+    async def test_redeem_issue_validates_the_array_and_never_leaks_codes(self):
+        codes = [{"code": "A" * 32, "code_id": "c1", "nano_usd": 5_000_000_000}, {"code": "B" * 32, "code_id": "c2", "nano_usd": 5_000_000_000}]
+        with self.transport(lambda _: httpx.Response(200, json=codes)):
+            value = await self.gateway.issue_redeem_codes(amount_usd=Decimal("5"), count=2, label="L", expires_days=30)
+        self.assertEqual(json.loads(self.requests[0].content), {"amount_usd": 5.0, "count": 2, "label": "L", "expires_days": 30})
+        self.assertEqual([c["code_id"] for c in value], ["c1", "c2"])
+        with self.transport(lambda _: httpx.Response(200, json=codes[:1])):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.issue_redeem_codes(amount_usd=5, count=2, label="L")
+        self.assertEqual(caught.exception.code, "invalid_response")
+        self.assertNotIn("A" * 32, repr(caught.exception) + caught.exception.detail)
+        with self.transport(lambda _: httpx.Response(200, json={"codes": codes})):
+            with self.assertRaises(GatewayError):
+                await self.gateway.issue_redeem_codes(amount_usd=5, count=2, label="L")
+
+    async def test_a_timeout_is_unavailable_and_marked_as_timed_out(self):
+        def slow(request):
+            raise httpx.ReadTimeout("slow", request=request)
+
+        with self.transport(slow):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.try_persona("abc123def456", text="x", revs=[None], max_tokens=300, temperature=0.8)
+        self.assertEqual((caught.exception.code, caught.exception.timed_out), ("unavailable", True))
+        with self.transport(lambda _: httpx.Response(502)):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.list_personas()
+        self.assertEqual((caught.exception.code, caught.exception.timed_out), ("unavailable", False))
+
+    async def test_only_the_redeem_listings_get_the_larger_response_cap(self):
+        row = {"code_id": "c", "nano_usd": 1, "label": "x" * 200, "created_at": 1.0, "created_by": "admin"}
+        big = [row] * 25000  # about 6.5 MB, above the default 4 MiB cap
+        with self.transport(lambda _: httpx.Response(200, json=big)):
+            self.assertEqual(len(await self.gateway.list_redeem_codes()), 25000)
+        with self.transport(lambda _: httpx.Response(200, json={"personas": big})):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.list_personas()
+        self.assertEqual(caught.exception.code, "response_limit")
+
+    async def test_redeem_csv_requires_csv_and_the_known_header(self):
+        header = "code_id,code_hash,nano_usd,label,created_at,created_by,redeemed_at,redeemed_by_key_id,disabled_at,expires_at\r\n"
+        with self.transport(lambda _: httpx.Response(200, text=header + "c1,h,1000000000,L,1.0,admin,,,,\r\n", headers={"content-type": "text/csv; charset=utf-8"})):
+            rows = await self.gateway.redeem_code_rows()
+        self.assertEqual(rows, [["c1", "h", "1000000000", "L", "1.0", "admin", "", "", "", ""]])
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True})):
+            with self.assertRaises(GatewayError):
+                await self.gateway.redeem_code_rows()
+        with self.transport(lambda _: httpx.Response(200, text="wrong,header\r\n", headers={"content-type": "text/csv"})):
+            with self.assertRaises(GatewayError):
+                await self.gateway.redeem_code_rows()
 
 
 if __name__ == "__main__":

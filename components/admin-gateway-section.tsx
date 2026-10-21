@@ -1,271 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { portalErrorText, portalRequest } from "../lib/portal-client";
 import { AdminDialog } from "./admin-dialog";
-import { GatewayNotConnected } from "./admin-keys-section";
-import { ResourceState, usePortalResource } from "./admin-resource";
+import {
+  ACTION_ZH,
+  BlockError,
+  ConfirmNodeDialog,
+  GpuPanel,
+  JobStatus,
+  MaintenanceDialog,
+  NODE_ACTIONS,
+  text,
+  type GatewayModel,
+  type GatewayOverview,
+  type Job,
+} from "./admin-gateway-panels";
+import { FleetEvents, FleetPanel } from "./admin-fleet-panel";
+import { GatewayNotConnected, ResourceState, usePortalResource } from "./admin-resource";
 import { useLocale } from "./locale-provider";
 
-type GatewayModel = {
-  id: string;
-  enabled: boolean;
-  maintenance_message?: string | null;
-  node?: unknown;
-};
-type GatewayNode = {
-  name: string;
-  enabled?: boolean;
-  role?: string;
-  models?: string[];
-  reachable?: boolean;
-  state?: string;
-};
-type GatewayOverview = {
-  gatewayConfigured: boolean;
-  state: { models?: GatewayModel[] } | null;
-  nodes: { nodes?: GatewayNode[]; actions?: string[] } | null;
-  metrics: {
-    gpu_source_up?: boolean;
-    vllm_source_up?: boolean;
-    gpus?: unknown[];
-    serving?: Record<string, unknown> | null;
-  } | null;
-  errors: { state: string | null; nodes: string | null; metrics: string | null };
-};
-type Job = { key: number; node: string; action: string; jobId: string };
-
-const NODE_ACTIONS = ["start", "stop", "restart", "check", "backup", "fw-status"];
-const ACTION_ZH: Record<string, string> = {
-  start: "啟動",
-  stop: "停止",
-  restart: "重啟",
-  check: "檢查",
-  backup: "備份",
-  "fw-status": "防火牆狀態",
-};
-const TERMINAL_STATES = ["done", "error", "failed"];
-const POLL_MS = 5000;
-const MAX_POLLS = 60;
-
-const asRecord = (value: unknown): Record<string, unknown> | null =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-const pick = (record: Record<string, unknown>, keys: string[]): unknown =>
-  keys.map((key) => record[key]).find((value) => value !== undefined && value !== null);
-const finite = (value: unknown): number | null =>
-  typeof value === "number" && Number.isFinite(value) ? value : null;
-const text = (value: unknown): string =>
-  typeof value === "string" || typeof value === "number" ? String(value) : "—";
-
-function BlockError({ message, code }: { message: string; code: string }) {
-  return (
-    <p className="portal-error" role="alert">
-      {message} <code>{code}</code>
-    </p>
-  );
-}
-
-function JobStatus({ job, onSettled }: { job: Job; onSettled: () => void }) {
-  const zh = useLocale().locale === "zh";
-  const [state, setState] = useState<string>("pending");
-  const [failure, setFailure] = useState<unknown>(null);
-  const settledRef = useRef(onSettled);
-  useEffect(() => {
-    settledRef.current = onSettled;
-  });
-  useEffect(() => {
-    let polls = 0;
-    let stopped = false;
-    const timer = setInterval(async () => {
-      polls += 1;
-      try {
-        const result = await portalRequest<{ state?: string }>(
-          `/admin/gateway/nodes/${encodeURIComponent(job.node)}/jobs/${encodeURIComponent(job.jobId)}`,
-        );
-        if (stopped) return;
-        setFailure(null);
-        setState(result.state ?? "unknown");
-        if (result.state && TERMINAL_STATES.includes(result.state)) {
-          stopped = true;
-          clearInterval(timer);
-          settledRef.current();
-          return;
-        }
-      } catch (reason: unknown) {
-        if (stopped) return;
-        setFailure(reason);
-      }
-      if (polls >= MAX_POLLS) {
-        stopped = true;
-        clearInterval(timer);
-      }
-    }, POLL_MS);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [job.node, job.jobId]);
-  const locale = useLocale().locale;
-  return (
-    <li>
-      <code>{job.node}</code> · {zh ? (ACTION_ZH[job.action] ?? job.action) : job.action} ·{" "}
-      {zh ? "工作" : "job"} <code>{job.jobId}</code> · {zh ? "狀態：" : "state: "}
-      <strong>{state}</strong>
-      {failure !== null && (
-        <span className="portal-error" role="alert"> {portalErrorText(failure, locale)}</span>
-      )}
-    </li>
-  );
-}
-
-function MaintenanceDialog({
-  model,
-  onClose,
-  onDone,
-}: {
-  model: GatewayModel;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const locale = useLocale().locale;
-  const zh = locale === "zh";
-  const [message, setMessage] = useState(model.maintenance_message ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
-  async function save(next: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      await portalRequest(`/admin/gateway/models/${encodeURIComponent(model.id)}/maintenance`, {
-        method: "POST",
-        body: JSON.stringify({ message: next }),
-      });
-      onDone();
-    } catch (reason: unknown) {
-      setError(reason);
-      setBusy(false);
-    }
-  }
-  return (
-    <AdminDialog
-      title={zh ? `維護訊息：${model.id}` : `Maintenance message: ${model.id}`}
-      confirmLabel={zh ? "儲存" : "Save"}
-      cancelLabel={zh ? "取消" : "Cancel"}
-      onConfirm={() => save(message.trim())}
-      onClose={onClose}
-      inFlight={busy}
-      extraActions={
-        <button type="button" className="portal-button-secondary" disabled={busy} onClick={() => save("")}>
-          {zh ? "清除訊息" : "Clear message"}
-        </button>
-      }
-    >
-      <label className="portal-field">
-        {zh ? "訊息" : "Message"}
-        <textarea rows={3} maxLength={300} value={message} disabled={busy} onChange={(event) => setMessage(event.target.value)} />
-      </label>
-      {error !== null && (
-        <p className="portal-error" role="alert">{portalErrorText(error, locale)}</p>
-      )}
-    </AdminDialog>
-  );
-}
-
-function ConfirmNodeDialog({
-  node,
-  action,
-  onClose,
-  onConfirm,
-  busy,
-}: {
-  node: string;
-  action: string;
-  onClose: () => void;
-  onConfirm: () => void;
-  busy: boolean;
-}) {
-  const zh = useLocale().locale === "zh";
-  const restart = action === "restart";
-  return (
-    <AdminDialog
-      title={zh ? `${restart ? "重啟" : "停止"}節點 ${node}？` : `${restart ? "Restart" : "Stop"} node ${node}?`}
-      confirmLabel={zh ? (restart ? "重啟節點" : "停止節點") : restart ? "Restart node" : "Stop node"}
-      cancelLabel={zh ? "取消" : "Cancel"}
-      onConfirm={onConfirm}
-      onClose={onClose}
-      inFlight={busy}
-      danger
-    >
-      <p className="portal-note">
-        {zh
-          ? "此節點上的模型會中斷服務，進行中的請求可能失敗。"
-          : "Models on this node stop serving and in-flight requests may fail."}
-      </p>
-    </AdminDialog>
-  );
-}
-
-function GpuPanel({ metrics, zh }: { metrics: NonNullable<GatewayOverview["metrics"]>; zh: boolean }) {
-  const gpus = (metrics.gpus ?? []).map(asRecord).filter((gpu) => gpu !== null);
-  const serving = asRecord(metrics.serving);
-  const running = serving ? finite(serving.running) : null;
-  const waiting = serving ? finite(serving.waiting) : null;
-  const cell = (value: unknown, suffix = "") => (value === undefined ? "—" : `${text(value)}${suffix}`);
-  return (
-    <>
-      {(metrics.gpu_source_up === false || metrics.vllm_source_up === false) && (
-        <p className="portal-note" role="status">
-          {zh ? "部分指標來源目前離線。" : "Some metric sources are currently offline."}
-        </p>
-      )}
-      {running !== null || waiting !== null ? (
-        <p>
-          {zh ? "服務中：" : "Serving: "}
-          {zh ? `執行中 ${running ?? "—"}` : `Running ${running ?? "—"}`} ·{" "}
-          {zh ? `等待 ${waiting ?? "—"}` : `Waiting ${waiting ?? "—"}`}
-        </p>
-      ) : null}
-      {gpus.length > 0 ? (
-        <div className="portal-table-wrap">
-          <table className="portal-table">
-            <caption className="sr-only">{zh ? "GPU 指標" : "GPU metrics"}</caption>
-            <thead>
-              <tr>
-                <th scope="col">GPU</th>
-                <th scope="col">{zh ? "名稱" : "Name"}</th>
-                <th scope="col">{zh ? "使用率" : "Utilization"}</th>
-                <th scope="col">{zh ? "記憶體（已用 / 總量，GB）" : "Memory (used / total, GB)"}</th>
-                <th scope="col">{zh ? "溫度" : "Temp"}</th>
-                <th scope="col">{zh ? "功耗" : "Power"}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gpus.map((gpu, index) => {
-                // Field names follow the gateway's /api/metrics gpus[] (sell-panel app.py api_metrics).
-                const used = pick(gpu, ["mem_used_gb"]);
-                const total = pick(gpu, ["mem_total_gb"]);
-                return (
-                  <tr key={index}>
-                    <td>{cell(pick(gpu, ["index"]) ?? index)}</td>
-                    <td>{cell(pick(gpu, ["model", "name"]))}</td>
-                    <td>{cell(pick(gpu, ["util"]), "%")}</td>
-                    <td>{used === undefined && total === undefined ? "—" : `${cell(used)} / ${cell(total)} GB`}</td>
-                    <td>{cell(pick(gpu, ["temp_c"]), "°C")}</td>
-                    <td>{cell(pick(gpu, ["power_w"]), " W")}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="portal-empty">{zh ? "沒有 GPU 資料。" : "No GPU data."}</p>
-      )}
-    </>
-  );
-}
+/** The gateway treats a missing or null flag as enabled, so only an explicit false is "disabled". */
+const isEnabled = (model: GatewayModel) => model.enabled !== false;
 
 export function AdminGatewaySection() {
   const locale = useLocale().locale;
@@ -276,6 +32,7 @@ export function AdminGatewaySection() {
   const [confirmOp, setConfirmOp] = useState<{ node: string; action: string } | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [busy, setBusy] = useState(false);
+  const [fleetModel, setFleetModel] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const jobCounter = useRef(0);
 
@@ -284,7 +41,10 @@ export function AdminGatewaySection() {
     setBusy(true);
     setError(null);
     try {
-      await portalRequest(`/admin/gateway/models/${encodeURIComponent(model.id)}/toggle`, { method: "POST" });
+      await portalRequest(`/admin/gateway/models/${encodeURIComponent(model.id)}/toggle`, {
+        method: "POST",
+        body: JSON.stringify({ enabled: !isEnabled(model) }),
+      });
       resource.refresh();
     } catch (reason: unknown) {
       setError(reason);
@@ -296,7 +56,7 @@ export function AdminGatewaySection() {
 
   function startToggle(model: GatewayModel) {
     // Disabling cuts customers off, so it is confirmed; enabling stays one click.
-    if (model.enabled) setConfirmDisable(model);
+    if (isEnabled(model)) setConfirmDisable(model);
     else void toggleModel(model);
   }
 
@@ -369,16 +129,27 @@ export function AdminGatewaySection() {
                         {models.map((model) => (
                           <tr key={model.id}>
                             <td><code>{model.id}</code></td>
-                            <td>{model.enabled ? (zh ? "啟用" : "Enabled") : zh ? "停用" : "Disabled"}</td>
+                            <td>{isEnabled(model) ? (zh ? "啟用" : "Enabled") : zh ? "停用" : "Disabled"}</td>
                             <td>{model.maintenance_message || "—"}</td>
                             <td>{text(model.node)}</td>
                             <td>
                               <div className="portal-actions">
-                                <button type="button" className="portal-text-button" disabled={busy} aria-label={`${model.enabled ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"} ${model.id}`} onClick={() => startToggle(model)}>
-                                  {model.enabled ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"}
+                                <button type="button" className="portal-text-button" disabled={busy} aria-label={`${isEnabled(model) ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"} ${model.id}`} onClick={() => startToggle(model)}>
+                                  {isEnabled(model) ? (zh ? "停用" : "Disable") : zh ? "啟用" : "Enable"}
                                 </button>
                                 <button type="button" className="portal-text-button" aria-label={zh ? `${model.id} 的維護訊息` : `Maintenance message for ${model.id}`} onClick={() => setMaintenance(model)}>
                                   {zh ? "維護訊息" : "Maintenance"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="portal-text-button"
+                                  aria-label={zh ? `${model.id} 的 fleet 控制` : `Fleet controls for ${model.id}`}
+                                  // The gateway's fleet {model_id} is a single path segment.
+                                  disabled={model.id.includes("/")}
+                                  title={model.id.includes("/") ? (zh ? "fleet 路由不支援含 / 的模型 id" : "Fleet routes do not support model ids that contain /") : undefined}
+                                  onClick={() => setFleetModel(model.id)}
+                                >
+                                  {zh ? "Fleet 控制" : "Fleet"}
                                 </button>
                               </div>
                             </td>
@@ -391,6 +162,8 @@ export function AdminGatewaySection() {
                   <p className="portal-empty">{zh ? "閘道沒有模型。" : "The gateway has no models."}</p>
                 )}
               </section>
+              {fleetModel !== null && <FleetPanel key={fleetModel} modelId={fleetModel} onClose={() => setFleetModel(null)} />}
+              <FleetEvents models={models.map((model) => model.id).filter((id) => !id.includes("/"))} />
               <section className="portal-panel">
                 <h2>{zh ? "節點" : "Nodes"}</h2>
                 {data.errors.nodes || !data.nodes ? (

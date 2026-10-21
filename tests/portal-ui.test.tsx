@@ -85,7 +85,28 @@ describe("account portal", () => {
     expect(portalErrorText(new PortalError(404, "gateway_rejected", "Model not found on the gateway."), "en")).toBe("Model not found on the gateway.");
     expect(portalErrorText(new PortalError(404, "gateway_rejected", ""), "en")).toBe("The gateway rejected the request.");
     expect(portalErrorText(new PortalError(503, "gateway_unavailable", "x"), "en")).toBe("The API gateway is unavailable right now. Try again in a moment.");
-    expect(portalErrorText(new PortalError(400, "unknown_action", "x"), "en")).toBe("That node action is not available.");
+    expect(portalErrorText(new PortalError(400, "unknown_action", "x"), "en")).toBe("That action is not available.");
+    expect(portalErrorText(new PortalError(400, "unknown_action", "x"), "zh")).toBe("此操作無法使用。");
+    expect(portalErrorText(new PortalError(404, "persona_not_found", "x"), "zh")).toBe("找不到此人設或版本。");
+    expect(portalErrorText(new PortalError(404, "persona_not_found", "x"), "en")).toBe("That persona or revision was not found.");
+    expect(portalErrorText(new PortalError(404, "fleet_not_managed", "x"), "zh")).toBe("此模型不由 fleet 控制器管理（control_managed 未開啟）。");
+    expect(portalErrorText(new PortalError(404, "fleet_not_managed", "x"), "en")).toBe("This model is not managed by the fleet controller (control_managed is off).");
+    expect(portalErrorText(new PortalError(404, "job_not_found", "x"), "zh")).toBe("找不到這個工作。");
+    expect(portalErrorText(new PortalError(404, "job_not_found", "x"), "en")).toBe("That job was not found.");
+    expect(portalErrorText(new PortalError(404, "redeem_code_not_found", "x"), "zh")).toBe("找不到此兌換碼，或它已經停用。");
+    expect(portalErrorText(new PortalError(404, "redeem_code_not_found", "x"), "en")).toBe("That code does not exist or is already disabled.");
+    expect(portalErrorText(new PortalError(409, "state_changed", "x"), "zh")).toBe("狀態在送出期間被其他操作改變了，請重新整理後確認。");
+    expect(portalErrorText(new PortalError(409, "state_changed", "x"), "en")).toBe("The state changed while your request was in flight. Refresh and check it.");
+    expect(portalErrorText(new PortalError(409, "key_limit", "x"), "zh")).toBe("此帳號的有效金鑰已達上限，請先停用一把。");
+    expect(portalErrorText(new PortalError(409, "key_limit", "x"), "en")).toBe("This account already has the maximum number of active keys. Disable one first.");
+    expect(portalErrorText(new PortalError(409, "target_not_customer", "x"), "zh")).toBe("金鑰只能簽發給客戶帳號。");
+    expect(portalErrorText(new PortalError(409, "target_not_customer", "x"), "en")).toBe("Keys can only be issued to customer accounts.");
+    expect(portalErrorText(new PortalError(409, "key_enable_in_progress", "x"), "zh")).toBe("另一個請求正在重新啟用這把金鑰，請稍後重新整理。");
+    expect(portalErrorText(new PortalError(504, "gateway_timeout", "x"), "zh")).toBe("閘道沒有及時回應；模型可能已經執行並用掉 token，重試前請先確認用量。");
+    expect(portalErrorText(new PortalError(504, "gateway_timeout", "x"), "en")).toBe("The gateway did not answer in time. The model may still have run and used tokens; check usage before retrying.");
+    expect(portalErrorText(new PortalError(409, "key_enable_in_progress", "x"), "en")).toBe("Another request is re-enabling this key. Refresh in a moment.");
+    expect(portalErrorText(new PortalError(409, "redeem_issue_unconfirmed_recent", "x"), "zh")).toBe("最近一次以這個標籤產生兌換碼時閘道沒有確認結果，請先檢查並停用該標籤的兌換碼。");
+    expect(portalErrorText(new PortalError(409, "redeem_issue_unconfirmed_recent", "x"), "en")).toBe("A recent issue with this label was not confirmed. Check and disable the codes with this label first.");
     expect(portalErrorText(new PortalError(404, "key_not_found", "x"), "en")).toBe("That API key no longer exists on the gateway.");
     expect(portalErrorText(new PortalError(404, "customer_not_found", "x"), "en")).toBe("That account was not found.");
     expect(portalErrorText(new PortalError(503, "gateway_auth_failed", "x"), "en")).toBe("The gateway rejected the portal's admin token. Check PC_GATEWAY_ADMIN_TOKEN on the portal service.");
@@ -675,6 +696,30 @@ describe("admin keys section", () => {
     expect(await screen.findByText("This key's account is disabled. Enable the account first.")).toBeVisible();
   });
 
+  it("offers only active customer accounts, not administrators, when issuing a key", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/keys": { keys: [], envKeys: [], gatewayConfigured: true },
+      "GET /admin/customers": {
+        customers: [
+          { id: "admin-1", email: "boss@example.com", name: "Boss", role: "admin", status: "active", createdAt: 1, keyCount: 0 },
+          { id: "cust-1", email: "active@example.com", name: "Active", role: "customer", status: "active", createdAt: 1, keyCount: 0 },
+          { id: "cust-2", email: "off@example.com", name: "Off", role: "customer", status: "disabled", createdAt: 1, keyCount: 0 },
+        ],
+      },
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Issue key for a customer" }));
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("option", { name: /active@example.com/ });
+    const emails = within(dialog)
+      .getAllByRole("option")
+      .map((option) => option.textContent ?? "")
+      .filter((label) => label.includes("@"));
+    expect(emails).toHaveLength(1);
+    expect(emails[0]).toContain("active@example.com");
+  });
+
   it("issues a key for an active customer and shows the secret once", async () => {
     const user = userEvent.setup();
     const calls = adminFetch({
@@ -970,6 +1015,7 @@ describe("admin gateway section", () => {
     await waitFor(() =>
       expect(calls.some((call) => call.path === "/admin/gateway/models/zai%2Fglm-5/toggle")).toBe(true),
     );
+    expect(calls.find((call) => call.path === "/admin/gateway/models/zai%2Fglm-5/toggle")?.body).toEqual({ enabled: false });
   });
 
   it("sends nothing when disabling a model is cancelled, and enables without a dialog", async () => {
@@ -988,7 +1034,23 @@ describe("admin gateway section", () => {
     await waitFor(() =>
       expect(calls.filter((call) => call.method === "POST").map((call) => call.path)).toEqual(["/admin/gateway/models/other-model/toggle"]),
     );
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({ enabled: true });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("treats a model without an enabled flag as enabled", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/gateway": { ...overview, state: { models: [{ id: "legacy", enabled: null }, { id: "bare" }] } },
+      "POST /admin/gateway/models/legacy/toggle": { id: "legacy", enabled: false, changed: true },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    expect(await screen.findByRole("button", { name: "Disable bare" })).toBeVisible();
+    expect(screen.getAllByText("Enabled")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Disable legacy" }));
+    const dialog = await screen.findByRole("dialog", { name: "Disable model legacy?" });
+    await user.click(within(dialog).getByRole("button", { name: "Disable model" }));
+    await waitFor(() => expect(calls.find((call) => call.method === "POST")?.body).toEqual({ enabled: false }));
   });
 
   it("sets and clears a maintenance message", async () => {
@@ -1078,6 +1140,6 @@ describe("admin navigation for gateway sections", () => {
     const labels = within(screen.getByRole("navigation", { name: /administration/i }))
       .getAllByRole("link")
       .map((link) => link.textContent);
-    expect(labels).toEqual(["Overview", "Customers", "API keys", "Usage", "Gateway", "Node allocation", "Credit requests", "Audit log"]);
+    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Credit requests", "Audit log"]);
   });
 });

@@ -1,60 +1,13 @@
 import json
-import tempfile
+import time
 import unittest
-
-from fastapi.testclient import TestClient
+from concurrent.futures import ThreadPoolExecutor
 
 from server.app import create_app
 from server.gateway import GatewayError
 from server.settings import Settings
 from server.test_agents import CONFIGURATION
-from server.testsupport import FakeGateway, fresh_database, rows
-
-ORIGIN = "http://localhost:3010"
-BASE = "/api/portal"
-PASSWORD = "customer-test-password-123!"
-
-
-class _PortalCase(unittest.TestCase):
-    """Shared fixture; holds no tests so subclasses do not re-run each other's cases."""
-
-    def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.settings = Settings(db_path=fresh_database(self.directory.name), allowed_origins=(ORIGIN,))
-        self.gateway = FakeGateway()
-        self.app = create_app(self.settings, gateway=self.gateway)
-        self.store = self.app.state.store
-        self.clients = []
-
-    def tearDown(self):
-        for client in self.clients:
-            client.close()
-        self.directory.cleanup()
-
-    def client(self):
-        client = TestClient(self.app, base_url=ORIGIN)
-        self.clients.append(client)
-        return client
-
-    def post(self, client, path, data):
-        return client.post(BASE + path, json=data, headers={"Origin": ORIGIN})
-
-    def register(self, client, email):
-        response = self.post(client, "/auth/register", {"email": email, "name": "Test", "password": PASSWORD})
-        self.assertEqual(response.status_code, 201, response.text)
-        return response.json()["user"]
-
-    def admin(self, email="admin@example.test"):
-        self.store.create_user(email, "Admin", PASSWORD, role="admin")
-        client = self.client()
-        self.assertEqual(self.post(client, "/auth/login", {"email": email, "password": PASSWORD}).status_code, 200)
-        return client
-
-    def audit(self, action):
-        return [e for e in rows(self.store, "audit_events") if e["action"] == action]
-
-    def user_id(self, email):
-        return next(u["id"] for u in rows(self.store, "users") if u["email"] == email)
+from server.testsupport import BASE, ORIGIN, PASSWORD, PortalCase as _PortalCase, rows
 
 
 class AccountStatusTests(_PortalCase):
@@ -319,6 +272,24 @@ class AdminAccountTests(_PortalCase):
         r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "enable"})
         self.assertEqual((r.json()["keysRevoked"], r.json()["keysFailed"]), (0, 0))
 
+    def test_issue_with_a_rejected_gateway_token_is_an_auth_failure(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        self.gateway.reject = 401
+        r = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "A", "prepaidUsd": 5})
+        self.assertEqual((r.status_code, r.json()["error"]), (503, "gateway_auth_failed"))
+        self.assertNotIn("private upstream token", r.text)
+        self.assertEqual((rows(self.store, "gateway_keys"), rows(self.store, "key_reservations")), ([], []))
+
+    def test_issue_refuses_accounts_that_are_not_customers(self):
+        admin = self.admin()
+        self.store.create_user("other-admin@example.test", "Other", PASSWORD, role="admin")
+        other = self.user_id("other-admin@example.test")
+        r = self.post(admin, f"/admin/customers/{other}/keys", {"label": "A", "prepaidUsd": 5})
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "target_not_customer"))
+        self.assertIn("Keys can only be issued to customer accounts.", r.json()["detail"])
+        self.assertEqual((self.gateway.issued, rows(self.store, "gateway_keys"), self.audit("admin.key_issued")), ([], [], []))
+
 
 class SelfServicePasswordTests(_PortalCase):
     def test_change_password_keeps_current_session_and_drops_others(self):
@@ -510,7 +481,7 @@ class AdminKeysTests(_PortalCase):
         for status in (401, 403):
             self.gateway.reject = status
             for response in (admin.get(BASE + "/admin/keys"), self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": True}),
-                             self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {})):
+                             self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True})):
                 self.assertEqual(response.status_code, 503, response.text)
                 self.assertEqual(response.json(), {"error": "gateway_auth_failed",
                                                    "detail": "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN."})
@@ -534,6 +505,77 @@ class AdminKeysTests(_PortalCase):
         self.assertEqual(self.post(client, "/admin/keys/x/limits", {"rpm": 1}).status_code, 403)
         self.assertEqual((self.gateway.disabled, self.gateway.limits, self.gateway.balances), ([], [], []))
         self.assertEqual(self.client().get(BASE + "/admin/keys").status_code, 401)
+
+    def test_enable_respects_the_active_key_cap(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        with self.store.connect() as con:
+            for n in range(20):
+                con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", ("local-%d" % n, user["id"], "gk-%d" % n, "k", "sk-%d" % n, "active", 1))
+            con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,?)", ("local-x", user["id"], "gk-x", "k", "sk-x", "revoked", 1, 2))
+        r = self.post(admin, "/admin/keys/gk-x/disable", {"disabled": False})
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "key_limit"))
+        self.assertEqual((self.gateway.enabled, self.audit("admin.key_enabled"), rows(self.store, "key_reservations")), ([], [], []))
+        with self.store.connect() as con:
+            con.execute("UPDATE gateway_keys SET status='revoked' WHERE id='local-0'")
+        self.assertEqual(self.post(admin, "/admin/keys/gk-x/disable", {"disabled": False}).status_code, 200)
+        self.assertEqual(self.gateway.enabled, ["gk-x"])
+        self.assertEqual(rows(self.store, "key_reservations"), [])
+        self.assertEqual(next(k for k in rows(self.store, "gateway_keys") if k["id"] == "local-x")["status"], "active")
+
+    def test_simultaneous_re_enables_of_the_same_key_report_in_progress_not_the_cap(self):
+        admin, other = self.admin(), self.admin("admin2@example.test")
+        user = self.register(self.client(), "a@example.test")
+        with self.store.connect() as con:
+            for n in range(19):
+                con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", ("local-%d" % n, user["id"], "gk-%d" % n, "k", "sk-%d" % n, "active", 1))
+            con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,?)", ("local-x", user["id"], "gk-x", "k", "sk-x", "revoked", 1, 2))
+        self.gateway.disable_delay = 0.6
+
+        def enable(client, wait):
+            time.sleep(wait)
+            return self.post(client, "/admin/keys/gk-x/disable", {"disabled": False})
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(enable, admin, 0)
+            second = executor.submit(enable, other, 0.2)
+            responses = [first.result(), second.result()]
+        self.assertEqual(responses[0].status_code, 200, responses[0].text)
+        self.assertEqual((responses[1].status_code, responses[1].json()["error"]), (409, "key_enable_in_progress"))
+        self.assertEqual(self.gateway.enabled, ["gk-x"])
+        self.assertEqual(len(self.audit("admin.key_enabled")), 1)
+        self.assertEqual(rows(self.store, "key_reservations"), [])
+        self.assertEqual(next(k for k in rows(self.store, "gateway_keys") if k["id"] == "local-x")["status"], "active")
+        # Once the first request has finished, the same request is simply "already enabled".
+        self.assertEqual(self.post(other, "/admin/keys/gk-x/disable", {"disabled": False}).status_code, 200)
+
+    def test_unsafe_characters_in_labels_are_refused(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        for label in ("\\ud800", "a\\u202eb", "a\\u007fb", "a\\u009fb"):
+            r = self.post_raw(admin, f"/admin/customers/{user['id']}/keys", '{"label": "%s", "prepaidUsd": 5}' % label)
+            self.assertEqual((r.status_code, r.json()["error"]), (400, "invalid_input"), label)
+        self.assertEqual(self.gateway.issued, [])
+
+    def test_a_concurrent_re_enable_of_the_same_key_is_not_a_cap_error(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        with self.store.connect() as con:
+            for n in range(19):
+                con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", ("local-%d" % n, user["id"], "gk-%d" % n, "k", "sk-%d" % n, "active", 1))
+            con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,?)", ("local-x", user["id"], "gk-x", "k", "sk-x", "revoked", 1, 2))
+        reserve = self.store.reserve_key_slot
+
+        def other_request_won(user_id, limit=20, tag=None):
+            # The other re-enable of gk-x finishes between this request's ownership read and its reservation.
+            with self.store.connect() as con:
+                con.execute("UPDATE gateway_keys SET status='active',revoked_at=NULL WHERE id='local-x'")
+            return reserve(user_id, limit, tag=tag)
+
+        self.store.reserve_key_slot = other_request_won
+        r = self.post(admin, "/admin/keys/gk-x/disable", {"disabled": False})
+        self.assertEqual((r.status_code, r.json()), (200, {"ok": True}))
+        self.assertEqual((self.gateway.enabled, self.audit("admin.key_enabled"), rows(self.store, "key_reservations")), ([], [], []))
 
 
 class AdminUsageTests(_PortalCase):
@@ -629,6 +671,49 @@ class AdminUsageTests(_PortalCase):
 
 
 class AdminGatewayTests(_PortalCase):
+    def test_overview_reports_a_rejected_token_as_auth_failure(self):
+        admin = self.admin()
+        self.gateway.reject = 401
+        body = admin.get(BASE + "/admin/gateway").json()
+        self.assertEqual(body["errors"], {"state": "gateway_auth_failed", "nodes": "gateway_auth_failed", "metrics": "gateway_auth_failed"})
+
+    def test_toggle_sets_the_requested_state_instead_of_flipping(self):
+        admin = self.admin()
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": False})
+        self.assertEqual((r.status_code, r.json()), (200, {"id": "glm-5.3", "enabled": False, "changed": False}))
+        self.assertEqual((self.gateway.toggled, self.audit("admin.model_toggled")), ([], []))
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True})
+        self.assertEqual((r.status_code, r.json()["enabled"], r.json()["changed"]), (200, True, True))
+        self.assertEqual(self.gateway.toggled, ["glm-5.3"])
+        self.assertEqual(json.loads(self.audit("admin.model_toggled")[0]["details"]), {"enabled": True, "requested": True})
+        for bad in ({}, {"enabled": "yes"}, {"enabled": 1}):
+            self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/toggle", bad).status_code, 422, bad)
+        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-9/toggle", {"enabled": True}).status_code, 404)
+        self.assertEqual(self.gateway.toggled, ["glm-5.3"])
+
+    def test_toggle_race_is_reported_and_audited(self):
+        admin = self.admin()
+
+        async def raced(model_id):
+            self.gateway.toggled.append(model_id)
+            return {"id": model_id, "enabled": False}
+
+        self.gateway.toggle_model = raced
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True})
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "state_changed"))
+        self.assertEqual(len(self.audit("admin.model_toggled")), 1)
+
+    def test_toggle_treats_a_missing_or_null_flag_as_enabled(self):
+        admin = self.admin()
+        self.gateway.state_value["models"] = [{"id": "no-flag"}, {"id": "null-flag", "enabled": None}]
+        for model_id in ("no-flag", "null-flag"):
+            r = self.post(admin, f"/admin/gateway/models/{model_id}/toggle", {"enabled": True})
+            self.assertEqual((r.status_code, r.json()), (200, {"id": model_id, "enabled": True, "changed": False}), model_id)
+        self.assertEqual((self.gateway.toggled, self.audit("admin.model_toggled")), ([], []))
+        r = self.post(admin, "/admin/gateway/models/no-flag/toggle", {"enabled": False})
+        self.assertEqual((r.status_code, r.json()["enabled"], r.json()["changed"]), (200, False, True))
+        self.assertEqual(self.gateway.toggled, ["no-flag"])
+
     def test_overview_isolates_failures(self):
         admin = self.admin()
         body = admin.get(BASE + "/admin/gateway").json()
@@ -670,7 +755,7 @@ class AdminGatewayTests(_PortalCase):
 
     def test_model_and_node_actions_are_audited(self):
         admin = self.admin()
-        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {}).json()["enabled"], True)
+        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True}).json()["enabled"], True)
         self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/maintenance", {"message": "down for 10 min"}).status_code, 200)
         self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/maintenance", {"message": "x" * 301}).status_code, 422)
         r = self.post(admin, "/admin/gateway/nodes/b300-14/ops/check", {})
@@ -690,7 +775,7 @@ class AdminGatewayTests(_PortalCase):
 
     def test_model_id_with_slash_and_empty_maintenance_message(self):
         admin = self.admin()
-        self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/toggle", {}).json()["id"], "zai-org/GLM-5.3")
+        self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/toggle", {"enabled": True}).json()["id"], "zai-org/GLM-5.3")
         self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/maintenance", {}).status_code, 200)
         self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/maintenance", {"message": ""}).status_code, 200)
         self.assertEqual(self.gateway.maintenance, [("zai-org/GLM-5.3", ""), ("zai-org/GLM-5.3", "")])
@@ -701,7 +786,7 @@ class AdminGatewayTests(_PortalCase):
     def test_gateway_rejection_and_outage_are_mapped_and_not_audited(self):
         admin = self.admin()
         self.gateway.reject = GatewayError("rejected", 404, "unknown model")
-        r = self.post(admin, "/admin/gateway/models/glm-9/toggle", {})
+        r = self.post(admin, "/admin/gateway/models/glm-9/toggle", {"enabled": True})
         self.assertEqual((r.status_code, r.json()["error"]), (404, "gateway_rejected"))
         self.gateway.reject = None
         self.gateway.fail = True
@@ -713,7 +798,7 @@ class AdminGatewayTests(_PortalCase):
     def test_unconfigured_gateway_refuses_writes(self):
         admin = self.admin()
         self.gateway.configured = False
-        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {})
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True})
         self.assertEqual((r.status_code, r.json()["error"]), (503, "provider_not_configured"))
         self.assertEqual(self.gateway.toggled, [])
 

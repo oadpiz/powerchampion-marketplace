@@ -130,7 +130,7 @@ python -c "from alembic import command; from server.migrate import _config; from
 
 ## 連接閘道（A2b）
 
-A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／節點。未設定 `PC_GATEWAY_ADMIN_TOKEN` 時，`/admin/keys`、`/admin/usage`、`/admin/gateway` 顯示「閘道尚未連線（PC_GATEWAY_ADMIN_TOKEN 未設定）」，客戶與帳號功能不受影響。後台導覽順序：總覽、客戶、金鑰、用量、閘道、機台分配、儲值申請、操作紀錄。
+A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／節點。未設定 `PC_GATEWAY_ADMIN_TOKEN` 時，`/admin/keys`、`/admin/usage`、`/admin/gateway` 顯示「閘道尚未連線（PC_GATEWAY_ADMIN_TOKEN 未設定）」，客戶與帳號功能不受影響。後台導覽順序（A2c 起）：總覽、客戶、金鑰、兌換碼、用量、閘道、人設、機台分配、儲值申請、操作紀錄。
 
 ### 部署前
 
@@ -155,12 +155,48 @@ A2b 讓管理後台透過閘道的 admin token 管理金鑰、用量與模型／
 - **停用即撤銷**：停用客戶帳號時，其所有仍有效的閘道金鑰一併撤銷，每把寫一筆 `key.revoked`（目標為本機金鑰紀錄 ID）。若閘道當下連不上，帳號仍會停用，並寫一筆 `key.revocation_needs_reconciliation`（目標為閘道金鑰 ID）；閘道上那把金鑰可能仍有效。
 - **對帳處理**：在操作紀錄（`/admin/audit`）找 `key.revocation_needs_reconciliation`；閘道恢復後，主要做法是由管理員到 `/admin/keys` 找到該閘道金鑰 ID 按「停用」（成功會寫 `admin.key_disabled`）。另一個做法只能走 API：以管理員工作階段對該客戶再呼叫一次 `POST /api/portal/admin/customers/{id}/status`，body 為 `{"action": "disable"}`——本機記錄中仍為有效的金鑰會被重試撤銷；後台介面對已停用的帳號只顯示「啟用」，沒有這個按鈕。停用 API 的回應帶 `keysRevoked`／`keysFailed` 數量，`keysFailed` 大於 0 就代表有金鑰需要對帳（後台停用帳號時會直接顯示這個警告）。金鑰發放過程閘道失敗時同理會有 `key.provisioning_needs_reconciliation`，以閘道金鑰 ID 比對 `/admin/keys` 清單處理。
 - **停用帳號的金鑰不能單獨啟用**：在 `/admin/keys` 對某把金鑰按「啟用」時，若它在本機記錄裡屬於已停用的帳號，回 409 `account_disabled`（「Enable the account first.」），不呼叫閘道、不寫稽核；請先到客戶頁啟用帳號。沒有本機擁有者的金鑰（手動或設定檔建立的）不受此限制。
-- **停用模型要確認**：`/admin/gateway` 按模型的「停用」會先跳出確認視窗（停用後客戶會收到 404），確認後才送出；「啟用」仍是一鍵。
+- **停用模型要確認**：`/admin/gateway` 按模型的「停用」會先跳出確認視窗（停用後客戶會收到 404），確認後才送出；「啟用」仍是一鍵。A2c 起送出的是「要變成啟用／停用」，不是「翻轉」：模型已經是那個狀態時什麼都不做；兩位管理員同時操作導致狀態跟要求不同時，畫面顯示「狀態在送出期間被其他操作改變了」，請重新整理後確認。
+- **簽發只給客戶帳號**：「為客戶簽發金鑰」的下拉只列有效的客戶帳號，API 對管理員帳號回 409 `target_not_customer`。
+- **重新啟用金鑰受 20 把上限約束**：帳號已有 20 把有效金鑰時回 409 `key_limit`，請先停用一把；另一位管理員正在啟用同一把時回 409 `key_enable_in_progress`，稍後重新整理即可。
 - 金鑰相關審計事件：`admin.key_issued`、`admin.key_disabled`、`admin.key_enabled`、`admin.key_limits`、`admin.key_balance`、`key.created`（客戶自助）、`key.revoked`；閘道操作為 `admin.model_toggled`、`admin.model_maintenance`、`admin.node_op`。事件不含密鑰內容。
 
 ### 回滾
 
 把 Dokploy 的 `PC_GATEWAY_ADMIN_TOKEN` 拿掉並重新部署：後台三個頁面回到「未連線」，客戶資料、帳號與已發出的金鑰不受影響（金鑰留在閘道）。此版沒有新增資料庫結構，不需要降級 schema。
+
+## Personas／fleet／兌換碼（A2c）
+
+A2c 把閘道 `/personas` 頁、fleet 按鈕與兌換碼搬進後台。**本期沒有新環境變數、沒有 migration**；閘道要已部署含 personas／fleet／redeem 路由的版本（確認方式見 [A2c 計畫](superpowers/plans/2026-10-21-a2c-personas-fleet-redeem.md) Task 12）。
+
+### 人設（`/admin/personas`）
+
+- 清單 → 檢視 → 版本表。「新增版本」預填目前檢視的版本；「儲存後立即啟用」預設**不勾**，啟用會讓使用這個人設的請求立刻改用新版本，要啟用請在版本表按「啟用」並確認。編輯器顯示內容大小（上限 196,608 位元組），超過時不能儲存。
+- **試跑會花 token**：每次試跑都實際呼叫模型並計入閘道用量。最多約 90 秒（Cloudflare 在約 100 秒會切斷，所以不能再拉長）；逾時的試跑仍可能已經用掉 token（API 為 504 `gateway_timeout`），重試前先確認用量。操作紀錄在呼叫前就寫 `admin.persona_try_started`，成功後再寫 `admin.persona_tried`；只有前者的那筆，就是逾時或失敗的試跑。紀錄只有字數與版本，不含系統提示或試跑內容。
+
+### Fleet（`/admin/gateway` 模型列的「Fleet」）
+
+- 只對 `control_managed` 的模型有作用；其他模型會顯示「此模型不由 fleet 控制器管理（control_managed 未開啟）」且沒有按鈕。模型 id 含 `/` 的不能開（閘道 fleet 路由只接受單一路徑段）。
+- 六個動作，每個都要先確認：
+  - **freeze／resume**：凍結（容量調整停在目前值）／恢復自動容量調整，立即生效。
+  - **candidate**：下載、驗證並預熱候選版本，完成後停下等待核准（面板顯示 `awaiting_approval · ready`）。
+  - **approve**：只有在等待核准時能按；降低現行版本並切換到候選版本。
+  - **drain**：排空此模型的流量。**rollback**：回到前一個 serving 狀態。
+- candidate／approve／drain／rollback 會回傳 job，面板每 5 秒查一次 `/api/control/jobs/{id}`，結束或等待核准時停止並重新載入狀態；最多查 120 次後停止自動更新。閘道拒絕衝突（例如已有工作流程在跑）時直接顯示閘道給的原因。
+- **閘道那邊的 actor 一律記成 `admin`**（portal 用同一把 admin token），要知道是誰按的請看 portal 的「操作紀錄」（`admin.fleet_*`）。
+- 「顯示 fleet 事件」展開後才載入容量事件（最近 100 筆，可依模型篩選）。
+
+### 兌換碼（`/admin/redeem`）
+
+- 產生：每張面額 > 0 且 ≤ 1000 美元、每批 1–500 張、批次標籤必填、有效天數 1–3650 或不填（不過期）。送出前會顯示「將產生 N 張、每張 $X、合計 $Y」再確認。
+- **明文只顯示一次**：產生後的對話框列出兌換碼，可「複製全部」或「下載兌換碼（.txt，含明文）」（一行一碼的純文字，檔案在瀏覽器產生，不經伺服器；**請用文字編輯器開啟，不要用 Excel 開啟後另存**，試算表會把以「-」或「=」開頭的兌換碼當成公式而改掉）；只能按「我已保存」關閉。portal 不存明文，閘道只存雜湊，關閉後再也拿不到。
+- **閘道沒有確認時的對帳**：產生時若閘道逾時或回應異常，畫面會說可能已建立標籤為「X」的兌換碼，操作紀錄有 `admin.redeem_codes_issue_unconfirmed`。這些碼如果存在，沒有人看過明文，請：重新整理清單 → 依標籤篩選 → 按「停用此標籤的 N 張可用兌換碼」（或逐張停用）。30 分鐘內用同一個標籤再產生會被擋下（409 `redeem_issue_unconfirmed_recent`；比對時忽略大小寫、前後與重複空白和 Unicode 寫法差異，所以「Promo」與「 promo 」視為同一個），要先勾選「我已檢查並停用該標籤的兌換碼」才會送出，那筆 `admin.redeem_codes_issued` 會帶 `acknowledgedUnconfirmed: true`。清單被截斷（超過 1000 筆）時批次停用會關閉，因為它可能漏掉較舊的碼；請逐張停用或用 CSV 匯出比對。
+- 清單只顯示最新 1000 筆；完整資料用「匯出 CSV」，**匯出檔只有雜湊、沒有明文**，可疑儲存格（以 `=`、`+`、`-`、`@` 開頭）前面會加 `'`，避免試算表當成公式。
+- 容量：閘道清單一次回全部兌換碼，portal 最多讀 32 MiB（約 14 萬張）、匯出最多約 4 萬張；超過要等閘道分頁（後續工作）。
+- 審計：`admin.redeem_codes_issued`（含 code id，不含明文）、`admin.redeem_code_disabled`、`admin.redeem_codes_exported`。
+
+### 回滾
+
+前端與 FastAPI 一起回到前一個 image 即可；沒有 schema 或 env 變更。已產生的兌換碼與人設版本留在閘道，不受影響。
 
 ## 機台分配（node allocation）
 
