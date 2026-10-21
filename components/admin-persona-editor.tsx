@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { portalErrorText, portalRequest } from "../lib/portal-client";
+import { PortalError, portalErrorText, portalRequest } from "../lib/portal-client";
 import { useLocale } from "./locale-provider";
 
 export type PersonaExample = { user: string; assistant: string };
@@ -21,6 +21,8 @@ const MAX_EXAMPLE_TEXT = 4000;
 const MAX_NOTE = 200;
 const MAX_INPUT = 4000;
 const MAX_TOKENS = 1024;
+/** Request body limit for a revision save, in bytes (BFF and backend). */
+export const MAX_REVISION_BYTES = 196608;
 // Control characters other than tab, newline and carriage return.
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/;
@@ -61,13 +63,22 @@ export function RevisionEditor({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  const bodyBytes = new TextEncoder().encode(JSON.stringify({ system, examples, note: note.trim(), activate })).length;
+  const tooLarge = bodyBytes > MAX_REVISION_BYTES;
+
   function updateExample(index: number, field: keyof PersonaExample, value: string) {
     setExamples((current) => current.map((pair, i) => (i === index ? { ...pair, [field]: value } : pair)));
   }
 
   async function save() {
     if (busy) return;
-    const invalid = revisionError(system, examples, note, zh);
+    const invalid =
+      revisionError(system, examples, note, zh) ??
+      (tooLarge
+        ? zh
+          ? `這個版本共 ${bodyBytes.toLocaleString()} 位元組，超過上限 ${MAX_REVISION_BYTES.toLocaleString()}；請縮短系統提示或範例。`
+          : `This revision is ${bodyBytes.toLocaleString()} bytes, over the ${MAX_REVISION_BYTES.toLocaleString()}-byte limit. Shorten the system prompt or the examples.`
+        : null);
     if (invalid) {
       setMessage(invalid);
       return;
@@ -128,6 +139,10 @@ export function RevisionEditor({
         {zh ? "備註" : "Note"}
         <input value={note} maxLength={MAX_NOTE} disabled={busy} onChange={(event) => setNote(event.target.value)} />
       </label>
+      <p className={tooLarge ? "portal-error" : "portal-note"}>
+        {zh ? "內容大小：" : "Size: "}
+        {`${bodyBytes.toLocaleString()} / ${MAX_REVISION_BYTES.toLocaleString()} ${zh ? "位元組" : "bytes"}`}
+      </p>
       <label>
         <input type="checkbox" checked={activate} disabled={busy} onChange={(event) => setActivate(event.target.checked)} />{" "}
         {zh ? "儲存後立即啟用" : "Activate immediately after saving"}
@@ -136,7 +151,7 @@ export function RevisionEditor({
         <p className="portal-error" role="alert">{message}</p>
       )}
       <div className="portal-actions">
-        <button type="button" className="portal-button" disabled={busy} onClick={save}>
+        <button type="button" className="portal-button" disabled={busy || tooLarge} onClick={save}>
           {busy ? (zh ? "儲存中…" : "Saving…") : zh ? "儲存版本" : "Save revision"}
         </button>
       </div>
@@ -198,7 +213,14 @@ export function TryPanel({
       });
       setResults(Array.isArray(response.results) ? response.results : []);
     } catch (reason: unknown) {
-      setMessage(portalErrorText(reason, locale));
+      const timedOut = reason instanceof PortalError && reason.status === 504;
+      setMessage(
+        timedOut
+          ? zh
+            ? "試跑逾時，沒有收到結果；模型可能已經執行並用掉 token。"
+            : "The try timed out without a result. The model may still have run and used tokens."
+          : portalErrorText(reason, locale),
+      );
     } finally {
       setBusy(false);
     }
@@ -240,8 +262,8 @@ export function TryPanel({
           </label>
           <p className="portal-note">
             {zh
-              ? "每次試跑都會實際呼叫模型並計入閘道用量（會留下操作紀錄）。"
-              : "Every try calls the model and counts toward gateway usage (it is recorded in the audit log)."}
+              ? "每次試跑都會實際呼叫模型並計入閘道用量（會留下操作紀錄）。最多約 90 秒；逾時的試跑仍可能已經用掉 token。"
+              : "Every try calls the model and counts toward gateway usage (it is recorded in the audit log). It can take up to about 90 seconds; a try that times out may still have used tokens."}
           </p>
           {message !== null && (
             <p className="portal-error" role="alert">{message}</p>

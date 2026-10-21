@@ -95,6 +95,8 @@ export function portalErrorCodeText(error: unknown, locale: "en" | "zh"): string
     return locale === "zh"
       ? "此帳號的有效金鑰已達上限，請先停用一把。"
       : "This account already has the maximum number of active keys. Disable one first.";
+  if (code === "key_enable_in_progress")
+    return locale === "zh" ? "另一個請求正在重新啟用這把金鑰，請稍後重新整理。" : "Another request is re-enabling this key. Refresh in a moment.";
   if (code === "target_not_customer")
     return locale === "zh" ? "金鑰只能簽發給客戶帳號。" : "Keys can only be issued to customer accounts.";
   if (code === "key_not_found")

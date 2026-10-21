@@ -101,6 +101,8 @@ describe("account portal", () => {
     expect(portalErrorText(new PortalError(409, "key_limit", "x"), "en")).toBe("This account already has the maximum number of active keys. Disable one first.");
     expect(portalErrorText(new PortalError(409, "target_not_customer", "x"), "zh")).toBe("金鑰只能簽發給客戶帳號。");
     expect(portalErrorText(new PortalError(409, "target_not_customer", "x"), "en")).toBe("Keys can only be issued to customer accounts.");
+    expect(portalErrorText(new PortalError(409, "key_enable_in_progress", "x"), "zh")).toBe("另一個請求正在重新啟用這把金鑰，請稍後重新整理。");
+    expect(portalErrorText(new PortalError(409, "key_enable_in_progress", "x"), "en")).toBe("Another request is re-enabling this key. Refresh in a moment.");
     expect(portalErrorText(new PortalError(404, "key_not_found", "x"), "en")).toBe("That API key no longer exists on the gateway.");
     expect(portalErrorText(new PortalError(404, "customer_not_found", "x"), "en")).toBe("That account was not found.");
     expect(portalErrorText(new PortalError(503, "gateway_auth_failed", "x"), "en")).toBe("The gateway rejected the portal's admin token. Check PC_GATEWAY_ADMIN_TOKEN on the portal service.");

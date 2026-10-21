@@ -125,13 +125,40 @@ describe("admin personas section", () => {
       },
     });
     await openP1(user);
-    expect(screen.getByText("Every try calls the model and counts toward gateway usage (it is recorded in the audit log).")).toBeVisible();
+    expect(screen.getByText(/Every try calls the model and counts toward gateway usage \(it is recorded in the audit log\)\. It can take up to about 90 seconds; a try that times out may still have used tokens\./)).toBeVisible();
     await user.type(screen.getByLabelText("Test message"), "price?");
     await user.selectOptions(screen.getByLabelText("Revision B (compare, optional)"), "1");
     await user.click(screen.getByRole("button", { name: "Run try" }));
     expect(await screen.findByText("It costs $5.")).toBeVisible();
     expect(screen.getByText("backend timeout")).toBeVisible();
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({ input: "price?", revs: [null, 1], maxTokens: 300 });
+  });
+
+  it("shows the request size and blocks saving a revision over the limit", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({ "GET /admin/personas": list, "GET /admin/personas/p1": detail(2) });
+    await openP1(user);
+    expect(screen.getByText(/^Size: [\d,]+ \/ 196,608 bytes$/)).toBeVisible();
+    // 30,000 CJK characters are within the character limit but 90,000 bytes; ten 8,000-byte examples push it over.
+    fireEvent.change(screen.getByLabelText("System prompt"), { target: { value: "字".repeat(30000) } });
+    for (let index = 0; index < 10; index += 1) await user.click(screen.getByRole("button", { name: "Add example" }));
+    for (let index = 1; index <= 10; index += 1) fireEvent.change(screen.getByLabelText(`Example ${index} user`), { target: { value: "字".repeat(4000) } });
+    expect(screen.getByRole("button", { name: "Save revision" })).toBeDisabled();
+    expect(screen.getByText(/^Size: [\d,]+ \/ 196,608 bytes$/)).toHaveClass("portal-error");
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("explains that a timed-out try may still have used tokens", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/personas": list,
+      "GET /admin/personas/p1": detail(2),
+      "POST /admin/personas/p1/try": Response.json({ error: "service_unavailable", detail: "x" }, { status: 504 }),
+    });
+    await openP1(user);
+    await user.type(screen.getByLabelText("Test message"), "hello");
+    await user.click(screen.getByRole("button", { name: "Run try" }));
+    expect(await screen.findByText("The try timed out without a result. The model may still have run and used tokens.")).toBeVisible();
   });
 
   it("shows the not-connected notice without a create button", async () => {
