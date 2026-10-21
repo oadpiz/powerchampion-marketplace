@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminPortal } from "../components/admin-portal";
@@ -182,6 +182,81 @@ describe("admin redeem codes section", () => {
     await waitFor(() => expect(calls.filter((call) => call.method === "POST").map((call) => call.path)).toEqual([
       "/admin/redeem/codes/c1/disable", "/admin/redeem/codes/c1/disable", "/admin/redeem/codes/c5/disable",
     ]));
+  });
+
+  it("downloads plaintext codes as a text file, one per line, never as a spreadsheet", async () => {
+    const user = userEvent.setup();
+    const blobs: Blob[] = [];
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = vi.fn((blob: Blob) => { blobs.push(blob); return "blob:x"; });
+      static revokeObjectURL = vi.fn();
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const risky = {
+      codes: [
+        { code: "-dashLeadingCode0001abcd", codeId: "code-1", amountUsd: "5.00" },
+        { code: "=SUM(A1)codeEquals0002ab", codeId: "code-2", amountUsd: "5.00" },
+      ],
+      count: 2, amountUsd: "5.00", label: "=HYPERLINK(\"x\")", expiresDays: null,
+    };
+    adminFetch({ "GET /admin/redeem/codes": listing(), "POST /admin/redeem/codes": Response.json(risky, { status: 201 }) });
+    wrap(<AdminPortal section="redeem" />);
+    await user.click(await screen.findByRole("button", { name: "Generate codes" }));
+    const form = await screen.findByRole("dialog");
+    await fillGenerate(user, form, { amount: "5", count: "2", label: "Promo" });
+    await user.click(within(form).getByRole("button", { name: "Next" }));
+    await user.click(within(form).getByRole("button", { name: "Generate" }));
+    const once = await screen.findByRole("dialog", { name: "These codes are shown only once" });
+    expect(within(once).getByText(/Open it in a text editor; do not open it in Excel and save it again/)).toBeVisible();
+    expect(within(once).queryByRole("button", { name: /CSV/ })).not.toBeInTheDocument();
+    await user.click(within(once).getByRole("button", { name: "Download codes (.txt, plaintext)" }));
+    expect(blobs).toHaveLength(1);
+    expect(blobs[0].type).toBe("text/plain");
+    expect(await blobs[0].text()).toBe("-dashLeadingCode0001abcd\n=SUM(A1)codeEquals0002ab\n");
+    const anchor = click.mock.contexts[0] as HTMLAnchorElement;
+    expect(anchor.download).toBe("redeem_codes-HYPERLINK_x.txt");
+  });
+
+  it("names the real cause of a refused label and counts code points", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({ "GET /admin/redeem/codes": listing(), "POST /admin/redeem/codes": Response.json(issued, { status: 201 }) });
+    wrap(<AdminPortal section="redeem" />);
+    await user.click(await screen.findByRole("button", { name: "Generate codes" }));
+    const dialog = await screen.findByRole("dialog");
+    await fillGenerate(user, dialog, { amount: "5", count: "2" });
+    const label = within(dialog).getByLabelText("Batch label");
+    fireEvent.change(label, { target: { value: "Pro\u200bmo" } });
+    await user.click(within(dialog).getByRole("button", { name: "Next" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("The batch label contains a control or hidden character");
+    fireEvent.change(label, { target: { value: "\u{1F381}".repeat(80) } });
+    await user.click(within(dialog).getByRole("button", { name: "Next" }));
+    expect(within(dialog).getByText(/This will generate 2 codes/)).toBeVisible();
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it("turns bulk disable off while the list is truncated", async () => {
+    const user = userEvent.setup();
+    adminFetch({ "GET /admin/redeem/codes": listing({ truncated: true, total: 1500 }) });
+    wrap(<AdminPortal section="redeem" />);
+    await user.selectOptions(await screen.findByLabelText("Batch label"), "Promo");
+    expect(screen.getByRole("button", { name: "Disable all 1 active codes with this label" })).toBeDisabled();
+    expect(screen.getByText(/Bulk disable is off while only the newest 1,000 codes are loaded/)).toBeVisible();
+  });
+
+  it("reloads the list when a bulk disable only partly succeeds", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/redeem/codes": listing({ codes: [code("c1", "active"), code("c5", "active")] }),
+      "POST /admin/redeem/codes/c1/disable": { ok: true, codeId: "c1" },
+      "POST /admin/redeem/codes/c5/disable": Response.json({ error: "gateway_unavailable", detail: "x" }, { status: 503 }),
+    });
+    wrap(<AdminPortal section="redeem" />);
+    await user.selectOptions(await screen.findByLabelText("Batch label"), "Promo");
+    await user.click(screen.getByRole("button", { name: "Disable all 2 active codes with this label" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Disable" }));
+    expect(await within(dialog).findByText(/1 could not be disabled/)).toBeVisible();
+    await waitFor(() => expect(calls.filter((call) => call.path === "/admin/redeem/codes")).toHaveLength(2));
   });
 
   it("exports the hash-only CSV with the server's file name", async () => {

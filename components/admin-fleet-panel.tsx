@@ -221,11 +221,11 @@ function FleetEventTable({ modelId }: { modelId: string }) {
                 <tr>
                   <th scope="col">{zh ? "時間" : "Time"}</th>
                   <th scope="col">{zh ? "模型" : "Model"}</th>
-                  <th scope="col">Mode</th>
+                  <th scope="col">{zh ? "模式" : "Mode"}</th>
                   <th scope="col">{zh ? "容量" : "Capacity"}</th>
                   <th scope="col">{zh ? "原因" : "Reason"}</th>
-                  <th scope="col">Policy</th>
-                  <th scope="col">Event</th>
+                  <th scope="col">{zh ? "策略版本" : "Policy"}</th>
+                  <th scope="col">{zh ? "事件 ID" : "Event"}</th>
                 </tr>
               </thead>
               <tbody>

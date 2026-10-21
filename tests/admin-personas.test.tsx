@@ -158,7 +158,60 @@ describe("admin personas section", () => {
     await openP1(user);
     await user.type(screen.getByLabelText("Test message"), "hello");
     await user.click(screen.getByRole("button", { name: "Run try" }));
-    expect(await screen.findByText("The try timed out without a result. The model may still have run and used tokens.")).toBeVisible();
+    expect(await screen.findByText("The try timed out without a result. The model may still have run and used tokens; check usage before retrying.")).toBeVisible();
+  });
+
+  it("shows the same timeout copy for the backend's gateway_timeout, in a live region", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/personas": list,
+      "GET /admin/personas/p1": detail(2),
+      "POST /admin/personas/p1/try": Response.json({ error: "gateway_timeout", detail: "x" }, { status: 504 }),
+    });
+    await openP1(user);
+    expect(document.querySelector(".persona-try-results")).toHaveAttribute("aria-live", "polite");
+    await user.type(screen.getByLabelText("Test message"), "hello");
+    await user.click(screen.getByRole("button", { name: "Run try" }));
+    expect(await screen.findByText(/check usage before retrying/)).toBeVisible();
+  });
+
+  it("counts characters as code points and names the real cause of a refusal", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/personas": list,
+      "POST /admin/personas": Response.json({ persona_id: "p3" }, { status: 201 }),
+      "GET /admin/personas/p3": { persona: { persona_id: "p3", name: "x", created_at: 1, active_rev: null }, revisions: [] },
+    });
+    wrap(<AdminPortal section="personas" />);
+    await user.click(await screen.findByRole("button", { name: "New persona" }));
+    const dialog = await screen.findByRole("dialog", { name: "New persona" });
+    const name = within(dialog).getByLabelText("Name");
+    fireEvent.change(name, { target: { value: "Sales\u200bTeam" } });
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("The name contains a control or hidden character");
+    fireEvent.change(name, { target: { value: "\u{1F600}".repeat(81) } });
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Enter a name of 1 to 80 characters.");
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    // 80 emoji are 160 UTF-16 units but 80 characters, as the server counts them.
+    fireEvent.change(name, { target: { value: "\u{1F600}".repeat(80) } });
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+  });
+
+  it("asks before discarding an unsaved draft when switching revisions", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({ "GET /admin/personas": list, "GET /admin/personas/p1": detail(2), "GET /admin/personas/p1?rev=1": detail(1) });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await openP1(user);
+    await user.type(screen.getByLabelText("Note"), "draft");
+    await user.click(screen.getByRole("button", { name: "View revision 1" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(calls.some((call) => call.path === "/admin/personas/p1?rev=1")).toBe(false);
+    expect(screen.getByLabelText("Note")).toHaveValue("draft");
+    confirm.mockReturnValue(true);
+    await user.click(screen.getByRole("button", { name: "View revision 1" }));
+    await waitFor(() => expect(calls.some((call) => call.path === "/admin/personas/p1?rev=1")).toBe(true));
   });
 
   it("shows the not-connected notice without a create button", async () => {

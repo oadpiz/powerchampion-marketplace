@@ -102,6 +102,8 @@ describe("account portal", () => {
     expect(portalErrorText(new PortalError(409, "target_not_customer", "x"), "zh")).toBe("金鑰只能簽發給客戶帳號。");
     expect(portalErrorText(new PortalError(409, "target_not_customer", "x"), "en")).toBe("Keys can only be issued to customer accounts.");
     expect(portalErrorText(new PortalError(409, "key_enable_in_progress", "x"), "zh")).toBe("另一個請求正在重新啟用這把金鑰，請稍後重新整理。");
+    expect(portalErrorText(new PortalError(504, "gateway_timeout", "x"), "zh")).toBe("閘道沒有及時回應；模型可能已經執行並用掉 token，重試前請先確認用量。");
+    expect(portalErrorText(new PortalError(504, "gateway_timeout", "x"), "en")).toBe("The gateway did not answer in time. The model may still have run and used tokens; check usage before retrying.");
     expect(portalErrorText(new PortalError(409, "key_enable_in_progress", "x"), "en")).toBe("Another request is re-enabling this key. Refresh in a moment.");
     expect(portalErrorText(new PortalError(409, "redeem_issue_unconfirmed_recent", "x"), "zh")).toBe("最近一次以這個標籤產生兌換碼時閘道沒有確認結果，請先檢查並停用該標籤的兌換碼。");
     expect(portalErrorText(new PortalError(409, "redeem_issue_unconfirmed_recent", "x"), "en")).toBe("A recent issue with this label was not confirmed. Check and disable the codes with this label first.");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { lineProblem, unsafeMessage } from "../lib/admin-text";
 import { PortalError, portalErrorText, portalRequest } from "../lib/portal-client";
 import { AdminDialog } from "./admin-dialog";
 import { downloadText } from "./admin-resource";
@@ -13,8 +14,6 @@ export type IssuedBatch = { codes: IssuedCode[]; count: number; amountUsd: strin
 const MAX_CODE_CENTS = 100000;
 const MAX_BATCH = 500;
 const MAX_EXPIRES_DAYS = 3650;
-// eslint-disable-next-line no-control-regex
-const UNSAFE = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
 
 function cents(value: string): number | null {
   if (!/^\d+(\.\d{1,2})?$/.test(value.trim())) return null;
@@ -49,7 +48,9 @@ export function GenerateCodesDialog({ onClose, onIssued }: { onClose: () => void
   function validate(): string | null {
     if (amountCents === null) return zh ? "每張面額須大於 0、最多 1,000 美元，最多兩位小數。" : "Each code must be above 0 and at most 1,000 USD, with at most two decimals.";
     if (!Number.isInteger(countValue) || countValue < 1 || countValue > MAX_BATCH) return zh ? "張數須為 1–500。" : "Generate from 1 to 500 codes.";
-    if (!label.trim() || label.trim().length > 80 || UNSAFE.test(label)) return zh ? "請輸入 1–80 字的批次標籤。" : "Enter a batch label of 1 to 80 characters.";
+    const labelProblem = lineProblem(label, 80);
+    if (labelProblem === "unsafe") return unsafeMessage({ en: "batch label", zh: "批次標籤" }, zh);
+    if (labelProblem) return zh ? "請輸入 1–80 字的批次標籤。" : "Enter a batch label of 1 to 80 characters.";
     if (expiresValue !== null && (!Number.isInteger(expiresValue) || expiresValue < 1 || expiresValue > MAX_EXPIRES_DAYS))
       return zh ? "有效天數須為 1–3,650，或留空表示不過期。" : "Expiry must be 1 to 3,650 days, or empty for no expiry.";
     return null;
@@ -112,7 +113,7 @@ export function GenerateCodesDialog({ onClose, onIssued }: { onClose: () => void
           </label>
           <label className="portal-field">
             {zh ? "批次標籤" : "Batch label"}
-            <input value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} />
+            <input value={label} onChange={(event) => setLabel(event.target.value)} />
           </label>
           <label className="portal-field">
             {zh ? "有效天數（選填）" : "Valid for days (optional)"}
@@ -163,10 +164,6 @@ export function GenerateCodesDialog({ onClose, onIssued }: { onClose: () => void
   );
 }
 
-function csvCell(value: string) {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
 /** The only place plaintext codes are shown. They live in this component's props until "I have saved them". */
 export function CodesOnceDialog({ batch, onClose }: { batch: IssuedBatch; onClose: () => void }) {
   const zh = useLocale().locale === "zh";
@@ -180,9 +177,11 @@ export function CodesOnceDialog({ batch, onClose }: { batch: IssuedBatch; onClos
     }
   }
   function download() {
-    const rows = [["code", "code_id", "amount_usd", "label"], ...batch.codes.map((item) => [item.code, item.codeId, item.amountUsd, batch.label])];
-    // Built in the browser; the file never passes through a server.
-    downloadText(`redeem_codes-${batch.label.replace(/[^A-Za-z0-9_-]+/g, "_") || "batch"}.csv`, rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n", "text/csv");
+    // Plain text, one code per line, built in the browser (the file never passes through a server).
+    // Not CSV: a spreadsheet would evaluate a code starting with "-" (or a label starting with "=") as a
+    // formula, and neutralising the cell would change the code itself.
+    const name = batch.label.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^[-_]+|[-_]+$/g, "") || "batch";
+    downloadText(`redeem_codes-${name}.txt`, batch.codes.map((item) => item.code).join("\n") + "\n", "text/plain");
   }
   return (
     <AdminDialog
@@ -197,7 +196,7 @@ export function CodesOnceDialog({ batch, onClose }: { batch: IssuedBatch; onClos
             {zh ? "複製全部" : "Copy all"}
           </button>
           <button type="button" className="portal-button-secondary" onClick={download}>
-            {zh ? "下載 CSV（含明文）" : "Download CSV (includes plaintext)"}
+            {zh ? "下載兌換碼（.txt，含明文）" : "Download codes (.txt, plaintext)"}
           </button>
         </>
       }
@@ -207,13 +206,18 @@ export function CodesOnceDialog({ batch, onClose }: { batch: IssuedBatch; onClos
           ? "關閉後就無法再取得這些兌換碼的明文；入口網站與閘道都只保存雜湊。"
           : "After you close this, the plaintext cannot be shown again; the portal and the gateway keep only hashes."}
       </p>
+      <p className="portal-note">
+        {zh
+          ? "下載的檔案是一行一個兌換碼的純文字。請用文字編輯器開啟；不要用 Excel 開啟後另存，試算表可能把以「-」或「=」開頭的兌換碼改掉。"
+          : "The download is plain text with one code per line. Open it in a text editor; do not open it in Excel and save it again, because a spreadsheet can change codes that start with \"-\" or \"=\"."}
+      </p>
       <div className="portal-table-wrap">
         <table className="portal-table">
           <caption className="sr-only">{zh ? "新產生的兌換碼" : "New redeem codes"}</caption>
           <thead>
             <tr>
               <th scope="col">{zh ? "兌換碼" : "Code"}</th>
-              <th scope="col">Code ID</th>
+              <th scope="col">{zh ? "兌換碼 ID" : "Code ID"}</th>
               <th scope="col">{zh ? "面額" : "Amount"}</th>
             </tr>
           </thead>
@@ -241,11 +245,14 @@ export function ConfirmDisableDialog({
   label,
   onClose,
   onDone,
+  onPartial,
 }: {
   codeIds: string[];
   label: string | null;
   onClose: () => void;
   onDone: () => void;
+  /** Called when some codes were disabled and some were not, so the list can be reloaded. */
+  onPartial?: () => void;
 }) {
   const locale = useLocale().locale;
   const zh = locale === "zh";
@@ -269,6 +276,7 @@ export function ConfirmDisableDialog({
       }
     }
     setBusy(false);
+    if (failed && failed < codeIds.length) onPartial?.();
     if (failed) {
       setMessage(
         `${zh ? `有 ${failed} 張停用失敗：` : `${failed} could not be disabled: `}${portalErrorText(lastError, locale)}`,

@@ -101,6 +101,10 @@ export function portalErrorCodeText(error: unknown, locale: "en" | "zh"): string
     return locale === "zh"
       ? "最近一次以這個標籤產生兌換碼時閘道沒有確認結果，請先檢查並停用該標籤的兌換碼。"
       : "A recent issue with this label was not confirmed. Check and disable the codes with this label first.";
+  if (code === "gateway_timeout")
+    return locale === "zh"
+      ? "閘道沒有及時回應；模型可能已經執行並用掉 token，重試前請先確認用量。"
+      : "The gateway did not answer in time. The model may still have run and used tokens; check usage before retrying.";
   if (code === "target_not_customer")
     return locale === "zh" ? "金鑰只能簽發給客戶帳號。" : "Keys can only be issued to customer accounts.";
   if (code === "key_not_found")

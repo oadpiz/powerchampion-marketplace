@@ -149,7 +149,7 @@ export function AdminGatewaySection() {
                                   title={model.id.includes("/") ? (zh ? "fleet 路由不支援含 / 的模型 id" : "Fleet routes do not support model ids that contain /") : undefined}
                                   onClick={() => setFleetModel(model.id)}
                                 >
-                                  Fleet
+                                  {zh ? "Fleet 控制" : "Fleet"}
                                 </button>
                               </div>
                             </td>

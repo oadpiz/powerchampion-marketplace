@@ -61,7 +61,7 @@ aria2c 雙鏡像或 ModelScope）。沒有「輸入 repo id 就下載並上架�
 
 每個子期各自一份實作計畫、獨立可部署、獨立可回滾。B1 不依賴 A，可提早開工。
 
-2026-10-09：A2 拆為 A2a／A2b；A2a 加入殼層與密碼重設（使用者需求）。2026-10-09：A2b 不含 Personas／fleet，移到 A2c；客戶自助發放由 `PC_CUSTOMER_KEY_ISSUANCE` 控制（預設關）；停用客戶即撤銷其閘道金鑰。2026-10-21：A2c 範圍定案——`/api/control` 只代理 fleet 寫入需要的 job 輪詢（`GET /api/control/jobs/{id}`），control 的 mode／switch／profit-evidence／validate／preview 不代理；persona `try` 會實際呼叫模型，與其他寫入一樣寫 `audit_events`；兌換碼明文只在產生當下回給瀏覽器一次，不入 portal 資料庫、審計或日誌；A3 改為依賴 A2c（閘道 `/personas` 退場前，portal 必須先有 Personas 頁）。
+2026-10-09：A2 拆為 A2a／A2b；A2a 加入殼層與密碼重設（使用者需求）。2026-10-09：A2b 不含 Personas／fleet，移到 A2c；客戶自助發放由 `PC_CUSTOMER_KEY_ISSUANCE` 控制（預設關）；停用客戶即撤銷其閘道金鑰。2026-10-21：A2c 範圍定案——`/api/control` 只代理 fleet 寫入需要的 job 輪詢（`GET /api/control/jobs/{id}`），control 的 mode／switch／profit-evidence／validate／preview 不代理；persona `try` 會實際呼叫模型，與其他寫入一樣寫 `audit_events`；兌換碼明文只在產生當下回給瀏覽器一次，不入 portal 資料庫、審計或日誌；兌換碼限制（owner 2026-10-21）：每張面額 > 0 且 ≤ 1000 USD、每批 1–500 張、批次標籤必填、有效天數 1–3650 或不過期，產生前 UI 顯示張數 × 面額的合計供確認；A3 改為依賴 A2c（閘道 `/personas` 退場前，portal 必須先有 Personas 頁）。
 
 ## 4. 第 0 期：閘道分支收斂
 
@@ -185,7 +185,7 @@ admin 新增頁（`app/admin/[[...section]]`）：
 - 「閘道」頁對 `glm-5.3-flash-uncensored` 設維護訊息後，客戶請求回 503 且訊息相同；清除後恢復 200。
 - 每個寫入動作在「稽核」頁出現一筆，含操作者與目標。
 - A2c：在「人設」頁建立 persona → 新增 revision（不啟用）→ 試跑新舊兩版並排 → 啟用新版；「稽核」頁依序出現
-  `admin.persona_created`、`admin.persona_revision_saved`、`admin.persona_tried`、`admin.persona_activated`，
+  `admin.persona_created`、`admin.persona_revision_saved`、`admin.persona_try_started`（試跑前寫入，逾時的試跑也留紀錄）、`admin.persona_tried`、`admin.persona_activated`，
   details 不含 system 或試跑原文。
 - A2c：對非 `control_managed` 模型開 fleet 面板，顯示「不由 fleet 控制器管理」且沒有動作鈕；對受管模型
   status／timeline 可讀（生產驗收不執行 fleet 寫入）。

@@ -122,8 +122,10 @@ text is passed on), `gateway_rejected`
 `key_not_found`, 404 `customer_not_found`, 400 `unknown_action`, 409 `key_limit`,
 409 `key_enable_in_progress`, 409 `target_not_customer`, 409 `state_changed`, and 422/400
 `invalid_input` for bad bodies. Text fields refuse control characters (C0, DEL, C1), bidi
-embedding/override/isolate characters and lone surrogates; multi-line persona text (system prompt,
-examples, try input) additionally allows tab, newline and carriage return.
+embedding/override/isolate characters and lone surrogates; single-line fields (labels, names, notes)
+also refuse the invisible characters U+200B–U+200F, U+2060 and U+061C, while multi-line persona text
+(system prompt, examples, try input) allows tab, newline and carriage return. Lengths count code
+points, as the admin UI does.
 
 Audit actions written by these routes (actor = caller, target = affected
 account; never any password material): `account.password_changed`,
@@ -150,19 +152,19 @@ under `/api/portal`. Gateway errors map as above; the route-specific 404 codes a
 | `POST /admin/personas` | `{name}` (1–80 characters). 201 `{persona_id}` |
 | `POST /admin/personas/{id}/revisions` | `{system, examples, note, activate}`: `system` ≤ 32000 characters, `examples` ≤ 50 `{user, assistant}` pairs of ≤ 4000 each, `note` one line ≤ 200, `activate` **required** bool (the gateway's "omitted = activate now" is not used). Body ≤ 196608 bytes (else 413). Returns `{rev}`. 404 `persona_not_found` |
 | `POST /admin/personas/{id}/activate` | `{rev}`. 404 `persona_not_found` |
-| `POST /admin/personas/{id}/try` | `{input (≤ 4000), revs (1–2 of null or a rev), maxTokens (1–1024, default 300), temperature (0–2, default 0.8)}`. Calls the model (spends tokens); 90 s adapter timeout, 95 s at the BFF |
+| `POST /admin/personas/{id}/try` | `{input (≤ 4000), revs (1–2 of null or a rev), maxTokens (1–1024, default 300), temperature (0–2, default 0.8)}`. Calls the model (spends tokens); 90 s adapter timeout, 95 s at the BFF. A try the gateway does not answer in time is 504 `gateway_timeout` (the model may still have run) |
 | `GET /admin/gateway/fleet/{model}/status`, `/timeline` | Fleet state and the workflow timeline. 404 `fleet_not_managed` when the model is not `control_managed` |
 | `GET /admin/gateway/fleet/events?modelId=&limit=` | Fleet capacity events; `limit` 1..500 (default 100) |
 | `POST /admin/gateway/fleet/{model}/{action}` | `action` ∈ `freeze`, `resume`, `candidate`, `drain`, `approve`, `rollback` (else 400 `unknown_action`); no body. freeze/resume return the capacity state; the others return `{job_id, state, phase}`. Conflicts are 409 `gateway_rejected` with the gateway's reason |
 | `GET /admin/gateway/control/jobs/{job}` | Poll a fleet workflow job (the only `/api/control` route the portal proxies). 404 `job_not_found` |
 | `GET /admin/redeem/codes` | Newest 1000 codes (whitelisted fields only), with `total`, `counts` per status and `truncated` |
-| `POST /admin/redeem/codes` | `{amountUsd (> 0, ≤ 1000, two decimals), count (1–500), label (required, ≤ 80), expiresDays? (1–3650), acknowledgeUnconfirmed?}`. 201 with the plaintext codes, once. 409 `redeem_issue_unconfirmed_recent` when the same label had an unconfirmed issue in the last 30 minutes and `acknowledgeUnconfirmed` is not `true` |
+| `POST /admin/redeem/codes` | `{amountUsd (> 0, ≤ 1000, two decimals), count (1–500), label (required, ≤ 80), expiresDays? (1–3650), acknowledgeUnconfirmed?}`. 201 with the plaintext codes, once. 409 `redeem_issue_unconfirmed_recent` when the same label (compared after NFKC, case folding and whitespace collapsing) had an unconfirmed issue in the last 30 minutes and `acknowledgeUnconfirmed` is not `true`; an acknowledged issue records `acknowledgedUnconfirmed: true` in its audit details |
 | `POST /admin/redeem/codes/{id}/disable` | 404 `redeem_code_not_found` when missing or already disabled |
 | `GET /admin/redeem/codes/export` | `{filename, csv, rows}`: the gateway CSV (code hashes, no plaintext), with cells starting `= + - @`, tab or CR prefixed by `'` |
 
 Error codes added in A2c: `persona_not_found`, `fleet_not_managed`, `job_not_found`,
-`redeem_code_not_found`, `redeem_issue_unconfirmed_recent`, plus `state_changed`, `key_limit`
-and `key_enable_in_progress` above.
+`redeem_code_not_found`, `redeem_issue_unconfirmed_recent`, 504 `gateway_timeout` (persona try only),
+plus `state_changed`, `key_limit` and `key_enable_in_progress` above.
 
 Audit actions (A2c; details never contain persona text, try input, a redeem code or a token):
 `admin.persona_created` (`{name}`), `admin.persona_revision_saved` (`{rev, activate, systemChars, examples}`),

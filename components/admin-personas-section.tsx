@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { lineProblem, unsafeMessage } from "../lib/admin-text";
 import { PortalError, portalErrorText, portalRequest } from "../lib/portal-client";
 import { AdminDialog } from "./admin-dialog";
 import { RevisionEditor, TryPanel, type PersonaExample, type PersonaRevisionSummary } from "./admin-persona-editor";
@@ -42,8 +43,9 @@ function CreatePersonaDialog({ onClose, onCreated }: { onClose: () => void; onCr
   const [message, setMessage] = useState<string | null>(null);
   async function submit() {
     if (busy) return;
-    if (!name.trim() || name.trim().length > 80) {
-      setMessage(zh ? "請輸入 1–80 字的名稱。" : "Enter a name of 1 to 80 characters.");
+    const problem = lineProblem(name, 80);
+    if (problem) {
+      setMessage(problem === "unsafe" ? unsafeMessage({ en: "name", zh: "名稱" }, zh) : zh ? "請輸入 1–80 字的名稱。" : "Enter a name of 1 to 80 characters.");
       return;
     }
     setBusy(true);
@@ -70,7 +72,7 @@ function CreatePersonaDialog({ onClose, onCreated }: { onClose: () => void; onCr
     >
       <label className="portal-field">
         {zh ? "名稱" : "Name"}
-        <input value={name} maxLength={80} onChange={(event) => setName(event.target.value)} />
+        <input value={name} onChange={(event) => setName(event.target.value)} />
       </label>
       {message !== null && (
         <p className="portal-error" role="alert">{message}</p>
@@ -87,6 +89,15 @@ function PersonaView({ personaId, onGone, onChanged }: { personaId: string; onGo
   const resource = usePortalResource<PersonaDetail>(path);
   const [confirm, setConfirm] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const draftDirty = useRef(false);
+  function view(target: number) {
+    if (
+      draftDirty.current &&
+      !window.confirm(zh ? "新版本編輯器裡有尚未儲存的內容，切換版本會捨棄它。要繼續嗎？" : "The new revision has unsaved changes. Viewing another revision discards them. Continue?")
+    )
+      return;
+    setRev(target);
+  }
   const [message, setMessage] = useState<string | null>(null);
 
   if (resource.error instanceof PortalError && resource.error.code === "persona_not_found") {
@@ -192,7 +203,7 @@ function PersonaView({ personaId, onGone, onChanged }: { personaId: string; onGo
                         <td>{item.system_len ?? "—"}</td>
                         <td>{item.example_count ?? "—"}</td>
                         <td>
-                          <button type="button" className="portal-text-button" aria-label={zh ? `檢視版本 ${item.rev}` : `View revision ${item.rev}`} onClick={() => setRev(item.rev)}>
+                          <button type="button" className="portal-text-button" aria-label={zh ? `檢視版本 ${item.rev}` : `View revision ${item.rev}`} onClick={() => view(item.rev)}>
                             {zh ? "檢視" : "View"}
                           </button>{" "}
                           {item.rev === activeRev ? (
@@ -215,6 +226,7 @@ function PersonaView({ personaId, onGone, onChanged }: { personaId: string; onGo
             personaId={personaId}
             initialSystem={persona.system ?? ""}
             initialExamples={(persona.examples ?? []).map((pair) => ({ user: pair.user ?? "", assistant: pair.assistant ?? "" }))}
+            dirtyRef={draftDirty}
             onSaved={(saved) => {
               if (saved === rev) resource.refresh();
               else setRev(saved);

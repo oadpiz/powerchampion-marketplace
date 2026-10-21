@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type MutableRefObject } from "react";
+import { codePoints, lineProblem, textProblem, unsafeMessage } from "../lib/admin-text";
 import { PortalError, portalErrorText, portalRequest } from "../lib/portal-client";
 import { useLocale } from "./locale-provider";
 
@@ -23,23 +24,24 @@ const MAX_INPUT = 4000;
 const MAX_TOKENS = 1024;
 /** Request body limit for a revision save, in bytes (BFF and backend). */
 export const MAX_REVISION_BYTES = 196608;
-// Control characters other than tab, newline and carriage return.
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/;
-
 function revisionError(system: string, examples: PersonaExample[], note: string, zh: boolean): string | null {
-  if (system.length > MAX_SYSTEM || CONTROL.test(system))
+  const systemField = { en: "system prompt", zh: "系統提示" };
+  const systemProblem = textProblem(system, MAX_SYSTEM);
+  if (systemProblem === "unsafe") return unsafeMessage(systemField, zh);
+  if (systemProblem === "long")
     return zh ? `系統提示最多 ${MAX_SYSTEM.toLocaleString()} 字。` : `The system prompt can be at most ${MAX_SYSTEM.toLocaleString()} characters.`;
   if (examples.length > MAX_EXAMPLES) return zh ? "範例最多 50 組。" : "Use at most 50 examples.";
-  for (const pair of examples) {
-    if ([pair.user, pair.assistant].some((text) => text.length > MAX_EXAMPLE_TEXT || CONTROL.test(text)))
-      return zh ? "每則範例訊息最多 4,000 字。" : "Each example message can be at most 4,000 characters.";
+  for (const [index, pair] of examples.entries()) {
+    const problems = [pair.user, pair.assistant].map((text) => textProblem(text, MAX_EXAMPLE_TEXT));
+    if (problems.includes("unsafe")) return unsafeMessage({ en: `example ${index + 1}`, zh: `範例 ${index + 1} ` }, zh);
+    if (problems.includes("long"))
+      return zh ? `範例 ${index + 1} 的每則訊息最多 4,000 字。` : `Each message in example ${index + 1} can be at most 4,000 characters.`;
     if (!pair.user.trim() && !pair.assistant.trim())
-      return zh ? "每組範例至少要有使用者或助理的內容。" : "Each example needs a user or an assistant message.";
+      return zh ? `範例 ${index + 1} 至少要有使用者或助理的內容。` : `Example ${index + 1} needs a user or an assistant message.`;
   }
-  // eslint-disable-next-line no-control-regex
-  if (note.trim().length > MAX_NOTE || /[\u0000-\u001f]/.test(note))
-    return zh ? "備註須為單行，最多 200 字。" : "The note must be a single line of at most 200 characters.";
+  const noteProblem = lineProblem(note, MAX_NOTE, false);
+  if (noteProblem === "unsafe") return unsafeMessage({ en: "note (a single line)", zh: "備註（須為單行）" }, zh);
+  if (noteProblem === "long") return zh ? "備註最多 200 字。" : "The note can be at most 200 characters.";
   return null;
 }
 
@@ -48,11 +50,14 @@ export function RevisionEditor({
   initialSystem,
   initialExamples,
   onSaved,
+  dirtyRef,
 }: {
   personaId: string;
   initialSystem: string;
   initialExamples: PersonaExample[];
   onSaved: (rev: number, activated: boolean) => void;
+  /** Set to true while the draft differs from what it was prefilled with. */
+  dirtyRef?: MutableRefObject<boolean>;
 }) {
   const locale = useLocale().locale;
   const zh = locale === "zh";
@@ -63,6 +68,11 @@ export function RevisionEditor({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  const dirty =
+    system !== initialSystem || JSON.stringify(examples) !== JSON.stringify(initialExamples) || note !== "" || activate;
+  useEffect(() => {
+    if (dirtyRef) dirtyRef.current = dirty;
+  });
   const bodyBytes = new TextEncoder().encode(JSON.stringify({ system, examples, note: note.trim(), activate })).length;
   const tooLarge = bodyBytes > MAX_REVISION_BYTES;
 
@@ -108,7 +118,7 @@ export function RevisionEditor({
         {zh ? "系統提示" : "System prompt"}
         <textarea rows={8} value={system} disabled={busy} onChange={(event) => setSystem(event.target.value)} />
       </label>
-      <p className="portal-note" aria-live="polite">{`${system.length.toLocaleString()} / ${MAX_SYSTEM.toLocaleString()}`}</p>
+      <p className="portal-note" aria-live="polite">{`${codePoints(system).toLocaleString()} / ${MAX_SYSTEM.toLocaleString()}`}</p>
       <fieldset className="portal-field">
         <legend>{zh ? "範例對話" : "Examples"}</legend>
         {examples.map((pair, index) => (
@@ -137,7 +147,7 @@ export function RevisionEditor({
       </fieldset>
       <label className="portal-field">
         {zh ? "備註" : "Note"}
-        <input value={note} maxLength={MAX_NOTE} disabled={busy} onChange={(event) => setNote(event.target.value)} />
+        <input value={note} disabled={busy} onChange={(event) => setNote(event.target.value)} />
       </label>
       <p className={tooLarge ? "portal-error" : "portal-note"}>
         {zh ? "內容大小：" : "Size: "}
@@ -193,12 +203,17 @@ export function TryPanel({
   async function run() {
     if (busy || disabled) return;
     const tokens = Number(maxTokens);
-    if (!input.trim() || input.length > MAX_INPUT) {
+    const inputProblem = textProblem(input, MAX_INPUT);
+    if (inputProblem === "unsafe") {
+      setMessage(unsafeMessage({ en: "test message", zh: "測試訊息" }, zh));
+      return;
+    }
+    if (!input.trim() || inputProblem === "long") {
       setMessage(zh ? "請輸入 1–4,000 字的測試訊息。" : "Enter a test message of 1 to 4,000 characters.");
       return;
     }
     if (!Number.isInteger(tokens) || tokens < 1 || tokens > MAX_TOKENS) {
-      setMessage(zh ? "Max tokens 須為 1–1,024 的整數。" : "Max tokens must be a whole number from 1 to 1,024.");
+      setMessage(zh ? "最大 token 數須為 1–1,024 的整數。" : "Max tokens must be a whole number from 1 to 1,024.");
       return;
     }
     const revs: (number | null)[] = [revA === "" ? null : Number(revA)];
@@ -213,12 +228,13 @@ export function TryPanel({
       });
       setResults(Array.isArray(response.results) ? response.results : []);
     } catch (reason: unknown) {
+      // 504 is either the gateway not answering in time (gateway_timeout) or the BFF's own 95 s limit.
       const timedOut = reason instanceof PortalError && reason.status === 504;
       setMessage(
         timedOut
           ? zh
-            ? "試跑逾時，沒有收到結果；模型可能已經執行並用掉 token。"
-            : "The try timed out without a result. The model may still have run and used tokens."
+            ? "試跑逾時，沒有收到結果；模型可能已經執行並用掉 token，重試前請先確認用量。"
+            : "The try timed out without a result. The model may still have run and used tokens; check usage before retrying."
           : portalErrorText(reason, locale),
       );
     } finally {
@@ -243,7 +259,7 @@ export function TryPanel({
         <>
           <label className="portal-field">
             {zh ? "測試訊息" : "Test message"}
-            <textarea rows={3} value={input} maxLength={MAX_INPUT} disabled={busy} onChange={(event) => setInput(event.target.value)} />
+            <textarea rows={3} value={input} disabled={busy} onChange={(event) => setInput(event.target.value)} />
           </label>
           <label className="portal-field">
             {zh ? "版本 A" : "Revision A"}
@@ -257,7 +273,7 @@ export function TryPanel({
             </select>
           </label>
           <label className="portal-field">
-            Max tokens
+            {zh ? "最大 token 數" : "Max tokens"}
             <input type="number" min={1} max={MAX_TOKENS} value={maxTokens} disabled={busy} onChange={(event) => setMaxTokens(event.target.value)} />
           </label>
           <p className="portal-note">
@@ -274,9 +290,12 @@ export function TryPanel({
             </button>
             {busy && <span className="portal-note" role="status">{zh ? "最多約 90 秒" : "This can take up to about 90 seconds."}</span>}
           </div>
-          {results && (
-            <div className="persona-try-results" style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(results.length, 1)}, minmax(0, 1fr))`, gap: "1rem" }}>
-              {results.map((result, index) => (
+          <div
+            className="persona-try-results"
+            aria-live="polite"
+            style={{ display: "grid", gridTemplateColumns: `repeat(${Math.max(results?.length ?? 1, 1)}, minmax(0, 1fr))`, gap: "1rem" }}
+          >
+              {(results ?? []).map((result, index) => (
                 <article key={index} className="portal-panel" aria-label={revisionLabel(result.rev ?? null, zh)}>
                   <h3>{revisionLabel(result.rev ?? null, zh)}</h3>
                   {typeof result.error === "string" ? (
@@ -292,8 +311,7 @@ export function TryPanel({
                   )}
                 </article>
               ))}
-            </div>
-          )}
+          </div>
         </>
       )}
     </section>

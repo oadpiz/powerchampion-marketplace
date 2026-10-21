@@ -65,6 +65,19 @@ describe("fleet panel on the gateway page", () => {
     }
   });
 
+  it("opens the panel for a model id with a colon", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/gateway": { ...overview, state: { models: [{ id: "glm:fp8", enabled: true }] } },
+      "GET /admin/gateway/fleet/glm%3Afp8/status": status({ model_id: "glm:fp8" }),
+      "GET /admin/gateway/fleet/glm%3Afp8/timeline": { model_id: "glm:fp8", events: [] },
+    });
+    wrap(<AdminPortal section="gateway" />);
+    const panel = await openFleet(user, "glm:fp8");
+    expect(await within(panel).findByText(/observe · 6 \/ 8/)).toBeVisible();
+    expect(calls.map((call) => call.path)).toContain("/admin/gateway/fleet/glm%3Afp8/status");
+  });
+
   it("disables fleet controls for model ids with a slash", async () => {
     adminFetch(fleetRoutes());
     wrap(<AdminPortal section="gateway" />);

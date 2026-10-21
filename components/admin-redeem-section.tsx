@@ -118,11 +118,24 @@ export function AdminRedeemSection() {
                     </select>
                   </label>
                   {activeInLabel.length > 0 && (
-                    <button type="button" className="portal-button-secondary" onClick={() => setDisable({ codeIds: activeInLabel.map((code) => code.codeId), label })}>
+                    <button
+                      type="button"
+                      className="portal-button-secondary"
+                      // Only the newest 1000 codes are loaded; a bulk action would silently miss older ones.
+                      disabled={data.truncated}
+                      onClick={() => setDisable({ codeIds: activeInLabel.map((code) => code.codeId), label })}
+                    >
                       {zh ? `停用此標籤的 ${activeInLabel.length} 張可用兌換碼` : `Disable all ${activeInLabel.length} active codes with this label`}
                     </button>
                   )}
                 </div>
+                {activeInLabel.length > 0 && data.truncated && (
+                  <p className="portal-note">
+                    {zh
+                      ? "清單只載入最新 1000 筆，批次停用可能漏掉較舊的兌換碼，因此暫停使用；請逐張停用，或用 CSV 匯出比對完整清單。"
+                      : "Bulk disable is off while only the newest 1,000 codes are loaded, because it could miss older codes with this label. Disable codes one by one, or use the CSV export to check the full list."}
+                  </p>
+                )}
                 {data.truncated && (
                   <p className="portal-note" role="status">
                     {zh
@@ -138,7 +151,7 @@ export function AdminRedeemSection() {
                       <caption className="sr-only">{zh ? "兌換碼" : "Redeem codes"}</caption>
                       <thead>
                         <tr>
-                          <th scope="col">Code ID</th>
+                          <th scope="col">{zh ? "兌換碼 ID" : "Code ID"}</th>
                           <th scope="col">{zh ? "面額" : "Amount"}</th>
                           <th scope="col">{zh ? "標籤" : "Label"}</th>
                           <th scope="col">{zh ? "狀態" : "Status"}</th>
@@ -200,6 +213,7 @@ export function AdminRedeemSection() {
             setDisable(null);
             resource.refresh();
           }}
+          onPartial={resource.refresh}
         />
       )}
     </>

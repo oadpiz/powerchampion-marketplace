@@ -215,6 +215,29 @@ describe("portal service boundary", () => {
     }
   });
 
+  it("accepts a colon in a fleet model id whether raw or encoded as %3A, but never an encoded slash", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await GET(request("/admin/gateway/fleet/glm-5.2%3Afp8/status"))).status).toBe(200);
+    expect((await POST(request("/admin/gateway/fleet/glm-5.2%3afp8/freeze", "POST"))).status).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "http://127.0.0.1:3020/api/portal/admin/gateway/fleet/glm-5.2%3Afp8/status",
+      "http://127.0.0.1:3020/api/portal/admin/gateway/fleet/glm-5.2%3afp8/freeze",
+    ]);
+    expect((await GET(request("/admin/gateway/fleet/glm%2Ffp8/status"))).status).toBe(404);
+    expect((await GET(request("/admin/gateway/fleet/glm%25fp8/status"))).status).toBe(404);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("passes a persona try timeout through as 504 gateway_timeout", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "gateway_timeout", detail: "upstream detail" }, { status: 504 })));
+    const response = await POST(request("/admin/personas/abc123def456/try", "POST", { input: "x" }));
+    expect(response.status).toBe(504);
+    expect(await response.json()).toEqual({ error: "gateway_timeout", detail: "The gateway did not answer in time. The model may still have run and used tokens." });
+  });
+
   it("passes route-specific 4xx errors through unchanged", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", "");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "fleet_not_managed", detail: "Not managed." }, { status: 404 })));
