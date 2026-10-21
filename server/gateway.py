@@ -36,11 +36,14 @@ REDEEM_MAX_BYTES = 32 * 1024 * 1024
 
 
 class GatewayError(Exception):
-    def __init__(self, code, status=None, detail=""):
+    def __init__(self, code, status=None, detail="", timed_out=False):
         super().__init__(code)
         self.code = code
         self.status = status
         self.detail = (detail or "")[:300]
+        # Still code "unavailable" (callers that only care about "did it work" are unchanged);
+        # set when no answer arrived in time, so a caller that spent model tokens can say so.
+        self.timed_out = timed_out
 
 
 def _strip_secrets(value):
@@ -112,6 +115,8 @@ class GatewayAdapter:
                     return value
         except GatewayError:
             raise
+        except httpx.TimeoutException:
+            raise GatewayError("unavailable", timed_out=True) from None
         except (httpx.HTTPError, ValueError, TypeError):
             raise GatewayError("unavailable") from None
 

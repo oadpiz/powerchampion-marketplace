@@ -814,6 +814,19 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(GatewayError):
                 await self.gateway.issue_redeem_codes(amount_usd=5, count=2, label="L")
 
+    async def test_a_timeout_is_unavailable_and_marked_as_timed_out(self):
+        def slow(request):
+            raise httpx.ReadTimeout("slow", request=request)
+
+        with self.transport(slow):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.try_persona("abc123def456", text="x", revs=[None], max_tokens=300, temperature=0.8)
+        self.assertEqual((caught.exception.code, caught.exception.timed_out), ("unavailable", True))
+        with self.transport(lambda _: httpx.Response(502)):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.list_personas()
+        self.assertEqual((caught.exception.code, caught.exception.timed_out), ("unavailable", False))
+
     async def test_only_the_redeem_listings_get_the_larger_response_cap(self):
         row = {"code_id": "c", "nano_usd": 1, "label": "x" * 200, "created_at": 1.0, "created_by": "admin"}
         big = [row] * 25000  # about 6.5 MB, above the default 4 MiB cap

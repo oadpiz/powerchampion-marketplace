@@ -10,6 +10,7 @@ from .gateway import PERSONA_ID
 from .support import PREFIX, body_json, fail, gateway_path, text_value, unsafe_text
 
 PERSONA_NOT_FOUND = ("persona_not_found", "This persona or revision does not exist.")
+TRY_TIMEOUT = ("gateway_timeout", "The gateway did not answer in time. The model may still have run and used tokens; check usage before retrying.")
 MAX_SYSTEM = 32000
 MAX_EXAMPLES = 50
 MAX_EXAMPLE_TEXT = 4000
@@ -136,6 +137,7 @@ def attach_admin_personas(application, ctx):
         details = {"revs": revs, "inputChars": len(text), "maxTokens": max_tokens}
         ctx.require_gateway()
         ctx.audit("admin.persona_try_started", admin, persona_id, details)
-        result = await ctx.gateway_call(ctx.gateway.try_persona, persona_id, text=text, revs=revs, max_tokens=max_tokens, temperature=temperature)
+        result = await ctx.gateway_call(ctx.gateway.try_persona, persona_id, text=text, revs=revs, max_tokens=max_tokens, temperature=temperature,
+                                        on_timeout=TRY_TIMEOUT)
         ctx.audit("admin.persona_tried", admin, persona_id, details)
         return result

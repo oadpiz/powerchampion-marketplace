@@ -85,6 +85,16 @@ class AdminPersonaTests(PortalCase):
         self.assertEqual([e["action"] for e in rows(self.store, "audit_events") if e["action"].startswith("admin.persona")], ["admin.persona_try_started"])
         self.assertEqual(self.details("admin.persona_try_started"), [{"revs": [None], "inputChars": 1, "maxTokens": 300}])
 
+    def test_a_try_that_times_out_is_a_distinct_504_and_stays_audited(self):
+        admin = self.admin()
+        self.gateway.reject = GatewayError("unavailable", timed_out=True)
+        r = self.post(admin, "/admin/personas/p1/try", {"input": "x"})
+        self.assertEqual((r.status_code, r.json()["error"]), (504, "gateway_timeout"))
+        self.assertIn("may still have run and used tokens", r.json()["detail"])
+        self.assertEqual((len(self.audit("admin.persona_try_started")), self.audit("admin.persona_tried")), (1, []))
+        # Other persona routes keep reporting a timeout as the gateway being unavailable.
+        self.assertEqual(self.post(admin, "/admin/personas", {"name": "X"}).json()["error"], "gateway_unavailable")
+
     def test_unsafe_characters_are_refused_before_the_gateway(self):
         admin = self.admin()
         self.assertEqual(self.post_raw(admin, "/admin/personas", '{"name": "a\\ud800"}').status_code, 400)

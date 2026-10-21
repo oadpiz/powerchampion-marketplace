@@ -13,7 +13,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from .gateway import CODE_ID, REDEEM_CSV_HEADER, GatewayError
-from .support import PREFIX, body_json, fail, gateway_fail, gateway_path, owner_json, owners_by_gateway_key_id, safe_iso, text_value, usd_from_nano
+from .support import (PREFIX, body_json, fail, gateway_fail, gateway_path, normalized_label, owner_json, owners_by_gateway_key_id, safe_iso,
+                      text_value, usd_from_nano)
 
 REDEEM_CODE_NOT_FOUND = ("redeem_code_not_found", "This code does not exist or is already disabled.")
 MAX_CODE_USD = Decimal("1000")
@@ -114,10 +115,12 @@ def attach_admin_redeem(application, ctx):
         if not acknowledged:
             # After an unconfirmed issue, codes with this label may exist that nobody has seen. Retrying blindly
             # would leave a second, live batch; the admin must check the list (and disable those) first.
+            # Labels are compared on a normalised key, so "Promo", " promo " and an NFD spelling all match.
             with ctx.store.connect() as con:
-                recent = con.execute("SELECT COUNT(*) FROM audit_events WHERE action='admin.redeem_codes_issue_unconfirmed' AND target_id=? AND created_at>?",
-                                     (label, int(time.time()) - UNCONFIRMED_WINDOW)).fetchone()[0]
-            if recent:
+                recent = con.execute("SELECT target_id FROM audit_events WHERE action='admin.redeem_codes_issue_unconfirmed' AND created_at>?",
+                                     (int(time.time()) - UNCONFIRMED_WINDOW,)).fetchall()
+            key = normalized_label(label)
+            if any(row["target_id"] and normalized_label(row["target_id"]) == key for row in recent):
                 fail("redeem_issue_unconfirmed_recent", "A recent issue with this label was not confirmed by the gateway. Check the list for codes with "
                      "this label and disable them, then retry with acknowledgeUnconfirmed.", 409)
         amount_text = f"{amount:.2f}"
@@ -130,8 +133,10 @@ def attach_admin_redeem(application, ctx):
             gateway_fail(error)
         except ValueError:
             _invalid("Check the request details.")
-        ctx.audit("admin.redeem_codes_issued", admin, label,
-                  {"count": count, "amountUsd": amount_text, "expiresDays": expires_days, "codeIds": [code["code_id"] for code in codes]})
+        details = {"count": count, "amountUsd": amount_text, "expiresDays": expires_days, "codeIds": [code["code_id"] for code in codes]}
+        if acknowledged:
+            details["acknowledgedUnconfirmed"] = True
+        ctx.audit("admin.redeem_codes_issued", admin, label, details)
         return JSONResponse({"codes": [{"code": code["code"], "codeId": code["code_id"], "amountUsd": usd_from_nano(code["nano_usd"])} for code in codes],
                              "count": count, "amountUsd": amount_text, "label": label, "expiresDays": expires_days}, status_code=201)
 

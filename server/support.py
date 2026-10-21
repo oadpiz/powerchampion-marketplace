@@ -6,6 +6,7 @@ tests swap gateway attributes after the app is built."""
 import json
 import math
 import re
+import unicodedata
 import time
 import uuid
 from dataclasses import dataclass
@@ -48,6 +49,10 @@ async def body_json(request, maximum=65536):
 # C0 and C1 controls, DEL, bidi embedding/override/isolate characters and lone surrogates (which cannot
 # be encoded as UTF-8 and would fail later, in the database or the gateway request).
 UNSAFE_TEXT = re.compile("[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069\ud800-\udfff]")
+# Invisible characters that make two labels look identical: zero-width space/non-joiner/joiner,
+# LRM/RLM, word joiner and the Arabic letter mark. Refused in single-line fields (text_value) only;
+# multi-line persona text may legitimately need ZWJ/ZWNJ.
+INVISIBLE_TEXT = re.compile("[\u200b-\u200f\u2060\u061c]")
 
 
 def unsafe_text(value, allow=""):
@@ -55,8 +60,13 @@ def unsafe_text(value, allow=""):
     return any(char not in allow for char in UNSAFE_TEXT.findall(value))
 
 
+def normalized_label(value):
+    """Comparison key for labels: NFKC, case-folded, whitespace collapsed ("Promo" == " promo ")."""
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
 def text_value(value, label, maximum, required=True):
-    if not isinstance(value, str) or len(value.strip()) > maximum or (required and not value.strip()) or unsafe_text(value):
+    if not isinstance(value, str) or len(value.strip()) > maximum or (required and not value.strip()) or unsafe_text(value) or INVISIBLE_TEXT.search(value):
         fail("invalid_input", "Enter a valid " + label + ".")
     return value.strip()
 
@@ -204,14 +214,17 @@ class PortalContext:
         # Mirrors require_gateway(customer=True): whether POST /keys can succeed for a customer.
         return bool(self.gateway.configured and self.settings.customer_key_issuance)
 
-    async def gateway_call(self, call, *args, not_found=None, **kwargs):
-        """not_found=(code, detail) turns a gateway 404 into that route-specific error."""
+    async def gateway_call(self, call, *args, not_found=None, on_timeout=None, **kwargs):
+        """not_found=(code, detail) turns a gateway 404 into that route-specific error;
+        on_timeout=(code, detail) turns "no answer in time" into a 504 with that code."""
         self.require_gateway()
         try:
             return await call(*args, **kwargs)
         except GatewayError as error:
             if error.code == "invalid_identifier":
                 fail("invalid_input", "Check the model, node or job name.")
+            if on_timeout and error.timed_out:
+                fail(on_timeout[0], on_timeout[1], 504)
             if not_found and error.code == "rejected" and error.status == 404:
                 fail(not_found[0], not_found[1], 404)
             gateway_fail(error)

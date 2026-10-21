@@ -4,6 +4,7 @@ import json
 import logging
 import unittest
 
+from server.gateway import GatewayError
 from server.testsupport import BASE, PortalCase, database_text, rows
 
 
@@ -83,9 +84,26 @@ class AdminRedeemTests(PortalCase):
             con.execute("UPDATE audit_events SET created_at=created_at-1801 WHERE action='admin.redeem_codes_issue_unconfirmed'")
         self.assertEqual(self.issue(admin).status_code, 201)
 
+    def test_the_unconfirmed_guard_compares_normalised_labels_and_records_the_acknowledgement(self):
+        admin = self.admin()
+        self.gateway.reject = GatewayError("unavailable", timed_out=True)
+        self.assertEqual(self.issue(admin, label="Promo").status_code, 503)
+        self.assertEqual(self.issue(admin, label="Caf\u00e9").status_code, 503)
+        self.assertEqual(len(self.audit("admin.redeem_codes_issue_unconfirmed")), 2)
+        self.gateway.reject = None
+        for label in (" promo ", "PROMO", "Cafe\u0301", "CAF\u00c9"):
+            r = self.issue(admin, label=label)
+            self.assertEqual((r.status_code, r.json()["error"]), (409, "redeem_issue_unconfirmed_recent"), label)
+        self.assertEqual(self.issue(admin, label="Promo 2").status_code, 201)
+        r = self.issue(admin, label="promo", acknowledgeUnconfirmed=True)
+        self.assertEqual(r.status_code, 201)
+        details = [json.loads(e["details"]) for e in self.audit("admin.redeem_codes_issued")]
+        self.assertNotIn("acknowledgedUnconfirmed", details[0])
+        self.assertIs(details[1]["acknowledgedUnconfirmed"], True)
+
     def test_unsafe_label_characters_are_refused(self):
         admin = self.admin()
-        for label in ("\\ud800", "a\\u202eb", "a\\u007fb", "a\\u0085b", "a\\u2066b"):
+        for label in ("\\ud800", "a\\u202eb", "a\\u007fb", "a\\u0085b", "a\\u2066b", "Pro\\u200bmo", "a\\u200fb", "a\\u2060b", "a\\u061cb"):
             r = self.post_raw(admin, "/admin/redeem/codes", '{"amountUsd": 5, "count": 1, "label": "%s"}' % label)
             self.assertEqual((r.status_code, r.json()["error"]), (400, "invalid_input"), label)
         self.assertEqual(self.gateway.issued_codes, [])
