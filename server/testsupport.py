@@ -52,7 +52,8 @@ class FakeGateway:
         self.issued, self.disabled, self.enabled, self.limits, self.balances = [], [], [], [], []
         self.report = {"keys": [], "total_cost_usd": "0.000000", "total_requests": 0, "unpriced_models": [], "amount_status": "confirmed"}
         self.listing = {"keys": [], "env_keys": []}
-        self.state_value = {"models": [], "nodes": [], "gateway": {"public_base_url": "https://gateway.example"}}
+        self.state_value = {"models": [{"id": "glm-5.3", "enabled": False}, {"id": "zai-org/GLM-5.3", "enabled": False}],
+                            "nodes": [], "gateway": {"public_base_url": "https://gateway.example"}}
         self.nodes_value = {"nodes": [], "actions": ["start", "stop", "restart", "check"]}
         self.metrics_value = {"ts": 0, "gpu_source_up": False, "vllm_source_up": False, "gpus": [], "serving": {}}
         self.ops, self.toggled, self.maintenance = [], [], []
@@ -122,7 +123,13 @@ class FakeGateway:
         self._maybe_fail(); return self.metrics_value
 
     async def toggle_model(self, model_id):
-        self._maybe_fail(); self.toggled.append(model_id); return {"id": model_id, "enabled": True}
+        self._maybe_fail()
+        model = next((m for m in self.state_value["models"] if m["id"] == model_id), None)
+        if model is None:
+            raise GatewayError("rejected", 404, "Model not found.")
+        model["enabled"] = not model["enabled"]
+        self.toggled.append(model_id)
+        return {"id": model_id, "enabled": model["enabled"]}
 
     async def set_maintenance(self, model_id, message):
         self._maybe_fail(); self.maintenance.append((model_id, message)); return {"id": model_id, "maintenance_message": message or None}

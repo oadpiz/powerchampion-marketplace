@@ -83,6 +83,15 @@ def gateway_fail(error):
     fail("gateway_unavailable", "The API gateway is unavailable.", 503)
 
 
+def gateway_error_code(error):
+    """The per-call error code shown in the gateway overview; a rejected portal token is reported as such."""
+    if isinstance(error, GatewayError):
+        if error.code == "rejected" and error.status in (401, 403):
+            return "gateway_auth_failed"
+        return error.code
+    return "unavailable"
+
+
 def usd_from_nano(value):
     return None if not isinstance(value, int) or isinstance(value, bool) else f"{Decimal(value) / Decimal(10**9):.2f}"
 
@@ -166,6 +175,10 @@ class PortalContext:
         if not self.gateway.configured or (customer and not self.settings.customer_key_issuance):
             fail("provider_not_configured", "API key provisioning is not connected yet. Contact support for access.", 503)
 
+    def audit(self, action, actor, target=None, details=None):
+        with self.store.connect() as con:
+            self.store.audit(con, action, actor["id"], target, details)
+
     def key_issuance(self):
         # Mirrors require_gateway(customer=True): whether POST /keys can succeed for a customer.
         return bool(self.gateway.configured and self.settings.customer_key_issuance)
@@ -193,7 +206,9 @@ class PortalContext:
         try:
             try:
                 created = await self.gateway.create_key("portal:" + owner_id[:12] + ":" + label, prepaid_usd=prepaid_usd, limits=limits or None)
-            except GatewayError:
+            except GatewayError as error:
+                if error.code == "rejected" and error.status in (401, 403):
+                    fail("gateway_auth_failed", "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN.", 503)
                 fail("gateway_unavailable", "The API gateway is unavailable. No key was added to the account.", 503)
             key_id = uuid.uuid4().hex
             try:

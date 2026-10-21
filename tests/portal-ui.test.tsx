@@ -675,6 +675,30 @@ describe("admin keys section", () => {
     expect(await screen.findByText("This key's account is disabled. Enable the account first.")).toBeVisible();
   });
 
+  it("offers only active customer accounts, not administrators, when issuing a key", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/keys": { keys: [], envKeys: [], gatewayConfigured: true },
+      "GET /admin/customers": {
+        customers: [
+          { id: "admin-1", email: "boss@example.com", name: "Boss", role: "admin", status: "active", createdAt: 1, keyCount: 0 },
+          { id: "cust-1", email: "active@example.com", name: "Active", role: "customer", status: "active", createdAt: 1, keyCount: 0 },
+          { id: "cust-2", email: "off@example.com", name: "Off", role: "customer", status: "disabled", createdAt: 1, keyCount: 0 },
+        ],
+      },
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Issue key for a customer" }));
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("option", { name: /active@example.com/ });
+    const emails = within(dialog)
+      .getAllByRole("option")
+      .map((option) => option.textContent ?? "")
+      .filter((label) => label.includes("@"));
+    expect(emails).toHaveLength(1);
+    expect(emails[0]).toContain("active@example.com");
+  });
+
   it("issues a key for an active customer and shows the secret once", async () => {
     const user = userEvent.setup();
     const calls = adminFetch({
@@ -970,6 +994,7 @@ describe("admin gateway section", () => {
     await waitFor(() =>
       expect(calls.some((call) => call.path === "/admin/gateway/models/zai%2Fglm-5/toggle")).toBe(true),
     );
+    expect(calls.find((call) => call.path === "/admin/gateway/models/zai%2Fglm-5/toggle")?.body).toEqual({ enabled: false });
   });
 
   it("sends nothing when disabling a model is cancelled, and enables without a dialog", async () => {
@@ -988,6 +1013,7 @@ describe("admin gateway section", () => {
     await waitFor(() =>
       expect(calls.filter((call) => call.method === "POST").map((call) => call.path)).toEqual(["/admin/gateway/models/other-model/toggle"]),
     );
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({ enabled: true });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 

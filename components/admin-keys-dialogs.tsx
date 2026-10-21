@@ -31,6 +31,7 @@ type CustomerOption = {
   id: string;
   email: string;
   name: string;
+  role: "customer" | "admin";
   status: "active" | "disabled";
 };
 export type IssuedKey = { secret: string; label: string; prefix: string };
@@ -78,7 +79,7 @@ export function IssueKeyDialog({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const active = (customers.data?.customers ?? []).filter(
-    (customer) => customer.status === "active",
+    (customer) => customer.status === "active" && customer.role === "customer",
   );
 
   async function submit() {

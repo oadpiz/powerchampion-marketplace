@@ -10,8 +10,8 @@ from fastapi.responses import JSONResponse
 
 from .gateway import JOB_ID, MODEL_ID, NODE_ACTIONS, NODE_NAME, GatewayError
 from .store import iso, key_json
-from .support import (PREFIX, body_json, fail, gateway_fail, gateway_key_id, gateway_key_json, gateway_path, limits_from,
-                      owner_json, owners_by_gateway_key_id, text_value, usd_amount, usd_from_nano)
+from .support import (PREFIX, body_json, fail, gateway_error_code, gateway_fail, gateway_key_id, gateway_key_json, gateway_path,
+                      limits_from, owner_json, owners_by_gateway_key_id, text_value, usd_amount, usd_from_nano)
 
 
 def attach_admin_gateway(application, ctx):
@@ -135,24 +135,36 @@ def attach_admin_gateway(application, ctx):
         if not isinstance(disabled, bool):
             fail("invalid_input", "Choose whether to disable or enable the key.", 422)
         ctx.require_gateway()
+        reservation = None
         if not disabled:
             # Keys revoked by disabling their account stay revoked until the account is enabled.
             # Keys without a local owner are admin-managed and are not checked here.
             with ctx.store.connect() as con:
-                owner = con.execute("SELECT u.disabled_at FROM gateway_keys k JOIN users u ON u.id=k.user_id WHERE k.gateway_key_id=?", (key_id,)).fetchone()
+                owner = con.execute("SELECT k.id, k.user_id, k.status, u.disabled_at FROM gateway_keys k JOIN users u ON u.id=k.user_id WHERE k.gateway_key_id=?", (key_id,)).fetchone()
             if owner and owner["disabled_at"] is not None:
                 fail("account_disabled", "Enable the account first.", 409)
+            if owner and owner["status"] == "revoked":
+                # Re-enabling counts against the same per-account cap as issuing a new key.
+                reservation = ctx.store.reserve_key_slot(owner["user_id"])
+                if reservation is None:
+                    fail("key_limit", "This account already has the maximum number of active keys. Disable one first.", 409)
         try:
-            await ctx.gateway.set_key_disabled(key_id, disabled)
-        except GatewayError as error:
-            gateway_fail(error)
-        with ctx.store.connect() as con:
-            con.execute("BEGIN IMMEDIATE")
-            if disabled:
-                con.execute("UPDATE gateway_keys SET status='revoked',revoked_at=? WHERE gateway_key_id=? AND status='active'", (int(time.time()), key_id))
-            else:
-                con.execute("UPDATE gateway_keys SET status='active',revoked_at=NULL WHERE gateway_key_id=? AND status='revoked'", (key_id,))
-            ctx.store.audit(con, "admin.key_disabled" if disabled else "admin.key_enabled", admin["id"], key_id)
+            try:
+                await ctx.gateway.set_key_disabled(key_id, disabled)
+            except GatewayError as error:
+                gateway_fail(error)
+            with ctx.store.connect() as con:
+                con.execute("BEGIN IMMEDIATE")
+                if disabled:
+                    con.execute("UPDATE gateway_keys SET status='revoked',revoked_at=? WHERE gateway_key_id=? AND status='active'", (int(time.time()), key_id))
+                else:
+                    con.execute("UPDATE gateway_keys SET status='active',revoked_at=NULL WHERE gateway_key_id=? AND status='revoked'", (key_id,))
+                if reservation is not None:
+                    con.execute("DELETE FROM key_reservations WHERE id=?", (reservation,))
+                ctx.store.audit(con, "admin.key_disabled" if disabled else "admin.key_enabled", admin["id"], key_id)
+        finally:
+            if reservation is not None:
+                ctx.store.release_key_slot(reservation)
         return {"ok": True}
 
     @application.post(PREFIX + "/admin/keys/{key_id}/limits")
@@ -202,17 +214,31 @@ def attach_admin_gateway(application, ctx):
         for name, result in zip(names, results):
             failed = isinstance(result, BaseException)
             body[name] = None if failed else result
-            body["errors"][name] = (result.code if isinstance(result, GatewayError) else "unavailable") if failed else None
+            body["errors"][name] = gateway_error_code(result) if failed else None
         return body
 
     @application.post(PREFIX + "/admin/gateway/models/{model_id:path}/toggle")
     async def admin_model_toggle(model_id: str, request: Request):
         admin = ctx.current_user(request, admin=True)
         gateway_path(model_id, MODEL_ID)
+        enabled = (await body_json(request)).get("enabled")
+        if not isinstance(enabled, bool):
+            fail("invalid_input", "Choose whether the model should be enabled.", 422)
+        # The gateway only offers a flip, so read the current state first and flip only when it differs.
+        # A change between this read and the flip is still possible; it is detected below.
+        state = await ctx.gateway_call(ctx.gateway.state)
+        models = state.get("models") if isinstance(state, dict) else None
+        model = next((m for m in models if isinstance(m, dict) and m.get("id") == model_id), None) if isinstance(models, list) else None
+        if model is None:
+            fail("gateway_rejected", "Model not found.", 404)
+        # The gateway treats a missing flag as enabled (/api/state reports None).
+        if (model.get("enabled") is not False) == enabled:
+            return {"id": model_id, "enabled": enabled, "changed": False}
         result = await ctx.gateway_call(ctx.gateway.toggle_model, model_id)
-        with ctx.store.connect() as con:
-            ctx.store.audit(con, "admin.model_toggled", admin["id"], model_id)
-        return result
+        ctx.audit("admin.model_toggled", admin, model_id, {"requested": enabled, "enabled": result.get("enabled")})
+        if result.get("enabled") is not enabled:
+            fail("state_changed", "The model changed while this request was in flight. Refresh and check its state.", 409)
+        return dict(result, changed=True)
 
     @application.post(PREFIX + "/admin/gateway/models/{model_id:path}/maintenance")
     async def admin_model_maintenance(model_id: str, request: Request):

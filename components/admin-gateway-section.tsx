@@ -36,7 +36,10 @@ export function AdminGatewaySection() {
     setBusy(true);
     setError(null);
     try {
-      await portalRequest(`/admin/gateway/models/${encodeURIComponent(model.id)}/toggle`, { method: "POST" });
+      await portalRequest(`/admin/gateway/models/${encodeURIComponent(model.id)}/toggle`, {
+        method: "POST",
+        body: JSON.stringify({ enabled: !model.enabled }),
+      });
       resource.refresh();
     } catch (reason: unknown) {
       setError(reason);

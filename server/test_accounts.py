@@ -273,6 +273,15 @@ class AdminAccountTests(_PortalCase):
         r = self.post(admin, f"/admin/customers/{user['id']}/status", {"action": "enable"})
         self.assertEqual((r.json()["keysRevoked"], r.json()["keysFailed"]), (0, 0))
 
+    def test_issue_with_a_rejected_gateway_token_is_an_auth_failure(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        self.gateway.reject = 401
+        r = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "A", "prepaidUsd": 5})
+        self.assertEqual((r.status_code, r.json()["error"]), (503, "gateway_auth_failed"))
+        self.assertNotIn("private upstream token", r.text)
+        self.assertEqual((rows(self.store, "gateway_keys"), rows(self.store, "key_reservations")), ([], []))
+
 
 class SelfServicePasswordTests(_PortalCase):
     def test_change_password_keeps_current_session_and_drops_others(self):
@@ -464,7 +473,7 @@ class AdminKeysTests(_PortalCase):
         for status in (401, 403):
             self.gateway.reject = status
             for response in (admin.get(BASE + "/admin/keys"), self.post(admin, f"/admin/keys/{gid}/disable", {"disabled": True}),
-                             self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {})):
+                             self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True})):
                 self.assertEqual(response.status_code, 503, response.text)
                 self.assertEqual(response.json(), {"error": "gateway_auth_failed",
                                                    "detail": "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN."})
@@ -488,6 +497,23 @@ class AdminKeysTests(_PortalCase):
         self.assertEqual(self.post(client, "/admin/keys/x/limits", {"rpm": 1}).status_code, 403)
         self.assertEqual((self.gateway.disabled, self.gateway.limits, self.gateway.balances), ([], [], []))
         self.assertEqual(self.client().get(BASE + "/admin/keys").status_code, 401)
+
+    def test_enable_respects_the_active_key_cap(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        with self.store.connect() as con:
+            for n in range(20):
+                con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", ("local-%d" % n, user["id"], "gk-%d" % n, "k", "sk-%d" % n, "active", 1))
+            con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,?)", ("local-x", user["id"], "gk-x", "k", "sk-x", "revoked", 1, 2))
+        r = self.post(admin, "/admin/keys/gk-x/disable", {"disabled": False})
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "key_limit"))
+        self.assertEqual((self.gateway.enabled, self.audit("admin.key_enabled"), rows(self.store, "key_reservations")), ([], [], []))
+        with self.store.connect() as con:
+            con.execute("UPDATE gateway_keys SET status='revoked' WHERE id='local-0'")
+        self.assertEqual(self.post(admin, "/admin/keys/gk-x/disable", {"disabled": False}).status_code, 200)
+        self.assertEqual(self.gateway.enabled, ["gk-x"])
+        self.assertEqual(rows(self.store, "key_reservations"), [])
+        self.assertEqual(next(k for k in rows(self.store, "gateway_keys") if k["id"] == "local-x")["status"], "active")
 
 
 class AdminUsageTests(_PortalCase):
@@ -583,6 +609,38 @@ class AdminUsageTests(_PortalCase):
 
 
 class AdminGatewayTests(_PortalCase):
+    def test_overview_reports_a_rejected_token_as_auth_failure(self):
+        admin = self.admin()
+        self.gateway.reject = 401
+        body = admin.get(BASE + "/admin/gateway").json()
+        self.assertEqual(body["errors"], {"state": "gateway_auth_failed", "nodes": "gateway_auth_failed", "metrics": "gateway_auth_failed"})
+
+    def test_toggle_sets_the_requested_state_instead_of_flipping(self):
+        admin = self.admin()
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": False})
+        self.assertEqual((r.status_code, r.json()), (200, {"id": "glm-5.3", "enabled": False, "changed": False}))
+        self.assertEqual((self.gateway.toggled, self.audit("admin.model_toggled")), ([], []))
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True})
+        self.assertEqual((r.status_code, r.json()["enabled"], r.json()["changed"]), (200, True, True))
+        self.assertEqual(self.gateway.toggled, ["glm-5.3"])
+        self.assertEqual(json.loads(self.audit("admin.model_toggled")[0]["details"]), {"enabled": True, "requested": True})
+        for bad in ({}, {"enabled": "yes"}, {"enabled": 1}):
+            self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/toggle", bad).status_code, 422, bad)
+        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-9/toggle", {"enabled": True}).status_code, 404)
+        self.assertEqual(self.gateway.toggled, ["glm-5.3"])
+
+    def test_toggle_race_is_reported_and_audited(self):
+        admin = self.admin()
+
+        async def raced(model_id):
+            self.gateway.toggled.append(model_id)
+            return {"id": model_id, "enabled": False}
+
+        self.gateway.toggle_model = raced
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True})
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "state_changed"))
+        self.assertEqual(len(self.audit("admin.model_toggled")), 1)
+
     def test_overview_isolates_failures(self):
         admin = self.admin()
         body = admin.get(BASE + "/admin/gateway").json()
@@ -624,7 +682,7 @@ class AdminGatewayTests(_PortalCase):
 
     def test_model_and_node_actions_are_audited(self):
         admin = self.admin()
-        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {}).json()["enabled"], True)
+        self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True}).json()["enabled"], True)
         self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/maintenance", {"message": "down for 10 min"}).status_code, 200)
         self.assertEqual(self.post(admin, "/admin/gateway/models/glm-5.3/maintenance", {"message": "x" * 301}).status_code, 422)
         r = self.post(admin, "/admin/gateway/nodes/b300-14/ops/check", {})
@@ -644,7 +702,7 @@ class AdminGatewayTests(_PortalCase):
 
     def test_model_id_with_slash_and_empty_maintenance_message(self):
         admin = self.admin()
-        self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/toggle", {}).json()["id"], "zai-org/GLM-5.3")
+        self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/toggle", {"enabled": True}).json()["id"], "zai-org/GLM-5.3")
         self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/maintenance", {}).status_code, 200)
         self.assertEqual(self.post(admin, "/admin/gateway/models/zai-org/GLM-5.3/maintenance", {"message": ""}).status_code, 200)
         self.assertEqual(self.gateway.maintenance, [("zai-org/GLM-5.3", ""), ("zai-org/GLM-5.3", "")])
@@ -655,7 +713,7 @@ class AdminGatewayTests(_PortalCase):
     def test_gateway_rejection_and_outage_are_mapped_and_not_audited(self):
         admin = self.admin()
         self.gateway.reject = GatewayError("rejected", 404, "unknown model")
-        r = self.post(admin, "/admin/gateway/models/glm-9/toggle", {})
+        r = self.post(admin, "/admin/gateway/models/glm-9/toggle", {"enabled": True})
         self.assertEqual((r.status_code, r.json()["error"]), (404, "gateway_rejected"))
         self.gateway.reject = None
         self.gateway.fail = True
@@ -667,7 +725,7 @@ class AdminGatewayTests(_PortalCase):
     def test_unconfigured_gateway_refuses_writes(self):
         admin = self.admin()
         self.gateway.configured = False
-        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {})
+        r = self.post(admin, "/admin/gateway/models/glm-5.3/toggle", {"enabled": True})
         self.assertEqual((r.status_code, r.json()["error"]), (503, "provider_not_configured"))
         self.assertEqual(self.gateway.toggled, [])
 
