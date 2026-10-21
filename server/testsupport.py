@@ -62,6 +62,15 @@ class FakeGateway:
         self.reject = None
         self.create_delay = 0
         self.issue_lock = threading.Lock()
+        self.personas = {"p1": {"persona_id": "p1", "name": "Support", "created_at": 1.0, "active_rev": 1,
+                                "revisions": [{"rev": 1, "system": "Be kind.", "examples": [], "note": "first", "author": "admin", "created_at": 1.0}]}}
+        self.persona_calls = []
+        self.try_delay = 0
+        self.fleet_managed = {"glm-5.2-fp8"}
+        self.fleet_calls = []
+        self.job_value = {"id": "wf-1", "kind": "candidate", "model_id": "glm-5.2-fp8", "state": "awaiting_approval",
+                          "phase": "ready", "reason": "", "created_at": 1.0, "updated_at": 2.0}
+        self.redeem_codes, self.issued_codes, self.disabled_codes = [], [], []
 
     def _maybe_fail(self):
         if self.reject is not None:
@@ -133,6 +142,132 @@ class FakeGateway:
 
     async def set_maintenance(self, model_id, message):
         self._maybe_fail(); self.maintenance.append((model_id, message)); return {"id": model_id, "maintenance_message": message or None}
+
+    # personas: same shapes as the gateway's PersonaStore routes
+    async def list_personas(self):
+        self._maybe_fail()
+        return {"personas": [{"persona_id": p["persona_id"], "name": p["name"], "created_at": p["created_at"], "active_rev": p["active_rev"],
+                              "latest_rev": max((r["rev"] for r in p["revisions"]), default=None)} for p in self.personas.values()]}
+
+    async def get_persona(self, persona_id, rev=None):
+        self._maybe_fail()
+        self.persona_calls.append(("get", persona_id, rev))
+        persona = self.personas.get(persona_id)
+        if persona is None:
+            raise GatewayError("rejected", 404, "No such persona.")
+        head = {"persona_id": persona_id, "name": persona["name"], "created_at": persona["created_at"], "active_rev": persona["active_rev"]}
+        revisions = persona["revisions"]
+        chosen = next((r for r in revisions if r["rev"] == rev), None) if rev is not None else None
+        if chosen is None and revisions:
+            # The gateway falls back to the latest revision for an unknown or missing rev.
+            chosen = max(revisions, key=lambda r: r["rev"])
+        if chosen is not None:
+            head.update(rev=chosen["rev"], system=chosen["system"], note=chosen["note"], author=chosen["author"],
+                        rev_created_at=chosen["created_at"], examples=list(chosen["examples"]))
+        return {"persona": head, "revisions": [{"rev": r["rev"], "note": r["note"], "author": r["author"], "created_at": r["created_at"],
+                                                "system_len": len(r["system"]), "example_count": len(r["examples"])} for r in revisions]}
+
+    async def create_persona(self, name):
+        self._maybe_fail()
+        persona_id = "p%d" % (len(self.personas) + 1)
+        self.personas[persona_id] = {"persona_id": persona_id, "name": name, "created_at": 2.0, "active_rev": None, "revisions": []}
+        return persona_id
+
+    async def save_persona_revision(self, persona_id, *, system, examples, note, activate):
+        self._maybe_fail()
+        persona = self.personas.get(persona_id)
+        if persona is None:
+            raise GatewayError("rejected", 404, "No such persona.")
+        rev = max((r["rev"] for r in persona["revisions"]), default=0) + 1
+        persona["revisions"].append({"rev": rev, "system": system, "examples": list(examples), "note": note, "author": "admin", "created_at": 3.0})
+        if activate:
+            persona["active_rev"] = rev
+        self.persona_calls.append(("revision", persona_id, rev, activate))
+        return rev
+
+    async def activate_persona(self, persona_id, rev):
+        self._maybe_fail()
+        persona = self.personas.get(persona_id)
+        if persona is None or not any(r["rev"] == rev for r in persona["revisions"]):
+            raise GatewayError("rejected", 404, "No such revision.")
+        persona["active_rev"] = rev
+        self.persona_calls.append(("activate", persona_id, rev))
+
+    async def try_persona(self, persona_id, *, text, revs, max_tokens, temperature):
+        self._maybe_fail()
+        if self.try_delay:
+            await asyncio.sleep(self.try_delay)
+        self.persona_calls.append(("try", persona_id, tuple(revs), max_tokens, temperature))
+        return {"input": text, "results": [{"rev": r, "reply": "ok", "usage": {"prompt_tokens": 5, "completion_tokens": 3}} for r in revs]}
+
+    # fleet: unmanaged models are 404 exactly like the gateway
+    def _managed(self, model_id):
+        if model_id not in self.fleet_managed:
+            raise GatewayError("rejected", 404, "Managed model not found.")
+
+    async def fleet_status(self, model_id):
+        self._maybe_fail()
+        self._managed(model_id)
+        return {"model_id": model_id, "enabled": True, "draining": False, "frozen": False, "capacity": None, "workflow": None}
+
+    async def fleet_timeline(self, model_id):
+        self._maybe_fail()
+        self._managed(model_id)
+        return {"model_id": model_id, "events": []}
+
+    async def fleet_events(self, model_id=None, limit=100):
+        self._maybe_fail()
+        if model_id is not None:
+            self._managed(model_id)
+        self.fleet_calls.append(("events", model_id, limit))
+        return {"events": []}
+
+    async def fleet_action(self, model_id, action):
+        self._maybe_fail()
+        self._managed(model_id)
+        self.fleet_calls.append((model_id, action))
+        if action in ("freeze", "resume"):
+            return {"model_id": model_id, "mode": "frozen" if action == "freeze" else "observe", "sellable_cap": 8, "physical_cap": 8,
+                    "reason": "operator", "policy_version": "v1", "observed_at": 1.0, "event_id": 1}
+        return {"job_id": "wf-%d" % len(self.fleet_calls), "state": "queued", "phase": "queued"}
+
+    async def control_job(self, job_id):
+        self._maybe_fail()
+        if job_id == "missing":
+            raise GatewayError("rejected", 404, "Switch job not found.")
+        return dict(self.job_value, id=job_id)
+
+    # redeem codes: the gateway keeps only rows without plaintext; plaintext lives in issued_codes for assertions
+    async def issue_redeem_codes(self, *, amount_usd, count, label, expires_days=None):
+        self._maybe_fail()
+        nano = int(round(float(amount_usd) * 1_000_000_000))
+        result = []
+        for _ in range(count):
+            n = len(self.issued_codes) + 1
+            code, code_id = "PlainRedeemCode-%04d-abcdefghijkl" % n, "code-%d" % n
+            self.issued_codes.append(code)
+            self.redeem_codes.append({"code_id": code_id, "nano_usd": nano, "label": label, "created_at": float(n), "created_by": "admin",
+                                      "redeemed_at": None, "redeemed_by_key_id": None, "disabled_at": None,
+                                      "expires_at": None if expires_days is None else float(n) + expires_days * 86400})
+            result.append({"code": code, "code_id": code_id, "nano_usd": nano})
+        return result
+
+    async def list_redeem_codes(self):
+        self._maybe_fail()
+        return [dict(row) for row in sorted(self.redeem_codes, key=lambda row: row["created_at"], reverse=True)]
+
+    async def disable_redeem_code(self, code_id):
+        self._maybe_fail()
+        row = next((r for r in self.redeem_codes if r["code_id"] == code_id), None)
+        if row is None or row["disabled_at"] is not None:
+            raise GatewayError("rejected", 404, "Code not found or already disabled.")
+        row["disabled_at"] = 9.0
+        self.disabled_codes.append(code_id)
+
+    async def redeem_code_rows(self):
+        self._maybe_fail()
+        return [[r["code_id"], "hash-" + r["code_id"], str(r["nano_usd"]), r["label"], str(r["created_at"]), r["created_by"], "", "", "", ""]
+                for r in self.redeem_codes]
 
 
 ORIGIN = "http://localhost:3010"
