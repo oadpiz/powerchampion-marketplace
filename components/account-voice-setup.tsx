@@ -723,13 +723,13 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
             <p className="portal-note" role="status">
               {zh ? (
                 <>
-                  還有 {counts.placeholders} 個地方寫著「（請填入）」，AI 可能會照著念。請到「
+                  還有 {counts.placeholders} 個地方寫著「（請填入）」，AI 可能會照著念。可以先試打聽聽看，之後再到「
                   <Link href="/account/voice/faq">常見問答</Link>」補上。
                 </>
               ) : (
                 <>
                   {counts.placeholders} places still say &quot;（請填入）&quot; (to be filled in); the AI may read them aloud.
-                  Fill them in on <Link href="/account/voice/faq">FAQ</Link>.
+                  You can try a call first and fill them in later on <Link href="/account/voice/faq">FAQ</Link>.
                 </>
               )}
             </p>
