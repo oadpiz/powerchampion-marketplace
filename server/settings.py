@@ -54,6 +54,13 @@ class Settings:
     voice_enabled: bool = False
     voice_try_secret: str = field(default="", repr=False)
     voice_try_url: str = ""
+    # Phase 2 (phase2-contract §1.7). The runtime token is what b300-23 and the Taiwan host send to
+    # /api/voice-runtime/*; shorter than 32 characters (besides surrounding spaces) or unset makes those routes
+    # answer 503 (fail closed). The media URL and secret sign content links to the Taiwan host; unset makes those
+    # routes answer 503 and the call page's content.linkAvailable false. None of them stops the service starting.
+    voice_runtime_token: str = field(default="", repr=False)
+    voice_media_url: str = ""
+    voice_media_secret: str = field(default="", repr=False)
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -107,6 +114,22 @@ class Settings:
         used exactly as written, like the demo reads it) and the try URL is valid."""
         return len(self.voice_try_secret.strip()) >= VOICE_TRY_SECRET_MIN and bool(self.voice_try_origin)
 
+    @property
+    def voice_runtime_configured(self):
+        """The runtime token has at least 32 characters besides surrounding spaces (§1.1 step 2)."""
+        return len(self.voice_runtime_token.strip()) >= VOICE_TRY_SECRET_MIN
+
+    @property
+    def voice_media_origin(self):
+        """PC_VOICE_MEDIA_URL as scheme://host[:port], checked like PC_VOICE_TRY_URL; "" when not valid."""
+        return voice_try_origin(self.voice_media_url)
+
+    @property
+    def voice_media_available(self):
+        """Content links can be signed: a media secret of at least 32 characters (used exactly as written, like the
+        try secret) and a valid media URL."""
+        return len(self.voice_media_secret.strip()) >= VOICE_TRY_SECRET_MIN and bool(self.voice_media_origin)
+
     @classmethod
     def from_env(cls):
         origins = tuple(origin.strip().rstrip("/") for origin in os.environ.get("PC_PORTAL_ALLOWED_ORIGINS", "http://localhost:3010,https://powerchampion.ai").split(",") if origin.strip())
@@ -135,4 +158,7 @@ class Settings:
             voice_enabled=os.environ.get("PC_VOICE_ENABLED", "0") == "1",
             voice_try_secret=os.environ.get("PC_VOICE_TRY_SECRET", ""),
             voice_try_url=os.environ.get("PC_VOICE_TRY_URL", "").strip(),
+            voice_runtime_token=os.environ.get("PC_VOICE_RUNTIME_TOKEN", ""),
+            voice_media_url=os.environ.get("PC_VOICE_MEDIA_URL", "").strip(),
+            voice_media_secret=os.environ.get("PC_VOICE_MEDIA_SECRET", ""),
         )

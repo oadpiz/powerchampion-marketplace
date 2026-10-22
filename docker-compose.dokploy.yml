@@ -83,6 +83,7 @@ services:
       PC_VOICE_ENABLED: ${PC_VOICE_ENABLED:-0}
       PC_VOICE_TRY_SECRET: ${PC_VOICE_TRY_SECRET:-}
       PC_VOICE_TRY_URL: ${PC_VOICE_TRY_URL:-}
+      PC_VOICE_RUNTIME_TOKEN: ${PC_VOICE_RUNTIME_TOKEN:-}
     volumes:
       - portal-data:/data
     # No ports, no Traefik labels and not on dokploy-network: only the website

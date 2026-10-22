@@ -327,7 +327,9 @@ describe("portal service boundary", () => {
     const calls = fetchMock.mock.calls.length;
     // /voice-runtime is the edge hosts' API: it must never be reachable through the browser boundary.
     // (A bare "%2e%2e" segment is a dot segment to the URL parser, which resolves it before the proxy sees the path.)
-    const blocked = ["/voice-runtime/config", "/voice-runtime/stores", "/me/voice/faqs/../x", "/me/voice/faqs/%2e%2e%2fsetup",
+    // Phase 2 (phase2-contract §3.1): the portal's runtime routes are reached only through /api/voice-runtime/*.
+    const blocked = ["/voice-runtime/config", "/voice-runtime/stores", "/voice/runtime/config", "/voice/runtime/calls",
+      "/voice/runtime/config?number=0227001001", "/voice/runtime", "/me/voice/faqs/../x", "/me/voice/faqs/%2e%2e%2fsetup",
       "/me/voice/faqs/..%2fsetup", "/me/voice/faqs/%2E%2E%5Csetup", `/me/voice/faqs/${"A".repeat(32)}`, `/me/voice/faqs/${"c".repeat(31)}`, `/me/voice/faqs/${id}/extra`,
       "/me/voice/x", "/me/voices", "/me/voice/", "/me/voice/faqs/import/x", "/admin/voice", "/admin/voice/x",
       `/admin/voice/stores/${id}/delete`, `/admin/voice/numbers/${id}/status`, `/admin/voice/stores/${id}%2fstatus`, "/admin/voice/stores/not-hex"];

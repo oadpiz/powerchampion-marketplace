@@ -12,7 +12,7 @@
 # $S/pids/local-*.pid; stop with scripts/voice/stop-local.sh, which kills only those PIDs.
 # Python: $VOICE_PYTHON (default python3) with server/requirements.txt installed. Node: node_modules in the repository.
 # Nothing here talks to production: the gateway origin is https://gateway.invalid, Grafana is off, and the try
-# secret is a test-only value.
+# secret, the runtime token and the media secret are test-only values.
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 PY="${VOICE_PYTHON:-python3}"
@@ -75,6 +75,11 @@ export PC_RUNTIME_ENABLED=0
 export PC_TRIAL_ENABLED=0
 export PC_VOICE_TRY_SECRET=test-only-not-a-secret-0000000000
 export PC_VOICE_TRY_URL=http://127.0.0.1:8097/
+# Phase 2: the runtime routes (/api/voice-runtime/*) and content links, with test-only values. Nothing listens on
+# 8098; a content link is only signed, never fetched, by the smoke.
+export PC_VOICE_RUNTIME_TOKEN=test-only-runtime-token-0000000000
+export PC_VOICE_MEDIA_URL=http://127.0.0.1:8098
+export PC_VOICE_MEDIA_SECRET=test-only-not-a-secret-0000000000
 if [ "$MODE" = on ]; then export PC_VOICE_ENABLED=1; else export PC_VOICE_ENABLED=0; fi
 
 cd "$W"

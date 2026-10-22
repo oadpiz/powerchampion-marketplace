@@ -81,4 +81,12 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(compose).not.toMatch(/^\s+PC_TRIAL_API_KEY\s*:/m);
     expect(portal).toMatch(/^\s+PC_TRIAL_ENABLED:\s*"0"\s*$/m);
   });
+
+  it("wires the phone agent's runtime token from the environment only, empty by default (fail closed)", () => {
+    // phase2-contract §1.7: `:-` (not `:?`) so a deploy without it still starts; the routes then answer 503.
+    expect(portal).toMatch(/^\s+PC_VOICE_RUNTIME_TOKEN:\s*\$\{PC_VOICE_RUNTIME_TOKEN:-\}\s*$/m);
+    expect(compose).not.toMatch(/^\s+PC_VOICE_RUNTIME_TOKEN\s*:\s*(?!\$\{PC_VOICE_RUNTIME_TOKEN:-\}\s*$)\S/m);
+    expect(website).not.toMatch(/PC_VOICE_RUNTIME_TOKEN/);
+    expect(portal).toMatch(/^\s+PC_VOICE_ENABLED:\s*\$\{PC_VOICE_ENABLED:-0\}\s*$/m);
+  });
 });
