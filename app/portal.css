@@ -303,7 +303,9 @@
   min-height: 110px;
 }
 /* A radio or checkbox keeps its own size: the text-field rule above stretched each one across the row with its
-   text on the next line, so the selected dot sat between two options (verifier finding 2026-10-22). */
+   text on the next line, so the selected dot sat between two options (verifier finding 2026-10-22). width: auto
+   alone is not enough inside .portal-field, a column flex box whose default align-items: stretch widens every
+   child with an auto width; align-self stops that. */
 .portal-field input[type="radio"],
 .portal-field input[type="checkbox"],
 .portal-choice input {
@@ -311,9 +313,17 @@
   min-width: 0;
   min-height: 0;
   flex: none;
+  align-self: flex-start;
   margin: 3px 0 0;
   padding: 0;
   accent-color: var(--focus, #c2aa7d);
+}
+/* A .portal-field whose own control is a radio or checkbox puts its text beside the box, like .portal-choice. */
+.portal-field:has(> input[type="radio"]),
+.portal-field:has(> input[type="checkbox"]) {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
 }
 /* A group of radios: a fieldset without its own box, one option per line. */
 .portal-choices {
