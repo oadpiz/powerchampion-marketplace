@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { voiceAdminErrorText } from "../components/admin-voice-dialogs";
 import { PortalError } from "../lib/portal-client";
-import { PHONE_LIKE } from "../lib/voice-calls";
-import { NOTE_PHONE_PATTERN } from "../lib/voice-quality";
+import { PHONE_NUMERALS, hasPhoneNumber, phoneText } from "../lib/voice-calls";
+import { noteHasPhoneNumber } from "../lib/voice-quality";
 import vectors from "./support/phone-like-vectors.json";
 
 /*
@@ -13,10 +13,19 @@ import vectors from "./support/phone-like-vectors.json";
 describe("phase 2 front-end and back-end sync", () => {
   // phone-like-vectors.json is also run through server/voice_calls.has_phone_number by test_voice_calls_note_sync.py.
   it("checks Quality notes and listening summaries for phone numbers exactly like the backend and the store page", () => {
-    for (const text of vectors.number) expect(NOTE_PHONE_PATTERN.test(text), JSON.stringify(text)).toBe(true);
-    // U+FEFF between digits is not a number for Python's \s; JavaScript's \s would call it one.
-    for (const text of vectors.not_number) expect(NOTE_PHONE_PATTERN.test(text), JSON.stringify(text)).toBe(false);
-    expect(NOTE_PHONE_PATTERN.source).toBe(PHONE_LIKE.source);
+    for (const text of vectors.number) expect(noteHasPhoneNumber(text), JSON.stringify(text)).toBe(true);
+    for (const text of vectors.not_number) expect(noteHasPhoneNumber(text), JSON.stringify(text)).toBe(false);
+    expect(noteHasPhoneNumber).toBe(hasPhoneNumber);
+  });
+
+  it("reads Chinese numerals with the backend's table (voice_calls.PHONE_NUMERALS)", () => {
+    expect(PHONE_NUMERALS).toEqual(vectors.numerals);
+    for (const [digit, chars] of Object.entries(vectors.numerals)) {
+      for (const char of chars) {
+        expect(phoneText(char.repeat(8)), char).toBe(digit.repeat(8));
+        expect(hasPhoneNumber(char.repeat(8)), char).toBe(true);
+      }
+    }
   });
 
   it("words 409 number_in_use from A7/A8 once calls refer to a number (§4.4, §12.1)", () => {

@@ -16,6 +16,7 @@ import hmac
 import json
 import re
 import secrets
+import unicodedata
 import uuid
 from datetime import datetime
 
@@ -108,8 +109,19 @@ TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0
 # Years 2000-2037: epoch columns are 32-bit INTEGER on Postgres (the end of 2037-12 is still below 2**31).
 MONTH = re.compile(r"(20[0-2][0-9]|203[0-7])-(0[1-9]|1[0-2])")
 CURSOR = re.compile(r"([0-9]{10})-([a-f0-9]{32})")
-# §6.3: eight or more characters of digits (ASCII or full-width), spaces and "-", starting and ending with a digit.
-PHONE_LIKE = re.compile(r"[0-9０-９][0-9０-９\s-]{6,}[0-9０-９]")
+# §6.3 (as amended by the phase 2 fix round): a note is first put in a comparable form (phone_text: NFKC, so full-width
+# digits and brackets become ASCII; invisible characters dropped; Chinese numerals read as digits), then eight or more
+# digits that only separators split (whitespace, - . / ( ) and the dots and dashes below) are a phone number. Digits are
+# counted, not characters, so "10/22 14:30" (6 digits) is not one. lib/voice-calls.ts phoneText/PHONE_LIKE is the same
+# rule; tests/support/phone-like-vectors.json holds the shared vectors and the numeral table
+# (server/test_voice_calls_note_sync.py, tests/voice-p2-sync.test.ts). Digits and separators never overlap, so the
+# pattern cannot backtrack badly.
+PHONE_LIKE = re.compile(r"[0-9](?:[\s\-./()\u30fb\u2027\u00b7\u2010\u2011\u2013\u2014]*[0-9]){7,}")
+PHONE_INVISIBLE = re.compile("[\u200b-\u200f\u2060\u061c\ufeff\u00ad]")
+# Written grouped by digit (LESSONS 2026-10-22: never two zipped strings).
+PHONE_NUMERALS = {"0": "零〇○洞", "1": "一壹么幺", "2": "二貳兩", "3": "三參叁", "4": "四肆", "5": "五伍", "6": "六陸", "7": "七柒",
+                  "8": "八捌", "9": "九玖"}
+PHONE_NUMERAL_TABLE = str.maketrans({char: digit for digit, chars in PHONE_NUMERALS.items() for char in chars})
 
 REPORT_KEYS = ("schema", "source", "call_id", "entry", "dialed", "store_id", "started_at", "answered_at", "ended_at",
                "sent_at", "disposition", "caller_tail", "caller_kind", "config", "disclosure_version", "ai", "message",
@@ -783,8 +795,13 @@ def parse_cursor(value):
     return int(match.group(1)), match.group(2)
 
 
+def phone_text(text):
+    """The comparable form of a note for the §6.3 check (only for matching; the note is stored as sent)."""
+    return PHONE_INVISIBLE.sub("", unicodedata.normalize("NFKC", text)).translate(PHONE_NUMERAL_TABLE)
+
+
 def has_phone_number(text):
-    return bool(PHONE_LIKE.search(text))
+    return bool(PHONE_LIKE.search(phone_text(text)))
 
 
 # ---------------------------------------------------------------- JSON shapes (§6, §7)

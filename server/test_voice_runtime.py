@@ -775,12 +775,24 @@ class PureRuleTests(unittest.TestCase):
                     vc.month_bounds(bad)
 
     def test_phone_number_rule(self):
-        for text in ("0912 345 678", "0912-345-678", "０９１２３４５６７８", "02 2700 1001", "12345678"):
+        for text in ("0912 345 678", "0912-345-678", "０９１２３４５６７８", "02 2700 1001", "12345678",
+                     # fix round: dots, slashes, brackets, Chinese numerals and invisible characters no longer slip through
+                     "0912.345.678", "0912/345/678", "(02)2700.1001", "（02）2700‧1001", "0912・345・678", "零九一二三四五六七八",
+                     "〇九壹貳參肆伍陸柒捌", "0912\u200b345678", "0912\ufeff345678", "09１2 三四五 678"):
             with self.subTest(text=text):
                 self.assertTrue(vc.has_phone_number(text))
-        for text in ("問洗牙價格，AI 說的是去年的價錢", "1234567", "3 號診間", "p95 1910 ms"):
+        for text in ("問洗牙價格，AI 說的是去年的價錢", "1234567", "3 號診間", "p95 1910 ms", "一二三四五六七", "3.5 秒", "10/22 14:30"):
             with self.subTest(text=text):
                 self.assertFalse(vc.has_phone_number(text))
+
+    def test_numeral_table_has_one_digit_per_character(self):
+        seen = {}
+        for digit, chars in vc.PHONE_NUMERALS.items():
+            for char in chars:
+                self.assertNotIn(char, seen, char)
+                seen[char] = digit
+        self.assertEqual(sorted(vc.PHONE_NUMERALS), list("0123456789"))
+        self.assertEqual(vc.phone_text("零一二三四五六七八九"), "0123456789")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@
 import { vi } from "vitest";
 import type { VoiceSummary } from "../../components/account-voice";
 import type { CallEntry, CallOutcome, CallerKind, HandoffReason, MediaKind, MeterReason } from "../../lib/voice-calls";
+import { hasPhoneNumber } from "../../lib/voice-calls";
 
 export const STORE_ID = "a".repeat(32);
 export const OTHER_STORE_ID = "b".repeat(32);
@@ -188,11 +189,10 @@ function detailOf(state: Backend, r: Row) {
   };
 }
 
-// The backend's single-line rule (support.UNSAFE_TEXT, INVISIBLE_TEXT, voice_merchant._single_line) and PHONE_LIKE.
+// The backend's single-line rule (support.UNSAFE_TEXT, INVISIBLE_TEXT, voice_merchant._single_line); the phone
+// check is lib/voice-calls.ts hasPhoneNumber, which tests/support/phone-like-vectors.json keeps equal to the backend's.
 // eslint-disable-next-line no-control-regex
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069\u200b-\u200f\u2060\u061c]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
-// eslint-disable-next-line no-control-regex
-const PHONE = /[0-9０-９][0-9０-９\t\n\v\f\r\u001c-\u001f \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000-]{6,}[0-9０-９]/;
 
 const BFF_FILTERS: [string, RegExp][] = [
   ["month", /^\d{4}-(0[1-9]|1[0-2])$/],
@@ -273,7 +273,7 @@ function flag(state: Backend, id: string, init: RequestInit | undefined): Respon
   if (typeof raw !== "string" || UNSAFE.test(raw)) return failure(400, "invalid_input", "Enter a valid note.");
   const note = raw.trim();
   if ([...note].length > state.flagNoteChars) return failure(400, "invalid_input", "The note can be up to 100 characters.");
-  if (PHONE.test(note)) return failure(400, "note_contains_number", "Do not put phone numbers in the note.");
+  if (hasPhoneNumber(note)) return failure(400, "note_contains_number", "Do not put phone numbers in the note.");
   if (r.flag && r.flag.kind === body.kind && r.flag.note === note) return Response.json({ changed: false, flag: flagJson(r) });
   r.flag = { kind: "wrong_answer", note, flaggedAt: now() };
   return Response.json({ changed: true, flag: flagJson(r) });

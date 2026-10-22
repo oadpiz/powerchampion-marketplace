@@ -15,7 +15,7 @@ import {
   OUTCOME_LABEL,
   REVIEW_LABEL_COPY,
 } from "../components/admin-voice-quality-labels";
-import { ENTRIES, HANDOFF_REASONS, METER_REASONS, OUTCOMES } from "../lib/voice-calls";
+import { ENTRIES, HANDOFF_REASONS, METER_REASONS, OUTCOMES, hasPhoneNumber } from "../lib/voice-calls";
 import {
   AUTO_FLAGS,
   DEGRADE_REASONS,
@@ -65,7 +65,6 @@ const A9_FILTERS: [string, RegExp][] = [
   ["reviewed", /^(0|1|all)$/],
   ["entry", /^(pstn|webrtc|softphone|try)$/],
 ];
-const PHONE_LIKE = /[0-9０-９][0-9０-９\s-]{6,}[0-9０-９]/;
 // eslint-disable-next-line no-control-regex
 const UNSAFE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
 // eslint-disable-next-line no-control-regex
@@ -376,7 +375,7 @@ class QualityBackend {
       return fail(400, "invalid_input", "Choose up to 6 different labels.");
     if (typeof note !== "string" || [...note.replace(/[\n\r\t]/g, "")].some((char) => UNSAFE.test(char))) return fail(400, "invalid_input", "Enter a valid note.");
     if ([...note.trim()].length > 500) return fail(400, "invalid_input", "The note can be up to 500 characters.");
-    if (PHONE_LIKE.test(note)) return fail(400, "note_contains_number", "Do not put phone numbers in the note.");
+    if (hasPhoneNumber(note)) return fail(400, "note_contains_number", "Do not put phone numbers in the note.");
     if (status !== "open" && status !== "done") return fail(400, "invalid_input", "Choose the status: open or done.");
     const ordered = CONTRACT.reviewLabels.filter((label) => (labels as string[]).includes(label));
     const next = { score, labels: ordered, note: note.trim(), status };
@@ -429,7 +428,7 @@ class QualityBackend {
     if (passed !== null && typeof passed !== "boolean") return fail(400, "invalid_input", "Send passed as true, false or null.");
     if (typeof summary !== "string" || [...summary.replace(/[\n\r\t]/g, "")].some((char) => UNSAFE.test(char)) || [...summary.trim()].length > 1000)
       return fail(400, "invalid_input", "Enter a valid summary.");
-    if (PHONE_LIKE.test(summary)) return fail(400, "note_contains_number", "Do not put phone numbers in the note.");
+    if (hasPhoneNumber(summary)) return fail(400, "note_contains_number", "Do not put phone numbers in the note.");
     if (typeof reportRef !== "string" || UNSAFE_LINE.test(reportRef) || [...reportRef.trim()].length > 200) return fail(400, "invalid_input", "Enter a valid report reference.");
     return { title: title.trim(), kind, heldOn, sampleCount: sampleCount as number, raterCount: raterCount as number, passed: passed as boolean | null, summary: summary.trim(), reportRef: reportRef.trim() };
   }

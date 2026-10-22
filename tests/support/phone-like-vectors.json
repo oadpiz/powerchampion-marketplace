@@ -1,5 +1,17 @@
 {
-  "_comment": "phase2-contract 6.3 note check: the same strings go through lib/voice-calls.ts hasPhoneNumber (tests/account-voice-calls.test.tsx) and server/voice_calls.has_phone_number (server/test_voice_calls_note_sync.py). Each whitespace-like separator is listed so that Python's \\s and JavaScript's \\s differences show.",
+  "_comment": "phase2-contract 6.3 note check (amended in the phase 2 fix round): the same strings go through lib/voice-calls.ts hasPhoneNumber (tests/account-voice-calls.test.tsx, tests/voice-p2-sync.test.ts) and server/voice_calls.has_phone_number (server/test_voice_calls_note_sync.py). A note is compared after NFKC, without invisible characters and with Chinese numerals read as digits (`numerals`, which both sides must hold exactly); 8 or more digits split only by separators are a number. Each whitespace-like separator is listed so that Python's \\s and JavaScript's \\s differences show.",
+  "numerals": {
+    "0": "\u96f6\u3007\u25cb\u6d1e",
+    "1": "\u4e00\u58f9\u4e48\u5e7a",
+    "2": "\u4e8c\u8cb3\u5169",
+    "3": "\u4e09\u53c3\u53c1",
+    "4": "\u56db\u8086",
+    "5": "\u4e94\u4f0d",
+    "6": "\u516d\u9678",
+    "7": "\u4e03\u67d2",
+    "8": "\u516b\u634c",
+    "9": "\u4e5d\u7396"
+  },
   "number": [
     "0912 345 678",
     "0912-345-678",
@@ -15,17 +27,36 @@
     "0912\u2029345678",
     "0912\t345678",
     "0912\u0085345678",
-    "0912\u001c345678"
+    "0912\u001c345678",
+    "0912\ufeff345678",
+    "0912\u200b345678",
+    "0912.345.678",
+    "0912/345/678",
+    "(02)2700.1001",
+    "\uff0802\uff092700\u20271001",
+    "0912\u30fb345\u30fb678",
+    "0912\u00b7345\u00b7678",
+    "0912\u2013345\u2013678",
+    "0912\uff0d345\uff0d678",
+    "\u96f6\u4e5d\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b",
+    "\u3007\u4e5d\u58f9\u8cb3\u53c3\u8086\u4f0d\u9678\u67d2\u634c",
+    "09\uff112 \u4e09\u56db\u4e94 678",
+    "0912\u200d345\u2060678",
+    "0912\u00ad345678",
+    "\u5ba2\u4eba\u96fb\u8a71 02-2700-1001 \u8acb\u56de\u96fb"
   ],
   "not_number": [
     "1234567",
     "\u50f9\u683c 1,200 \u5143",
-    "0912\ufeff345678",
-    "0912\u200b345678",
     "\u7b2c 3 \u7248 4 \u6708",
     "0912_345678",
-    "0912.345.678",
     "",
-    "AI \u8aaa\u7684\u662f\u53bb\u5e74\u7684\u50f9\u9322"
+    "AI \u8aaa\u7684\u662f\u53bb\u5e74\u7684\u50f9\u9322",
+    "10/22 14:30",
+    "12 34 56",
+    "3.5 \u79d2",
+    "\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03",
+    "2026/10",
+    "p95 1910 ms"
   ]
 }
