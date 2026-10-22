@@ -30,6 +30,7 @@ describe("studio error text", () => {
   const codes: [string, number, string][] = [
     ["studio_unconfigured", 503, "影片工作室尚未開放"],
     ["studio_not_open", 403, "影片工作室尚未開放"],
+    ["studio_rights_required", 400, "商品照片的使用權"],
     ["studio_insufficient_credits", 402, "點數不足"],
     ["studio_busy", 409, "正在處理中"],
     ["studio_needs_render", 409, "產生全部"],
@@ -141,11 +142,25 @@ describe("upload flow", () => {
       "POST /studio/uploads": { upload_id: "u", put_url: "https://media.test/media/upload/t", expires_at: 1 },
       "PUT https://media.test/media/upload/t": () => new Response("no", { status: 403 }),
     });
-    await expect(uploadFile(new File(["x"], "a.png", { type: "image/png" }), "input_image")).rejects.toMatchObject({ reason: "put" });
+    await expect(uploadFile(new File(["x"], "a.png", { type: "image/png" }), "input_image", undefined, undefined, { rightsConfirmed: true })).rejects.toMatchObject({ reason: "put" });
     const big = new File([new Uint8Array(10_000_001)], "big.png", { type: "image/png" });
     const before = calls.length;
     await expect(uploadFile(big, "shot_image", "p1")).rejects.toMatchObject({ reason: "size" });
     expect(calls.length).toBe(before);
+  });
+  it("sends the rights declaration for product photos only, and never without it", async () => {
+    const calls = studioFetch({
+      "POST /studio/uploads": { upload_id: "u_p1", put_url: "https://media.test/media/upload/t", expires_at: 1 },
+      "PUT https://media.test/media/upload/t": () => new Response("{}", { status: 201 }),
+    });
+    const photo = () => new File([new Uint8Array(4)], "a.png", { type: "image/png" });
+    await expect(uploadFile(photo(), "input_image")).rejects.toMatchObject({ reason: "rights" });
+    await expect(uploadFile(photo(), "shot_image", "p1", undefined, { rightsConfirmed: false })).rejects.toMatchObject({ reason: "rights" });
+    expect(calls).toHaveLength(0);
+    await expect(uploadFile(photo(), "shot_image", "p1", undefined, { rightsConfirmed: true })).resolves.toBe("u_p1");
+    expect(calls[0].body).toEqual({ purpose: "shot_image", content_type: "image/png", bytes: 4, project_id: "p1", rights_confirmed: true });
+    await uploadFile(photo(), "character_ref", "p1");
+    expect(calls[2].body).toEqual({ purpose: "character_ref", content_type: "image/png", bytes: 4, project_id: "p1" });
   });
 });
 

@@ -119,10 +119,11 @@ describe("studio new", () => {
     inFrame(<StudioNew navigate={navigate} />);
     const input = await screen.findByLabelText("選擇圖片");
     const file = new File([new Uint8Array([137, 80, 78, 71])], "cup.png", { type: "image/png" });
+    await userEvent.click(screen.getByRole("checkbox", { name: "我擁有或已取得這張商品照片的使用權，並同意用於產生影片。" }));
     await userEvent.upload(input, file);
     expect(await screen.findByRole("img", { name: "已上傳的圖片 1" })).toHaveAttribute("src", "blob:preview");
     const ticket = calls.find((call) => call.path === "/studio/uploads");
-    expect(ticket?.body).toEqual({ purpose: "input_image", content_type: "image/png", bytes: 4 });
+    expect(ticket?.body).toEqual({ purpose: "input_image", content_type: "image/png", bytes: 4, rights_confirmed: true });
     const put = calls.find((call) => call.method === "PUT");
     expect(put?.url).toBe("https://studio-media.test/media/upload/tok1");
     expect(put?.init?.body).toBe(file);
@@ -140,10 +141,34 @@ describe("studio new", () => {
     expect(body.idempotency_key).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
   });
 
+  it("requires the product photo rights checkbox before an upload starts", async () => {
+    const calls = studioFetch({
+      "POST /studio/uploads": () => Response.json({ upload_id: "u_img1", put_url: "https://studio-media.test/media/upload/tok1", expires_at: 1 }, { status: 201 }),
+      "PUT https://studio-media.test/media/upload/tok1": () => new Response("{}", { status: 201 }),
+    });
+    URL.createObjectURL = vi.fn(() => "blob:preview");
+    URL.revokeObjectURL = vi.fn();
+    inFrame(<StudioNew navigate={() => {}} />);
+    const input = await screen.findByLabelText("選擇圖片");
+    const box = screen.getByRole("checkbox", { name: "我擁有或已取得這張商品照片的使用權，並同意用於產生影片。" });
+    expect(box).not.toBeChecked();
+    expect(input).toBeDisabled();
+    // A picker that fires anyway (fireEvent ignores `disabled`) still asks for nothing.
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array(4)], "cup.png", { type: "image/png" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("請先勾選");
+    expect(calls.some((call) => call.path === "/studio/uploads" || call.method === "PUT")).toBe(false);
+    await userEvent.click(box);
+    expect(input).toBeEnabled();
+    fireEvent.change(input, { target: { files: [new File([new Uint8Array(4)], "cup.png", { type: "image/png" })] } });
+    expect(await screen.findByRole("img", { name: "已上傳的圖片 1" })).toBeInTheDocument();
+    expect(calls.find((call) => call.path === "/studio/uploads")?.body).toMatchObject({ purpose: "input_image", rights_confirmed: true });
+  });
+
   it("refuses an unsupported file before asking for an upload URL", async () => {
     const calls = studioFetch({});
     inFrame(<StudioNew navigate={() => {}} />);
     const input = await screen.findByLabelText("選擇圖片");
+    await userEvent.click(screen.getByRole("checkbox", { name: /商品照片的使用權/ }));
     // userEvent honours `accept`; fireEvent simulates a picker that ignores it.
     fireEvent.change(input, { target: { files: [new File(["x"], "a.gif", { type: "image/gif" })] } });
     expect(await screen.findByRole("alert")).toHaveTextContent("不支援這種檔案格式");

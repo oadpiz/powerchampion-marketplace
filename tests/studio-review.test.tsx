@@ -38,6 +38,11 @@ const ready = () =>
     exports: { "9:16": { url: "https://studio-media.test/media/e/v.mp4?exp=1&sig=x", srt_url: "https://studio-media.test/media/e/v.srt?exp=1&sig=x" }, "16:9": null },
   });
 
+async function tickRights() {
+  const box = await screen.findByRole("checkbox", { name: /商品照片的使用權/ });
+  if (!(box as HTMLInputElement).checked) await userEvent.click(box);
+}
+
 describe("M1: a failed create with images", () => {
   it.each([
     [402, "studio_insufficient_credits", "點數不足"],
@@ -57,6 +62,7 @@ describe("M1: a failed create with images", () => {
     URL.createObjectURL = vi.fn(() => "blob:x");
     URL.revokeObjectURL = vi.fn();
     inFrame(<StudioNew navigate={() => {}} />);
+    await tickRights();
     await userEvent.upload(await screen.findByLabelText("選擇圖片"), new File([new Uint8Array(4)], "a.png", { type: "image/png" }));
     await screen.findByRole("img", { name: "已上傳的圖片 1" });
     await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
@@ -65,6 +71,7 @@ describe("M1: a failed create with images", () => {
     expect(alert).toHaveTextContent("請重新上傳商品圖片");
     expect(screen.queryByRole("img", { name: "已上傳的圖片 1" })).not.toBeInTheDocument();
     expect(calls.filter((c) => c.path === "/studio/credits").length).toBeGreaterThanOrEqual(2);
+    await tickRights();
     await userEvent.upload(screen.getByLabelText("選擇圖片"), new File([new Uint8Array(4)], "b.png", { type: "image/png" }));
     await screen.findByRole("img", { name: "已上傳的圖片 1" });
     await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
