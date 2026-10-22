@@ -13,7 +13,9 @@ EXPECTED_TABLES = {
     "runtime_tasks", "runtime_references", "runtime_events", "runtime_instructions",
     "runtime_approvals", "runtime_artifacts", "alloc_engineers", "alloc_nodes", "alloc_meta",
 }
-HEAD = "0004_engineer_accounts"
+VOICE_TABLES = {"voice_stores", "voice_store_hours", "voice_store_closures", "voice_faqs", "voice_config_versions", "voice_numbers"}
+EXPECTED_TABLES = EXPECTED_TABLES | VOICE_TABLES
+HEAD = "0005_voice_core"
 
 
 class MigrationTests(unittest.TestCase):
@@ -41,8 +43,8 @@ class MigrationTests(unittest.TestCase):
         upgrade_to_head(self.db.url)
         with sqlite3.connect(self.db.path) as con:
             names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'")}
-        # 13 legacy indexes + alloc_nodes_engineer (0003)
-        self.assertEqual(len(names), 14, names)
+        # 13 legacy indexes + alloc_nodes_engineer (0003) + voice_faqs_store, voice_numbers_number (0005)
+        self.assertEqual(len(names), 16, names)
 
     def test_store_on_pre_alembic_sqlite_keeps_data(self):
         if self.db.backend != "sqlite":
@@ -146,6 +148,63 @@ class MigrationTests(unittest.TestCase):
         with store.connect() as con:
             row = con.execute("SELECT user_id, key_updated_revision, key_updated_by FROM alloc_engineers WHERE username='justin'").fetchone()
             self.assertEqual(tuple(row), (None, None, None))
+
+    def _snapshot(self, store, tables):
+        snapshot = {}
+        with store.connect() as con:
+            for table in sorted(tables):
+                snapshot[table] = sorted((tuple(sorted(dict(r).items())) for r in con.execute('SELECT * FROM "' + table + '"').fetchall()), key=repr)
+        return snapshot
+
+    def test_voice_core_upgrade_and_downgrade(self):
+        from server.store import Store
+        store = Store(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        self.assertLessEqual(VOICE_TABLES, set(self.db.table_names()))
+        with store.connect() as con:
+            con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
+                        ("u1", "owner@clinic.example", "owner", "unused", "customer", 1))
+            store.audit(con, "admin.voice_store_created", "u1", "s" * 32, {"userId": "u1"})
+            con.execute("INSERT INTO voice_stores (id,owner_user_id,name,industry,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+                        ("s" * 32, "u1", "Clinic", "clinic", 1, 1))
+            row = con.execute("SELECT status, recording_mode, retention_days, ai_answer_enabled, max_message_seconds, handoff_mode, greeting FROM voice_stores").fetchone()
+            self.assertEqual(tuple(row), ("draft", "message_only", 90, 0, 120, "callback", ""))
+            con.execute("INSERT INTO voice_store_hours (store_id,weekday,open_min,close_min) VALUES (?,?,?,?)", ("s" * 32, 0, 540, 720))
+            con.execute("INSERT INTO voice_store_closures (store_id,date,note) VALUES (?,?,?)", ("s" * 32, "2026-12-25", ""))
+            con.execute("INSERT INTO voice_faqs (id,store_id,question,answer,position,updated_at) VALUES (?,?,?,?,?,?)",
+                        ("f" * 32, "s" * 32, "Q", "A", 0, 1))
+            con.execute("INSERT INTO voice_config_versions (store_id,version,config_json,config_sha256,created_by,created_at) VALUES (?,?,?,?,?,?)",
+                        ("s" * 32, 1, "{}", "0" * 64, "u1", 1))
+            con.execute("INSERT INTO voice_numbers (id,number,store_id,purpose,channel,active_from,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                        ("n" * 32, "ext-0001", "s" * 32, "test", "online", 1, 1, 1))
+        # every CHECK this migration adds rejects an illegal value
+        for sql in ("UPDATE voice_stores SET status='open'", "UPDATE voice_stores SET industry='bank'",
+                    "UPDATE voice_stores SET handoff_mode='voicemail'", "UPDATE voice_stores SET recording_mode='video'",
+                    "UPDATE voice_stores SET ask_callback='sometimes'", "UPDATE voice_stores SET after_hours_mode='closed'",
+                    "UPDATE voice_stores SET retention_days=91", "UPDATE voice_stores SET retention_days=0",
+                    "UPDATE voice_stores SET recording_mode='full', retention_days=31", "UPDATE voice_stores SET max_message_seconds=59",
+                    "UPDATE voice_stores SET ai_answer_enabled=2", "UPDATE voice_numbers SET purpose='sales'",
+                    "UPDATE voice_numbers SET channel='sip'", "UPDATE voice_numbers SET active_to=1",
+                    "UPDATE voice_store_hours SET close_min=1441", "UPDATE voice_store_hours SET weekday=7",
+                    "UPDATE voice_faqs SET ai_allowed=2"):
+            with self.assertRaises(store.IntegrityError, msg=sql):
+                with store.connect() as con:
+                    con.execute(sql)
+        with store.connect() as con:
+            con.execute("UPDATE voice_stores SET recording_mode='full', retention_days=30")
+        others = set(self.db.table_names()) - VOICE_TABLES - {"alembic_version"}
+        before = self._snapshot(store, others)
+        downgrade_to(self.db.url, "0004_engineer_accounts")
+        self.assertEqual(self._versions(store), ["0004_engineer_accounts"])
+        self.assertEqual([t for t in self.db.table_names() if t.startswith("voice_")], [])
+        self.assertEqual(set(self.db.table_names()) - {"alembic_version"}, others)
+        self.assertEqual(self._snapshot(store, others), before)
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        with store.connect() as con:
+            for table in sorted(VOICE_TABLES):
+                self.assertEqual(con.execute('SELECT COUNT(*) FROM "' + table + '"').fetchone()[0], 0, table)
+        self.assertEqual(self._snapshot(store, others), before)
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":
