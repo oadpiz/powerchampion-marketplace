@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import AdminPage from "../app/admin/[[...section]]/page";
 import { AdminPortal } from "../components/admin-portal";
@@ -32,6 +33,27 @@ describe("admin phone agent section", () => {
     wrap(<AdminPortal section="voice" />);
     expect(await screen.findByText("The phone agent feature is off (PC_VOICE_ENABLED is not 1).")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Phone agent");
+    expect(calls.map((call) => call.path)).toEqual(["/session", "/admin/voice/stores"]);
+  });
+
+  // Phase 2 wiring (phase2-contract §10.2, §11.3): an in-page tab, not a route; P2-6 replaces the placeholders.
+  it.each([
+    ["en", ["Stores", "Numbers", "Quality"], "Quality", "Blind listening log"],
+    ["zh", ["店家", "號碼", "品質"], "品質", "盲聽紀錄"],
+  ])("offers the Quality tab with the listening log below it (%s)", async (locale, tabs, quality, listening) => {
+    localStorage.setItem("pc-locale", locale);
+    window.history.replaceState({}, "", "/admin/voice");
+    const user = userEvent.setup();
+    const calls = adminFetch({ "GET /admin/voice/stores": () => ({ stores: [] }) });
+    wrap(<AdminPortal section="voice" />);
+    const tablist = await screen.findByRole("tablist");
+    expect(within(tablist).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(tabs);
+    await user.click(within(tablist).getByRole("tab", { name: quality }));
+    expect(within(tablist).getByRole("tab", { name: quality })).toHaveAttribute("aria-selected", "true");
+    const panel = screen.getByRole("tabpanel", { name: quality });
+    expect(within(panel).getByRole("heading", { level: 2, name: quality })).toBeVisible();
+    expect(within(panel).getByRole("heading", { level: 2, name: listening })).toBeVisible();
+    // The placeholders read nothing; the stores list is the section's own read.
     expect(calls.map((call) => call.path)).toEqual(["/session", "/admin/voice/stores"]);
   });
 

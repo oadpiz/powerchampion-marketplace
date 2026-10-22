@@ -70,6 +70,14 @@ describe("account portal", () => {
     expect(safeAccountReturn("/account/voice/x")).toBe("/account");
     expect(safeAccountReturn("/account/voice/faqs")).toBe("/account");
     expect(safeAccountReturn("/account/voice/setup/x")).toBe("/account");
+    // Phase 2 call records (phase2-contract §10.2): the list and one call, by its 32 lowercase hex id.
+    expect(safeAccountReturn("/account/voice/calls")).toBe("/account/voice/calls");
+    expect(safeAccountReturn("/account/voice/calls/a1b2c3d4e5f60718293a4b5c6d7e8f90")).toBe("/account/voice/calls/a1b2c3d4e5f60718293a4b5c6d7e8f90");
+    expect(safeAccountReturn("/account/voice/calls/A1B2C3D4E5F60718293A4B5C6D7E8F90")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/calls/a1b2c3d4")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/calls/a1b2c3d4e5f60718293a4b5c6d7e8f90/x")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/calls/")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/try/a1b2c3d4e5f60718293a4b5c6d7e8f90")).toBe("/account");
     expect(safeAccountReturn("/admin/voice")).toBe("/admin/voice");
     expect(safeAccountReturn("/admin/voice/x")).toBe("/account");
     expect(safeAccountReturn("/tasks")).toBe("/tasks");

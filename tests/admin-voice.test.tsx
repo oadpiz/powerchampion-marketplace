@@ -405,7 +405,7 @@ describe("admin phone agent: stores", () => {
     voiceBackend({ stores: seedStores() });
     wrap(<AdminPortal section="voice" />);
     const table = await screen.findByRole("table", { name: "店家" });
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["店家", "號碼"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["店家", "號碼", "品質"]);
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "店名", "帳號 email", "產業", "狀態", "設定版本", "問答數", "最後試打", "AI 回答", "動作",
     ]);
@@ -710,6 +710,12 @@ describe("admin phone agent: numbers", () => {
     expect(screen.getByRole("tab", { name: "Numbers" })).toHaveFocus();
     expect(screen.getByRole("tab", { name: "Numbers" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("tabpanel", { name: "Numbers" })).toBeVisible();
+    // Phase 2 added Quality as the last tab: End reaches it, ArrowRight from it wraps back to Stores.
+    await user.keyboard("{End}");
+    expect(screen.getByRole("tab", { name: "Quality" })).toHaveFocus();
+    expect(await screen.findByRole("tabpanel", { name: "Quality" })).toBeVisible();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: "Stores" })).toHaveAttribute("aria-selected", "true");
   });
 
   it("validates a number before sending, shows 409 number_overlap, then adds it", async () => {

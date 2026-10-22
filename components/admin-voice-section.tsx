@@ -21,6 +21,7 @@ import {
   type StoreItem,
   type VoiceNumber,
 } from "./admin-voice-dialogs";
+import { AdminVoiceQuality } from "./admin-voice-quality";
 import { useLocale } from "./locale-provider";
 
 /** A3 (phase1-contract §4.3). Phase 1 does not return FAQ contents. */
@@ -40,10 +41,12 @@ type StoreDetail = {
 };
 
 type Resource<T> = { data: T | null; error: unknown; loading: boolean; refresh: () => void };
-type Tab = "stores" | "numbers";
+type Tab = "stores" | "numbers" | "quality";
 const TABS: { tab: Tab; en: string; zh: string }[] = [
   { tab: "stores", en: "Stores", zh: "店家" },
   { tab: "numbers", en: "Numbers", zh: "號碼" },
+  // Phase 2 (phase2-contract §10.2, §11.3): call quality and the blind listening log; the call drawer stays in-page.
+  { tab: "quality", en: "Quality", zh: "品質" },
 ];
 
 const AFTER_HOURS: Record<string, [string, string]> = {
@@ -62,7 +65,7 @@ const RECORDING: Record<string, [string, string]> = {
 };
 const label = (table: Record<string, [string, string]>, value: string, zh: boolean) => table[value]?.[zh ? 1 : 0] ?? value;
 
-/** /admin/voice: stores and the number table, switched by in-page tabs (phase1-contract §7.2, §8.6). */
+/** /admin/voice: stores, the number table and quality, switched by in-page tabs (phase1-contract §7.2, §8.6; phase2-contract §10.2). */
 export function AdminVoiceSection() {
   const { locale } = useLocale();
   const zh = locale === "zh";
@@ -111,7 +114,13 @@ export function AdminVoiceSection() {
         ))}
       </div>
       <div role="tabpanel" id={`voice-panel-${tab}`} aria-labelledby={`voice-tab-${tab}`}>
-        {tab === "stores" ? <StoresPanel resource={stores} /> : <NumbersPanel stores={stores.data?.stores ?? []} />}
+        {tab === "stores" ? (
+          <StoresPanel resource={stores} />
+        ) : tab === "numbers" ? (
+          <NumbersPanel stores={stores.data?.stores ?? []} />
+        ) : (
+          <AdminVoiceQuality stores={stores.data?.stores ?? []} />
+        )}
       </div>
     </>
   );

@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PortalError, portalErrorText, portalRequest } from "../lib/portal-client";
+import { AccountVoiceCalls } from "./account-voice-calls";
 import { AccountVoiceFaq } from "./account-voice-faq";
 import { AccountVoiceSetup } from "./account-voice-setup";
 import { AccountVoiceTry } from "./account-voice-try";
 import { useLocale } from "./locale-provider";
 
-export type VoiceSub = "setup" | "faq" | "try";
+export type VoiceSub = "setup" | "faq" | "try" | "calls";
 
 /** Limits from GET /me/voice (contract §1.5). Read them from here; never hard-code them in a page. */
 export type VoiceLimits = {
@@ -126,6 +127,8 @@ const SUBS: { sub: VoiceSub; href: string; en: string; zh: string }[] = [
   { sub: "setup", href: "/account/voice/setup", en: "Setup", zh: "設定" },
   { sub: "faq", href: "/account/voice/faq", en: "FAQ", zh: "常見問答" },
   { sub: "try", href: "/account/voice/try", en: "Try a call", zh: "試打一通" },
+  // Phase 2 (phase2-contract §10.3); /account/voice/calls/<id> stays under this item.
+  { sub: "calls", href: "/account/voice/calls", en: "Calls", zh: "通話紀錄" },
 ];
 
 const STATUS: Record<string, [string, string]> = {
@@ -200,13 +203,19 @@ export function VoiceStart({ summary, zh }: { summary: VoiceSummary; zh: boolean
   );
 }
 
-/** /account/voice[/setup|faq|try]: the shell around the three merchant sub-pages (contract §8.1). */
+/**
+ * /account/voice[/setup|faq|try|calls[/<id>]]: the shell around the merchant sub-pages (contract §8.1;
+ * phase2-contract §10.2-§10.3 added the call records).
+ */
 export function AccountVoice({
   sub,
+  callId,
   state,
   onReload,
 }: {
   sub?: VoiceSub;
+  /** One call on /account/voice/calls/<id>; ignored on the other sub-pages. */
+  callId?: string;
   state: VoiceState;
   onReload: () => void;
 }) {
@@ -292,6 +301,7 @@ export function AccountVoice({
       {current === "setup" && <AccountVoiceSetup summary={state.summary} onChanged={onReload} />}
       {current === "faq" && <AccountVoiceFaq summary={state.summary} onChanged={onReload} />}
       {current === "try" && <AccountVoiceTry summary={state.summary} onChanged={onReload} />}
+      {current === "calls" && <AccountVoiceCalls summary={state.summary} onChanged={onReload} callId={callId} />}
     </>
   );
 }
