@@ -427,10 +427,19 @@ describe("setup page: opening", () => {
     // One more character is over.
     setValue(greetingBox(), "一".repeat(32));
     expect(screen.getByText("About 15.1 s (limit 15 s)")).toBeVisible();
+    // Verifier finding 2026-10-22: say how many characters to remove; the greeting counter alone reads 32 / 40.
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "The opening is too long (about 15.1 s). Shorten the greeting to 15 s or less to save.",
+      "The opening is too long (about 15.1 s). Remove 1 more character from the greeting or store name to save.",
     );
-    expect(screen.getByText("The opening is longer than 15 seconds. Shorten the greeting.")).toBeVisible();
+    expect(screen.getByText("The opening is longer than 15 seconds: remove 1 more character from the greeting or store name (spaces not counted).")).toBeVisible();
+    setValue(greetingBox(), "一".repeat(35));
+    expect(screen.getByRole("alert")).toHaveTextContent("Remove 4 more characters from the greeting or store name to save.");
+    // A name that is over on its own: only the name can fix it.
+    setValue(greetingBox(), "");
+    setValue(nameBox(), "一".repeat(20) + " " + "一".repeat(18));
+    expect(screen.getByText(/^The opening is longer than 15 seconds: remove 1 more character from the store name/)).toBeVisible();
+    setValue(nameBox(), "晴光牙醫診所");
+    setValue(greetingBox(), "一".repeat(32));
     expect(saveButton()).toBeDisabled();
     expect(applyButton()).toBeDisabled();
     await user.click(applyButton());
@@ -742,8 +751,30 @@ describe("setup page: save and apply", () => {
     expect(nameBox()).toBeEnabled();
   });
 
+  it("locks the form while the temporary password is unchanged, and says where to change it", async () => {
+    // Verifier finding 2026-10-22: the store could type everything, get 403 on save, and lose it on the way to Security.
+    const { calls } = await renderSetup({ passwordChangeRequired: true });
+    expect(nameBox()).toBeDisabled();
+    expect(greetingBox()).toBeDisabled();
+    expect(saveButton()).toBeDisabled();
+    expect(applyButton()).toBeDisabled();
+    const note = document.querySelector("[data-voice-locked]") as HTMLElement;
+    expect(note).toHaveTextContent("Change the temporary password we gave you under Security first; then you can edit the setup.");
+    expect(within(note).getByRole("link", { name: "Security" })).toHaveAttribute("href", "/account/security");
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it("says why the form is locked in Chinese", async () => {
+    localStorage.setItem("pc-locale", "zh");
+    window.history.replaceState({}, "", "/account/voice/setup");
+    await renderSetup({ passwordChangeRequired: true });
+    expect(document.querySelector("[data-voice-locked]")).toHaveTextContent("請先到「安全性」把我們給你的臨時密碼換掉，才能修改設定。");
+  });
+
   it("links to Security when the backend asks for a password change", async () => {
-    const { user, onChanged } = await renderSetup({ passwordChangeRequired: true });
+    // M1 was read before an operator reset the password: the backend still refuses, and says why.
+    const refused = () => Response.json({ error: "password_change_required", detail: "x" }, { status: 403 });
+    const { user, onChanged } = await renderSetup({ override: { "POST /me/voice/setup": refused } });
     setValue(greetingBox(), "請問要掛號嗎？");
     await user.click(saveButton());
     const alert = await screen.findByRole("alert");
@@ -757,10 +788,14 @@ describe("setup page: save and apply", () => {
     const { user, calls, onChanged } = await renderSetup({ setup: { introText: "" }, faqCount: 0 });
     setValue(greetingBox(), "請問要掛號嗎？");
     await user.click(applyButton());
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "There is nothing to apply yet. Add a store description or a question first.",
+    // One message, not "nothing to apply" next to "Saved. Use Save and apply" (verifier finding 2026-10-22).
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Your settings are saved, but they cannot be applied yet: There is nothing to apply yet. Add a store description or a question on FAQ first.",
     );
-    expect(screen.getByText(/^Saved\./)).toBeVisible();
+    expect(within(alert).getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "/account/voice/faq");
+    expect(screen.queryByText(/^Saved\./)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(writes(calls).map((call) => call.path)).toEqual(["/me/voice/setup", "/me/voice/publish"]);
     expect(onChanged).toHaveBeenCalledTimes(1);
   });
@@ -842,7 +877,8 @@ describe("setup page: Chinese", () => {
   it("renders the Chinese copy", async () => {
     localStorage.setItem("pc-locale", "zh");
     window.history.replaceState({}, "", "/account/voice/setup");
-    const { user } = await renderSetup({ passwordChangeRequired: true });
+    const refused = () => Response.json({ error: "password_change_required", detail: "x" }, { status: 403 });
+    const { user } = await renderSetup({ override: { "POST /me/voice/setup": refused } });
     for (const heading of ["基本資料", "開場", "營業時間", "特殊休假日", "留言與回電", "錄音與保存"])
       expect(screen.getByRole("heading", { level: 3, name: heading })).toBeVisible();
     expect(screen.getByRole("heading", { level: 2, name: "設定" })).toBeVisible();
@@ -859,8 +895,8 @@ describe("setup page: Chinese", () => {
     expect(screen.getByText("試打不計費，也不留存錄音。")).toBeVisible();
     expect(screen.getByRole("button", { name: "儲存並套用" })).toBeEnabled();
     setValue(screen.getByRole("textbox", { name: "開場白" }), "一".repeat(32));
-    expect(screen.getByText("開場超過 15 秒，請縮短開場白。")).toBeVisible();
-    expect(screen.getByText("開場太長（約 15.1 秒），請把開場白縮短到 15 秒內，才能儲存。")).toBeVisible();
+    expect(screen.getByText("開場超過 15 秒：請把開場白或店名再刪 1 字（不含空白）。")).toBeVisible();
+    expect(screen.getByText("開場太長（約 15.1 秒），請把開場白或店名再刪 1 字，才能儲存。")).toBeVisible();
     setValue(screen.getByRole("textbox", { name: "開場白" }), "請問要掛號嗎？");
     await user.click(screen.getByRole("button", { name: "儲存" }));
     const alert = await screen.findByRole("alert");

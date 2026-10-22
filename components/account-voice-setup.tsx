@@ -38,6 +38,8 @@ type Load =
 
 type Notice =
   | { kind: "saved" }
+  /** "Save and apply" saved the fields, then the apply failed: one message, not "error" next to "saved". */
+  | { kind: "savedNotApplied"; error: unknown }
   | { kind: "applied" | "unchanged"; version: number; warnings: VoiceWarning[] };
 
 type PreviewState =
@@ -147,6 +149,9 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
   const { setup, disclosure, template } = load.data;
   const limits = load.data.limits;
   const readOnly = setup.status === "suspended" || summary.store.status === "suspended";
+  // Every write is refused until the temporary password is changed, so the form is locked instead of letting the
+  // store type and lose it (verifier finding 2026-10-22).
+  const locked = summary.account.passwordChangeRequired;
   const opening = openingInfo(disclosure.template, draft.name, draft.greeting, limits);
   const problems = setupProblems(draft, disclosure.template, limits, setup.recordingMode);
   const changes = setupChanges(setup, draft);
@@ -160,7 +165,7 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
 
   async function save(apply: boolean) {
     // The fieldset already disables the buttons; this also covers a click that reaches the handler anyway.
-    if (!draft || load.status !== "ready" || problems.any || readOnly || busy !== null) return;
+    if (!draft || load.status !== "ready" || problems.any || readOnly || locked || busy !== null) return;
     setBusy(apply ? "apply" : "save");
     setActionError(null);
     setNotice(null);
@@ -188,23 +193,29 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
       onChanged();
       setPreviewNonce((value) => value + 1);
     } catch (cause) {
-      setActionError(cause);
       if (saved) {
-        setNotice({ kind: "saved" });
+        setNotice({ kind: "savedNotApplied", error: cause });
         onChanged();
-      }
+      } else setActionError(cause);
     } finally {
       setBusy(null);
     }
   }
 
   const securityLink = (text: string) => <Link href="/account/security">{text}</Link>;
+  const faqLink = (text: string) => <Link href="/account/voice/faq">{text}</Link>;
   const errorText = (error: unknown): ReactNode =>
     error instanceof PortalError && error.code === "password_change_required" ? (
       zh ? (
         <>請先到「{securityLink("安全性")}」變更我們發給你的臨時密碼，再修改設定或試打。</>
       ) : (
         <>Change the temporary password we gave you under {securityLink("Security")} before editing or trying a call.</>
+      )
+    ) : error instanceof PortalError && error.code === "kb_empty" ? (
+      zh ? (
+        <>還沒有任何內容。請到「{faqLink("常見問答")}」填店家介紹或新增問答。</>
+      ) : (
+        <>There is nothing to apply yet. Add a store description or a question on {faqLink("FAQ")} first.</>
       )
     ) : (
       voiceErrorText(error, locale, limits)
@@ -228,7 +239,11 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
       : problems.greeting === "unsafe"
         ? unsafeMessage({ en: "greeting", zh: "開場白" }, zh)
         : null;
-  const shortenField = opening.shorten === "name" ? (zh ? "店名" : "store name") : zh ? "開場白" : "greeting";
+  // Name the field and how many characters to remove (verifier finding 2026-10-22: the greeting counter could
+  // read 39 / 40 while the opening as a whole was over).
+  const shortenField = opening.shorten === "name" ? (zh ? "店名" : "store name") : zh ? "開場白或店名" : "greeting or store name";
+  const over = Math.max(0, -opening.remaining);
+  const overChars = zh ? `${over} 字` : `${over} more character${over === 1 ? "" : "s"}`;
 
   const setSegment = (key: number, patch: { openMin?: number; closeMin?: number }) =>
     update({ hours: draft.hours.map((segment) => (segment.key === key ? { ...segment, ...patch } : segment)) });
@@ -260,7 +275,7 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
             ? unsafeMessage({ en: "note", zh: "備註" }, zh)
             : null;
 
-  const counts = notice && notice.kind !== "saved" ? warningCounts(notice.warnings) : null;
+  const counts = notice?.kind === "applied" || notice?.kind === "unchanged" ? warningCounts(notice.warnings) : null;
 
   return (
     <form
@@ -270,7 +285,7 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
         event.preventDefault();
       }}
     >
-      <fieldset style={bare} disabled={readOnly || busy !== null}>
+      <fieldset style={bare} disabled={readOnly || locked || busy !== null}>
         <section className="portal-panel" aria-labelledby="voice-setup-basics">
           <h2 id="voice-setup-title">{zh ? "設定" : "Setup"}</h2>
           <h3 id="voice-setup-basics">{zh ? "基本資料" : "Basics"}</h3>
@@ -294,8 +309,8 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
                 ? `開場白剩餘字數：${opening.remaining}（告知文字、店名、開場白合計最多 ${limits.openingNonSpaceMax} 字，不含空白）`
                 : `Greeting characters left: ${opening.remaining} (the notice, store name and greeting share ${limits.openingNonSpaceMax} characters, not counting spaces)`
               : zh
-                ? `開場超過 ${limits.openingSecondsMax} 秒，請縮短${shortenField}。`
-                : `The opening is longer than ${limits.openingSecondsMax} seconds. Shorten the ${shortenField}.`}
+                ? `開場超過 ${limits.openingSecondsMax} 秒：請把${shortenField}再刪 ${overChars}（不含空白）。`
+                : `The opening is longer than ${limits.openingSecondsMax} seconds: remove ${overChars} from the ${shortenField} (spaces not counted).`}
           </p>
           {nameMessage && (
             <p className="portal-error" role="alert">
@@ -358,8 +373,8 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
           {!opening.ok && (
             <p className="portal-error" role="alert">
               {zh
-                ? `開場太長（約 ${seconds} 秒），請把開場白縮短到 ${limits.openingSecondsMax} 秒內，才能儲存。`
-                : `The opening is too long (about ${seconds} s). Shorten the greeting to ${limits.openingSecondsMax} s or less to save.`}
+                ? `開場太長（約 ${seconds} 秒），請把${shortenField}再刪 ${overChars}，才能儲存。`
+                : `The opening is too long (about ${seconds} s). Remove ${overChars} from the ${shortenField} to save.`}
             </p>
           )}
         </section>
@@ -666,11 +681,20 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
               {zh ? "請先修正上面標示的欄位，才能儲存。" : "Fix the fields marked above before you save."}
             </p>
           )}
+          {locked && !readOnly && (
+            <p className="portal-note" data-voice-locked="">
+              {zh ? (
+                <>請先到「{securityLink("安全性")}」把我們給你的臨時密碼換掉，才能修改設定。</>
+              ) : (
+                <>Change the temporary password we gave you under {securityLink("Security")} first; then you can edit the setup.</>
+              )}
+            </p>
+          )}
           <div className="portal-actions">
             <button
               type="button"
               className="portal-button-secondary"
-              disabled={!dirty || problems.any || readOnly || busy !== null}
+              disabled={!dirty || problems.any || readOnly || locked || busy !== null}
               onClick={() => void save(false)}
             >
               {busy === "save" ? (zh ? "處理中…" : "Working…") : zh ? "儲存" : "Save"}
@@ -678,7 +702,7 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
             <button
               type="button"
               className="portal-button"
-              disabled={problems.any || readOnly || busy !== null}
+              disabled={problems.any || readOnly || locked || busy !== null}
               onClick={() => void save(true)}
             >
               {busy === "apply" ? (zh ? "處理中…" : "Working…") : zh ? "儲存並套用" : "Save and apply"}
@@ -699,7 +723,13 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
               {zh ? "已儲存。按「儲存並套用」後，試打才會用到。" : 'Saved. Use "Save and apply" so test calls use it.'}
             </p>
           )}
-          {notice && notice.kind !== "saved" && (
+          {notice?.kind === "savedNotApplied" && (
+            <p className="portal-error" role="alert">
+              {zh ? "設定已儲存，但還不能套用：" : "Your settings are saved, but they cannot be applied yet: "}
+              {errorText(notice.error)}
+            </p>
+          )}
+          {(notice?.kind === "applied" || notice?.kind === "unchanged") && (
             <p className="portal-note" role="status">
               {notice.kind === "unchanged" ? (
                 zh ? (
