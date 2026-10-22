@@ -33,9 +33,12 @@ PHASE1_CODES = {"invalid_input", "not_found", "auth_required", "admin_required",
 # §1.2: the BFF turns 503 voice_media_unavailable into 503 service_unavailable, so no page words this code.
 BFF_RENAMED = {"voice_media_unavailable"}
 # §12.1: the phase 2 codes a browser sees, and where each page words them.
-STORE_CODES = ("call_not_found", "note_contains_number", "call_content_unavailable", "call_content_expired",
-               "voice_content_link_limit")
-QUALITY_CODES = STORE_CODES + ("listening_not_found", "listening_limit")
+SHARED_CODES = ("call_not_found", "note_contains_number", "call_content_unavailable", "call_content_expired",
+                "voice_content_link_limit")
+# Only M17 answers call_content_pending (amended §6.5: the records sender has not reported the call yet).
+STORE_ONLY_CODES = ("call_content_pending",)
+STORE_CODES = SHARED_CODES + STORE_ONLY_CODES
+QUALITY_CODES = SHARED_CODES + ("listening_not_found", "listening_limit")
 NUMBER_CODES = ("number_in_use",)
 
 
@@ -114,7 +117,7 @@ class VoiceCallErrorCodeSyncTests(unittest.TestCase):
     def test_backend_codes_are_the_contract_list(self):
         # A code the backend gains fails here until it is sorted into one of the lists above and given copy.
         codes = backend_codes(SERVER / "voice_call_routes.py") | backend_codes(SERVER / "admin_voice.py")
-        self.assertEqual(codes - PHASE1_CODES - BFF_RENAMED, set(QUALITY_CODES) | set(NUMBER_CODES))
+        self.assertEqual(codes - PHASE1_CODES - BFF_RENAMED, set(QUALITY_CODES) | set(STORE_ONLY_CODES) | set(NUMBER_CODES))
 
     def test_store_pages_word_their_codes(self):
         text = "\n".join(path.read_text(encoding="utf-8") for path in STORE_PAGES)

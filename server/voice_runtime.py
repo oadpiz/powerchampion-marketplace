@@ -108,5 +108,5 @@ def attach_voice_runtime(application, ctx):
         parsed = vc.parse_report(body, now)
         with store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
-            status, payload = vc.ingest(con, parsed, now)
+            status, payload = vc.ingest(con, parsed, now, audit=store.audit)
         return JSONResponse(payload, status_code=status)

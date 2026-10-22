@@ -620,8 +620,9 @@ def get_call(con, row_id):
     return con.execute("SELECT * FROM voice_calls WHERE id=?", (row_id,)).fetchone()
 
 
-def ingest(con, parsed, now):
-    """§3.4 steps 1-9 for a parsed report. Call inside BEGIN IMMEDIATE. Returns (HTTP status, response body)."""
+def ingest(con, parsed, now, audit=None):
+    """§3.4 steps 1-9 for a parsed report. Call inside BEGIN IMMEDIATE. Returns (HTTP status, response body).
+    `audit(con, action, actor_id, target_id, details)` records a call that moved to another store (Store.audit)."""
     body = parsed["body"]
     source = body["source"]
     row = con.execute("SELECT * FROM voice_calls WHERE call_id=?", (body["call_id"],)).fetchone()
@@ -657,7 +658,22 @@ def ingest(con, parsed, now):
     reports = _reports(row, source, body)
     columns = merged_columns(con, reports["orchestrator"], reports["records"], row)
     columns.update(_source_columns(source, body, now), updated_at=now)
+    moved = row["store_id"] is not None and columns["store_id"] != row["store_id"]
+    if moved:
+        # The first report's number pointed at another store (the two sources disagree on dialed; the records
+        # sender's wins, §3.5). What that store wrote is not shown to the new one: its flag and note go, and an
+        # operator's finished review is opened again (the call is back in "to review" with source_mismatch).
+        columns.update(store_flag_kind=None, store_flag_note=None, store_flagged_at=None, store_flagged_by=None)
     _write(con, row["id"], columns, insert=False)
+    if moved:
+        review = con.execute("SELECT status FROM voice_call_reviews WHERE call_row_id=?", (row["id"],)).fetchone()
+        reopened = review is not None and review["status"] != "open"
+        if reopened:
+            con.execute("UPDATE voice_call_reviews SET status='open', updated_at=? WHERE call_row_id=?", (now, row["id"]))
+        if audit is not None:
+            audit(con, "voice.call_reattributed", None, row["id"],
+                  {"fromStoreId": row["store_id"], "toStoreId": columns["store_id"], "flagCleared": row["store_flag_kind"] is not None,
+                   "reviewReopened": reopened})
     return 200, _answer(result, get_call(con, row["id"]))
 
 
