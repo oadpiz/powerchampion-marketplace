@@ -81,8 +81,11 @@ scripts/voice/stop-local.sh
   the test-only runtime token (four calls also get a fake records-sender report,
   and a store sees a call only after it);
   the store reads its calls and the estimated counts, another store is refused, a
-  wrong answer is flagged and reviewed on the Quality routes, and bad or missing
-  tokens, an unset token and the switch off are refused. Turning AI answer on for
+  wrong answer is flagged and reviewed on the Quality routes, the store deletes
+  one call's recording and text (it leaves the store's pages, its billing stays)
+  and a fake records sender pulls and acknowledges the deletion request
+  (`/api/voice-runtime/deletions`), and bad or missing tokens, an unset token and
+  the switch off are refused. Turning AI answer on for
   the test store has no route yet, so that one step writes the smoke database.
 - Nothing reaches production: the gateway origin is `https://gateway.invalid`,
   Grafana is off, and the try-ticket, runtime and media secrets are test-only
@@ -90,6 +93,10 @@ scripts/voice/stop-local.sh
   passwords are generated per run, kept in `db/smoke-secrets.json` (mode 0600)
   inside the run directory, and redacted from the report together with tickets.
 - `smoke.py` exits 0 only when every check passes, and prints the failed ones.
+- The portal's retention schedule (phase2-contract §16.4, §16.5) runs a minute after
+  start and then hourly while `PC_VOICE_ENABLED=1`; `python -m server.manage
+  voice-retention` runs it once and prints the counts. `PC_VOICE_CALL_RETENTION_DAYS`
+  (90-3660, default 1825) is how long a call's billing row is kept.
 
 ## Dependency audit status
 

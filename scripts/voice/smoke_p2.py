@@ -3,8 +3,10 @@
 A fake orchestrator stands in for b300-23 (phase2-contract §3.3-§3.4): it pulls a store's settings by the dialed
 number and reports calls through Next's /api/voice-runtime/* route with the test-only runtime token, the way the
 real one will. A fake records sender stands in for the Taiwan host once (the message part of one call). Then store A
-reads its calls, store B tries A's, A flags one as a wrong answer, the operator reviews it on the Quality routes, and
-the runtime is refused with a wrong or missing token, with the token unset (mode `notoken`) and with the switch off.
+reads its calls, store B tries A's, A flags one as a wrong answer, the operator reviews it on the Quality routes, A
+deletes one call's recording and text and a fake records sender pulls and acknowledges the deletion (phase2-contract
+§16), and the runtime is refused with a wrong or missing token, with the token unset (mode `notoken`) and with the
+switch off.
 
 Every function takes `m`, the smoke module, for its report (m.R), its BFF helper (m.call/m.expect) and its paths.
 Store and operator routes go through the BFF with cookies like the rest of the smoke; the runtime goes to Next with
@@ -488,6 +490,72 @@ def run_on(m, state, admin_jar, a_jar, b_jar):
     R.check("A10 shows dialed ******5678 and never the whole number", got == 200 and a10.get("call", {}).get("dialed") == "******5678"
             and "0912345678" not in shown and "912345678" not in shown, "got %d dialed %s" % (got, a10.get("call", {}).get("dialed")))
 
+    run_deletion(m, state, admin_jar, a_jar, b_jar)
+
+
+def run_deletion(m, state, admin_jar, a_jar, b_jar):
+    """§16: store A deletes c5's recording and text (M18); the fake records sender pulls the request (R3) and
+    acknowledges it (R4). The month still counts and bills c5."""
+    R = m.R
+    rows, cid, month = state["a_rows"], state["call_ids"], state["month"]
+    R.section("20c. Store A deletes c5's recording and text; the records sender pulls and acknowledges the deletion (M18, R3, R4)")
+    got, pulled, _ = runtime(m, "GET", "/deletions")
+    R.check("R3 before any deletion -> 200, nothing pending", got == 200 and isinstance(pulled, dict) and pulled.get("deletions") == [],
+            "got %d %s" % (got, m_short(pulled)))
+    m.expect("B deletes A's call", "DELETE", "/me/voice/calls/" + rows["c5"], b_jar, None, 404, "call_not_found")
+    got, payload = m.call("DELETE", "/me/voice/calls/" + rows["c5"], a_jar)
+    R.check("A deletes c5 -> 200 changed true", got == 200 and isinstance(payload, dict) and payload.get("changed") is True
+            and payload.get("deletedAt"), "got %d %s" % (got, m_short(payload)))
+    got, again = m.call("DELETE", "/me/voice/calls/" + rows["c5"], a_jar)
+    R.check("A deletes c5 again -> 200 changed false (idempotent)", got == 200 and isinstance(again, dict) and again.get("changed") is False,
+            "got %d %s" % (got, m_short(again)))
+    got, m13 = m.call("GET", "/me/voice/calls?month=" + month, a_jar)
+    listed = [c["id"] for c in m13.get("calls", [])] if isinstance(m13, dict) else []
+    summary = m13.get("summary", {}) if isinstance(m13, dict) else {}
+    R.check("A's list no longer has c5; the month still counts 5 calls and 3 billable, 1 deleted",
+            got == 200 and rows["c5"] not in listed and len(listed) == 4 and (summary.get("total"), summary.get("meterUnits"),
+                                                                             summary.get("deleted")) == (5, 3, 1),
+            "got %d %d listed, summary %s" % (got, len(listed), m_short(summary)))
+    m.expect("A opens c5", "GET", "/me/voice/calls/" + rows["c5"], a_jar, None, 404, "call_not_found")
+    m.expect("A asks for c5's content", "POST", "/me/voice/calls/%s/content-link" % rows["c5"], a_jar, {}, 404, "call_not_found")
+    got, a10 = m.call("GET", "/admin/voice/quality/calls/" + rows["c5"], admin_jar)
+    call, deletions = (a10.get("call", {}), a10.get("deletions", [])) if isinstance(a10, dict) else ({}, [])
+    R.check("the operator sees that the store deleted it: storeDeletedAt, content deleted, one pending store_deleted request",
+            got == 200 and call.get("storeDeletedAt") and a10.get("content", {}).get("state") == "deleted"
+            and [(d.get("reason"), d.get("status")) for d in deletions] == [("store_deleted", "pending")],
+            "got %d %s" % (got, m_short(deletions)))
+    m.expect("the operator asks for c5's content", "POST", "/admin/voice/quality/calls/%s/content-link" % rows["c5"], admin_jar, {}, 410,
+             "call_content_deleted")
+    got, pulled, _ = runtime(m, "GET", "/deletions?limit=100")
+    items = pulled.get("deletions", []) if isinstance(pulled, dict) else []
+    text = json.dumps(pulled, ensure_ascii=False)
+    R.check("R3 lists one request: c5's call_id and all kinds, ids only (no store, row id or caller digits)",
+            got == 200 and [(d.get("call_id"), d.get("kinds")) for d in items] == [(cid["c5"], ["recording", "summary", "transcript"])]
+            and all(set(d) == {"id", "call_id", "kinds"} for d in items) and rows["c5"] not in text and state["a_id"] not in text,
+            "got %d %s" % (got, m_short(pulled)))
+    request_id = items[0]["id"] if items else "0" * 32
+    got, payload, _ = runtime(m, "POST", "/deletions/%s/ack" % ("0" * 32), {"files_deleted": 0, "rows_deleted": 0})
+    R.check("R4 for an id that is not a request -> 404 deletion_not_found", got == 404 and error_of(payload) == "deletion_not_found",
+            "got %d %s" % (got, error_of(payload)))
+    got, payload, _ = runtime(m, "POST", "/deletions/%s/ack" % request_id, {"files_deleted": 3, "rows_deleted": 2})
+    R.check("R4 acknowledges c5's deletion -> 200 acked, done", got == 200 and isinstance(payload, dict)
+            and (payload.get("result"), payload.get("status")) == ("acked", "done"), "got %d %s" % (got, m_short(payload)))
+    got, payload, _ = runtime(m, "POST", "/deletions/%s/ack" % request_id, {"files_deleted": 0, "rows_deleted": 0})
+    R.check("R4 again -> 200 duplicate (idempotent)", got == 200 and isinstance(payload, dict) and payload.get("result") == "duplicate",
+            "got %d %s" % (got, m_short(payload)))
+    got, pulled, _ = runtime(m, "GET", "/deletions")
+    R.check("R3 after the acknowledgement -> nothing pending", got == 200 and isinstance(pulled, dict) and pulled.get("deletions") == [],
+            "got %d %s" % (got, m_short(pulled)))
+    got, a10 = m.call("GET", "/admin/voice/quality/calls/" + rows["c5"], admin_jar)
+    deletions = a10.get("deletions", []) if isinstance(a10, dict) else []
+    R.check("A10 shows the Taiwan host's confirmation: contentPurgedAt, done with 3 files and 2 rows",
+            got == 200 and a10.get("call", {}).get("contentPurgedAt") and [(d.get("status"), d.get("filesDeleted"), d.get("rowsDeleted"))
+                                                                          for d in deletions] == [("done", 3, 2)],
+            "got %d %s" % (got, m_short(deletions)))
+    got, audit = m.call("GET", "/admin/audit", admin_jar)
+    text = json.dumps(audit, ensure_ascii=False)
+    R.check("the audit log has voice.call_content_deleted", got == 200 and "voice.call_content_deleted" in text, "got %d" % got)
+
 
 # ---------------------------------------------------------------- notoken (PC_VOICE_RUNTIME_TOKEN unset)
 
@@ -554,6 +622,7 @@ def run_off(m, state):
         ("POST", "/me/voice/calls/%s/flag" % rows["c1"], a_jar, {"kind": "wrong_answer"}),
         ("DELETE", "/me/voice/calls/%s/flag" % rows["c3"], a_jar, None),
         ("POST", "/me/voice/calls/%s/content-link" % rows["c1"], a_jar, {}),
+        ("DELETE", "/me/voice/calls/" + rows["c1"], a_jar, None),
         ("GET", "/admin/voice/quality/calls", admin_jar, None),
         ("GET", "/admin/voice/quality/calls/" + rows["c3"], admin_jar, None),
         ("POST", "/admin/voice/quality/calls/%s/review" % rows["c3"], admin_jar, review),
@@ -564,4 +633,9 @@ def run_off(m, state):
         ("DELETE", "/admin/voice/quality/listening/" + listening, admin_jar, None),
     ]:
         m.expect("off", method, path, jar, body, 404, "not_found")
-    R.note("- That is all 5 store call routes (M13-M17) and all 8 Quality routes (A9-A16), each 404 not_found.")
+    R.note("- That is all 6 store call routes (M13-M18) and all 8 Quality routes (A9-A16), each 404 not_found.")
+    for label, method, path, body in (("R3", "GET", "/deletions", None), ("R4", "POST", "/deletions/%s/ack" % ("0" * 32),
+                                                                          {"files_deleted": 0, "rows_deleted": 0})):
+        got, payload, _ = runtime(m, method, path, body)
+        R.check("%s with the right token -> 404 not_found" % label, got == 404 and error_of(payload) == "not_found",
+                "got %d %s" % (got, error_of(payload)))
