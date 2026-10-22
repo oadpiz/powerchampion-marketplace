@@ -1,8 +1,6 @@
 import { notFound } from "next/navigation";
-import {
-  AdminPortal,
-  type AdminSection,
-} from "../../../components/admin-portal";
+import { AdminPortal } from "../../../components/admin-portal";
+import { isAdminSection } from "../../../lib/admin-sections";
 import { metadataForRoute } from "../../../lib/metadata";
 
 export const metadata = metadataForRoute("/admin");
@@ -14,10 +12,6 @@ export default async function AdminPage({
 }) {
   const { section = [] } = await params;
   const current = section[0] ?? "overview";
-  if (
-    section.length > 1 ||
-    !["overview", "customers", "keys", "redeem", "usage", "gateway", "personas", "allocation", "engineers", "credits", "audit"].includes(current)
-  )
-    notFound();
-  return <AdminPortal section={current as AdminSection} />;
+  if (section.length > 1 || !isAdminSection(current)) notFound();
+  return <AdminPortal section={current} />;
 }

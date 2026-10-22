@@ -26,7 +26,7 @@ export function OverviewSection() {
     {
       label: zh ? "API 金鑰" : "API keys",
       value: resource.data?.keyCount,
-      href: "/admin/customers",
+      href: "/admin/keys",
     },
     {
       label: zh ? "待審核儲值申請" : "Pending credit requests",

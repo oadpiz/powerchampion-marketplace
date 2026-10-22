@@ -11,8 +11,10 @@ import { AuthForm } from "../components/auth-form";
 import { AccountPortal } from "../components/account-portal";
 import { AdminPortal } from "../components/admin-portal";
 import { AdminShell } from "../components/admin-shell";
+import { OverviewSection } from "../components/admin-overview-section";
 import { LocaleProvider } from "../components/locale-provider";
 import { PortalError, portalErrorText, safeAccountReturn } from "../lib/portal-client";
+import { ADMIN_SECTIONS } from "../lib/admin-sections";
 
 const customer = {
   id: "cust-1",
@@ -81,6 +83,14 @@ describe("account portal", () => {
     expect(safeAccountReturn("/admin")).toBe("/admin");
     expect(safeAccountReturn("/admin/customers")).toBe("/admin/customers");
     expect(safeAccountReturn("/admin/anything")).toBe("/account");
+    expect(safeAccountReturn("/admin/keys")).toBe("/admin/keys");
+    expect(safeAccountReturn("/admin/engineers")).toBe("/admin/engineers");
+    for (const section of ADMIN_SECTIONS) expect(safeAccountReturn(`/admin/${section}`)).toBe(`/admin/${section}`);
+    expect(safeAccountReturn("/admin/")).toBe("/account");
+    expect(safeAccountReturn("/admin/keys/extra")).toBe("/account");
+    expect(safeAccountReturn("/admin/keys?next=https://evil.example")).toBe("/account");
+    expect(safeAccountReturn("/admin//evil.example")).toBe("/account");
+    expect(safeAccountReturn("/admin/constructor")).toBe("/account");
     expect(portalErrorText(new PortalError(503, "usage_pricing_incomplete", "Internal details"), "en")).toContain("Pricing data is incomplete");
     expect(portalErrorText(new PortalError(404, "gateway_rejected", "Model not found on the gateway."), "en")).toBe("Model not found on the gateway.");
     expect(portalErrorText(new PortalError(404, "gateway_rejected", ""), "en")).toBe("The gateway rejected the request.");
@@ -607,6 +617,18 @@ const gatewayKey = {
   portalKeyId: "pk-1",
   portalStatus: "active",
 };
+
+describe("admin overview section", () => {
+  it("links each stat card to the section it counts", async () => {
+    adminFetch({
+      "GET /admin/overview": { customerCount: 3, keyCount: 7, pendingCreditCount: 2, gatewayConfigured: true },
+    });
+    wrap(<OverviewSection />);
+    expect(await screen.findByRole("link", { name: /API keys/ })).toHaveAttribute("href", "/admin/keys");
+    expect(screen.getByRole("link", { name: /Customer accounts/ })).toHaveAttribute("href", "/admin/customers");
+    expect(screen.getByRole("link", { name: /Pending credit requests/ })).toHaveAttribute("href", "/admin/credits");
+  });
+});
 
 describe("admin keys section", () => {
   it("lists keys with the owner email, postpaid balance and unowned keys", async () => {
