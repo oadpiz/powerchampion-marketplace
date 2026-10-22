@@ -191,7 +191,7 @@ class AccessTests(VoiceCase):
             self.assertEqual(response.status_code, 200, response.text)
             for marker in markers:
                 self.assertNotIn(marker, response.text)
-        payload = vt.verify(responses[-1].json()["ticket"], SECRET)
+        payload = vt.verify(responses[-1].json()["ticket"], SECRET, ledger=vt.NonceLedger())
         self.assertEqual(payload["store_id"], b_id)
         self.assertEqual(before, (self.store_row(a_id), self.ok(a.get(BASE + "/me/voice/faqs"))))
 
@@ -719,7 +719,7 @@ class TryTests(VoiceCase):
         for secret in (body["ticket"], body["ticket"].split(".")[1], payload["nonce"]):
             self.assertNotIn(secret, stored_text)
         with self.assertRaises(vt.TicketError):
-            vt.verify(body["ticket"], "another-test-only-value-1111111111")
+            vt.verify(body["ticket"], "another-test-only-value-1111111111", ledger=vt.NonceLedger())
         summary = self.ok(client.get(BASE + "/me/voice"))["try"]
         self.assertEqual((summary["used"], summary["remaining"]), (1, 19))
         self.assertIsNotNone(summary["lastIssuedAt"])
@@ -769,7 +769,7 @@ class TryTests(VoiceCase):
         statuses = sorted(r.status_code for r in responses)
         self.assertEqual((statuses.count(200), statuses.count(429)), (20, 5), statuses)
         self.assertEqual(len([e for e in self.audit("voice.try_issued") if e["target_id"] == store_id]), 20)
-        nonces = {vt.verify(r.json()["ticket"], SECRET)["nonce"] for r in responses if r.status_code == 200}
+        nonces = {vt.verify(r.json()["ticket"], SECRET, ledger=vt.NonceLedger())["nonce"] for r in responses if r.status_code == 200}
         self.assertEqual(len(nonces), 20)
 
 

@@ -82,9 +82,9 @@ class TestVectorTests(unittest.TestCase):
         self.assertEqual((payload["store_id"], payload["config_version"]), (STORE_ID, 1))
         cases = [
             ("same ticket again", lambda: vt.verify(TICKET, SECRET, now=IAT + 61, ledger=ledger), "ticket_replayed"),
-            ("11th character changed", lambda: vt.verify(TICKET[:10] + ("B" if TICKET[10] != "B" else "C") + TICKET[11:], SECRET, now=IAT + 60), "ticket_invalid"),
-            ("other secret", lambda: vt.verify(TICKET, SECRET[:-1] + "1", now=IAT + 60), "ticket_invalid"),
-            ("now = exp", lambda: vt.verify(TICKET, SECRET, now=IAT + 900), "ticket_expired"),
+            ("11th character changed", lambda: vt.verify(TICKET[:10] + ("B" if TICKET[10] != "B" else "C") + TICKET[11:], SECRET, now=IAT + 60, ledger=vt.NonceLedger()), "ticket_invalid"),
+            ("other secret", lambda: vt.verify(TICKET, SECRET[:-1] + "1", now=IAT + 60, ledger=vt.NonceLedger()), "ticket_invalid"),
+            ("now = exp", lambda: vt.verify(TICKET, SECRET, now=IAT + 900, ledger=vt.NonceLedger()), "ticket_expired"),
         ]
         for label, call, code in cases:
             with self.subTest(label), self.assertRaises(vt.TicketError) as caught:
@@ -97,7 +97,7 @@ class TestVectorTests(unittest.TestCase):
             with self.subTest(index=index):
                 swapped = TICKET[:index] + ("A" if TICKET[index] != "A" else "B") + TICKET[index + 1:]
                 with self.assertRaises(vt.TicketError) as caught:
-                    vt.verify(swapped, SECRET, now=IAT + 60)
+                    vt.verify(swapped, SECRET, now=IAT + 60, ledger=vt.NonceLedger())
                 self.assertEqual(caught.exception.code, "ticket_invalid")
 
     def test_a_fresh_nonce_is_random_and_the_ticket_still_verifies(self):
@@ -111,10 +111,40 @@ class TestVectorTests(unittest.TestCase):
         self.assertEqual(len(ledger), 2)
 
 
+class SafetyTests(unittest.TestCase):
+    """Security review 2026-10-22: verify() skipped the replay check when the ledger was left out, and a secret of
+    32 spaces counted as a secret."""
+
+    def test_verify_refuses_to_run_without_a_ledger(self):
+        for call in (lambda: vt.verify(TICKET, SECRET, now=IAT + 60),
+                     lambda: vt.verify(TICKET, SECRET, now=IAT + 60, ledger=None),
+                     lambda: vt.verify(TICKET, SECRET, now=IAT + 60, ledger=object())):
+            with self.assertRaises(TypeError):
+                call()
+
+    def test_the_same_ticket_twice_is_a_replay(self):
+        ledger = vt.NonceLedger()
+        vt.verify(TICKET, SECRET, now=IAT + 60, ledger=ledger)
+        with self.assertRaises(vt.TicketError) as caught:
+            vt.verify(TICKET, SECRET, now=IAT + 61, ledger=ledger)
+        self.assertEqual((caught.exception.code, caught.exception.close_code), ("ticket_replayed", 4401))
+
+    def test_spaces_do_not_count_towards_the_secret_length(self):
+        for secret in (" " * 32, " " * 200, "\t" * 40, " " + "x" * 31 + " "):
+            with self.subTest(secret=repr(secret)), self.assertRaises(ValueError):
+                vt.sign(secret, vector_config(), now=IAT)
+        # A real secret with spaces around it still signs with the value as written.
+        padded = " " + SECRET + " "
+        ticket, _ = vt.sign(padded, vector_config(), now=IAT, nonce=NONCE)
+        self.assertEqual(vt.verify(ticket, padded, now=IAT + 1, ledger=vt.NonceLedger())["nonce"], NONCE)
+        with self.assertRaises(vt.TicketError):
+            vt.verify(ticket, SECRET, now=IAT + 1, ledger=vt.NonceLedger())
+
+
 class VerifyStepTests(unittest.TestCase):
     def assertInvalid(self, ticket, code="ticket_invalid", now=IAT + 60):
         with self.assertRaises(vt.TicketError) as caught:
-            vt.verify(ticket, SECRET, now=now)
+            vt.verify(ticket, SECRET, now=now, ledger=vt.NonceLedger())
         self.assertEqual(caught.exception.code, code)
 
     def test_shape_is_checked_before_anything_else(self):
@@ -146,11 +176,11 @@ class VerifyStepTests(unittest.TestCase):
             with self.subTest(label):
                 self.assertInvalid(signed(payload))
         # The same construction with nothing wrong passes, so the cases above fail for the reason named.
-        self.assertEqual(vt.verify(signed(canonical(good_payload())), SECRET, now=IAT + 60)["nonce"], NONCE)
-        self.assertEqual(vt.verify(signed(canonical(good_payload(iat=IAT + 120, exp=IAT + 1020))), SECRET, now=IAT + 60)["iat"], IAT + 120)
+        self.assertEqual(vt.verify(signed(canonical(good_payload())), SECRET, now=IAT + 60, ledger=vt.NonceLedger())["nonce"], NONCE)
+        self.assertEqual(vt.verify(signed(canonical(good_payload(iat=IAT + 120, exp=IAT + 1020))), SECRET, now=IAT + 60, ledger=vt.NonceLedger())["iat"], IAT + 120)
 
     def test_expiry_boundary(self):
-        self.assertEqual(vt.verify(TICKET, SECRET, now=IAT + 899)["exp"], IAT + 900)
+        self.assertEqual(vt.verify(TICKET, SECRET, now=IAT + 899, ledger=vt.NonceLedger())["exp"], IAT + 900)
         self.assertInvalid(TICKET, "ticket_expired", now=IAT + 900)
         self.assertInvalid(TICKET, "ticket_expired", now=IAT + 10 ** 6)
 
@@ -162,7 +192,7 @@ class VerifyStepTests(unittest.TestCase):
         self.assertEqual(len(ledger), 1)
 
     def test_secrets_shorter_than_32_characters_are_refused(self):
-        for call in (lambda: vt.sign("x" * 31, vector_config(), now=IAT), lambda: vt.verify(TICKET, "x" * 31, now=IAT)):
+        for call in (lambda: vt.sign("x" * 31, vector_config(), now=IAT), lambda: vt.verify(TICKET, "x" * 31, now=IAT, ledger=vt.NonceLedger())):
             with self.assertRaises(ValueError) as caught:
                 call()
             self.assertNotIsInstance(caught.exception, vt.TicketError)
@@ -211,7 +241,7 @@ class FullStoreTests(unittest.TestCase):
                 ticket, _ = vt.sign(SECRET, config, now=IAT, nonce=NONCE)
                 self.assertLessEqual(len(ticket), vt.MAX_CHARS, label)
                 self.assertGreater(len(ticket), 30000, "the full store really is large")
-                self.assertEqual(vt.verify(ticket, SECRET, now=IAT + 1)["config"], json.loads(vc.canonical_json(config)))
+                self.assertEqual(vt.verify(ticket, SECRET, now=IAT + 1, ledger=vt.NonceLedger())["config"], json.loads(vc.canonical_json(config)))
 
 
 if __name__ == "__main__":
