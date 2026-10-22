@@ -1056,4 +1056,88 @@ def attach_studio(application, ctx, agent=None):
         return {"month": month, "agent_status": agent_status, "gpu_usd_per_hour": gpu_rate, "users": users,
                 "note": "est_gpu_usd is gpu_seconds times gpu_usd_per_hour: an estimate until the gateway bills at GPU cost (D-V8)."}
 
+    @application.get(PREFIX + "/admin/studio/report")
+    async def studio_report(request: Request):
+        """The monthly credits report the owner invoices from (no payment gateway: invoices are manual).
+
+        Computed from studio_ledger only. Month = Asia/Taipei calendar month. A balance here is the credits
+        an account still holds (studio_accounts.balance + reserved). An op's consumption (its reserve minus
+        its refund) belongs to the month of its settle/refund row, so an op reserved on the 31st and settled
+        on the 1st counts in the new month; until then it is held, shown as reserved_at_close. Per account:
+        opening + granted - consumed - expired == closing."""
+        current_user(request, admin=True)
+        month = request.query_params.get("month") or datetime.fromtimestamp(studio.now() + TAIPEI_OFFSET_S, timezone.utc).strftime("%Y-%m")
+        if not MONTH.fullmatch(month):
+            fail("invalid_input", "Choose a valid reporting month.")
+        return await run_in_threadpool(_report, month)
+
+    def _report(month):
+        utc_start, utc_end = _month_bounds(month)
+        start, end = utc_start - TAIPEI_OFFSET_S, utc_end - TAIPEI_OFFSET_S
+        rows = {}
+
+        def row(user_id):
+            if user_id not in rows:
+                rows[user_id] = {"user_id": user_id, "email": None, "name": None, "plan": None, "opening_balance": 0,
+                                 "credits_granted": 0, "grants": [], "credits_consumed": 0, "credits_expired": 0,
+                                 "closing_balance": 0, "reserved_at_close": 0, "videos_exported": 0, "ops": 0}
+            return rows[user_id]
+
+        with store.connect() as con:
+            for r in con.execute("SELECT user_id, SUM(delta) AS total FROM studio_ledger WHERE kind IN ('grant','expire') AND created_at<? GROUP BY user_id",
+                                 (start,)).fetchall():
+                row(r["user_id"])["opening_balance"] += int(r["total"] or 0)
+            for r in con.execute("SELECT user_id, kind, delta, note, created_at FROM studio_ledger WHERE kind IN ('grant','expire') "
+                                 "AND created_at>=? AND created_at<? ORDER BY created_at, id", (start, end)).fetchall():
+                item = row(r["user_id"])
+                if r["kind"] == "grant":
+                    item["credits_granted"] += int(r["delta"])
+                    item["grants"].append({"credits": int(r["delta"]), "note": r["note"], "created_at": int(r["created_at"])})
+                else:
+                    item["credits_expired"] -= int(r["delta"])
+            # One row per op from its ledger rows: when it ended (settle or refund row) and what it consumed.
+            # A free op (0 credits) that failed writes no settle or refund row; its terminal op row dates it.
+            ops = con.execute(
+                "SELECT l.user_id AS user_id, o.type AS type, o.state AS state, o.updated_at AS updated_at, "
+                "MIN(CASE WHEN l.kind IN ('settle','refund') THEN l.created_at END) AS ended_at, "
+                "SUM(CASE WHEN l.kind='settle' THEN 1 ELSE 0 END) AS settles, "
+                "-SUM(CASE WHEN l.kind='reserve' THEN l.delta ELSE 0 END) AS reserved, "
+                "-SUM(CASE WHEN l.kind IN ('reserve','refund') THEN l.delta ELSE 0 END) AS consumed "
+                "FROM studio_ledger l JOIN studio_ops o ON o.op_id=l.op_id "
+                "WHERE l.op_id IS NOT NULL AND l.created_at<? GROUP BY l.user_id, l.op_id, o.type, o.state, o.updated_at", (end,)).fetchall()
+            for r in ops:
+                ended_at, reserved, consumed = r["ended_at"], int(r["reserved"] or 0), int(r["consumed"] or 0)
+                if ended_at is None and not reserved and r["state"] in TERMINAL and r["updated_at"] < end:
+                    ended_at = r["updated_at"]
+                if ended_at is None:
+                    if reserved:
+                        row(r["user_id"])["reserved_at_close"] += reserved
+                elif ended_at < start:
+                    row(r["user_id"])["opening_balance"] -= consumed
+                else:
+                    item = row(r["user_id"])
+                    item["credits_consumed"] += consumed
+                    item["ops"] += 1
+                    if r["type"] == "export" and int(r["settles"] or 0):
+                        item["videos_exported"] += 1
+            for item in rows.values():
+                item["closing_balance"] = item["opening_balance"] + item["credits_granted"] - item["credits_consumed"] - item["credits_expired"]
+            users = [item for item in rows.values()
+                     if any(item[k] for k in ("opening_balance", "closing_balance", "credits_granted", "credits_consumed", "credits_expired", "ops"))]
+            ids = [item["user_id"] for item in users]
+            if ids:
+                marks = ",".join("?" * len(ids))
+                known = {r["id"]: r for r in con.execute("SELECT id, email, name FROM users WHERE id IN (" + marks + ")", tuple(ids)).fetchall()}
+                plans = {r["user_id"]: r["plan"] for r in con.execute("SELECT user_id, plan FROM studio_accounts WHERE user_id IN (" + marks + ")", tuple(ids)).fetchall()}
+                for item in users:
+                    if item["user_id"] in known:
+                        item["email"], item["name"] = known[item["user_id"]]["email"], known[item["user_id"]]["name"]
+                    item["plan"] = plans.get(item["user_id"])
+        users.sort(key=lambda item: ((item["email"] or "").lower(), item["user_id"]))
+        totals = {k: sum(item[k] for item in users) for k in ("opening_balance", "credits_granted", "credits_consumed", "credits_expired",
+                                                               "closing_balance", "reserved_at_close", "videos_exported", "ops")}
+        return {"month": month, "timezone": "Asia/Taipei", "period": {"start": start, "end": end}, "users": users, "totals": totals,
+                "note": "From the credit ledger. Consumption (settled charges net of refunds) counts in the Asia/Taipei month an op "
+                        "settled or was refunded, not the month it was reserved. Balances include reserved credits. Plan is the current plan."}
+
     return studio

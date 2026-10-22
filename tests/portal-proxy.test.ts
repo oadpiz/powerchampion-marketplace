@@ -501,6 +501,25 @@ describe("video studio routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(calls);
   });
 
+  it("allows the admin monthly report with only its month query, as a GET", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ users: [] })));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await GET(request("/admin/studio/report"))).status).toBe(200);
+    expect(fetchMock.mock.calls[0][0]).toBe(`${UP}/admin/studio/report`);
+    expect((await GET(request("/admin/studio/report?month=2027-02&owner=x&format=csv"))).status).toBe(200);
+    expect(fetchMock.mock.calls[1][0]).toBe(`${UP}/admin/studio/report?month=2027-02`);
+    for (const month of ["2027-13", "2027-00", "2027-1", "27-01", "2027-01-01", "", "2027-01%0A"]) {
+      expect((await GET(request(`/admin/studio/report?month=${month}`))).status, month).toBe(400);
+    }
+    for (const path of ["/admin/studio/report/export", "/admin/studio/report.csv", "/admin/studio/reports", "/studio/report"]) {
+      expect((await GET(request(path))).status, path).toBe(404);
+    }
+    expect((await POST(request("/admin/studio/report", "POST", {}))).status).toBe(404);
+    expect((await DELETE(request("/admin/studio/report", "DELETE"))).status).toBe(404);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("rewrites a studio 5xx to the generic service code and passes studio 4xx codes through", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", "");
     vi.stubGlobal("fetch", vi.fn()

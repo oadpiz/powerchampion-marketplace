@@ -379,6 +379,7 @@ b300-grafana-tunnel → Grafana（b300-31）→ Prometheus、annotations（b300-
 - **設定**：portal 需要 `PC_STUDIO_AGENT_URL`、`SHORTVIDEO_SERVICE_TOKEN`、`SHORTVIDEO_GRANT_SECRET`、`SHORTVIDEO_QUOTE_SECRET`（後三者與 shortvideo-api 相同；token 不可等於任一個 secret）。少一個就整個 studio 503。四個值只放 Dokploy 的 Environment，不寫進 compose。
 - **點數**：1 點＝NT$1 牌價。`POST /api/portal/admin/studio/credits/grant` `{user_id, credits, note?, plan?, period_end?}`（管理員限定，寫稽核 `admin.studio_credits_grant`；負數＝扣回，稽核 `admin.studio_credits_expire`，不能扣到可用餘額以下）。`plan` 是 `creator|merchant|agency`，決定 agent 端每日花費上限；第一次發點數沒給就用 `creator`。月初重置目前手動。
 - **用量**：`GET /api/portal/admin/studio/usage?month=YYYY-MM`：每位使用者的扣點／退點（portal 帳本）對照 agent 的牌價成本與 GPU 秒數。`est_gpu_usd` 是估算（D-V8 之前閘道仍以牌價計費）。agent 連不到時仍回 portal 的部分，`agent_status` 不是 `ok`。
+- **月報（開發票用）**：`GET /api/portal/admin/studio/report?month=YYYY-MM`（後台影片工作室「月報（開發票用）」分頁，可下載 CSV，UTF-8 含 BOM）。月份以台北時間計，數字只從 `studio_ledger` 算：每位使用者的期初餘額、本月發放（含每筆備註與日期）、本月消耗（已結算扣點減退點）、到期扣除、期末餘額、匯出影片數與步驟數，加上合計。餘額＝可用＋保留中。**歸屬規則**：一個步驟的消耗算在它結算（settle／refund 帳本列）的那個月，不是預留的那個月；月底預留、次月結算的步驟算次月，月底時列在「期末保留中」。恆等式：期初 + 發放 − 消耗 − 到期扣除 = 期末。方案是目前方案。1 點 = NT$1 牌價（Creator 1,000 點 NT$990、Merchant 4,000 點 NT$2,990、Agency 15,000 點 NT$9,900），可依方案或依消耗開發票；目前沒有金流，發票與發點都是手動。
 - **扣點流程**：報價（agent 簽章）→ portal 本地驗章 → 一個資料庫交易裡預扣（同時檢查冪等鍵、每個專案 1 個、每人 2 個進行中的工作、餘額）→ 送 agent。agent 回 4xx 立即退點；逾時或 5xx 進 `unknown`，由每 10 秒的 sweeper 向 agent 查詢後結算。portal 在預扣後當掉：120 秒後 agent 仍查無此工作就退點。失敗的工作只收已產出的部分（`produced_credits`）。
 - **對帳**：每位使用者 `studio_accounts.balance` 等於 `studio_ledger.delta` 的總和，`reserved` 等於進行中工作的點數總和。
   ```sql
