@@ -9,6 +9,7 @@ import re
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -664,6 +665,54 @@ class PublishTests(VoiceCase):
         self.assertEqual((body["changed"], body["version"], body["configSha256"]), (True, 2, self.recompiled(store_id, 2)[1]))
         self.assertEqual(self.details("voice.published")[1], {"version": 2, "configSha256": body["configSha256"], "kbChars": 10, "warnings": 1})
         self.assertEqual(self.store_row(store_id)["current_version"], 2)
+
+    def test_new_versions_are_capped_per_store_in_a_rolling_24_hours(self):
+        # Security review 2026-10-22: 60 change-and-apply rounds wrote 61 versions (1 MB) in 0.3 s.
+        self.assertEqual((vm.PUBLISH_LIMIT, vm.PUBLISH_WINDOW_SECONDS), (60, 86400))
+        client, store_id = self.merchant()
+        self.add_faq(client)
+        with mock.patch.object(vm, "PUBLISH_LIMIT", 3):
+            for n in range(3):
+                self.ok(self.post(client, "/me/voice/setup", {"greeting": "您好%d" % n}))
+                self.assertEqual(self.ok(self.post(client, "/me/voice/publish", {}))["version"], n + 1)
+            self.ok(self.post(client, "/me/voice/setup", {"greeting": "您好3"}))
+            self.error(self.post(client, "/me/voice/publish", {}), 429, "voice_publish_limit")
+            self.assertEqual((len(self.published(store_id)), len(self.audit("voice.published"))), (3, 3))
+            self.assertEqual(self.store_row(store_id)["current_version"], 3)
+            # Applying what is already applied is never refused and makes no version.
+            self.ok(self.post(client, "/me/voice/setup", {"greeting": "您好2"}))
+            self.assertEqual(self.ok(self.post(client, "/me/voice/publish", {}))["changed"], False)
+            # Another store has its own count.
+            other, other_id = self.merchant("b@example.test")
+            self.add_faq(other)
+            self.assertEqual(self.ok(self.post(other, "/me/voice/publish", {}))["version"], 1)
+            # Rolling: once the oldest version is more than 24 hours old, one more is allowed.
+            with self.store.connect() as con:
+                oldest = con.execute("SELECT id FROM audit_events WHERE action='voice.published' AND target_id=? "
+                                     "ORDER BY created_at LIMIT 1", (store_id,)).fetchone()[0]
+                con.execute("UPDATE audit_events SET created_at=created_at-86401 WHERE id=?", (oldest,))
+            self.ok(self.post(client, "/me/voice/setup", {"greeting": "您好4"}))
+            self.assertEqual(self.ok(self.post(client, "/me/voice/publish", {}))["version"], 4)
+            self.ok(self.post(client, "/me/voice/setup", {"greeting": "您好5"}))
+            self.error(self.post(client, "/me/voice/publish", {}), 429, "voice_publish_limit")
+
+    def test_concurrent_publishes_never_pass_the_cap(self):
+        client, store_id = self.merchant()
+        self.add_faq(client)
+        start = threading.Barrier(12)
+
+        def attempt(n):
+            start.wait(timeout=15)
+            self.post(client, "/me/voice/setup", {"greeting": "您好%d" % n})
+            return self.post(client, "/me/voice/publish", {})
+
+        with mock.patch.object(vm, "PUBLISH_LIMIT", 2), ThreadPoolExecutor(max_workers=12) as pool:
+            responses = list(pool.map(attempt, range(12)))
+        self.assertTrue(all(r.status_code in (200, 429) for r in responses), [r.status_code for r in responses])
+        self.assertTrue(all(r.json()["error"] == "voice_publish_limit" for r in responses if r.status_code == 429))
+        versions = len(self.published(store_id))
+        self.assertLessEqual(versions, 2)
+        self.assertEqual(len([e for e in self.audit("voice.published") if e["target_id"] == store_id]), versions)
 
     def test_preview(self):
         client, store_id = self.merchant(name="晴光【規則】牙醫")
