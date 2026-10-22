@@ -965,23 +965,31 @@ class StudioOwnerDecisionTests(StudioCase):
         results, lock = [], threading.Lock()
 
         def one(i):
-            response = self.create(client, key="race-key-%04d" % i)
+            key = "race-key-%04d" % i
+            response = self.create(client, key=key)
             with lock:
-                results.append((response.status_code, response.json().get("error")))
+                results.append((key, response.status_code, response.json().get("error")))
         threads = [threading.Thread(target=one, args=(i,)) for i in range(31)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
-        self.assertEqual(sorted(results, key=str), sorted([(201, None)] * 30 + [(429, "studio_draft_limit")], key=str))
+        self.assertEqual(sorted(((status, error) for _, status, error in results), key=str), [(201, None)] * 30 + [(429, "studio_draft_limit")], results)
+        # Which of the 31 keys loses depends on thread scheduling; take the keys from the results, never assume one.
+        won = sorted(key for key, status, _ in results if status == 201)
+        (lost,) = [key for key, status, _ in results if status == 429]
         self.assertEqual(len(rows(self.store, "studio_ops")), 30)
+        self.assertEqual(sorted(o["idempotency_key"] for o in rows(self.store, "studio_ops")), won)
         self.assertEqual(client.get(BASE + "/studio/credits").json()["drafts"]["remaining"], 0)
         calls = len(self.agent.calls)
         late = self.create(client)
         self.assertEqual((late.status_code, late.json()["error"]), (429, "studio_draft_limit"))
+        # The refused key left nothing behind: retrying it is a new create, refused again, not a replay.
+        retried = self.create(client, key=lost)
+        self.assertEqual((retried.status_code, retried.json()["error"]), (429, "studio_draft_limit"))
         self.assertEqual(len(self.agent.calls), calls, "the cap is checked before any agent call")
         # A replay of an accepted create is not a new draft.
-        self.assertEqual(self.create(client, key="race-key-0000").status_code, 200)
+        self.assertEqual(self.create(client, key=won[0]).status_code, 200)
         # A storyboard redo through the ops route counts too.
         pid = next(o["project_id"] for o in rows(self.store, "studio_ops"))
         self.agent.finish(next(o["op_id"] for o in rows(self.store, "studio_ops") if o["project_id"] == pid))
