@@ -1,4 +1,5 @@
-"""Operator (營運) phone-agent routes: phase1-contract.md §4, A1-A8 (with amendments A1-A9).
+"""Operator (營運) phone-agent routes: phase1-contract.md §4, A1-A8 (with amendments A1-A9); A7 and A8 refuse
+changing or deleting a number that calls refer to (phase2-contract.md §4.4, 409 number_in_use).
 
 Every route, in this order (contract §1.1, steps 1 and 2 swapped for /admin):
 1. ctx.current_user(request, admin=True) -> 401 auth_required / 403 admin_required. server/test_routes.py requires
@@ -259,6 +260,16 @@ def _number_fields(con, body, *, replace):
             "active_to": None if last is None else last_start + DAY_SECONDS, "note": note}
 
 
+# Phase 2: columns a number row keeps once a call refers to it (only active_to and note may still change).
+FIXED_ONCE_USED = ("number", "store_id", "purpose", "channel", "active_from")
+NUMBER_IN_USE = ("This number already has %d call(s); only the end date and note can change. To move it to another "
+                 "store, set an end date and add a new entry.")
+
+
+def _calls_using(con, number_id):
+    return int(con.execute("SELECT COUNT(*) FROM voice_calls WHERE number_id=?", (number_id,)).fetchone()[0])
+
+
 # ---------------------------------------------------------------- routes
 
 
@@ -388,6 +399,11 @@ def attach_admin_voice(application, ctx):
             fields = _number_fields(con, body, replace=True)
             if all(current[column] == value for column, value in fields.items()):
                 return {"number": _one_number(con, number_id)}
+            # Phase 2 (phase2-contract §4.4): once calls point at this row, only the end date and the note may change;
+            # moving it to another store or number would leave the old calls attributed to a row that no longer says so.
+            calls = _calls_using(con, number_id)
+            if calls and any(current[column] != fields[column] for column in FIXED_ONCE_USED):
+                fail("number_in_use", NUMBER_IN_USE % calls, 409)
             row = vs.update_number(con, number_id, **fields)  # the overlap check ignores this row itself
             store.audit(con, "admin.voice_number_updated", admin["id"], number_id, _number_audit(row))
             return {"number": _one_number(con, number_id)}
@@ -399,6 +415,9 @@ def attach_admin_voice(application, ctx):
         with store.connect() as con:
             admin_lock(con, admin)
             row = number_or_404(con, number_id)
+            calls = _calls_using(con, number_id)
+            if calls:
+                fail("number_in_use", NUMBER_IN_USE % calls, 409)
             vs.delete_number(con, number_id)
             store.audit(con, "admin.voice_number_deleted", admin["id"], number_id, _number_audit(row))
         return {"ok": True}

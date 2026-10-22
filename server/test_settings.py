@@ -62,7 +62,9 @@ class GrafanaUrlSettingTests(unittest.TestCase):
 
 
 TEST_SECRET = "test-only-not-a-secret-0000000000"
-VOICE_ENV = ("PC_VOICE_ENABLED", "PC_VOICE_TRY_SECRET", "PC_VOICE_TRY_URL")
+VOICE_ENV = ("PC_VOICE_ENABLED", "PC_VOICE_TRY_SECRET", "PC_VOICE_TRY_URL", "PC_VOICE_RUNTIME_TOKEN", "PC_VOICE_MEDIA_URL",
+             "PC_VOICE_MEDIA_SECRET")
+RUNTIME_TOKEN = "test-only-runtime-token-0000000000"
 
 
 class VoiceSettingTests(unittest.TestCase):
@@ -140,6 +142,41 @@ class VoiceSettingTests(unittest.TestCase):
                     "https://try example.test", ""):
             with self.subTest(url=url):
                 self.assertEqual(Settings(voice_try_url=url).voice_try_origin, "")
+
+
+class VoiceRuntimeSettingTests(unittest.TestCase):
+    """Phase 2 (phase2-contract §1.7): the runtime token and the content-link URL and secret."""
+    from_env = VoiceSettingTests.from_env
+
+    def test_defaults_are_unconfigured(self):
+        for s in (Settings(), self.from_env()):
+            self.assertEqual((s.voice_runtime_token, s.voice_media_url, s.voice_media_secret), ("", "", ""))
+            self.assertFalse(s.voice_runtime_configured)
+            self.assertFalse(s.voice_media_available)
+
+    def test_reads_env(self):
+        s = self.from_env(PC_VOICE_RUNTIME_TOKEN=RUNTIME_TOKEN, PC_VOICE_MEDIA_URL=" https://media.example.test/ ",
+                          PC_VOICE_MEDIA_SECRET=TEST_SECRET)
+        self.assertEqual(s.voice_runtime_token, RUNTIME_TOKEN)
+        self.assertTrue(s.voice_runtime_configured)
+        self.assertEqual(s.voice_media_origin, "https://media.example.test")
+        self.assertTrue(s.voice_media_available)
+
+    def test_short_or_blank_values_are_unconfigured_and_never_stop_startup(self):
+        for token in ("", RUNTIME_TOKEN[:31], " " * 40, " " + RUNTIME_TOKEN[:31] + " "):
+            with self.subTest(token=repr(token)):
+                self.assertFalse(self.from_env(PC_VOICE_ENABLED="1", PC_VOICE_RUNTIME_TOKEN=token).voice_runtime_configured)
+        self.assertTrue(Settings(voice_runtime_token=RUNTIME_TOKEN + "\n").voice_runtime_configured)
+        for url, secret in (("https://media.example.test", TEST_SECRET[:31]), ("https://media.example.test", " " * 40),
+                            ("http://media.example.test", TEST_SECRET), ("https://media.example.test/v1", TEST_SECRET), ("", TEST_SECRET)):
+            with self.subTest(url=url, secret=repr(secret)):
+                self.assertFalse(Settings(voice_media_url=url, voice_media_secret=secret).voice_media_available)
+        self.assertTrue(Settings(voice_media_url="http://localhost:8098", voice_media_secret=TEST_SECRET).voice_media_available)
+
+    def test_secrets_are_not_in_repr(self):
+        text = repr(Settings(voice_runtime_token=RUNTIME_TOKEN, voice_media_secret=TEST_SECRET))
+        self.assertNotIn(RUNTIME_TOKEN, text)
+        self.assertNotIn(TEST_SECRET, text)
 
 
 if __name__ == "__main__":

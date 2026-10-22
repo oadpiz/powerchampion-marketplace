@@ -15,8 +15,10 @@ EXPECTED_TABLES = {
     "studio_accounts", "studio_projects", "studio_ops", "studio_ledger", "studio_rate",
 }
 VOICE_TABLES = {"voice_stores", "voice_store_hours", "voice_store_closures", "voice_faqs", "voice_config_versions", "voice_numbers"}
-EXPECTED_TABLES = EXPECTED_TABLES | VOICE_TABLES
-HEAD = "0008_audit_action_index"
+CALL_TABLES = {"voice_calls", "voice_call_reviews", "voice_listening_logs"}
+EXPECTED_TABLES = EXPECTED_TABLES | VOICE_TABLES | CALL_TABLES
+HEAD = "0009_voice_calls"
+AUDIT_INDEXES = ["audit_events_action_actor_time", "audit_events_action_target_time"]
 
 
 class MigrationTests(unittest.TestCase):
@@ -46,8 +48,9 @@ class MigrationTests(unittest.TestCase):
             names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'")}
         # 13 legacy indexes + alloc_nodes_engineer (0003) + 5 studio indexes (0005)
         # + voice_faqs_store, voice_numbers_number (0007)
-        # + audit_events_action_target_time (0008)
-        self.assertEqual(len(names), 22, names)
+        # + audit_events_action_target_time (0008) + voice_calls_store_time, voice_calls_time, voice_calls_number,
+        # audit_events_action_actor_time (0009)
+        self.assertEqual(len(names), 26, names)
         self.assertLessEqual({"ux_studio_ops_active", "ix_studio_ops_state", "ix_studio_ops_user_state",
                               "ix_studio_projects_user_created", "ix_studio_ledger_user_created"}, names)
 
@@ -214,6 +217,7 @@ class MigrationTests(unittest.TestCase):
         store = Store(self.db.url)
         self.assertEqual(self._versions(store), [HEAD])
         self.assertLessEqual(VOICE_TABLES, set(self.db.table_names()))
+        downgrade_to(self.db.url, "0008_audit_action_index")  # 0009 refers to these tables; it has its own test
         with store.connect() as con:
             con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
                         ("u1", "owner@clinic.example", "owner", "unused", "customer", 1))
@@ -255,9 +259,9 @@ class MigrationTests(unittest.TestCase):
         upgrade_to_head(self.db.url)
         self.assertEqual(self._versions(store), [HEAD])
         with store.connect() as con:
-            for table in sorted(VOICE_TABLES):
+            for table in sorted(VOICE_TABLES | CALL_TABLES):
                 self.assertEqual(con.execute('SELECT COUNT(*) FROM "' + table + '"').fetchone()[0], 0, table)
-        self.assertEqual(self._snapshot(store, others), before)
+        self.assertEqual(self._snapshot(store, others - CALL_TABLES), before)
 
     def _audit_indexes(self, store):
         with store.connect() as con:
@@ -273,7 +277,7 @@ class MigrationTests(unittest.TestCase):
         from server.store import Store
         store = Store(self.db.url)
         self.assertEqual(self._versions(store), [HEAD])
-        self.assertEqual(self._audit_indexes(store), ["audit_events_action_target_time"])
+        self.assertEqual(self._audit_indexes(store), AUDIT_INDEXES)
         with store.connect() as con:
             for i in range(3):
                 store.audit(con, "voice.published", None, "s" * 32, {"version": i + 1})
@@ -289,8 +293,77 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(self._snapshot(store, {"audit_events"}), before)
         upgrade_to_head(self.db.url)
         self.assertEqual(self._versions(store), [HEAD])
-        self.assertEqual(self._audit_indexes(store), ["audit_events_action_target_time"])
+        self.assertEqual(self._audit_indexes(store), AUDIT_INDEXES)
         self.assertEqual(self._snapshot(store, {"audit_events"}), before)
+
+    def test_voice_calls_upgrade_and_downgrade(self):
+        from server.store import Store
+        store = Store(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        self.assertLessEqual(CALL_TABLES, set(self.db.table_names()))
+        call = {"id": "c" * 32, "call_id": "1797815702.118", "entry": "pstn", "dialed": "+886227001001", "number_id": "n" * 32,
+                "store_id": "s" * 32, "number_purpose": "customer", "started_at": 100, "ended_at": 259, "duration_s": 159,
+                "disposition": "ANSWERED", "caller_tail": "678", "caller_kind": "mobile", "outcome": "answered",
+                "retention_days_snapshot": 90, "meter_units": 1, "meter_reason": "ai_speech", "meter_rule": "q5-draft-1",
+                "received_at": 300, "updated_at": 300}
+        with store.connect() as con:
+            con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
+                        ("u1", "owner@clinic.example", "owner", "unused", "admin", 1))
+            con.execute("INSERT INTO voice_stores (id,owner_user_id,name,industry,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+                        ("s" * 32, "u1", "Clinic", "clinic", 1, 1))
+            con.execute("INSERT INTO voice_numbers (id,number,store_id,purpose,channel,active_from,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                        ("n" * 32, "+886227001001", "s" * 32, "customer", "pstn", 1, 1, 1))
+            names = sorted(call)
+            con.execute("INSERT INTO voice_calls (" + ",".join(names) + ") VALUES (" + ",".join("?" * len(names)) + ")",
+                        tuple(call[n] for n in names))
+            row = con.execute("SELECT ai_answered, message_outcome, auto_flags, mismatch, metrics, message_final, content_expected "
+                              "FROM voice_calls").fetchone()
+            self.assertEqual(tuple(row), (0, "none", "[]", "[]", "{}", 0, 0))
+            con.execute("INSERT INTO voice_call_reviews (call_row_id,score,status,reviewer_id,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+                        ("c" * 32, 3, "open", "u1", 1, 1))
+            con.execute("INSERT INTO voice_listening_logs (id,title,kind,held_on,sample_count,rater_count,created_by,created_at,updated_at) "
+                        "VALUES (?,?,?,?,?,?,?,?,?)", ("l" * 32, "G0", "tts_voice", "2026-10-22", 20, 3, "u1", 1, 1))
+        # a second row with the same call_id is refused (the last line of defence of §3.4)
+        with self.assertRaises(store.IntegrityError):
+            with store.connect() as con:
+                con.execute("INSERT INTO voice_calls (" + ",".join(names) + ") VALUES (" + ",".join("?" * len(names)) + ")",
+                            tuple(("d" * 32 if n == "id" else call[n]) for n in names))
+        for sql in ("UPDATE voice_calls SET entry='sip'", "UPDATE voice_calls SET disposition='ANSWER'",
+                    "UPDATE voice_calls SET caller_kind='pager'", "UPDATE voice_calls SET caller_tail='0912'",
+                    "UPDATE voice_calls SET duration_s=14401", "UPDATE voice_calls SET duration_s=-1",
+                    "UPDATE voice_calls SET outcome='done'", "UPDATE voice_calls SET message_outcome='ai_answered'",
+                    "UPDATE voice_calls SET handoff_reason='bored'", "UPDATE voice_calls SET degrade_reason='gpu'",
+                    "UPDATE voice_calls SET callback_via='sms'", "UPDATE voice_calls SET meter_units=2",
+                    "UPDATE voice_calls SET ai_answered=2", "UPDATE voice_calls SET content_expected=-1",
+                    "UPDATE voice_calls SET retention_days_snapshot=91", "UPDATE voice_calls SET retention_days_reported=0",
+                    "UPDATE voice_calls SET store_flag_kind='rude'", "UPDATE voice_calls SET number_purpose='sales'",
+                    "UPDATE voice_calls SET recording_mode='video'", "UPDATE voice_calls SET ai_speech_ms=-1",
+                    "UPDATE voice_call_reviews SET score=6", "UPDATE voice_call_reviews SET score=0",
+                    "UPDATE voice_call_reviews SET status='closed'", "UPDATE voice_listening_logs SET kind='music'",
+                    "UPDATE voice_listening_logs SET sample_count=0", "UPDATE voice_listening_logs SET rater_count=51",
+                    "UPDATE voice_listening_logs SET passed=2", "UPDATE voice_listening_logs SET held_on='2026-1-1'"):
+            with self.assertRaises(store.IntegrityError, msg=sql):
+                with store.connect() as con:
+                    con.execute(sql)
+        others = set(self.db.table_names()) - CALL_TABLES - {"alembic_version"}
+        before = self._snapshot(store, others)
+        downgrade_to(self.db.url, "0008_audit_action_index")
+        self.assertEqual(self._versions(store), ["0008_audit_action_index"])
+        self.assertEqual(set(self.db.table_names()) - {"alembic_version"}, others)
+        self.assertEqual(self._audit_indexes(store), ["audit_events_action_target_time"])
+        self.assertEqual(self._snapshot(store, others), before)
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        self.assertEqual(self._audit_indexes(store), AUDIT_INDEXES)
+        with store.connect() as con:
+            for table in sorted(CALL_TABLES):
+                self.assertEqual(con.execute('SELECT COUNT(*) FROM "' + table + '"').fetchone()[0], 0, table)
+            if self.db.backend == "sqlite":
+                plan = " ".join(str(r[-1]) for r in con.execute(
+                    "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM audit_events WHERE action IN (?,?) AND actor_id=? AND created_at>?",
+                    ("voice.call_content_link", "admin.voice_call_content_link", "u1", 0)).fetchall())
+                self.assertIn("audit_events_action_actor_time", plan)
+        self.assertEqual(self._snapshot(store, others), before)
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":
