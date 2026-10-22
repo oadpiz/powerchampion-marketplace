@@ -12,8 +12,9 @@ EXPECTED_TABLES = {
     "login_attempts", "trial_sessions", "trial_requests", "agents", "agent_versions",
     "runtime_tasks", "runtime_references", "runtime_events", "runtime_instructions",
     "runtime_approvals", "runtime_artifacts", "alloc_engineers", "alloc_nodes", "alloc_meta",
+    "studio_accounts", "studio_projects", "studio_ops", "studio_ledger", "studio_rate",
 }
-HEAD = "0004_engineer_accounts"
+HEAD = "0006_studio_expired"
 
 
 class MigrationTests(unittest.TestCase):
@@ -41,8 +42,10 @@ class MigrationTests(unittest.TestCase):
         upgrade_to_head(self.db.url)
         with sqlite3.connect(self.db.path) as con:
             names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'")}
-        # 13 legacy indexes + alloc_nodes_engineer (0003)
-        self.assertEqual(len(names), 14, names)
+        # 13 legacy indexes + alloc_nodes_engineer (0003) + 5 studio indexes (0005)
+        self.assertEqual(len(names), 19, names)
+        self.assertLessEqual({"ux_studio_ops_active", "ix_studio_ops_state", "ix_studio_ops_user_state",
+                              "ix_studio_projects_user_created", "ix_studio_ledger_user_created"}, names)
 
     def test_store_on_pre_alembic_sqlite_keeps_data(self):
         if self.db.backend != "sqlite":
@@ -146,6 +149,54 @@ class MigrationTests(unittest.TestCase):
         with store.connect() as con:
             row = con.execute("SELECT user_id, key_updated_revision, key_updated_by FROM alloc_engineers WHERE username='justin'").fetchone()
             self.assertEqual(tuple(row), (None, None, None))
+
+    def _index_sql(self, store, name):
+        with store.connect() as con:
+            if self.db.backend == "sqlite":
+                return con.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?", (name,)).fetchone()[0]
+            return con.execute("SELECT indexdef FROM pg_indexes WHERE schemaname='public' AND indexname=?", (name,)).fetchone()[0]
+
+    def test_studio_tables_partial_index_and_downgrade(self):
+        from server.store import Store
+        store = Store(self.db.url)
+        definition = self._index_sql(store, "ux_studio_ops_active")
+        self.assertIn("UNIQUE", definition.upper())
+        self.assertIn("WHERE", definition.upper())
+        self.assertIn("reserved", definition)
+        with store.connect() as con:
+            con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES ('u1','u1@example.test','u1','x','customer',1)")
+            con.execute("INSERT INTO studio_projects (id,user_id,created_at) VALUES ('p1','u1',1)")
+            con.execute("INSERT INTO studio_accounts (user_id,balance) VALUES ('u1',5)")
+            con.execute("INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,credits_charged,idempotency_key) VALUES ('o0','u1','p1',2,'settled',2,'k0')")
+            con.execute("INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,idempotency_key) VALUES ('o1','u1','p1',2,'reserved','k1')")
+            con.execute("INSERT INTO studio_ledger (user_id,op_id,kind,delta) VALUES ('u1','o1','reserve',-2)")
+            con.execute("INSERT INTO studio_rate (user_id,bucket,window_start,hits) VALUES ('u1','quote',0,1)")
+        rejected = (
+            # a second active op on the project (partial unique index), for each active state
+            "INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,idempotency_key) VALUES ('o2','u1','p1',2,'submitted','k2')",
+            "INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,idempotency_key) VALUES ('o2','u1','p1',2,'unknown','k2')",
+            "INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,idempotency_key) VALUES ('o2','u1','p1',2,'done','k2')",
+            "INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,credits_charged,idempotency_key) VALUES ('o2','u1','p1',2,'settled',3,'k2')",
+            "INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,credits_charged,idempotency_key) VALUES ('o2','u1','p1',2,'settled',2,'k1')",
+            "INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,idempotency_key) VALUES ('o2','u1','nope',2,'reserved','k2')",
+            "UPDATE studio_accounts SET balance=-1 WHERE user_id='u1'",
+            "UPDATE studio_accounts SET reserved=-1 WHERE user_id='u1'",
+            "INSERT INTO studio_ledger (user_id,kind,delta) VALUES ('u1','gift',1)",
+            "INSERT INTO studio_accounts (user_id,balance) VALUES ('nobody',1)",
+        )
+        for sql in rejected:
+            with self.assertRaises(store.IntegrityError, msg=sql):
+                with store.connect() as con:
+                    con.execute(sql)
+        with store.connect() as con:  # another terminal op on the same project is fine
+            con.execute("INSERT INTO studio_ops (op_id,user_id,project_id,credits,state,credits_charged,idempotency_key) VALUES ('o3','u1','p1',2,'refunded',0,'k3')")
+        downgrade_to(self.db.url, "0004_engineer_accounts")
+        self.assertEqual(self._versions(store), ["0004_engineer_accounts"])
+        self.assertFalse({"studio_accounts", "studio_projects", "studio_ops", "studio_ledger", "studio_rate"} & set(self.db.table_names()))
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        with store.connect() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM studio_ops").fetchone()[0], 0)
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":

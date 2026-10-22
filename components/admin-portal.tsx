@@ -12,6 +12,7 @@ import { AdminGatewaySection } from "./admin-gateway-section";
 import { AdminKeysSection } from "./admin-keys-section";
 import { AdminPersonasSection } from "./admin-personas-section";
 import { AdminRedeemSection } from "./admin-redeem-section";
+import { AdminStudioSection } from "./admin-studio-section";
 import { OverviewSection } from "./admin-overview-section";
 import { AdminUsageSection } from "./admin-usage-section";
 import { useLocale } from "./locale-provider";
@@ -57,6 +58,7 @@ export function AdminPortal({
       en: "Credit requests",
       zh: "儲值申請",
     },
+    { section: "studio", href: "/admin/studio", en: "Video studio", zh: "影片工作室" },
     { section: "audit", href: "/admin/audit", en: "Audit log", zh: "操作紀錄" },
   ];
   const signedOut =
@@ -127,6 +129,7 @@ export function AdminPortal({
           {section === "allocation" && <AdminAllocationSection />}
           {section === "engineers" && <AdminEngineersSection />}
           {section === "credits" && <CreditsSection />}
+          {section === "studio" && <AdminStudioSection />}
           {section === "audit" && <AuditSection />}
         </>
       ) : null}

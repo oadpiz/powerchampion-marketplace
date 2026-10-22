@@ -14,6 +14,7 @@ export type RoutePath =
   | "/solutions"
   | "/account"
   | "/admin"
+  | "/studio"
   | "/login"
   | "/register"
   | "/platform"
@@ -63,6 +64,10 @@ export const ROUTE_METADATA = {
   },
   "/account": { title: "Your Account | Power Champion", description: "Manage your Power Champion account and model API access." },
   "/admin": { title: "Administration | Power Champion", description: "Power Champion platform administration." },
+  "/studio": {
+    title: "Video Studio | Power Champion",
+    description: "Make product videos with AI: storyboard, edit shot by shot, generate and export.",
+  },
   "/login": { title: "Sign In | Power Champion", description: "Sign in to your Power Champion account." },
   "/register": { title: "Create an Account | Power Champion", description: "Create your Power Champion account." },
   "/platform": { title: "Model Platform | Power Champion", description: "Explore, compare, test, and integrate model APIs in the Power Champion development platform." },

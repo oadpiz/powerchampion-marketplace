@@ -28,9 +28,10 @@ from .admin_redeem import attach_admin_redeem
 from .admin_engineers import attach_admin_engineers
 from .runtime_api import attach_runtime
 from .allocation import attach_allocation
+from .studio import attach_studio
 
 
-def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=None, runtime_tools=None):
+def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=None, runtime_tools=None, studio_agent=None):
     settings = settings or Settings.from_env()
     store = Store(settings.resolved_database_url)
     gateway = gateway if gateway is not None else GatewayAdapter(settings)
@@ -42,6 +43,9 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
             # Worker leases fence each claim; two loops also let an unrelated
             # customer's task progress during a slow model response.
             workers = [asyncio.create_task(application.state.runtime_engine.serve(stop)) for _ in range(2)]
+        if application.state.studio.sweeper_enabled:
+            # Settles studio ops left reserved/submitted/unknown (PC_STUDIO_SWEEPER=0 turns it off).
+            workers.append(asyncio.create_task(application.state.studio.serve(stop)))
         try:
             yield
         finally:
@@ -392,6 +396,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
     attach_admin_engineers(application, ctx)
     attach_runtime(application, store, settings, agents, current_user, body_json, runtime_model, runtime_tools)
     attach_allocation(application, store, current_user, body_json, PREFIX)
+    attach_studio(application, ctx, studio_agent)
     return application
 
 

@@ -25,9 +25,13 @@ const FLEET_MODEL = "[A-Za-z0-9._:-]{1,128}";
 const FLEET_MODEL_PATH = "(?:[A-Za-z0-9._:-]|%3[Aa]){1,128}";
 const FLEET_ACTION = "(freeze|resume|candidate|drain|approve|rollback)";
 const CODE = "[A-Za-z0-9_-]{1,64}";
+// Video studio: portal-generated project ids and op ids. The agent's /internal/v1/* API is never reachable from here.
+const STUDIO_ID = "[A-Za-z0-9_-]{1,64}";
+const STUDIO_PROJECT = `/studio/projects/${STUDIO_ID}`;
+const STUDIO_PROJECTS = /^\/studio\/projects$/;
 const routes: Record<string, readonly RegExp[]> = {
-  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`), /^\/admin\/(keys|usage|gateway)$/, new RegExp(`^/admin/gateway/nodes/${NODE}/jobs/${JOB}$`), /^\/admin\/allocation(\/export)?$/, /^\/me\/engineer$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}$`), /^\/admin\/gateway\/fleet\/events$/, new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/(status|timeline)$`), new RegExp(`^/admin/gateway/control/jobs/${JOB}$`), /^\/admin\/redeem\/codes(\/export)?$/, /^\/admin\/engineers$/],
-  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/password$/, new RegExp(`^/admin/customers/${AGENT}/(status|role|reset-password)$`), /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`), new RegExp(`^/admin/customers/${AGENT}/keys$`), new RegExp(`^/admin/keys/${KEY}/(disable|limits|balance)$`), new RegExp(`^/admin/gateway/models/${MODEL}/(toggle|maintenance)$`), new RegExp(`^/admin/gateway/nodes/${NODE}/ops/${NODE_ACTION}$`), /^\/admin\/allocation\/(engineers|owner|export\/mark)$/, new RegExp(`^/admin/allocation/engineers/${AGENT}(/status|/account|/account/unlink)?$`), new RegExp(`^/admin/allocation/nodes/${ALLOC_NODE}$`), /^\/me\/engineer\/ssh-key$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}/(revisions|activate|try)$`), new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/${FLEET_ACTION}$`), /^\/admin\/redeem\/codes$/, new RegExp(`^/admin/redeem/codes/${CODE}/disable$`)],
+  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`), /^\/admin\/(keys|usage|gateway)$/, new RegExp(`^/admin/gateway/nodes/${NODE}/jobs/${JOB}$`), /^\/admin\/allocation(\/export)?$/, /^\/me\/engineer$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}$`), /^\/admin\/gateway\/fleet\/events$/, new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/(status|timeline)$`), new RegExp(`^/admin/gateway/control/jobs/${JOB}$`), /^\/admin\/redeem\/codes(\/export)?$/, /^\/admin\/engineers$/, /^\/studio\/(templates|projects|credits)$/, new RegExp(`^${STUDIO_PROJECT}$`), new RegExp(`^${STUDIO_PROJECT}/ops/${STUDIO_ID}$`), /^\/admin\/studio\/usage$/],
+  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/password$/, new RegExp(`^/admin/customers/${AGENT}/(status|role|reset-password)$`), /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`), new RegExp(`^/admin/customers/${AGENT}/keys$`), new RegExp(`^/admin/keys/${KEY}/(disable|limits|balance)$`), new RegExp(`^/admin/gateway/models/${MODEL}/(toggle|maintenance)$`), new RegExp(`^/admin/gateway/nodes/${NODE}/ops/${NODE_ACTION}$`), /^\/admin\/allocation\/(engineers|owner|export\/mark)$/, new RegExp(`^/admin/allocation/engineers/${AGENT}(/status|/account|/account/unlink)?$`), new RegExp(`^/admin/allocation/nodes/${ALLOC_NODE}$`), /^\/me\/engineer\/ssh-key$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}/(revisions|activate|try)$`), new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/${FLEET_ACTION}$`), /^\/admin\/redeem\/codes$/, new RegExp(`^/admin/redeem/codes/${CODE}/disable$`), /^\/studio\/(projects|uploads)$/, new RegExp(`^${STUDIO_PROJECT}/(settings|quote|ops|delete|restore)$`), new RegExp(`^${STUDIO_PROJECT}/shots/[0-9]{1,3}/edit$`), /^\/admin\/studio\/credits\/grant$/],
   DELETE: [/^\/keys\/[a-zA-Z0-9_-]{1,80}$/, new RegExp(`^/agents/${AGENT}$`)],
 };
 /** Empty or dot segments, including ones hidden behind an encoded dot or an encoded slash, are never legitimate ids. */
@@ -97,7 +101,7 @@ async function proxy(request: Request) {
   if (!upstreamOrigin) return failure("service_unconfigured", "The account service is not configured yet. Please contact support.", 503);
 
   const target = new URL(`/api/portal${path}`, upstreamOrigin);
-  if ((path === "/usage" || path === "/admin/usage") && url.searchParams.has("month")) {
+  if ((path === "/usage" || path === "/admin/usage" || path === "/admin/studio/usage") && url.searchParams.has("month")) {
     const month = url.searchParams.get("month") ?? "";
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return failure("invalid_input", "Choose a valid reporting month.", 400);
     target.searchParams.set("month", month);
@@ -106,6 +110,17 @@ async function proxy(request: Request) {
     const rev = url.searchParams.get("rev") ?? "";
     if (!/^[1-9][0-9]{0,8}$/.test(rev)) return failure("invalid_input", "Choose a valid revision.", 400);
     target.searchParams.set("rev", rev);
+  }
+  if (request.method === "GET" && STUDIO_PROJECTS.test(path)) {
+    const cursor = url.searchParams.get("cursor");
+    const limit = url.searchParams.get("limit");
+    const deleted = url.searchParams.get("deleted");
+    if (cursor !== null && !/^[0-9]{1,12}_[A-Za-z0-9_-]{1,64}$/.test(cursor)) return failure("invalid_input", "Reload the project list.", 400);
+    if (limit !== null && !(/^[1-9][0-9]?$/.test(limit) && Number(limit) <= 50)) return failure("invalid_input", "Choose a limit from 1 to 50.", 400);
+    if (deleted !== null && deleted !== "1") return failure("invalid_input", "Use deleted=1 for the trash.", 400);
+    if (cursor !== null) target.searchParams.set("cursor", cursor);
+    if (limit !== null) target.searchParams.set("limit", limit);
+    if (deleted !== null) target.searchParams.set("deleted", deleted);
   }
   if (path === "/admin/gateway/fleet/events") {
     const modelId = url.searchParams.get("modelId");
@@ -158,6 +173,10 @@ async function proxy(request: Request) {
     // A persona try the gateway did not answer in time: the model may still have run, so it is not a plain outage.
     if (response.status === 504 && "error" in data && data.error === "gateway_timeout") {
       return failure("gateway_timeout", "The gateway did not answer in time. The model may still have run and used tokens.", 504);
+    }
+    // The studio before its agent is connected: a known state the studio screens explain, not an outage. Fixed text only.
+    if (response.status === 503 && path.startsWith("/studio/") && "error" in data && data.error === "studio_unconfigured") {
+      return failure("studio_unconfigured", "The video studio is not open yet.", 503);
     }
     if (response.status === 503 && "error" in data && data.error === "gateway_auth_failed") {
       return failure("gateway_auth_failed", "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN.", 503);

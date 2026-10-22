@@ -58,10 +58,39 @@ export function portalErrorText(error: unknown, locale: "en" | "zh") {
   return portalErrorCodeText(error, locale) ?? portalErrorStatusText(error, locale);
 }
 
+/** Video studio error codes (server/studio.py); a 5xx reaches the browser as service_unavailable (see studioErrorText), except studio_unconfigured. */
+const STUDIO_CODE_TEXT: Record<string, [string, string]> = {
+  studio_unconfigured: ["影片工作室尚未開放，開放後即可使用。如需提前試用，請聯絡我們。", "The video studio is not open yet. Contact us if you would like early access."],
+  studio_unavailable: ["影片服務暫時無法連線，請稍後再試。", "The video service is unreachable right now. Try again in a moment."],
+  studio_insufficient_credits: ["點數不足，無法執行這個步驟。", "You do not have enough credits for this step."],
+  studio_busy: ["這支影片正在處理中，請等目前的步驟完成後再試。", "This video is busy. Wait for the current step to finish."],
+  studio_needs_render: ["有鏡頭尚未產生，請先「產生全部」。", "Some shots are not generated yet. Generate them first."],
+  studio_needs_draft: ["請先產生分鏡。", "Generate the storyboard first."],
+  studio_stale_quote: ["價格已更新，請重新確認。", "The price changed. Please confirm again."],
+  studio_storage_full: ["儲存空間暫時已滿，請稍後再試。", "Storage is full for now. Please try again later."],
+  studio_conflict: ["這支影片的編號已被使用，請重新建立。", "This project id is already in use. Create the video again."],
+  studio_invalid_input: ["內容不符合要求，請檢查後再試。", "Check the details and try again."],
+  studio_not_found: ["找不到這支影片，或你沒有權限查看。", "This video was not found, or you cannot open it."],
+  studio_daily_cap: ["今日影片產生量已達上限，請明天再試。", "Today's video generation limit has been reached. Try again tomorrow."],
+  studio_rate_limited: ["操作太頻繁，請稍等一下再試。", "Too many requests. Wait a moment and try again."],
+  studio_draft_limit: [
+    "今天產生分鏡的次數已達上限（每天 30 次），明天再試，或聯絡我們。",
+    "You have used today's 30 free storyboards. Try again tomorrow, or contact us.",
+  ],
+  studio_too_large: ["檔案或內容太大。", "The file or request is too large."],
+  studio_voice_not_allowed: ["這個配音只供內部測試使用，請選擇其他配音。", "That voice is for internal tests only. Choose another voice."],
+  studio_no_licensed_voice: [
+    "目前沒有可對外使用的配音，暫時無法產生畫面與配音；開放授權配音後即可使用。",
+    "No licensed voice is available yet, so pictures and narration cannot be generated for now.",
+  ],
+};
+
 /** Copy for error codes that mean one specific thing; null when only the HTTP status is informative. */
 export function portalErrorCodeText(error: unknown, locale: "en" | "zh"): string | null {
   const status = error instanceof PortalError ? error.status : 503;
   const code = error instanceof PortalError ? error.code : "unavailable";
+  const studio = STUDIO_CODE_TEXT[code];
+  if (studio) return studio[locale === "zh" ? 0 : 1];
   if (code === "usage_pricing_incomplete")
     return locale === "zh"
       ? "部分模型的用量價格資料尚未完整，暫時無法顯示可靠的費用報表。請聯繫支援確認計費資料。"
@@ -195,6 +224,7 @@ export function engineerKeyStatusText(status: string, locale: "en" | "zh"): { la
 export function safeAccountReturn(value: string | null): string {
   if (!value) return "/account";
   if (/^(?:\/account(?:\/(?:keys|usage|credits|security|ssh-key))?|\/admin|\/tasks|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)) return value;
+  if (/^\/studio(?:\/(?:new|credits)|\/p\/[A-Za-z0-9_-]{1,64})?$/.test(value)) return value;
   const adminSection = /^\/admin\/([a-z]+)$/.exec(value)?.[1];
   if (adminSection && isAdminSection(adminSection)) return value;
   if (value.startsWith("/tasks?")) {

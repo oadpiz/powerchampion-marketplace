@@ -29,6 +29,22 @@ class Settings:
     runtime_encryption_key: str = field(default="", repr=False)
     # Base of the cluster Grafana for the admin Engineers page links; "" hides the links.
     grafana_url: str = "https://grafana.powerchampion.ai"
+    # Video studio (server/studio.py): the shortvideo-agent internal API on the Compose network and
+    # the three secrets shared with it. Any of the four missing = studio routes answer 503 studio_unconfigured.
+    studio_agent_url: str = ""
+    studio_service_token: str = field(default="", repr=False)
+    studio_grant_secret: str = field(default="", repr=False)
+    studio_quote_secret: str = field(default="", repr=False)
+    # The settlement sweeper (a lifespan task). Off by default here so tests and ad-hoc apps never
+    # start it; from_env turns it on unless PC_STUDIO_SWEEPER=0.
+    studio_sweeper: bool = False
+    studio_sweep_interval: float = 10.0
+    # Voices for internal tests only (spec D-V4): customers may not choose them, nor render a project that uses one.
+    studio_internal_voices: tuple = ("tw_ref", "test")
+    # Public origin of the shortvideo media host; the UI only loads media and sends uploads there (empty: not checked).
+    studio_media_origin: str = ""
+    # Drafts are free (owner decision Q3), so each user may start this many per Asia/Taipei day.
+    studio_drafts_per_day: int = 30
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -48,6 +64,18 @@ class Settings:
             grafana = urlsplit(self.grafana_url)
             if grafana.scheme != "https" or not grafana.hostname or grafana.username or grafana.password or grafana.query or grafana.fragment or grafana.path not in ("", "/"):
                 raise ValueError("PC_GRAFANA_URL must be empty or an HTTPS origin without credentials, path or query")
+        if self.studio_agent_url:
+            agent = urlsplit(self.studio_agent_url)
+            if agent.scheme not in ("http", "https") or not agent.hostname or agent.username or agent.password or agent.query or agent.fragment or agent.path not in ("", "/"):
+                raise ValueError("PC_STUDIO_AGENT_URL must be empty or an http(s) origin without credentials, path or query")
+        if self.studio_media_origin:
+            media = urlsplit(self.studio_media_origin)
+            if media.scheme not in ("http", "https") or not media.hostname or media.username or media.password or media.query or media.fragment or media.path not in ("", "/"):
+                raise ValueError("PC_STUDIO_MEDIA_ORIGIN must be empty or an http(s) origin without credentials, path or query")
+        if self.studio_sweep_interval <= 0:
+            raise ValueError("The studio sweep interval must be positive")
+        if isinstance(self.studio_drafts_per_day, bool) or not isinstance(self.studio_drafts_per_day, int) or not 0 <= self.studio_drafts_per_day <= 10_000:
+            raise ValueError("PC_STUDIO_DRAFTS_PER_DAY must be a whole number from 0 to 10000")
 
     @property
     def resolved_database_url(self):
@@ -56,6 +84,13 @@ class Settings:
         if self.db_path.startswith(("sqlite:///", "postgres://", "postgresql://", "postgresql+psycopg://")):
             return self.db_path
         return "sqlite:///" + self.db_path
+
+    @property
+    def studio_configured(self):
+        """All four studio values are set and the service token is not one of the signing secrets
+        (the agent refuses that combination too)."""
+        values = (self.studio_agent_url, self.studio_service_token, self.studio_grant_secret, self.studio_quote_secret)
+        return all(values) and self.studio_service_token not in (self.studio_grant_secret, self.studio_quote_secret)
 
     @property
     def trial_available(self):
@@ -96,4 +131,12 @@ class Settings:
             runtime_enabled=os.environ.get("PC_RUNTIME_ENABLED", "0") == "1",
             runtime_encryption_key=os.environ.get("PC_RUNTIME_ENCRYPTION_KEY", ""),
             grafana_url=os.environ.get("PC_GRAFANA_URL", "https://grafana.powerchampion.ai").strip().rstrip("/"),
+            studio_agent_url=os.environ.get("PC_STUDIO_AGENT_URL", "").strip().rstrip("/"),
+            studio_service_token=os.environ.get("SHORTVIDEO_SERVICE_TOKEN", ""),
+            studio_grant_secret=os.environ.get("SHORTVIDEO_GRANT_SECRET", ""),
+            studio_quote_secret=os.environ.get("SHORTVIDEO_QUOTE_SECRET", ""),
+            studio_sweeper=os.environ.get("PC_STUDIO_SWEEPER", "1") != "0",
+            studio_media_origin=os.environ.get("PC_STUDIO_MEDIA_ORIGIN", "").strip().rstrip("/"),
+            studio_internal_voices=tuple(v.strip() for v in os.environ.get("PC_STUDIO_INTERNAL_VOICES", "tw_ref,test").split(",") if v.strip()),
+            studio_drafts_per_day=int(os.environ.get("PC_STUDIO_DRAFTS_PER_DAY", "30")),
         )

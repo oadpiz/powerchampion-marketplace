@@ -2,6 +2,10 @@
 PC_PORTAL_TEST_DATABASE_URL is set (see scripts/test_backend_postgres.sh)."""
 import asyncio
 import copy
+import hashlib
+import hmac
+import secrets
+import time
 import os
 import tempfile
 import threading
@@ -281,6 +285,262 @@ class FakeGateway:
         self._maybe_fail()
         self.activity_calls += 1
         return copy.deepcopy(self.activity_value)
+
+
+STUDIO_TOKEN = "studio-service-token-test-0001"
+STUDIO_GRANT_SECRET = "studio-grant-secret-test-0001"
+STUDIO_QUOTE_SECRET = "studio-quote-secret-test-0001"
+
+
+def studio_settings():
+    """Settings keyword arguments that make the video studio configured (no real agent is contacted)."""
+    return {"studio_agent_url": "http://shortvideo-api:8081", "studio_service_token": STUDIO_TOKEN,
+            "studio_grant_secret": STUDIO_GRANT_SECRET, "studio_quote_secret": STUDIO_QUOTE_SECRET}
+
+
+def _studio_sig(secret, tag, values):
+    # Written independently of server/studio.py (and identical to shortvideo/studio/signing.py), so a
+    # portal-side change to the signed message breaks these tests instead of passing them by symmetry.
+    text = [tag] + ["" if v is None else str(v) for v in values]
+    if any("|" in t for t in text):
+        raise ValueError("'|' in a signed field")
+    return hmac.new(secret.encode(), "|".join(text).encode(), hashlib.sha256).hexdigest()
+
+
+class FakeStudioAgent:
+    """In-memory stand-in for server.studio_agent.StudioAgent with the shapes of spec section 13.2.
+
+    Like the real agent it signs quotes with the quote secret, checks grants (signature, expiry, owner)
+    and quotes (signature, single use, current storyboard_rev) on op submission, and replays a known
+    op_id. Knobs: `fail` (an AgentError raised by every call), `submit_error` (raised by submit_op;
+    with `submit_accepts` True the op is recorded first, i.e. the response was lost), `finish()` to end
+    an op. `in_loop` lists calls made on the event-loop thread: it must stay empty."""
+    configured = True
+
+    def __init__(self, clock=time.time):
+        from server.studio_agent import AgentError
+        self.AgentError = AgentError
+        self.clock = clock
+        self.projects, self.ops, self.quotes_used, self.uploads = {}, {}, set(), {}
+        self.calls, self.in_loop = [], []
+        self.fail = None
+        self.submit_error = None
+        self.submit_accepts = True
+        # Drafts are free (owner decision Q3); the portal caps them per day instead.
+        self.prices = {"draft": 0, "render": 10, "regenerate": 10, "export": 0, "add_aspect": 4}
+        self.purge_errors = {}
+        self.created = []
+        self.usage_value = None
+
+    def _enter(self, name, owner=None):
+        try:
+            asyncio.get_running_loop()
+            self.in_loop.append(name)
+        except RuntimeError:
+            pass
+        self.calls.append((name, owner))
+        if self.fail is not None:
+            raise self.fail
+
+    def _missing(self):
+        return self.AgentError("rejected", 404, "studio_not_found")
+
+    def _project(self, owner, pid):
+        project = self.projects.get(pid)
+        if project is None or project["owner"] != owner:
+            raise self._missing()
+        return project
+
+    def _active(self, pid):
+        return next((o for o in self.ops.values() if o["project_id"] == pid and o["state"] in ("queued", "running")), None)
+
+    def doc(self, pid):
+        p = self.projects[pid]
+        active = self._active(pid)
+        exp = int(self.clock() // 3600) * 3600 + 7200
+        shots = [{"index": i, "kind": "image", "seconds": 5, "narration": "n", "stale": not p["rendered"], "status": "ready",
+                  "thumb_url": "https://media.test/media/" + pid + "-" + str(i) + "?exp=" + str(exp) + "&sig=" + "0" * 64}
+                 for i in range(1, p["shots"] + 1)]
+        return {"id": pid, "template_id": p["template_id"], "title": p["title"], "expired": bool(p.get("expired")), "status": "drafting" if active and active["type"] == "draft" else "rendering" if active else p["status"],
+                "aspect": p["aspect"], "aspects": [p["aspect"]], "storyboard_rev": p["rev"], "queue": None,
+                "active_op": {"op_id": active["op_id"], "type": active["type"], "state": active["state"]} if active else None,
+                "shots": shots, "characters": [], "settings": dict(p["settings"]), "exports": {p["aspect"]: None},
+                "created_at": p["created_at"], "updated_at": p["updated_at"]}
+
+    def templates(self, owner):
+        self._enter("templates", owner)
+        return {"items": [{"id": "ecommerce", "version": 1, "title": {"zh": "電商商品影片", "en": "Product video"},
+                           "input_schema": {"type": "object"}, "shot_schema": {"type": "object"},
+                           # Like the agent (D-V4 b): "none" first and the default, never internal; labels in x-enum-labels.
+                           "project_schema": {"type": "object", "properties": {"voice": {
+                               "type": "string", "enum": ["none", "tw_ref", "studio_female", "v1"], "default": "none",
+                               "x-enum-labels": {"none": {"zh": "無配音（只有字幕）", "en": "No voiceover (subtitles only)"}}}}},
+                           "aspects": ["9:16", "16:9"], "ops": [], "prices": {"draft": 2, "image": 1, "speech": 1, "clip": 8},
+                           "rules": {"shots": [6, 10]}}]}
+
+    def create_upload(self, owner, body):
+        self._enter("create_upload", owner)
+        if body.get("project_id") is not None:
+            self._project(owner, body["project_id"])
+        upload_id = "u_" + secrets.token_hex(6)
+        self.uploads[upload_id] = dict(body, owner=owner)
+        return {"upload_id": upload_id, "put_url": "https://media.test/media/upload/" + secrets.token_hex(8), "expires_at": int(self.clock()) + 900}
+
+    def create_project(self, owner, body):
+        self._enter("create_project", owner)
+        self.created.append(dict(body))
+        pid = body["project_id"]
+        if pid in self.projects:
+            if self.projects[pid]["owner"] != owner:
+                raise self.AgentError("rejected", 409, "studio_conflict")
+            return self.doc(pid)
+        if body.get("inputs", {}).get("topic") == "BLOCKED":
+            raise self.AgentError("rejected", 400, "studio_invalid_input")
+        now = self.clock()
+        self.projects[pid] = {"owner": owner, "template_id": body["template_id"], "aspect": body["aspect"], "inputs": body["inputs"],
+                              "title": body["inputs"].get("topic"), "status": "empty", "rev": 0, "shots": 0, "rendered": False,
+                              "settings": {"voice": "none", "subtitles": True}, "created_at": now, "updated_at": now}
+        return self.doc(pid)
+
+    def get_project(self, owner, pid):
+        self._enter("get_project", owner)
+        self._project(owner, pid)
+        return self.doc(pid)
+
+    def _edit(self, owner, pid):
+        p = self._project(owner, pid)
+        if self._active(pid):
+            raise self.AgentError("rejected", 409, "studio_busy")
+        p["rev"] += 1
+        p["rendered"] = False
+        p["updated_at"] = self.clock()
+        return p
+
+    def edit_settings(self, owner, pid, body):
+        self._enter("edit_settings", owner)
+        body = dict(body)
+        if "title" in body:
+            # Like the agent: the title is a project field, not a setting, and renaming does not stale the storyboard.
+            p = self._project(owner, pid)
+            if self._active(pid):
+                raise self.AgentError("rejected", 409, "studio_busy")
+            if body["title"] == "BLOCKED":
+                raise self.AgentError("rejected", 400, "studio_invalid_input")
+            p["title"] = body.pop("title")
+        if body:
+            self._edit(owner, pid)["settings"].update(body)
+        return self.doc(pid)
+
+    def purge_project(self, owner, pid):
+        """POST /internal/v1/projects/{id}/purge: owner-checked, 200 or 404, idempotent."""
+        self._enter("purge_project", owner)
+        if pid in self.purge_errors:
+            raise self.purge_errors[pid]
+        self._project(owner, pid)
+        if any(o["owner"] == owner and o["state"] in ("queued", "running") for o in self.ops.values()):
+            # Like the agent (2e7c38e): no purge while the owner has ANY active op, on any project.
+            raise self.AgentError("rejected", 409, "studio_busy")
+        del self.projects[pid]
+        return {"id": pid, "purged": True}
+
+    def edit_shot(self, owner, pid, index, body):
+        self._enter("edit_shot", owner)
+        p = self._project(owner, pid)
+        if not 1 <= index <= p["shots"]:
+            raise self._missing()
+        self._edit(owner, pid)
+        return self.doc(pid)
+
+    def quote(self, owner, pid, body):
+        self._enter("quote", owner)
+        p = self._project(owner, pid)
+        op_type, target = body.get("type"), body.get("target")
+        if op_type not in self.prices:
+            raise self.AgentError("rejected", 400, "studio_invalid_input")
+        if op_type == "export":
+            target = target or p["aspect"]
+        quote_id = "q_" + secrets.token_hex(12)
+        exp = int(self.clock()) + 600
+        credits = self.prices[op_type]
+        sig = _studio_sig(STUDIO_QUOTE_SECRET, "quote.v1", (quote_id, owner, pid, op_type, target, credits, p["rev"], exp))
+        return {"quote_id": quote_id, "type": op_type, "target": target, "credits": credits,
+                "breakdown": [{"part": op_type, "count": 1, "credits": credits}], "storyboard_rev": p["rev"], "exp": exp, "sig": sig}
+
+    def op_doc(self, op):
+        produced = op.get("produced_credits")
+        return {"op_id": op["op_id"], "project_id": op["project_id"], "type": op["type"], "target": op["target"], "state": op["state"],
+                "queue_position": 1 if op["state"] == "queued" else None, "credits": op["credits"],
+                "produced": None if produced is None else [{"key": "k", "kind": "image", "label": "x", "credits": produced, "shot": 1, "aspect": "9:16"}],
+                "produced_credits": produced, "list_cost_usd": op.get("list_cost_usd"), "gpu_seconds": op.get("gpu_seconds"),
+                "error": op.get("error"), "created_at": op["created_at"], "started_at": None, "finished_at": None}
+
+    def submit_op(self, owner, pid, body):
+        self._enter("submit_op", owner)
+        if self.submit_error is not None and not self.submit_accepts:
+            raise self.submit_error
+        op_id = body.get("op_id")
+        existing = self.ops.get(op_id)
+        if existing is not None:
+            if existing["owner"] != owner or existing["project_id"] != pid:
+                raise self._missing()
+            return self.op_doc(existing)
+        p = self._project(owner, pid)
+        quote, grant = body.get("quote") or {}, body.get("grant")
+        if grant is None:
+            raise self.AgentError("rejected", 403, "studio_forbidden")
+        now = self.clock()
+        expected = _studio_sig(STUDIO_GRANT_SECRET, "grant.v1", (op_id, owner, pid, body.get("type"), body.get("target"), quote.get("quote_id"),
+                                                                 quote.get("credits"), quote.get("storyboard_rev"), grant.get("plan"), grant.get("exp")))
+        if not hmac.compare_digest(expected, str(grant.get("sig"))) or grant["exp"] < now or grant["exp"] > now + 65:
+            raise self.AgentError("rejected", 403, "studio_forbidden")
+        q_expected = _studio_sig(STUDIO_QUOTE_SECRET, "quote.v1", (quote.get("quote_id"), owner, pid, body.get("type"), body.get("target"),
+                                                                   quote.get("credits"), quote.get("storyboard_rev"), quote.get("exp")))
+        if not hmac.compare_digest(q_expected, str(quote.get("sig"))):
+            raise self.AgentError("rejected", 400, "studio_invalid_input")
+        if quote["quote_id"] in self.quotes_used or quote["storyboard_rev"] != p["rev"]:
+            raise self.AgentError("rejected", 409, "studio_stale_quote")
+        if self._active(pid):
+            raise self.AgentError("rejected", 409, "studio_busy")
+        self.quotes_used.add(quote["quote_id"])
+        op = {"op_id": op_id, "owner": owner, "project_id": pid, "type": body["type"], "target": body.get("target"), "credits": quote["credits"],
+              "state": "queued", "created_at": now, "plan": grant["plan"]}
+        self.ops[op_id] = op
+        if self.submit_error is not None:
+            raise self.submit_error
+        return self.op_doc(op)
+
+    def get_op(self, owner, pid, op_id):
+        self._enter("get_op", owner)
+        op = self.ops.get(op_id)
+        if op is None or op["owner"] != owner or op["project_id"] != pid:
+            raise self._missing()
+        return self.op_doc(op)
+
+    def usage(self, month, owner=None):
+        self._enter("usage")
+        if self.usage_value is not None:
+            return copy.deepcopy(self.usage_value)
+        owners = {}
+        for op in self.ops.values():
+            row = owners.setdefault(op["owner"], {"owner": op["owner"], "ops": 0, "credits_quoted": 0, "credits_produced": 0,
+                                                  "list_cost_usd": 0.0, "gpu_seconds": 0.0, "est_gpu_usd": 0.0})
+            row["ops"] += 1
+            row["credits_quoted"] += op["credits"]
+            row["credits_produced"] += op.get("produced_credits") or 0
+        return {"month": month, "gpu_usd_per_hour": 2.08, "owners": list(owners.values())}
+
+    # -- test helpers -------------------------------------------------------------------------------
+
+    def finish(self, op_id, state="succeeded", produced_credits=None, error=None):
+        op = self.ops[op_id]
+        op["state"] = state
+        op["produced_credits"] = op["credits"] if state == "succeeded" and produced_credits is None else (produced_credits or 0)
+        op["error"] = error
+        p = self.projects[op["project_id"]]
+        if state == "succeeded" and op["type"] == "draft":
+            p["shots"], p["status"], p["rev"] = 3, "draft_ready", p["rev"] + 1
+        elif state == "succeeded":
+            p["rendered"], p["status"] = True, "ready"
 
 
 ORIGIN = "http://localhost:3010"

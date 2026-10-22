@@ -10,6 +10,7 @@ export const ADMIN_SECTIONS = [
   "allocation",
   "engineers",
   "credits",
+  "studio",
   "audit",
 ] as const;
 

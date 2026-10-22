@@ -4,9 +4,31 @@ import { useState, type ReactNode } from "react";
 import { useLocale } from "./locale-provider";
 
 const destinations = [
-  { href: "/tasks", icon: "↗", en: "Agent tasks", zh: "智能體任務", group: "build" },
+  {
+    href: "/tasks",
+    icon: "↗",
+    en: "Agent tasks",
+    zh: "智能體任務",
+    group: "build",
+  },
+  // In the platform layout but not in its sidebar: the sidebar is on public pages too, and the studio is
+  // linked only from the signed-in account header (components/account-portal.tsx).
+  {
+    href: "/studio",
+    icon: "▶",
+    en: "Video studio",
+    zh: "影片工作室",
+    group: "build",
+    hidden: true,
+  },
   { href: "/chat", icon: "✳", en: "Model chat", zh: "AI 對話", group: "build" },
-  { href: "/agents", icon: "◈", en: "Agents & services", zh: "智能體與建置", group: "build" },
+  {
+    href: "/agents",
+    icon: "◈",
+    en: "Agents & services",
+    zh: "智能體與建置",
+    group: "build",
+  },
   {
     href: "/platform",
     icon: "⌂",
@@ -135,7 +157,10 @@ export function PlatformFrame({
                     : "MANAGE"}
               </p>
               {destinations
-                .filter((item) => item.group === group)
+                .filter(
+                  (item) =>
+                    item.group === group && !("hidden" in item && item.hidden),
+                )
                 .map((item) => (
                   <a
                     key={item.href}
@@ -201,11 +226,17 @@ export function PlatformFrame({
             value={current.href}
             onChange={(event) => window.location.assign(event.target.value)}
           >
-            {destinations.map((item) => (
-              <option key={item.href} value={item.href}>
-                {item[locale]}
-              </option>
-            ))}
+            {destinations
+              .filter(
+                (item) =>
+                  !("hidden" in item && item.hidden) ||
+                  item.href === current.href,
+              )
+              .map((item) => (
+                <option key={item.href} value={item.href}>
+                  {item[locale]}
+                </option>
+              ))}
           </select>
         </label>
         <div className="platform-content">{children}</div>

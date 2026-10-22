@@ -81,4 +81,17 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(compose).not.toMatch(/^\s+PC_TRIAL_API_KEY\s*:/m);
     expect(portal).toMatch(/^\s+PC_TRIAL_ENABLED:\s*"0"\s*$/m);
   });
+
+  it("passes the video studio settings to the portal from the environment only", () => {
+    // S2 adds env passthrough only: the shortvideo services (and the agent URL default) arrive in S4.
+    for (const name of ["PC_STUDIO_AGENT_URL", "SHORTVIDEO_SERVICE_TOKEN", "SHORTVIDEO_GRANT_SECRET", "SHORTVIDEO_QUOTE_SECRET"]) {
+      expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-\\}\\s*$`, "m"));
+      // A literal value must never be committed, and no other service gets the secrets.
+      expect(compose.match(new RegExp(`^\\s+${name}\\s*:`, "gm"))).toHaveLength(1);
+    }
+    expect(portal).toMatch(/^\s+PC_STUDIO_SWEEPER:\s*\$\{PC_STUDIO_SWEEPER:-1\}\s*$/m);
+    expect(portal).toMatch(/^\s+PC_STUDIO_INTERNAL_VOICES:\s*\$\{PC_STUDIO_INTERNAL_VOICES:-tw_ref,test\}\s*$/m);
+    expect(portal).toMatch(/^\s+PC_STUDIO_MEDIA_ORIGIN:\s*\$\{PC_STUDIO_MEDIA_ORIGIN:-\}\s*$/m);
+    expect(website).not.toMatch(/SHORTVIDEO_|PC_STUDIO_/);
+  });
 });

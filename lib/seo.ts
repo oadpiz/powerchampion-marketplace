@@ -10,7 +10,7 @@ export const PUBLIC_ROUTES = [
   "/integrations", "/docs", "/docs/api", "/infrastructure", "/company", "/contact",
   "/trust", "/status", "/faq", "/terms", "/privacy", "/data-retention",
 ] as const;
-const PRIVATE_ROUTES = ["/chat", "/tasks", "/agents/build", "/account", "/admin", "/login", "/register", "/console", "/api"];
+const PRIVATE_ROUTES = ["/chat", "/tasks", "/agents/build", "/account", "/admin", "/studio", "/login", "/register", "/console", "/api"];
 
 export function isInternationalLocale(value: string | null | undefined): value is InternationalLocale {
   return INTERNATIONAL_LOCALES.some((locale) => locale === value);
@@ -36,6 +36,14 @@ export function languageAlternates(section: LocalizedSection): Record<string, st
 
 export function isPrivatePath(pathname: string): boolean {
   return PRIVATE_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
+}
+
+/**
+ * Studio pages send `same-origin`, never `no-referrer`: with no-referrer a same-origin POST carries
+ * `Origin: null` and the portal BFF refuses it (studio spec 5.3). Other pages keep the browser default.
+ */
+export function referrerPolicyFor(pathname: string): string | null {
+  return pathname === "/studio" || pathname.startsWith("/studio/") ? "same-origin" : null;
 }
 
 export function isIndexableRequest(url: URL): boolean {

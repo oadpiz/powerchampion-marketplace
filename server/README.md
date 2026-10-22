@@ -245,6 +245,14 @@ this service. Registration establishes a portal account, not verified identity.
 | `PC_GRAFANA_URL` | `https://grafana.powerchampion.ai`; HTTPS origin of the cluster Grafana for the Engineers page links (`/d/b300-engineers?var-engineer=<username>`). Empty hides the links |
 | `PC_RUNTIME_ENABLED` | `0`; opt-in background Agent tasks when set to `1` |
 | `PC_RUNTIME_ENCRYPTION_KEY` | Separate Fernet key for per-task model credentials; missing/invalid key leaves tasks unavailable |
+| `PC_STUDIO_AGENT_URL` | Empty. Video studio: origin of the shortvideo-agent internal API on the Compose network (S4: `http://shortvideo-api:8081`), http(s) without path or credentials. Empty, or any of the three secrets below missing, makes every `/studio/*` route answer 503 `studio_unconfigured` (the admin credit grant still works) |
+| `SHORTVIDEO_SERVICE_TOKEN` | Video studio: bearer token for the agent's `/internal/v1/*` (same value in the agent). Must differ from both secrets below, otherwise the studio stays unconfigured |
+| `SHORTVIDEO_GRANT_SECRET` | Video studio: HMAC key the portal signs op grants with (same value in the agent) |
+| `SHORTVIDEO_QUOTE_SECRET` | Video studio: HMAC key the agent signs quotes with; the portal verifies quotes locally before reserving credits |
+| `PC_STUDIO_SWEEPER` | `1`; the lifespan task that settles studio ops left `reserved`/`submitted`/`unknown` every 10 s (only runs when the studio is configured). `0` turns it off; ops then settle only when a customer opens the project or op |
+| `PC_STUDIO_INTERNAL_VOICES` | `tw_ref,test`. Video studio voices for internal tests only (D-V4): a non-admin choosing one gets 403 `studio_voice_not_allowed`, and a non-admin project still on one gets 409 `studio_no_licensed_voice` for steps that may synthesise narration (everything except draft, add_aspect and export). The templates response marks them as `x-internal-values` on the voice field |
+| `PC_STUDIO_DRAFTS_PER_DAY` | `30`. Drafts are free, so each user may start this many storyboards per Asia/Taipei day (new projects and draft redos). Over it: 429 `studio_draft_limit`. `GET /studio/credits` returns `drafts: {limit, used, remaining, resets_at}` |
+| `PC_STUDIO_MEDIA_ORIGIN` | Empty. Public origin of the shortvideo media host (for example `https://studio-media.powerchampion.ai`). Sent to the UI as `media_origin`; the studio pages then load media and send uploads only to that origin. Empty means not checked |
 
 There is no direct CORS access. Mutations require a matching Origin. The BFF must
 forward only the validated request origin and the `pc_portal_session` cookie;

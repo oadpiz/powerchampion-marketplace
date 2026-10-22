@@ -79,6 +79,16 @@ services:
       # customer's per-task model credential; it is never sent to the website.
       PC_RUNTIME_ENABLED: ${PC_RUNTIME_ENABLED:-0}
       PC_RUNTIME_ENCRYPTION_KEY: ${PC_RUNTIME_ENCRYPTION_KEY:-}
+      # Video studio (server/studio.py). Empty keeps every /studio route at 503
+      # studio_unconfigured. The shortvideo services and the agent URL arrive in S4;
+      # the three secrets are set in Dokploy only (same values as shortvideo-api).
+      PC_STUDIO_AGENT_URL: ${PC_STUDIO_AGENT_URL:-}
+      SHORTVIDEO_SERVICE_TOKEN: ${SHORTVIDEO_SERVICE_TOKEN:-}
+      SHORTVIDEO_GRANT_SECRET: ${SHORTVIDEO_GRANT_SECRET:-}
+      SHORTVIDEO_QUOTE_SECRET: ${SHORTVIDEO_QUOTE_SECRET:-}
+      PC_STUDIO_SWEEPER: ${PC_STUDIO_SWEEPER:-1}
+      PC_STUDIO_INTERNAL_VOICES: ${PC_STUDIO_INTERNAL_VOICES:-tw_ref,test}
+      PC_STUDIO_MEDIA_ORIGIN: ${PC_STUDIO_MEDIA_ORIGIN:-}
     volumes:
       - portal-data:/data
     # No ports, no Traefik labels and not on dokploy-network: only the website
