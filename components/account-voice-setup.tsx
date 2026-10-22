@@ -535,10 +535,10 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
 
         <section className="portal-panel" aria-labelledby="voice-setup-messages">
           <h3 id="voice-setup-messages">{zh ? "留言與回電" : "Messages and callbacks"}</h3>
-          <fieldset style={bare} className="portal-field">
+          <fieldset className="portal-choices">
             <legend>{zh ? "下班時間的做法" : "After hours"}</legend>
             {AFTER_HOURS_MODES.map((mode) => (
-              <label key={mode}>
+              <label key={mode} className="portal-choice">
                 <input
                   type="radio"
                   name="voice-after-hours"
@@ -598,10 +598,10 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
 
         <section className="portal-panel" aria-labelledby="voice-setup-recording">
           <h3 id="voice-setup-recording">{zh ? "錄音與保存" : "Recording and retention"}</h3>
-          <fieldset style={bare} className="portal-field">
+          <fieldset className="portal-choices">
             <legend>{zh ? "錄音方式" : "Recording"}</legend>
             {RECORDING_MODES.map((mode) => (
-              <label key={mode}>
+              <label key={mode} className="portal-choice">
                 <input
                   type="radio"
                   name="voice-recording"

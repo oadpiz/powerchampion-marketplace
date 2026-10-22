@@ -302,6 +302,47 @@
   resize: vertical;
   min-height: 110px;
 }
+/* A radio or checkbox keeps its own size: the text-field rule above stretched each one across the row with its
+   text on the next line, so the selected dot sat between two options (verifier finding 2026-10-22). */
+.portal-field input[type="radio"],
+.portal-field input[type="checkbox"],
+.portal-choice input {
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  flex: none;
+  margin: 3px 0 0;
+  padding: 0;
+  accent-color: var(--focus, #c2aa7d);
+}
+/* A group of radios: a fieldset without its own box, one option per line. */
+.portal-choices {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+  color: var(--ink, #eeebe5);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.portal-choices legend {
+  margin-bottom: 4px;
+  padding: 0;
+}
+/* One radio or checkbox and its text on the same line; long text wraps beside the box, not under it. */
+.portal-choice {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ink, #eeebe5);
+  font-size: 12px;
+  line-height: 1.6;
+  cursor: pointer;
+}
 .portal-page a:focus-visible,
 .portal-page button:focus-visible,
 .portal-field input:focus-visible,
