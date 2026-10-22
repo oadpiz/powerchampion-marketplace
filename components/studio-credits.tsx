@@ -70,7 +70,9 @@ export function StudioCreditsPage() {
             </div>
           </div>
           <p className="portal-hint studio-credit-hint">
-            {zh ? "目前不提供線上付款；需要加值或更換方案，請" : "Online payment is not available yet. To top up or change plans, "}
+            {zh
+              ? "目前不提供線上付款，點數由團隊人工加值。需要加值或更換方案，請"
+              : "Online payment is not available yet; credits are added by our team. To top up or change plans, "}
             <Link href="/contact">{zh ? "聯絡我們" : "contact us"}</Link>
             {zh
               ? "。參考：Creator 方案 1,000 點約 20 支（以每支 3 鏡動態影片、約 46 點計）。"

@@ -421,6 +421,18 @@
   max-width: 480px;
 }
 
+.studio-draft-action {
+  display: inline-grid;
+  justify-items: center;
+  gap: 4px;
+}
+.studio-drafts-left {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted, #aaa69e);
+  font-size: 12px;
+}
+
 /* ---------------------------------------------------------------- new */
 .studio-step {
   margin: 0 0 30px;

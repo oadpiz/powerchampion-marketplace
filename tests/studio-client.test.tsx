@@ -90,7 +90,7 @@ describe("schema helpers", () => {
   });
   it("hides internal voices from customers", () => {
     const voice = template.project_schema.properties!.voice;
-    expect(enumOptions("voice", voice, "zh", false).map((o) => o.value)).toEqual(["studio_female"]);
+    expect(enumOptions("voice", voice, "zh", false).map((o) => o.value)).toEqual(["none", "studio_female"]);
     expect(enumOptions("voice", voice, "zh", true)).toContainEqual({ value: "tw_ref", label: "內部測試", internal: true });
     const annotated = { ...voice, "x-internal-values": ["studio_female"], "x-enum-labels": { studio_female: { zh: "女聲" } } };
     expect(enumOptions("voice", annotated, "zh", true).find((o) => o.value === "studio_female")?.label).toBe("女聲（內部測試）");

@@ -67,9 +67,14 @@ REFRESH_WORKERS = 6
 THUMB_MARGIN_S = 300
 # Soft delete: a deleted project stays in the trash (回收區) and can be restored for 30 days. After that it is
 # hidden from every route, including restore. Credits are never refunded by a delete.
-# TODO(studio): purge job: drop portal rows (and ask the agent to drop the project and its media) once
-# deleted_at is older than TRASH_S. Until then old rows are only hidden.
+# Studio.purge (from the sweeper, at most hourly) then asks the agent to drop the project and its media
+# and marks the portal row status='purged'; the row itself stays, because ops and the ledger point at it.
 TRASH_S = 30 * 86400
+PURGE_EVERY_S = 3600
+PURGE_BATCH = 50
+PURGED = "purged"
+# The free-draft cap counts per Asia/Taipei calendar day (UTC+8, no daylight saving).
+TAIPEI_OFFSET_S = 8 * 3600
 TITLE_MAX = 120
 CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -183,6 +188,11 @@ def _title(value):
     return title
 
 
+def taipei_day_start(now):
+    """The UTC epoch second at which the Asia/Taipei day containing `now` began."""
+    return (now + TAIPEI_OFFSET_S) // 86400 * 86400 - TAIPEI_OFFSET_S
+
+
 def _month_bounds(month):
     start = datetime.strptime(month + "-01", "%Y-%m-%d").replace(tzinfo=timezone.utc)
     end = start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
@@ -207,6 +217,8 @@ class Studio:
         self.max_active_per_user = MAX_ACTIVE_PER_USER
         self.limits = dict(LIMITS)
         self.orphan_s = ORPHAN_S
+        self.drafts_per_day = ctx.settings.studio_drafts_per_day
+        self.last_purge = 0
 
     @property
     def internal_voices(self):
@@ -235,11 +247,31 @@ class Studio:
     def _consume(self, con, user_id, bucket):
         limit, window = self.limits[bucket]
         now = self.now()
-        start = now - now % window
+        self._hit(con, user_id, bucket, now - now % window, limit, "studio_rate_limited", "Too many requests. Please wait a moment and try again.")
+
+    def _consume_draft(self, con, user_id):
+        """One free draft from today's (Asia/Taipei) allowance; 429 studio_draft_limit when it is used up."""
+        self._hit(con, user_id, "draft", taipei_day_start(self.now()), self.drafts_per_day, "studio_draft_limit",
+                  "Today's storyboard limit has been reached. Try again tomorrow.")
+
+    def consume_draft(self, user_id):
+        with self.store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            self._consume_draft(con, user_id)
+
+    def drafts_json(self, user_id):
+        start = taipei_day_start(self.now())
+        with self.store.connect() as con:
+            row = con.execute("SELECT hits FROM studio_rate WHERE user_id=? AND bucket='draft' AND window_start=?", (user_id, start)).fetchone()
+        used = row["hits"] if row else 0
+        return {"limit": self.drafts_per_day, "used": used, "remaining": max(0, self.drafts_per_day - used), "resets_at": start + 86400}
+
+    @staticmethod
+    def _hit(con, user_id, bucket, start, limit, code, detail):
         con.execute("DELETE FROM studio_rate WHERE user_id=? AND bucket=? AND window_start<?", (user_id, bucket, start))
         row = con.execute("SELECT hits FROM studio_rate WHERE user_id=? AND bucket=? AND window_start=?", (user_id, bucket, start)).fetchone()
-        if row and row["hits"] >= limit:
-            fail("studio_rate_limited", "Too many requests. Please wait a moment and try again.", 429)
+        if (row["hits"] if row else 0) >= limit:
+            fail(code, detail, 429)
         if row:
             con.execute("UPDATE studio_rate SET hits=hits+1 WHERE user_id=? AND bucket=? AND window_start=?", (user_id, bucket, start))
         else:
@@ -291,6 +323,7 @@ class Studio:
                     fail("studio_conflict", PASS_THROUGH["studio_conflict"][1], 409)
                 return
             self._consume(con, user_id, "project")
+            self._consume_draft(con, user_id)  # every new project starts with its (free) draft
             con.execute("INSERT INTO studio_projects (id,user_id,template_id,title,status,thumb_url,thumb_exp,created_at,updated_at,deleted_at) VALUES (?,?,?,NULL,NULL,NULL,NULL,?,?,NULL)",
                         (project_id, user_id, template_id, now, now))
 
@@ -558,7 +591,39 @@ class Studio:
             if stop is not None and stop.is_set():
                 break
             self.reconcile(op)
+        if self.now() - self.last_purge >= PURGE_EVERY_S and not (stop is not None and stop.is_set()):
+            self.last_purge = self.now()
+            try:
+                self.purge()
+            except Exception:  # noqa: BLE001 - the settlement sweep must keep going
+                log.exception("studio purge failed")
         return len(ops)
+
+    def purge(self, limit=PURGE_BATCH):
+        """Ask the agent to drop projects deleted TRASH_S ago or more, then mark them purged (hidden for good;
+        they already are, by the 30-day rule). The agent's own 404 means already gone. Returns the number marked."""
+        if not self.agent.configured:
+            return 0
+        cutoff = self.now() - TRASH_S
+        with self.store.connect() as con:
+            due = [dict(r) for r in con.execute(
+                "SELECT id, user_id FROM studio_projects WHERE deleted_at IS NOT NULL AND deleted_at<=? AND (status IS NULL OR status<>?) "
+                "ORDER BY deleted_at LIMIT ?", (cutoff, PURGED, limit)).fetchall()]
+        done = 0
+        for row in due:
+            try:
+                self.agent.purge_project(row["user_id"], row["id"])
+            except AgentError as error:
+                if not (error.kind == "rejected" and error.status == 404 and error.code == "studio_not_found"):
+                    log.warning("studio purge of %s failed (%s %s %s); retried later", row["id"], error.kind, error.status, error.code)
+                    continue
+            except Exception:  # noqa: BLE001
+                log.exception("studio purge of %s failed", row["id"])
+                continue
+            with self.store.connect() as con:
+                done += con.execute("UPDATE studio_projects SET status=?, thumb_url=NULL, thumb_exp=NULL WHERE id=? AND deleted_at IS NOT NULL AND deleted_at<=?",
+                                    (PURGED, row["id"], cutoff)).rowcount
+        return done
 
     async def serve(self, stop):
         interval = self.settings.studio_sweep_interval
@@ -593,7 +658,7 @@ class Studio:
             recent = con.execute("SELECT id, op_id, kind, delta, note, created_at FROM studio_ledger WHERE user_id=? ORDER BY id DESC LIMIT 50", (user_id,)).fetchall()
         return {"balance": account["balance"] if account else 0, "reserved": account["reserved"] if account else 0,
                 "plan": account["plan"] if account else None, "period_end": account["period_end"] if account else None,
-                "recent": [dict(r) for r in recent]}
+                "recent": [dict(r) for r in recent], "drafts": self.drafts_json(user_id)}
 
     def refresh_projects(self, user_id, project_ids):
         """Refetch documents for the list view, a few at a time; failures keep the cached values."""
@@ -843,6 +908,8 @@ def attach_studio(application, ctx, agent=None):
             return {"op_id": existing["op_id"], "state": existing["state"]}
         studio.owned_project(user["id"], project_id)
         quote = studio.verify_quote(user["id"], project_id, body)
+        if quote["type"] == "draft":
+            studio.consume_draft(user["id"])  # a storyboard redo uses the same free daily allowance
         op, created = studio.reserve(user["id"], project_id, quote, key)
         if not created:
             return {"op_id": op["op_id"], "state": op["state"]}

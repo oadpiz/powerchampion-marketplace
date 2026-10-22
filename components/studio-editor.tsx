@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { PortalError } from "../lib/portal-client";
 import {
+  draftPriceLabel,
   aspectLabel,
   downloadUrl,
   isInternalVoice,
@@ -27,6 +28,7 @@ import {
 } from "../lib/studio-client";
 import { AdminDialog } from "./admin-dialog";
 import { useLocale } from "./locale-provider";
+import { DraftLimitText, DraftsLeft, TopUpLinks } from "./studio-help";
 import { ProjectSettings, ShotInspector } from "./studio-inspector";
 import { useStudio } from "./studio-shell";
 import { useStudioProject } from "./use-studio-project";
@@ -265,7 +267,8 @@ export function StudioEditor({ projectId }: { projectId: string }) {
     );
 
   const balance = credits?.balance ?? null;
-  const draftPrice = template?.prices?.draft ?? 2;
+  const draftPrice = draftPriceLabel(template?.prices?.draft, locale);
+  const draftsLeft = credits?.drafts?.remaining;
   const renderLabel = fresh?.render ? (zh ? `產生全部（${fresh.render.credits} 點）` : `Generate all (${fresh.render.credits} credits)`) : zh ? "產生全部" : "Generate all";
   const preview = mediaUrl(shot?.preview_url);
   const stageKeys = (event: KeyboardEvent<HTMLElement>) =>
@@ -296,9 +299,12 @@ export function StudioEditor({ projectId }: { projectId: string }) {
         </div>
         <div className="studio-toolbar" role="toolbar" aria-label={zh ? "影片動作" : "Video actions"}>
           {!hasStoryboard && !active && (
-            <button type="button" className="portal-button" disabled={busyNow} onClick={() => void ask("draft")}>
-              {zh ? `產生分鏡（${draftPrice} 點）` : `Write storyboard (${draftPrice} credits)`}
-            </button>
+            <span className="studio-draft-action">
+              <button type="button" className="portal-button" disabled={busyNow || draftsLeft === 0} onClick={() => void ask("draft")}>
+                {zh ? `產生分鏡（${draftPrice}）` : `Write storyboard (${draftPrice})`}
+              </button>
+              {draftsLeft !== undefined && draftsLeft > 0 && <DraftsLeft remaining={draftsLeft} zh={zh} />}
+            </span>
           )}
           {hasStoryboard && (
             <button type="button" className="portal-button" disabled={busyNow || staleCount === 0 || noVoice} onClick={() => void ask("render")}>
@@ -382,20 +388,19 @@ export function StudioEditor({ projectId }: { projectId: string }) {
       )}
       {actionError !== null && (
         <p className="portal-error" role="alert">
-          {studioErrorText(actionError, locale)}
-          {actionError instanceof PortalError && actionError.code === "studio_insufficient_credits" && (
-            <>
-              {" "}
-              <Link href="/studio/credits">{zh ? "查看點數" : "See credits"}</Link>
-            </>
+          {actionError instanceof PortalError && actionError.code === "studio_draft_limit" ? (
+            <DraftLimitText limit={credits?.drafts?.limit ?? 30} zh={zh} />
+          ) : (
+            studioErrorText(actionError, locale)
           )}
+          {actionError instanceof PortalError && actionError.code === "studio_insufficient_credits" && <TopUpLinks zh={zh} />}
         </p>
       )}
       {noVoice && (
         <p className="portal-note" role="status">
           {zh
-            ? "目前沒有可對外使用的配音，暫時無法產生畫面與配音；你仍可編輯分鏡，開放授權配音後即可產生。"
-            : "No licensed voice is available yet, so pictures and narration cannot be generated for now. You can still edit the storyboard."}
+            ? "目前沒有可對外使用的配音，這支影片用的是內部測試配音。到「專案設定」把配音改成「無配音（只有字幕）」，就能產生畫面。"
+            : "No licensed voice is available yet, and this video uses an internal test voice. In the project settings, switch the voice to “No voiceover (subtitles only)” to generate pictures."}
         </p>
       )}
       {error !== null &&
@@ -434,7 +439,13 @@ export function StudioEditor({ projectId }: { projectId: string }) {
             <>
               <h2>{project.status === "failed_draft" ? (zh ? "分鏡沒有產生成功" : "The storyboard could not be written") : zh ? "還沒有分鏡" : "No storyboard yet"}</h2>
               <p className="portal-muted">
-                {zh ? `按上方「產生分鏡（${draftPrice} 點）」再試一次。` : `Use "Write storyboard (${draftPrice} credits)" above to try again.`}
+                {draftsLeft === 0 ? (
+                  <DraftLimitText limit={credits?.drafts?.limit ?? 30} zh={zh} />
+                ) : zh ? (
+                  `按上方「產生分鏡（${draftPrice}）」再試一次。`
+                ) : (
+                  `Use "Write storyboard (${draftPrice})" above to try again.`
+                )}
               </p>
             </>
           )}
@@ -675,12 +686,7 @@ export function StudioEditor({ projectId }: { projectId: string }) {
           {pending.error !== null && !(pending.error instanceof PortalError && pending.error.code === "studio_stale_quote" && pending.requoted) && (
             <p className="portal-error" role="alert">
               {studioErrorText(pending.error, locale)}
-              {pending.error instanceof PortalError && pending.error.code === "studio_insufficient_credits" && (
-                <>
-                  {" "}
-                  <Link href="/studio/credits">{zh ? "查看點數" : "See credits"}</Link>
-                </>
-              )}
+              {pending.error instanceof PortalError && pending.error.code === "studio_insufficient_credits" && <TopUpLinks zh={zh} />}
             </p>
           )}
         </AdminDialog>

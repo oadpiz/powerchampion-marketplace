@@ -43,6 +43,8 @@ class Settings:
     studio_internal_voices: tuple = ("tw_ref", "test")
     # Public origin of the shortvideo media host; the UI only loads media and sends uploads there (empty: not checked).
     studio_media_origin: str = ""
+    # Drafts are free (owner decision Q3), so each user may start this many per Asia/Taipei day.
+    studio_drafts_per_day: int = 30
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -72,6 +74,8 @@ class Settings:
                 raise ValueError("PC_STUDIO_MEDIA_ORIGIN must be empty or an http(s) origin without credentials, path or query")
         if self.studio_sweep_interval <= 0:
             raise ValueError("The studio sweep interval must be positive")
+        if isinstance(self.studio_drafts_per_day, bool) or not isinstance(self.studio_drafts_per_day, int) or not 0 <= self.studio_drafts_per_day <= 10_000:
+            raise ValueError("PC_STUDIO_DRAFTS_PER_DAY must be a whole number from 0 to 10000")
 
     @property
     def resolved_database_url(self):
@@ -134,4 +138,5 @@ class Settings:
             studio_sweeper=os.environ.get("PC_STUDIO_SWEEPER", "1") != "0",
             studio_media_origin=os.environ.get("PC_STUDIO_MEDIA_ORIGIN", "").strip().rstrip("/"),
             studio_internal_voices=tuple(v.strip() for v in os.environ.get("PC_STUDIO_INTERNAL_VOICES", "tw_ref,test").split(",") if v.strip()),
+            studio_drafts_per_day=int(os.environ.get("PC_STUDIO_DRAFTS_PER_DAY", "30")),
         )

@@ -326,7 +326,9 @@ class FakeStudioAgent:
         self.fail = None
         self.submit_error = None
         self.submit_accepts = True
-        self.prices = {"draft": 2, "render": 10, "regenerate": 10, "export": 0, "add_aspect": 4}
+        # Drafts are free (owner decision Q3); the portal caps them per day instead.
+        self.prices = {"draft": 0, "render": 10, "regenerate": 10, "export": 0, "add_aspect": 4}
+        self.purge_errors = {}
         self.usage_value = None
 
     def _enter(self, name, owner=None):
@@ -368,7 +370,10 @@ class FakeStudioAgent:
         self._enter("templates", owner)
         return {"items": [{"id": "ecommerce", "version": 1, "title": {"zh": "電商商品影片", "en": "Product video"},
                            "input_schema": {"type": "object"}, "shot_schema": {"type": "object"},
-                           "project_schema": {"type": "object", "properties": {"voice": {"type": "string", "enum": ["tw_ref", "studio_female", "v1"]}}},
+                           # Like the agent (D-V4 b): "none" first and the default, never internal; labels in x-enum-labels.
+                           "project_schema": {"type": "object", "properties": {"voice": {
+                               "type": "string", "enum": ["none", "tw_ref", "studio_female", "v1"], "default": "none",
+                               "x-enum-labels": {"none": {"zh": "無配音（只有字幕）", "en": "No voiceover (subtitles only)"}}}}},
                            "aspects": ["9:16", "16:9"], "ops": [], "prices": {"draft": 2, "image": 1, "speech": 1, "clip": 8},
                            "rules": {"shots": [6, 10]}}]}
 
@@ -392,7 +397,7 @@ class FakeStudioAgent:
         now = self.clock()
         self.projects[pid] = {"owner": owner, "template_id": body["template_id"], "aspect": body["aspect"], "inputs": body["inputs"],
                               "title": body["inputs"].get("topic"), "status": "empty", "rev": 0, "shots": 0, "rendered": False,
-                              "settings": {"voice": "v1", "subtitles": True}, "created_at": now, "updated_at": now}
+                              "settings": {"voice": "none", "subtitles": True}, "created_at": now, "updated_at": now}
         return self.doc(pid)
 
     def get_project(self, owner, pid):
@@ -423,6 +428,15 @@ class FakeStudioAgent:
         if body:
             self._edit(owner, pid)["settings"].update(body)
         return self.doc(pid)
+
+    def purge_project(self, owner, pid):
+        """POST /internal/v1/projects/{id}/purge: owner-checked, 200 or 404, idempotent."""
+        self._enter("purge_project", owner)
+        if pid in self.purge_errors:
+            raise self.purge_errors[pid]
+        self._project(owner, pid)
+        del self.projects[pid]
+        return {"id": pid, "purged": True}
 
     def edit_shot(self, owner, pid, index, body):
         self._enter("edit_shot", owner)

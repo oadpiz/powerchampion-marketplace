@@ -82,7 +82,7 @@ describe("studio list", () => {
     studioFetch({ "GET /studio/projects?limit=20": { items: [], next: null } });
     inFrame(<StudioHome />);
     expect(await screen.findByRole("heading", { name: "還沒有影片" })).toBeInTheDocument();
-    expect(screen.getByText(/產生分鏡只要 2 點/)).toBeInTheDocument();
+    expect(screen.getByText(/產生分鏡免費/)).toBeInTheDocument();
   });
 
   it("maps an unreachable video service to its own message", async () => {
@@ -102,7 +102,7 @@ describe("studio new", () => {
     expect(screen.getByLabelText(/目標秒數/)).toHaveValue(45);
     expect(screen.getByRole("group", { name: /商品圖片/ })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /^直式 9:16/ })).toBeChecked();
-    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（2 點）" }));
+    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("請至少填寫其中一項：主題、商品網址、商品圖片");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
@@ -130,7 +130,7 @@ describe("studio new", () => {
     expect(put?.init?.credentials).toBe("omit");
 
     await userEvent.click(screen.getByRole("radio", { name: /^橫式 16:9/ }));
-    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（2 點）" }));
+    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/studio/p/pnew"));
     const created = calls.find((call) => call.method === "POST" && call.path === "/studio/projects");
     const body = created?.body as Record<string, unknown>;
@@ -154,7 +154,7 @@ describe("studio new", () => {
     studioFetch({ "POST /studio/projects": fail(402, "studio_insufficient_credits") });
     inFrame(<StudioNew navigate={() => {}} />);
     await userEvent.type(await screen.findByLabelText("主題"), "保溫杯");
-    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（2 點）" }));
+    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("點數不足");
     expect(within(alert).getByRole("link", { name: "查看點數" })).toHaveAttribute("href", "/studio/credits");

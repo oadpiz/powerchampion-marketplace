@@ -101,6 +101,11 @@ class StudioAgent:
     def edit_settings(self, owner, project_id, body):
         return self._request("POST", "/internal/v1/projects/" + _id(project_id) + "/settings", owner, body)
 
+    def purge_project(self, owner, project_id):
+        """Drop a project deleted more than 30 days ago, with its media. Owner-checked; 200, or 404 when it is
+        already gone (idempotent)."""
+        return self._request("POST", "/internal/v1/projects/" + _id(project_id) + "/purge", owner, {})
+
     def edit_shot(self, owner, project_id, index, body):
         if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index <= 999:
             raise AgentError("rejected", 404, "studio_not_found")

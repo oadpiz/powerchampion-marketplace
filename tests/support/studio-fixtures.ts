@@ -8,7 +8,7 @@ export const template: StudioTemplate = {
   title: { zh: "電商商品影片", en: "Product video" },
   aspects: ["9:16", "16:9"],
   ops: [],
-  prices: { draft: 2, image: 1, speech: 1, clip: 8 },
+  prices: { draft: 0, image: 1, speech: 1, clip: 8 },
   input_schema: {
     type: "object",
     properties: {
@@ -34,7 +34,13 @@ export const template: StudioTemplate = {
     type: "object",
     properties: {
       title: { type: "string", maxLength: 200 },
-      voice: { type: "string", enum: ["tw_ref", "studio_female"] },
+      voice: {
+        type: "string",
+        enum: ["none", "tw_ref", "studio_female"],
+        default: "none",
+        "x-enum-labels": { none: { zh: "無配音（只有字幕）", en: "No voiceover (subtitles only)" } },
+        "x-internal-values": ["tw_ref"],
+      },
       subtitles: { type: "boolean", default: true },
       music_upload_id: { type: ["string", "null"], "x-upload-purpose": "music" },
       music_rights_confirmed: { type: "boolean", default: false },

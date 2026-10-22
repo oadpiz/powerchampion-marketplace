@@ -133,12 +133,16 @@ export type OpResult = {
 };
 
 export type LedgerRow = { id: number; op_id: string | null; kind: string; delta: number; note: string | null; created_at: number };
+export type DraftAllowance = { limit: number; used: number; remaining: number; resets_at: number };
+
 export type StudioCredits = {
   balance: number;
   reserved: number;
   plan: string | null;
   period_end: number | null;
   recent: LedgerRow[];
+  /** Free storyboards left today (Asia/Taipei day); drafts cost no credits (owner decision Q3). */
+  drafts?: DraftAllowance;
 };
 
 /** Op states that mean "still running" on either side (portal ledger or agent queue). */
@@ -294,6 +298,13 @@ const STUDIO_ERRORS: Record<string, [string, string]> = {
 };
 
 /** Error text for the studio screens; `service_unavailable` here means the video service, not the account service. */
+/** The storyboard price for buttons: drafts are free (Q3), so normally 「免費」. */
+export function draftPriceLabel(price: number | undefined, locale: Locale): string {
+  const credits = price ?? 0;
+  if (credits <= 0) return locale === "zh" ? "免費" : "free";
+  return locale === "zh" ? `${credits} 點` : `${credits} credits`;
+}
+
 export function isStudioUnconfigured(error: unknown): boolean {
   return error instanceof PortalError && error.code === "studio_unconfigured";
 }
@@ -477,6 +488,8 @@ export function schemaTypes(schema: JsonSchema): string[] {
  * schema annotations when the agent sends them, else from this table (agent config `studio.voices`).
  */
 const KNOWN_VOICES: Record<string, { zh: string; en: string; internal: boolean }> = {
+  // D-V4 b: no voiceover, the narration shows as subtitles only. The default, offered to everyone.
+  none: { zh: "無配音（只有字幕）", en: "No voiceover (subtitles only)", internal: false },
   tw_ref: { zh: "內部測試", en: "Internal test", internal: true },
 };
 

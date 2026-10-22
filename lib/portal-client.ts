@@ -73,6 +73,10 @@ const STUDIO_CODE_TEXT: Record<string, [string, string]> = {
   studio_not_found: ["找不到這支影片，或你沒有權限查看。", "This video was not found, or you cannot open it."],
   studio_daily_cap: ["今日影片產生量已達上限，請明天再試。", "Today's video generation limit has been reached. Try again tomorrow."],
   studio_rate_limited: ["操作太頻繁，請稍等一下再試。", "Too many requests. Wait a moment and try again."],
+  studio_draft_limit: [
+    "今天產生分鏡的次數已達上限（每天 30 次），明天再試，或聯絡我們。",
+    "You have used today's 30 free storyboards. Try again tomorrow, or contact us.",
+  ],
   studio_too_large: ["檔案或內容太大。", "The file or request is too large."],
   studio_voice_not_allowed: ["這個配音只供內部測試使用，請選擇其他配音。", "That voice is for internal tests only. Choose another voice."],
   studio_no_licensed_voice: [

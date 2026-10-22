@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { PortalError } from "../lib/portal-client";
 import {
+  draftPriceLabel,
   aspectLabel,
   cleanInputs,
   localized,
@@ -16,6 +16,7 @@ import {
   type StudioTemplate,
 } from "../lib/studio-client";
 import { useLocale } from "./locale-provider";
+import { DraftLimitText, DraftsLeft, TopUpLinks } from "./studio-help";
 import { SchemaField } from "./studio-fields";
 import { useStudio } from "./studio-shell";
 
@@ -80,8 +81,11 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
       : template?.aspects.includes("9:16")
         ? "9:16"
         : (template?.aspects[0] ?? "9:16");
-  const price = template?.prices?.draft ?? 2;
-  const short = credits !== null && credits.balance < price;
+  // Drafts are free (owner decision Q3); a paid draft is still handled if a template ever prices one.
+  const price = template?.prices?.draft ?? 0;
+  const short = credits !== null && price > 0 && credits.balance < price;
+  const draftsLeft = credits?.drafts?.remaining;
+  const outOfDrafts = draftsLeft === 0;
   const uploading = Object.values(busyFields).some(Boolean);
   const setBusy = (name: string, busy: boolean) =>
     setBusyFields((current) => (current[name] === busy ? current : { ...current, [name]: busy }));
@@ -133,6 +137,7 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
 
   const fields = Object.entries(template?.input_schema.properties ?? {});
   const insufficient = submitError instanceof PortalError && submitError.code === "studio_insufficient_credits";
+  const draftLimited = submitError instanceof PortalError && submitError.code === "studio_draft_limit";
 
   return (
     <>
@@ -195,7 +200,9 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
                 </span>
                 <strong>{localized(item.title, locale, item.id)}</strong>
                 <small>
-                  {zh ? `${item.aspects.map((a) => aspectLabel(a, locale)).join("、")}・分鏡 ${item.prices?.draft ?? 2} 點` : `${item.aspects.join(", ")} · storyboard ${item.prices?.draft ?? 2} credits`}
+                  {zh
+                    ? `${item.aspects.map((a) => aspectLabel(a, locale)).join("、")}・分鏡${(item.prices?.draft ?? 0) > 0 ? ` ${draftPriceLabel(item.prices?.draft, locale)}` : "免費"}`
+                    : `${item.aspects.join(", ")} · storyboard ${draftPriceLabel(item.prices?.draft, locale)}`}
                 </small>
               </button>
             ))}
@@ -272,25 +279,28 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
                   ? zh
                     ? "上傳的商品圖片已無法使用。"
                     : "The uploaded product images can no longer be used."
-                  : studioErrorText(submitError, locale)}
+                  : draftLimited
+                    ? <DraftLimitText limit={credits?.drafts?.limit ?? 30} zh={zh} />
+                    : studioErrorText(submitError, locale)}
                 {reupload &&
                   (zh
                     ? " 這次建立沒有完成，已上傳的圖片綁定在那次嘗試上，請重新上傳商品圖片後再送出。"
                     : " This attempt did not finish and the uploaded images stay tied to it. Upload the product images again, then retry.")}
-                {insufficient && (
-                  <>
-                    {" "}
-                    <Link href="/studio/credits">{zh ? "查看點數" : "See credits"}</Link>
-                  </>
-                )}
+                {insufficient && <TopUpLinks zh={zh} />}
+              </p>
+            )}
+            {outOfDrafts && !draftLimited && (
+              <p className="portal-note" role="status">
+                <DraftLimitText limit={credits?.drafts?.limit ?? 30} zh={zh} />
               </p>
             )}
             {short && (
               <p className="portal-note" role="status">
-                {zh ? `可用點數不足 ${price} 點。` : `You need ${price} credits.`} <Link href="/studio/credits">{zh ? "查看點數" : "See credits"}</Link>
+                {zh ? `可用點數不足 ${price} 點。` : `You need ${price} credits.`}
+                <TopUpLinks zh={zh} />
               </p>
             )}
-            <button className="portal-button studio-primary" type="submit" disabled={submitting || uploading || short}>
+            <button className="portal-button studio-primary" type="submit" disabled={submitting || uploading || short || outOfDrafts}>
               {submitting
                 ? zh
                   ? "建立中…"
@@ -300,9 +310,10 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
                     ? "等待圖片上傳…"
                     : "Waiting for uploads…"
                   : zh
-                    ? `產生分鏡（${price} 點）`
-                    : `Write storyboard (${price} credits)`}
+                    ? `產生分鏡（${draftPriceLabel(price, locale)}）`
+                    : `Write storyboard (${draftPriceLabel(price, locale)})`}
             </button>
+            {draftsLeft !== undefined && draftsLeft > 0 && <DraftsLeft remaining={draftsLeft} zh={zh} />}
           </div>
         </form>
       )}

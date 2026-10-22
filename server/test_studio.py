@@ -36,6 +36,9 @@ class StudioCase(PortalCase):
         self.settings = Settings(db_path=fresh_database(self.directory.name), allowed_origins=(ORIGIN,),
                                  studio_sweeper=self.sweeper, studio_sweep_interval=0.05, **studio_settings())
         self.agent = FakeStudioAgent(clock=lambda: self.now)
+        # Drafts are free in production (StudioOwnerDecisionTests); the money tests keep a paid draft so
+        # every create also exercises reserve, settle and refund.
+        self.agent.prices["draft"] = 2
         self.app = create_app(self.settings, gateway=FakeGateway(), studio_agent=self.agent)
         self.store = self.app.state.store
         self.studio = self.app.state.studio
@@ -201,7 +204,8 @@ class StudioFlowTests(StudioCase):
         self.assertEqual(templates[0]["id"], "ecommerce")
         self.assertNotIn("rules", templates[0])
         self.assertEqual(templates[0]["prices"]["draft"], 2)
-        self.assertEqual(client.get(BASE + "/studio/credits").json(), {"balance": 0, "reserved": 0, "plan": None, "period_end": None, "recent": []})
+        self.assertEqual(client.get(BASE + "/studio/credits").json(), {"balance": 0, "reserved": 0, "plan": None, "period_end": None, "recent": [],
+                                                                  "drafts": {"limit": 30, "used": 0, "remaining": 30, "resets_at": T0 + 8 * 3600}})
         self.grant(user_id, 50, note="welcome", plan="merchant")
         credits = client.get(BASE + "/studio/credits").json()
         self.assertEqual((credits["balance"], credits["reserved"], credits["plan"]), (50, 0, "merchant"))
@@ -935,6 +939,155 @@ class StudioProjectLifecycleTests(StudioCase):
             self.assertEqual(client.get(BASE + "/studio/projects?" + query).status_code, 400, query)
 
 
+TAIPEI_MIDNIGHT = T0 + 8 * 3600  # T0 is 16:00 in Taipei (UTC+8, no daylight saving)
+
+
+class StudioOwnerDecisionTests(StudioCase):
+    """Free drafts with a daily cap (Q3), the trash purge, and the no-narration voice (D-V4 b)."""
+
+    def setUp(self):
+        super().setUp()
+        self.studio.limits["project"] = (1000, 3600)  # this class tests the draft cap, not the hourly project limit
+        self.agent.prices["draft"] = 0
+        self.studio.max_active_per_user = None
+
+    def test_drafts_are_free_and_the_daily_cap_defaults_to_30(self):
+        self.assertEqual(Settings().studio_drafts_per_day, 30)
+        client, user_id = self.customer()
+        response = self.create(client)
+        self.assertEqual(response.status_code, 201, response.text)  # no credits at all: a draft costs nothing
+        self.assertEqual(self.ops()[response.json()["op_id"]]["credits"], 0)
+        drafts = client.get(BASE + "/studio/credits").json()["drafts"]
+        self.assertEqual(drafts, {"limit": 30, "used": 1, "remaining": 29, "resets_at": TAIPEI_MIDNIGHT})
+
+    def test_a_30_thread_race_gets_exactly_30_drafts_and_the_cap_resets_at_taipei_midnight(self):
+        client, user_id = self.customer()
+        results, lock = [], threading.Lock()
+
+        def one(i):
+            response = self.create(client, key="race-key-%04d" % i)
+            with lock:
+                results.append((response.status_code, response.json().get("error")))
+        threads = [threading.Thread(target=one, args=(i,)) for i in range(31)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(sorted(results, key=str), sorted([(201, None)] * 30 + [(429, "studio_draft_limit")], key=str))
+        self.assertEqual(len(rows(self.store, "studio_ops")), 30)
+        self.assertEqual(client.get(BASE + "/studio/credits").json()["drafts"]["remaining"], 0)
+        calls = len(self.agent.calls)
+        late = self.create(client)
+        self.assertEqual((late.status_code, late.json()["error"]), (429, "studio_draft_limit"))
+        self.assertEqual(len(self.agent.calls), calls, "the cap is checked before any agent call")
+        # A replay of an accepted create is not a new draft.
+        self.assertEqual(self.create(client, key="race-key-0000").status_code, 200)
+        # A storyboard redo through the ops route counts too.
+        pid = next(o["project_id"] for o in rows(self.store, "studio_ops"))
+        self.agent.finish(next(o["op_id"] for o in rows(self.store, "studio_ops") if o["project_id"] == pid))
+        self.studio.sweep()
+        redo = self.submit(client, pid, self.quote(client, pid, "draft"))
+        self.assertEqual((redo.status_code, redo.json()["error"]), (429, "studio_draft_limit"))
+        self.now = TAIPEI_MIDNIGHT - 1
+        self.assertEqual(self.create(client).status_code, 429)
+        self.now = TAIPEI_MIDNIGHT
+        self.assertEqual(self.create(client).status_code, 201)
+        drafts = client.get(BASE + "/studio/credits").json()["drafts"]
+        self.assertEqual((drafts["used"], drafts["remaining"], drafts["resets_at"]), (1, 29, TAIPEI_MIDNIGHT + 86400))
+        other, _ = self.customer("second@example.test")  # per user
+        self.assertEqual(self.create(other).status_code, 201)
+        for o in rows(self.store, "studio_ops"):
+            if o["state"] in ACTIVE:
+                self.agent.finish(o["op_id"])
+        self.studio.sweep()
+
+    def test_the_cap_comes_from_the_environment(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"PC_STUDIO_DRAFTS_PER_DAY": "5"}, clear=False):
+            self.assertEqual(Settings.from_env().studio_drafts_per_day, 5)
+        with mock.patch.dict(os.environ, {"PC_STUDIO_DRAFTS_PER_DAY": "lots"}, clear=False):
+            with self.assertRaises(ValueError):
+                Settings.from_env()
+        client, _ = self.customer()
+        self.studio.drafts_per_day = 1
+        self.assertEqual(self.create(client).status_code, 201)
+        self.assertEqual(self.create(client).status_code, 429)
+
+    def test_purge_asks_the_agent_after_30_days_then_hides_the_project_for_good(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        kept = self.drafted(client, credits=0)
+        before = self.money()
+        for project in (pid, kept):
+            self.assertEqual(self.post(client, "/studio/projects/" + project + "/delete", {}).status_code, 200)
+        self.assertEqual(self.post(client, "/studio/projects/" + kept + "/restore", {}).status_code, 200)
+        self.now += 30 * DAY - 1
+        self.assertEqual(self.studio.purge(), 0)
+        self.assertNotIn("purge_project", [c[0] for c in self.agent.calls])
+        self.now += 1
+        self.assertEqual(self.studio.purge(), 1)
+        self.assertEqual([c for c in self.agent.calls if c[0] == "purge_project"], [("purge_project", user_id)])
+        self.assertNotIn(pid, self.agent.projects)
+        self.assertEqual(self.project_row(pid)["status"], "purged")
+        self.assertEqual(self.studio.purge(), 0)  # done once
+        self.assertIn(kept, self.agent.projects)  # a restored project is never purged
+        self.assertEqual(self.money(), before)
+        for response in (client.get(BASE + "/studio/projects/" + pid), self.post(client, "/studio/projects/" + pid + "/restore", {})):
+            self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.listed(client, "?deleted=1"), [])
+
+    def test_purge_treats_the_agents_not_found_as_done_and_retries_other_failures(self):
+        client, _ = self.customer()
+        gone, flaky = self.drafted(client), self.drafted(client, credits=0)
+        for project in (gone, flaky):
+            self.post(client, "/studio/projects/" + project + "/delete", {})
+        del self.agent.projects[gone]  # already purged on the agent side (idempotent: 404)
+        self.now += 30 * DAY
+        self.agent.purge_errors = {flaky: AgentError("timeout")}
+        self.assertEqual(self.studio.purge(), 1)
+        self.assertEqual((self.project_row(gone)["status"], self.project_row(flaky)["status"] == "purged"), ("purged", False))
+        self.agent.purge_errors = {}
+        self.assertEqual(self.studio.purge(), 1)
+        self.assertEqual(self.project_row(flaky)["status"], "purged")
+
+    def test_the_sweeper_purges_at_most_hourly(self):
+        client, _ = self.customer()
+        pid = self.drafted(client)
+        self.post(client, "/studio/projects/" + pid + "/delete", {})
+        self.now += 30 * DAY
+        self.studio.sweep()
+        self.assertEqual(self.project_row(pid)["status"], "purged")
+        second = self.drafted(client, credits=0)
+        self.post(client, "/studio/projects/" + second + "/delete", {})
+        self.now += 30 * DAY
+        self.studio.last_purge = self.now - 10
+        self.studio.sweep()
+        self.assertNotEqual(self.project_row(second)["status"], "purged")  # the last pass was 10 s ago
+        self.now += 3600
+        self.studio.sweep()
+        self.assertEqual(self.project_row(second)["status"], "purged")
+
+    def test_no_narration_voice_is_the_default_and_renders_for_customers(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        self.assertEqual(client.get(BASE + "/studio/projects/" + pid).json()["settings"]["voice"], "none")
+        voice = client.get(BASE + "/studio/templates").json()["items"][0]["project_schema"]["properties"]["voice"]
+        self.assertEqual((voice["enum"][0], voice["default"]), ("none", "none"))
+        self.assertNotIn("none", voice["x-internal-values"])
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", {"type": "render"}).status_code, 200)
+        # Back to none after an internal voice: allowed again.
+        self.agent.projects[pid]["settings"]["voice"] = "tw_ref"
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", {"type": "render"}).status_code, 409)
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/settings", {"voice": "none"}).status_code, 200)
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", {"type": "render"}).status_code, 200)
+
+    # helpers shared with the lifecycle tests
+    money = StudioProjectLifecycleTests.money
+    project_row = StudioProjectLifecycleTests.project_row
+    listed = StudioProjectLifecycleTests.listed
+
+
 class StudioAdminTests(StudioCase):
     def test_grant_is_admin_only_and_audited(self):
         customer, user_id = self.customer()
@@ -1063,6 +1216,9 @@ class StudioAgentClientTests(unittest.TestCase):
         self.agent(handler).usage("2027-01")
         self.assertNotIn("x-studio-owner", seen[1].headers)
         self.assertEqual(str(seen[1].url), "http://shortvideo-api:8081/internal/v1/usage?month=2027-01")
+        self.agent(handler).purge_project("user1", "p1")
+        self.assertEqual((seen[2].method, str(seen[2].url)), ("POST", "http://shortvideo-api:8081/internal/v1/projects/p1/purge"))
+        self.assertEqual(seen[2].headers["x-studio-owner"], "user1")
 
     def test_error_mapping(self):
         cases = ((lambda r: httpx.Response(409, json={"error": {"code": "studio_stale_quote", "message": "m"}}), ("rejected", 409, "studio_stale_quote")),

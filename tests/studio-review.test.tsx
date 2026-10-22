@@ -59,7 +59,7 @@ describe("M1: a failed create with images", () => {
     inFrame(<StudioNew navigate={() => {}} />);
     await userEvent.upload(await screen.findByLabelText("選擇圖片"), new File([new Uint8Array(4)], "a.png", { type: "image/png" }));
     await screen.findByRole("img", { name: "已上傳的圖片 1" });
-    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（2 點）" }));
+    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(text);
     expect(alert).toHaveTextContent("請重新上傳商品圖片");
@@ -67,7 +67,7 @@ describe("M1: a failed create with images", () => {
     expect(calls.filter((c) => c.path === "/studio/credits").length).toBeGreaterThanOrEqual(2);
     await userEvent.upload(screen.getByLabelText("選擇圖片"), new File([new Uint8Array(4)], "b.png", { type: "image/png" }));
     await screen.findByRole("img", { name: "已上傳的圖片 1" });
-    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（2 點）" }));
+    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
     await waitFor(() => expect(calls.filter((c) => c.path === "/studio/projects" && c.method === "POST")).toHaveLength(2));
     const [first, second] = calls.filter((c) => c.path === "/studio/projects" && c.method === "POST").map((c) => c.body as Record<string, unknown>);
     expect((first.inputs as Record<string, unknown>).image_ids).toEqual(["u_1"]);
@@ -79,9 +79,9 @@ describe("M1: a failed create with images", () => {
     const calls = studioFetch({ "POST /studio/projects": fail(503, "service_unavailable") });
     inFrame(<StudioNew navigate={() => {}} />);
     await userEvent.type(await screen.findByLabelText("主題"), "杯子");
-    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（2 點）" }));
+    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
     await screen.findByRole("alert");
-    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（2 點）" }));
+    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
     await waitFor(() => expect(calls.filter((c) => c.path === "/studio/projects")).toHaveLength(2));
     const keys = calls.filter((c) => c.path === "/studio/projects").map((c) => (c.body as Record<string, unknown>).idempotency_key);
     expect(keys[0]).toBe(keys[1]);

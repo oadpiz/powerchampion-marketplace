@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   cleanTitle,
+  draftPriceLabel,
   localized,
   mediaUrl,
   projectStatusLabel,
@@ -201,8 +202,8 @@ export function StudioHome() {
           <h2>{zh ? "還沒有影片" : "No videos yet"}</h2>
           <p className="portal-muted">
             {zh
-              ? `建立第一支影片：產生分鏡只要 ${templates[0]?.prices?.draft ?? 2} 點，滿意之後再產生畫面。`
-              : `Start your first video: the storyboard costs ${templates[0]?.prices?.draft ?? 2} credits, and you generate pictures only once you like it.`}
+              ? `建立第一支影片：產生分鏡${(templates[0]?.prices?.draft ?? 0) > 0 ? `只要 ${draftPriceLabel(templates[0]?.prices?.draft, locale)}` : "免費"}，滿意之後再產生畫面。`
+              : `Start your first video: the storyboard is ${draftPriceLabel(templates[0]?.prices?.draft, locale)}, and you generate pictures only once you like it.`}
           </p>
           {credits && credits.balance === 0 && (
             <p className="portal-note">
