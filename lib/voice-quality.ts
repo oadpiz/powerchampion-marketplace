@@ -15,6 +15,7 @@ import type {
   MeterReason,
   FlagKind,
 } from "./voice-calls";
+import { PHONE_LIKE } from "./voice-calls";
 
 /** The 5 flags the orchestrator reports, then the 5 the portal adds (voice_calls.auto_flags). */
 export const AUTO_FLAGS = [
@@ -202,9 +203,10 @@ export const LISTENING_FIELD_LIMITS = { titleChars: 60, summaryChars: 1000, repo
 /**
  * A note or summary that looks like a phone number (8 or more digits, spaces or dashes allowed between them): the
  * backend answers 400 note_contains_number (phase2-contract §6.3; server/voice_calls.py PHONE_LIKE). The page checks
- * first so the operator sees why before sending; the backend stays authoritative.
+ * first so the operator sees why before sending; the backend stays authoritative. It is the store page's PHONE_LIKE,
+ * whose whitespace is Python's (JavaScript's \s differs); tests/voice-p2-sync.test.ts runs the shared vectors.
  */
-export const NOTE_PHONE_PATTERN = /[0-9０-９][0-9０-９\s-]{6,}[0-9０-９]/;
+export const NOTE_PHONE_PATTERN = PHONE_LIKE;
 
 export type CsvValue = string | number | boolean | null | undefined;
 

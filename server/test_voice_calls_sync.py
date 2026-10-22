@@ -19,6 +19,24 @@ ROOT = Path(os.environ.get("PC_VOICE_FRONTEND_ROOT") or Path(__file__).resolve()
 CALLS = ROOT / "lib" / "voice-calls.ts"
 QUALITY = ROOT / "lib" / "voice-quality.ts"
 BFF = ROOT / "app" / "api" / "portal" / "[...path]" / "route.ts"
+STORE_LIST = ROOT / "components" / "account-voice-calls.tsx"
+STORE_PAGES = (STORE_LIST, ROOT / "components" / "account-voice-calls-detail.tsx",
+               ROOT / "components" / "account-voice-calls-content.tsx")
+QUALITY_COPY = ROOT / "components" / "admin-voice-quality-labels.tsx"
+NUMBER_DIALOGS = ROOT / "components" / "admin-voice-dialogs.tsx"
+STORE_MOCK = ROOT / "tests" / "support" / "voice-calls-backend.ts"
+SERVER = Path(__file__).resolve().parent
+
+# Codes the browser already has phase 1 copy for (phase1-contract §9, lib/portal-client.ts portalErrorText).
+PHASE1_CODES = {"invalid_input", "not_found", "auth_required", "admin_required", "password_change_required",
+                "store_suspended", "voice_store_not_found", "invalid_number", "number_not_found", "account_exists"}
+# §1.2: the BFF turns 503 voice_media_unavailable into 503 service_unavailable, so no page words this code.
+BFF_RENAMED = {"voice_media_unavailable"}
+# §12.1: the phase 2 codes a browser sees, and where each page words them.
+STORE_CODES = ("call_not_found", "note_contains_number", "call_content_unavailable", "call_content_expired",
+               "voice_content_link_limit")
+QUALITY_CODES = STORE_CODES + ("listening_not_found", "listening_limit")
+NUMBER_CODES = ("number_in_use",)
 
 
 def ts_const(path, name):
@@ -36,6 +54,20 @@ def bff_filter(name):
     if match is None:
         raise AssertionError("the BFF has no `[\"%s\", /^(…)$/]` call filter in %s" % (name, BFF))
     return match.group(1).split("|")
+
+
+def backend_codes(path):
+    """Every `fail("code", ...)` and `code="..."` default in a route module."""
+    text = path.read_text(encoding="utf-8")
+    return set(re.findall(r'fail\("([a-z_]+)"', text)) | set(re.findall(r'\bcode="([a-z_]+)"', text))
+
+
+def ts_int(path, pattern):
+    """The integer captured by `pattern` in a front-end file; a missing match is a failure, not a skip."""
+    match = re.search(pattern, path.read_text(encoding="utf-8"), re.MULTILINE)
+    if match is None:
+        raise AssertionError("%r is not in %s" % (pattern, path))
+    return int(match.group(1))
 
 
 class VoiceCallEnumSyncTests(unittest.TestCase):
@@ -73,6 +105,51 @@ class VoiceCallEnumSyncTests(unittest.TestCase):
         self.assertEqual(bff_filter("entry"), list(vc.ENTRIES))
         self.assertEqual(bff_filter("flag"), list(vcr.QUALITY_FLAG_FILTERS))
         self.assertEqual(bff_filter("reviewed"), list(vcr.QUALITY_REVIEWED_FILTERS))
+
+
+
+class VoiceCallErrorCodeSyncTests(unittest.TestCase):
+    """§12.1: every phase 2 error code a browser can get has copy on the page that gets it."""
+
+    def test_backend_codes_are_the_contract_list(self):
+        # A code the backend gains fails here until it is sorted into one of the lists above and given copy.
+        codes = backend_codes(SERVER / "voice_call_routes.py") | backend_codes(SERVER / "admin_voice.py")
+        self.assertEqual(codes - PHASE1_CODES - BFF_RENAMED, set(QUALITY_CODES) | set(NUMBER_CODES))
+
+    def test_store_pages_word_their_codes(self):
+        text = "\n".join(path.read_text(encoding="utf-8") for path in STORE_PAGES)
+        for code in STORE_CODES:
+            with self.subTest(code=code):
+                self.assertTrue('"%s"' % code in text, "no store page words %s" % code)
+
+    def test_quality_tab_words_its_codes(self):
+        text = QUALITY_COPY.read_text(encoding="utf-8")
+        for code in QUALITY_CODES:
+            with self.subTest(code=code):
+                self.assertTrue('case "%s":' % code in text, "%s has no case for %s" % (QUALITY_COPY.name, code))
+
+    def test_number_dialogs_word_number_in_use(self):
+        # §4.4: A7/A8 answer 409 number_in_use once calls refer to the number; the operator must see why.
+        text = NUMBER_DIALOGS.read_text(encoding="utf-8")
+        for code in NUMBER_CODES:
+            with self.subTest(code=code):
+                self.assertTrue('case "%s":' % code in text, "%s has no case for %s" % (NUMBER_DIALOGS.name, code))
+
+
+class VoiceCallLimitSyncTests(unittest.TestCase):
+    """§1.5 limits written into front-end files (and the store page's test backend) must be the backend's."""
+
+    def test_store_page_limits(self):
+        self.assertEqual(ts_int(CALLS, r"^export const FLAG_NOTE_CHARS_DEFAULT = (\d+);"), vc.FLAG_NOTE_CHARS)
+        self.assertEqual(ts_int(STORE_LIST, r"^const CALL_DETAIL_DAYS = (\d+);"), vc.CALL_DETAIL_DAYS)
+
+    def test_store_test_backend_answers_like_the_backend(self):
+        # tests/support/voice-calls-backend.ts stands in for M13-M17; its limits must be the backend's (LESSONS 2026-10-21).
+        self.assertEqual(ts_int(STORE_MOCK, r"^\s*pageSize: (\d+),"), vc.STORE_PAGE_SIZE)
+        self.assertEqual(ts_int(STORE_MOCK, r"^\s*flagNoteChars: (\d+),"), vc.FLAG_NOTE_CHARS)
+        self.assertEqual(ts_int(STORE_MOCK, r"^const TRANSCRIPT_DAYS = (\d+);"), vc.TRANSCRIPT_DAYS)
+        self.assertEqual(ts_int(STORE_MOCK, r"linksUsed >= (\d+)\)"), vc.CONTENT_LINKS_PER_HOUR)
+        self.assertEqual(ts_int(STORE_MOCK, r"exp: iat \+ (\d+), kinds"), vc.CONTENT_LINK_TTL_SECONDS)
 
 
 if __name__ == "__main__":
