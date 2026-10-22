@@ -1176,7 +1176,9 @@ describe("phone agent FAQ inside the account shell", () => {
       </LocaleProvider>,
     );
     await user.click(await screen.findByRole("button", { name: "Add a question" }));
-    expect(screen.getByText(/You have changes that are not applied yet/)).toBeVisible();
+    // No version yet: the shell says so, and not that there are unapplied changes (verifier finding 2026-10-22).
+    expect(screen.getByText("No version applied yet")).toBeVisible();
+    expect(screen.queryByText(/You have changes that are not applied yet/)).not.toBeInTheDocument();
     const form = screen.getByRole("form", { name: "New question" });
     await user.type(within(form).getByLabelText("Question"), "營業到幾點？");
     await user.type(within(form).getByLabelText("Answer"), "晚上九點。");
