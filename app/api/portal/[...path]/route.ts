@@ -25,10 +25,14 @@ const FLEET_MODEL = "[A-Za-z0-9._:-]{1,128}";
 const FLEET_MODEL_PATH = "(?:[A-Za-z0-9._:-]|%3[Aa]){1,128}";
 const FLEET_ACTION = "(freeze|resume|candidate|drain|approve|rollback)";
 const CODE = "[A-Za-z0-9_-]{1,64}";
+// Phone agent (voice) merchant and operator routes; ids are uuid4 hex like AGENT. /voice-runtime is deliberately absent.
+const VOICE_GET = [/^\/me\/voice(\/(setup|faqs|preview))?$/, /^\/admin\/voice\/(stores|numbers)$/, new RegExp(`^/admin/voice/stores/${AGENT}$`)];
+const VOICE_POST = [/^\/me\/voice\/(setup|faqs|faqs\/import|faqs\/from-template|publish|try)$/, new RegExp(`^/me/voice/faqs/${AGENT}$`), /^\/admin\/voice\/(stores|numbers)$/, new RegExp(`^/admin/voice/stores/${AGENT}/status$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`)];
+const VOICE_DELETE = [new RegExp(`^/me/voice/faqs/${AGENT}$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`)];
 const routes: Record<string, readonly RegExp[]> = {
-  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`), /^\/admin\/(keys|usage|gateway)$/, new RegExp(`^/admin/gateway/nodes/${NODE}/jobs/${JOB}$`), /^\/admin\/allocation(\/export)?$/, /^\/me\/engineer$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}$`), /^\/admin\/gateway\/fleet\/events$/, new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/(status|timeline)$`), new RegExp(`^/admin/gateway/control/jobs/${JOB}$`), /^\/admin\/redeem\/codes(\/export)?$/, /^\/admin\/engineers$/],
-  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/password$/, new RegExp(`^/admin/customers/${AGENT}/(status|role|reset-password)$`), /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`), new RegExp(`^/admin/customers/${AGENT}/keys$`), new RegExp(`^/admin/keys/${KEY}/(disable|limits|balance)$`), new RegExp(`^/admin/gateway/models/${MODEL}/(toggle|maintenance)$`), new RegExp(`^/admin/gateway/nodes/${NODE}/ops/${NODE_ACTION}$`), /^\/admin\/allocation\/(engineers|owner|export\/mark)$/, new RegExp(`^/admin/allocation/engineers/${AGENT}(/status|/account|/account/unlink)?$`), new RegExp(`^/admin/allocation/nodes/${ALLOC_NODE}$`), /^\/me\/engineer\/ssh-key$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}/(revisions|activate|try)$`), new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/${FLEET_ACTION}$`), /^\/admin\/redeem\/codes$/, new RegExp(`^/admin/redeem/codes/${CODE}/disable$`)],
-  DELETE: [/^\/keys\/[a-zA-Z0-9_-]{1,80}$/, new RegExp(`^/agents/${AGENT}$`)],
+  GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`), /^\/admin\/(keys|usage|gateway)$/, new RegExp(`^/admin/gateway/nodes/${NODE}/jobs/${JOB}$`), /^\/admin\/allocation(\/export)?$/, /^\/me\/engineer$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}$`), /^\/admin\/gateway\/fleet\/events$/, new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/(status|timeline)$`), new RegExp(`^/admin/gateway/control/jobs/${JOB}$`), /^\/admin\/redeem\/codes(\/export)?$/, /^\/admin\/engineers$/, ...VOICE_GET],
+  POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/password$/, new RegExp(`^/admin/customers/${AGENT}/(status|role|reset-password)$`), /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`), new RegExp(`^/admin/customers/${AGENT}/keys$`), new RegExp(`^/admin/keys/${KEY}/(disable|limits|balance)$`), new RegExp(`^/admin/gateway/models/${MODEL}/(toggle|maintenance)$`), new RegExp(`^/admin/gateway/nodes/${NODE}/ops/${NODE_ACTION}$`), /^\/admin\/allocation\/(engineers|owner|export\/mark)$/, new RegExp(`^/admin/allocation/engineers/${AGENT}(/status|/account|/account/unlink)?$`), new RegExp(`^/admin/allocation/nodes/${ALLOC_NODE}$`), /^\/me\/engineer\/ssh-key$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}/(revisions|activate|try)$`), new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/${FLEET_ACTION}$`), /^\/admin\/redeem\/codes$/, new RegExp(`^/admin/redeem/codes/${CODE}/disable$`), ...VOICE_POST],
+  DELETE: [/^\/keys\/[a-zA-Z0-9_-]{1,80}$/, new RegExp(`^/agents/${AGENT}$`), ...VOICE_DELETE],
 };
 /** Empty or dot segments, including ones hidden behind an encoded dot or an encoded slash, are never legitimate ids. */
 function traverses(path: string) {
@@ -43,7 +47,7 @@ function timeoutFor(path: string) {
   return PERSONA_TRY.test(path) ? 95000 : 20000;
 }
 function requestLimitFor(path: string) {
-  return path === "/runtime/tasks" || PERSONA_REVISIONS.test(path) ? 196608 : 65536;
+  return path === "/runtime/tasks" || path === "/me/voice/faqs/import" || PERSONA_REVISIONS.test(path) ? 196608 : 65536;
 }
 function responseLimitFor(path: string) {
   return path === "/admin/redeem/codes/export" ? 6291456 : 2097152;

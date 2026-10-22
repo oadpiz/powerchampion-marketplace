@@ -239,8 +239,8 @@ describe("admin engineers section", () => {
   });
 
   it.each([
-    ["en", ["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Credit requests", "Audit log"]],
-    ["zh", ["總覽", "客戶", "金鑰", "兌換碼", "用量", "閘道", "人設", "機台分配", "工程師", "儲值申請", "操作紀錄"]],
+    ["en", ["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Phone agent", "Credit requests", "Audit log"]],
+    ["zh", ["總覽", "客戶", "金鑰", "兌換碼", "用量", "閘道", "人設", "機台分配", "工程師", "電話客服", "儲值申請", "操作紀錄"]],
   ])("puts Engineers right after Node allocation in the %s navigation", async (locale, labels) => {
     localStorage.setItem("pc-locale", locale);
     window.history.replaceState({}, "", "/admin/engineers");

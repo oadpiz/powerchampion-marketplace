@@ -13,6 +13,7 @@ import { AdminPersonasSection } from "./admin-personas-section";
 import { AdminRedeemSection } from "./admin-redeem-section";
 import { OverviewSection } from "./admin-overview-section";
 import { AdminUsageSection } from "./admin-usage-section";
+import { AdminVoiceSection } from "./admin-voice-section";
 import { useLocale } from "./locale-provider";
 import { ResourceState, usePortalResource } from "./admin-resource";
 
@@ -26,6 +27,7 @@ export type AdminSection =
   | "personas"
   | "allocation"
   | "engineers"
+  | "voice"
   | "credits"
   | "audit";
 
@@ -61,6 +63,7 @@ export function AdminPortal({
       zh: "機台分配",
     },
     { section: "engineers", href: "/admin/engineers", en: "Engineers", zh: "工程師" },
+    { section: "voice", href: "/admin/voice", en: "Phone agent", zh: "電話客服" },
     {
       section: "credits",
       href: "/admin/credits",
@@ -136,6 +139,7 @@ export function AdminPortal({
           {section === "personas" && <AdminPersonasSection />}
           {section === "allocation" && <AdminAllocationSection />}
           {section === "engineers" && <AdminEngineersSection />}
+          {section === "voice" && <AdminVoiceSection />}
           {section === "credits" && <CreditsSection />}
           {section === "audit" && <AuditSection />}
         </>

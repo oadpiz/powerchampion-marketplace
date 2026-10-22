@@ -286,7 +286,7 @@ describe("admin redeem codes section", () => {
   it("lists the final navigation order", () => {
     wrap(<AdminShell pathname="/admin/redeem"><p>content</p></AdminShell>);
     const labels = within(screen.getByRole("navigation", { name: /administration/i })).getAllByRole("link").map((link) => link.textContent);
-    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Credit requests", "Audit log"]);
+    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Phone agent", "Credit requests", "Audit log"]);
     expect(screen.getByRole("link", { name: "Redeem codes" })).toHaveAttribute("aria-current", "page");
   });
 });

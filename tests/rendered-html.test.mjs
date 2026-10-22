@@ -607,6 +607,7 @@ test("server-renders each administration section and rejects unknown ones", asyn
     ["/admin/personas", "Personas"],
     ["/admin/allocation", "Node allocation"],
     ["/admin/engineers", "Engineers"],
+    ["/admin/voice", "Phone agent"],
   ]) {
     const response = await render(path);
     assert.equal(response.status, 200, path);
@@ -616,6 +617,21 @@ test("server-renders each administration section and rejects unknown ones", asyn
   assert.equal((await render("/admin/keys/extra")).status, 404);
   assert.equal((await render("/admin/redeem/x")).status, 404);
   assert.equal((await render("/admin/engineers/justin")).status, 404);
+  assert.equal((await render("/admin/voice/x")).status, 404);
+  assert.equal((await render("/admin/voice/stores")).status, 404);
+});
+
+test("server-renders the phone agent account pages and rejects unknown sub-pages", async () => {
+  for (const path of ["/account/voice", "/account/voice/setup", "/account/voice/faq", "/account/voice/try"]) {
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+    const html = await response.text();
+    assert.match(html, /<h1>Phone agent<\/h1>/, path);
+    assert.match(html, /name="robots" content="noindex, nofollow"/, path);
+  }
+  for (const path of ["/account/voice/x", "/account/voice/faqs", "/account/voice/setup/x", "/account/voice/try/x", "/account/security/setup", "/account/voices"]) {
+    assert.equal((await render(path)).status, 404, path);
+  }
 });
 
 test("server-renders the full API developer guide", async () => {
