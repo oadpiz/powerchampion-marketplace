@@ -1,5 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   AdminAllocationSection,
@@ -294,7 +296,10 @@ describe("admin node allocation section", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: "b300-30 role" }), "selling");
     const save = screen.getByRole("button", { name: "Save" });
     expect(save).toBeDisabled();
-    await user.click(screen.getByRole("checkbox", { name: /I ran the node sync \(runbook 4\.7\)/ }));
+    const synced = screen.getByRole("checkbox", { name: /I ran the node sync \(runbook 4\.7\)/ });
+    // portal.css lays out a .portal-field whose direct child is a checkbox as one line (see the CSS test below).
+    expect(synced.parentElement).toHaveClass("portal-field");
+    await user.click(synced);
     expect(save).toBeEnabled();
     await user.click(save);
     await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
@@ -480,7 +485,9 @@ describe("admin node allocation section", () => {
     expect(downloads).toEqual([]);
     expect(calls.some((call) => call.method === "POST")).toBe(false);
     expect(screen.getByRole("button", { name: "Export engineers.yaml" })).toBeDisabled();
-    await user.click(screen.getByRole("checkbox", { name: /confirmed each new fingerprint with the engineer/ }));
+    const confirmed = screen.getByRole("checkbox", { name: /confirmed each new fingerprint with the engineer/ });
+    expect(confirmed.parentElement).toHaveClass("portal-field");
+    await user.click(confirmed);
     await user.click(screen.getByRole("button", { name: "Export engineers.yaml" }));
     expect(await screen.findByText(/Last export: revision 3/)).toBeVisible();
     expect(downloads).toEqual(["engineers.yaml"]);
@@ -490,5 +497,22 @@ describe("admin node allocation section", () => {
       body: { revision: 3, fingerprintsConfirmed: true },
     });
     expect(screen.queryByRole("list", { name: "Engineer keys to confirm" })).not.toBeInTheDocument();
+  });
+});
+
+// Verifier finding 2026-10-22: the node-sync and fingerprint checkboxes sit directly in a label.portal-field, a column
+// flex box. width: auto did not stop align-items: stretch, so each box was as wide as the row with its text below.
+// Measured in a browser: 318 px wide before, 13 px after, the text beside it.
+describe("checkboxes inside .portal-field (portal.css)", () => {
+  it("keep their own size and put their text beside them", () => {
+    const css = readFileSync(join(process.cwd(), "app/portal.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const box = css.match(
+      /\.portal-field input\[type="radio"\],\s*\.portal-field input\[type="checkbox"\],\s*\.portal-choice input \{([^}]*)\}/,
+    );
+    expect(box?.[1]).toMatch(/align-self: flex-start;/);
+    const line = css.match(
+      /\.portal-field:has\(> input\[type="radio"\]\),\s*\.portal-field:has\(> input\[type="checkbox"\]\) \{([^}]*)\}/,
+    );
+    expect(line?.[1]).toMatch(/flex-direction: row;/);
   });
 });
