@@ -581,6 +581,36 @@ describe("setup page: business hours and closures", () => {
   });
 });
 
+describe("setup page: radio layout", () => {
+  // Verifier finding 2026-10-22: radios inside .portal-field got the text-field rule (width 100%, 43 px tall), so
+  // each radio was a full-width row with its text on the next line and the selected dot sat between two options.
+  it("keeps every radio out of .portal-field and on one line with its text", async () => {
+    await renderSetup();
+    const radios = screen.getAllByRole("radio");
+    expect(radios).toHaveLength(5);
+    for (const radio of radios) {
+      expect(radio.closest(".portal-field")).toBeNull();
+      expect(radio.closest("label")).toHaveClass("portal-choice");
+      expect(radio.closest("fieldset")).toHaveClass("portal-choices");
+    }
+  });
+
+  it("has CSS that keeps radios and checkboxes at their own size, even inside .portal-field", () => {
+    const css = readFileSync(resolve(process.cwd(), "app/portal.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rule = (selector: string) => {
+      const found = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].find((match) =>
+        match[1].split(",").map((part) => part.trim()).includes(selector),
+      );
+      return found ? found[2].replace(/\s+/g, " ") : "";
+    };
+    for (const selector of ['.portal-field input[type="radio"]', '.portal-field input[type="checkbox"]', ".portal-choice input"]) {
+      expect(rule(selector)).toMatch(/width: auto;/);
+      expect(rule(selector)).toMatch(/min-height: 0;/);
+    }
+    expect(rule(".portal-choice")).toMatch(/display: flex;/);
+  });
+});
+
 describe("setup page: messages, recording and retention", () => {
   it("offers exactly the backend's choices", async () => {
     await renderSetup();

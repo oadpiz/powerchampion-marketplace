@@ -701,7 +701,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
         </label>
         {variantMessage && <p className="portal-error">{variantMessage}</p>}
         {placeholderHint(draft.variantsText)}
-        <label>
+        <label className="portal-choice">
           <input type="checkbox" checked={!draft.aiAllowed} onChange={(event) => setDraft({ ...draft, aiAllowed: !event.target.checked })} />{" "}
           {t(T.noAiCheck)}
         </label>
@@ -972,16 +972,16 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
       {templateOpen && template.available && (
         <Modal labelledBy="voice-faq-template-title" busy={busy === "template"} onClose={() => setTemplateOpen(false)}>
           <h2 id="voice-faq-template-title">{zh ? `從「${template.title.zh}」範本帶入` : `Use the "${template.title.en}" template`}</h2>
-          <fieldset className="portal-field">
+          <fieldset className="portal-choices">
             <legend>{t(T.templateMode)}</legend>
             {IMPORT_MODES.map((mode) => (
-              <label key={mode}>
+              <label key={mode} className="portal-choice">
                 <input type="radio" name="voice-template-mode" checked={templateMode === mode} onChange={() => setTemplateMode(mode)} />{" "}
                 {t(mode === "append" ? T.modeAppend : T.modeReplace)}
               </label>
             ))}
           </fieldset>
-          <label>
+          <label className="portal-choice">
             <input type="checkbox" checked={templateIntro} onChange={(event) => setTemplateIntro(event.target.checked)} /> {t(T.templateIntro)}
           </label>
           <p className="portal-note">{t(T.templateNote)}</p>
@@ -1013,10 +1013,10 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
               }}
             />
           </label>
-          <fieldset className="portal-field">
+          <fieldset className="portal-choices">
             <legend>{t(T.csvMode)}</legend>
             {IMPORT_MODES.map((mode) => (
-              <label key={mode}>
+              <label key={mode} className="portal-choice">
                 <input
                   type="radio"
                   name="voice-csv-mode"

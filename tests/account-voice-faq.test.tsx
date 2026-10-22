@@ -494,6 +494,29 @@ describe("phone agent FAQ page", () => {
     expect(fake.calls.map((call) => `${call.method} ${call.path}`)).toEqual(["GET /me/voice/faqs"]);
   });
 
+  it("keeps the radios and checkboxes of the form and both dialogs on one line with their text", async () => {
+    // Verifier finding 2026-10-22: the template and CSV dialogs put their radios inside .portal-field.
+    const user = userEvent.setup();
+    const fake = new FakeVoice().install();
+    renderFaq(fake);
+    const inputs = () => [...document.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]')];
+    const check = (expected: number) => {
+      expect(inputs()).toHaveLength(expected);
+      for (const input of inputs()) {
+        expect(input.closest(".portal-field")).toBeNull();
+        expect(input.closest("label")).toHaveClass("portal-choice");
+      }
+    };
+    await user.click(await screen.findByRole("button", { name: "Add a question" }));
+    check(1);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Use the template" }));
+    check(3);
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Import CSV" }));
+    check(2);
+  });
+
   it("hides the template button for an industry without one", async () => {
     const fake = new FakeVoice();
     fake.template = null;
