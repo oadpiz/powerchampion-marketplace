@@ -1112,9 +1112,9 @@ describe("FAQ helpers", () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// Front/back enum sync (LESSONS 2026-10-21). The backend files arrive with other branches:
-// server/voice_compile.py with T2 (feat/voice-p1-prompt), the CSV import with T4. Each check runs
-// once its backend file is in the tree; until then it is reported as skipped, not passed.
+// Front/back enum sync (LESSONS 2026-10-21). On the merged branch (feat/voice-p1) the backend is in
+// the tree, so these checks always run: a missing backend file or constant fails instead of skipping.
+// server/test_voice_sync.py checks the same lists from the Python side.
 // ---------------------------------------------------------------------------------------------
 
 const SERVER = join(process.cwd(), "server");
@@ -1137,9 +1137,6 @@ function pythonRegex(source: string, name: string): string | null {
 
 describe("front/back enum sync", () => {
   const sources = serverSources();
-  const compile = existsSync(join(SERVER, "voice_compile.py")) ? readFileSync(join(SERVER, "voice_compile.py"), "utf8") : null;
-  const hasCsvImport = sources.some((source) => source.includes('"header_invalid"'));
-  const hasImportRoute = sources.some((source) => source.includes("/me/voice/faqs/import"));
 
   it("reads Python tuples and regexes the way the backend writes them", () => {
     // The PLACEHOLDER line as T2 wrote it in server/voice_compile.py (feat/voice-p1-prompt e0cba1e).
@@ -1148,17 +1145,17 @@ describe("front/back enum sync", () => {
     expect(pythonTuple("X = ('a', 'b')", "Y")).toBeNull();
   });
 
-  it.skipIf(compile === null)("uses the placeholder regex of server/voice_compile.py", () => {
-    expect(pythonRegex(compile ?? "", "PLACEHOLDER")).toBe(PLACEHOLDER.source);
+  it("uses the placeholder regex of server/voice_compile.py", () => {
+    expect(pythonRegex(readFileSync(join(SERVER, "voice_compile.py"), "utf8"), "PLACEHOLDER")).toBe(PLACEHOLDER.source);
   });
 
-  it.skipIf(!hasCsvImport)("knows every CSV problem code the backend can report (CSV_PROBLEMS)", () => {
+  it("knows every CSV problem code the backend can report (CSV_PROBLEMS)", () => {
     const backend = sources.map((source) => pythonTuple(source, "CSV_PROBLEMS")).find((tuple) => tuple !== null);
     expect(backend, "define CSV_PROBLEMS = (...) next to the CSV import so this test can compare it").toBeDefined();
     expect(new Set(backend)).toEqual(new Set(CSV_PROBLEMS));
   });
 
-  it.skipIf(!hasImportRoute)("sends only the import modes the backend accepts (IMPORT_MODES)", () => {
+  it("sends only the import modes the backend accepts (IMPORT_MODES)", () => {
     const backend = sources.map((source) => pythonTuple(source, "IMPORT_MODES")).find((tuple) => tuple !== null);
     expect(backend, "define IMPORT_MODES = (...) for M8/M9 so this test can compare it").toBeDefined();
     expect(new Set(backend)).toEqual(new Set(IMPORT_MODES));
