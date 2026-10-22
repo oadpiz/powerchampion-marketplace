@@ -65,6 +65,13 @@ LIST_DEFAULT, LIST_MAX = 20, 50
 GRANT_MAX = 1_000_000
 REFRESH_WORKERS = 6
 THUMB_MARGIN_S = 300
+# Soft delete: a deleted project stays in the trash (回收區) and can be restored for 30 days. After that it is
+# hidden from every route, including restore. Credits are never refunded by a delete.
+# TODO(studio): purge job: drop portal rows (and ask the agent to drop the project and its media) once
+# deleted_at is older than TRASH_S. Until then old rows are only hidden.
+TRASH_S = 30 * 86400
+TITLE_MAX = 120
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 IDEMPOTENCY = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -166,6 +173,14 @@ def _target(value):
 
 def _invalid(detail="Check the details and try again."):
     fail("studio_invalid_input", detail)
+
+
+def _title(value):
+    """A project title: trimmed, 1 to TITLE_MAX characters, no control characters."""
+    title = value.strip() if isinstance(value, str) else ""
+    if not 1 <= len(title) <= TITLE_MAX or CONTROL.search(title):
+        _invalid("Enter a title of 1 to 120 characters.")
+    return title
 
 
 def _month_bounds(month):
@@ -278,6 +293,43 @@ class Studio:
             self._consume(con, user_id, "project")
             con.execute("INSERT INTO studio_projects (id,user_id,template_id,title,status,thumb_url,thumb_exp,created_at,updated_at,deleted_at) VALUES (?,?,?,NULL,NULL,NULL,NULL,?,?,NULL)",
                         (project_id, user_id, template_id, now, now))
+
+    def _trashable(self, con, user_id, project_id):
+        """The user's project, live or deleted less than TRASH_S ago; 404 otherwise."""
+        if not isinstance(project_id, str) or not ID.fullmatch(project_id):
+            fail("studio_not_found", PASS_THROUGH["studio_not_found"][1], 404)
+        row = con.execute("SELECT * FROM studio_projects WHERE id=? AND user_id=? AND (deleted_at IS NULL OR deleted_at>?)",
+                          (project_id, user_id, self.now() - TRASH_S)).fetchone()
+        if not row:
+            fail("studio_not_found", PASS_THROUGH["studio_not_found"][1], 404)
+        return row
+
+    def delete_project(self, user_id, project_id):
+        """Soft delete; idempotent. 409 studio_busy while an op is active (checked under the write lock,
+        so it cannot interleave with reserve). No ledger row: credits already used are not refunded."""
+        with self.store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = self._trashable(con, user_id, project_id)
+            deleted_at = row["deleted_at"]
+            if deleted_at is None:
+                if con.execute("SELECT 1 FROM studio_ops WHERE project_id=? AND state IN (?,?,?)", (project_id, *ACTIVE)).fetchone():
+                    fail("studio_busy", "This project is busy. Wait for the current step to finish before deleting it.", 409)
+                deleted_at = self.now()
+                con.execute("UPDATE studio_projects SET deleted_at=? WHERE id=? AND deleted_at IS NULL", (deleted_at, project_id))
+        return {"id": project_id, "deleted_at": deleted_at, "restore_until": deleted_at + TRASH_S}
+
+    def restore_project(self, user_id, project_id):
+        """Undo a delete within TRASH_S; idempotent for a live project."""
+        with self.store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = self._trashable(con, user_id, project_id)
+            if row["deleted_at"] is not None:
+                con.execute("UPDATE studio_projects SET deleted_at=NULL WHERE id=?", (project_id,))
+        return {"id": project_id, "deleted_at": None, "restore_until": None}
+
+    def set_title(self, project_id, title):
+        with self.store.connect() as con:
+            con.execute("UPDATE studio_projects SET title=? WHERE id=?", (title, project_id))
 
     def drop_unused_project(self, user_id, project_id):
         with self.store.connect() as con:
@@ -593,11 +645,16 @@ def attach_studio(application, ctx, agent=None):
             limit = int(raw_limit)
         else:
             _invalid("Choose a limit from 1 to 50.")
+        deleted = request.query_params.get("deleted")
+        if deleted is not None and deleted != "1":
+            _invalid("Use deleted=1 for the trash.")
+        trash = deleted == "1"
+        now = studio.now()
         # A project with no op at all is a create that failed (or crashed) before reserving its draft:
         # nothing was charged and nothing was drafted, so it is not listed. Draft failures have an op and stay.
-        sql = ("SELECT * FROM studio_projects WHERE user_id=? AND deleted_at IS NULL "
-               "AND EXISTS (SELECT 1 FROM studio_ops o WHERE o.project_id=studio_projects.id)")
-        params = [user["id"]]
+        sql = ("SELECT * FROM studio_projects WHERE user_id=? AND " + ("deleted_at IS NOT NULL AND deleted_at>?" if trash else "deleted_at IS NULL") +
+               " AND EXISTS (SELECT 1 FROM studio_ops o WHERE o.project_id=studio_projects.id)")
+        params = [user["id"], now - TRASH_S] if trash else [user["id"]]
         cursor = request.query_params.get("cursor")
         if cursor is not None:
             match = CURSOR.fullmatch(cursor)
@@ -611,8 +668,8 @@ def attach_studio(application, ctx, agent=None):
         if len(rows) > limit:
             rows = rows[:limit]
             following = str(rows[-1]["created_at"]) + "_" + rows[-1]["id"]
-        now = studio.now()
-        stale = [r["id"] for r in rows if r["status"] is None or r["status"] in ("drafting", "rendering")
+        # The trash shows the cached values only: no agent call for a project the user threw away.
+        stale = [] if trash else [r["id"] for r in rows if r["status"] is None or r["status"] in ("drafting", "rendering")
                  or (r["thumb_url"] and (r["thumb_exp"] or 0) < now + THUMB_MARGIN_S)]
         if stale:
             await run_in_threadpool(studio.refresh_projects, user["id"], stale)
@@ -631,9 +688,12 @@ def attach_studio(application, ctx, agent=None):
             status = r["status"]
             if r["id"] in active:
                 status = "drafting" if active[r["id"]] == "draft" else "rendering"
-            items.append({"id": r["id"], "title": r["title"], "template_id": r["template_id"], "status": status or "empty",
-                          "thumb_url": r["thumb_url"] if r["thumb_url"] and (r["thumb_exp"] or 0) > now else None,
-                          "updated_at": r["updated_at"]})
+            item = {"id": r["id"], "title": r["title"], "template_id": r["template_id"], "status": status or "empty",
+                    "thumb_url": r["thumb_url"] if r["thumb_url"] and (r["thumb_exp"] or 0) > now else None,
+                    "updated_at": r["updated_at"]}
+            if trash:
+                item.update(deleted_at=r["deleted_at"], restore_until=r["deleted_at"] + TRASH_S)
+            items.append(item)
         return {"items": items, "next": following}
 
     @application.post(S + "/projects")
@@ -733,7 +793,16 @@ def attach_studio(application, ctx, agent=None):
         body = await body_json(request)
         if user["role"] != "admin" and body.get("voice") in studio.internal_voices:
             fail("studio_voice_not_allowed", "That voice is for internal tests only.", 403)
-        return await _edit(request, project_id, "edit_settings", body=body)
+        title = None
+        if "title" in body:
+            # Rename: the portal keeps the title (the list reads it) and the agent gets it too (exports use it).
+            title = _title(body["title"])
+            body = dict(body, title=title)
+        doc = await _edit(request, project_id, "edit_settings", body=body)
+        if title is not None:
+            await run_in_threadpool(studio.set_title, project_id, title)
+            doc["title"] = title
+        return doc
 
     @application.post(S + "/projects/{project_id}/shots/{index}/edit")
     async def studio_edit_shot(project_id: str, index: str, request: Request):
@@ -792,6 +861,18 @@ def attach_studio(application, ctx, agent=None):
             doc = await run_in_threadpool(studio.reconcile, op)
             op = studio.op(op_id)
         return studio.op_json(op, doc)
+
+    @application.post(S + "/projects/{project_id}/delete")
+    async def studio_delete(project_id: str, request: Request):
+        user = current_user(request)
+        studio.require()
+        return await run_in_threadpool(studio.delete_project, user["id"], project_id)
+
+    @application.post(S + "/projects/{project_id}/restore")
+    async def studio_restore(project_id: str, request: Request):
+        user = current_user(request)
+        studio.require()
+        return await run_in_threadpool(studio.restore_project, user["id"], project_id)
 
     @application.get(S + "/credits")
     async def studio_credits(request: Request):

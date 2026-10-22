@@ -3,20 +3,27 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
+  cleanTitle,
   localized,
   mediaUrl,
   projectStatusLabel,
   studioApi,
   studioErrorText,
   timeLabel,
+  TITLE_MAX,
+  TRASH_DAYS,
   type ProjectSummary,
   type StudioTemplate,
 } from "../lib/studio-client";
+import { AdminDialog } from "./admin-dialog";
 import { useLocale } from "./locale-provider";
 import { useStudio } from "./studio-shell";
 
 const BUSY = new Set(["drafting", "rendering"]);
 const LIST_POLL_MS = 10_000;
+
+type Renaming = { item: ProjectSummary; value: string; error: string | null; busy: boolean };
+type Deleting = { item: ProjectSummary; error: string | null; busy: boolean };
 
 /** /studio: the signed-in user's videos, newest first. */
 export function StudioHome() {
@@ -30,6 +37,11 @@ export function StudioHome() {
   const [templates, setTemplates] = useState<StudioTemplate[]>([]);
   const [revision, setRevision] = useState(0);
   const firstPage = useRef(true);
+  const [renaming, setRenaming] = useState<Renaming | null>(null);
+  const [deleting, setDeleting] = useState<Deleting | null>(null);
+  const [deletedTitle, setDeletedTitle] = useState<string | null>(null);
+  const untitled = zh ? "未命名影片" : "Untitled video";
+  const nameOf = (item: ProjectSummary) => item.title || untitled;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -106,6 +118,39 @@ export function StudioHome() {
 
   const templateTitle = (id: string) => localized(templates.find((t) => t.id === id)?.title, locale, id);
 
+  async function saveTitle() {
+    if (!renaming || renaming.busy) return;
+    const title = cleanTitle(renaming.value);
+    if (!title) {
+      setRenaming({ ...renaming, error: zh ? `請輸入 1 到 ${TITLE_MAX} 個字的名稱。` : `Enter a name of 1 to ${TITLE_MAX} characters.` });
+      return;
+    }
+    const id = renaming.item.id;
+    setRenaming({ ...renaming, busy: true, error: null });
+    try {
+      const doc = await studioApi.rename(id, title);
+      const saved = typeof doc.title === "string" && doc.title ? doc.title : title;
+      setItems((current) => current?.map((item) => (item.id === id ? { ...item, title: saved } : item)) ?? current);
+      setRenaming(null);
+    } catch (cause) {
+      setRenaming((current) => current && { ...current, busy: false, error: studioErrorText(cause, locale) });
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting || deleting.busy) return;
+    const { item } = deleting;
+    setDeleting({ ...deleting, busy: true, error: null });
+    try {
+      await studioApi.remove(item.id);
+      setItems((current) => current?.filter((known) => known.id !== item.id) ?? current);
+      setDeletedTitle(nameOf(item));
+      setDeleting(null);
+    } catch (cause) {
+      setDeleting((current) => current && { ...current, busy: false, error: studioErrorText(cause, locale) });
+    }
+  }
+
   return (
     <>
       <header className="portal-header studio-header">
@@ -124,6 +169,13 @@ export function StudioHome() {
           </Link>
         </div>
       </header>
+      {deletedTitle !== null && (
+        <p className="portal-note studio-notice" role="status">
+          {zh ? `「${deletedTitle}」已移到回收區，${TRASH_DAYS} 天內可以從` : `“${deletedTitle}” moved to the trash. You can restore it from the `}
+          <Link href="/studio/trash">{zh ? "回收區" : "trash"}</Link>
+          {zh ? "復原。" : ` within ${TRASH_DAYS} days.`}
+        </p>
+      )}
       {error !== null && (
         <div className="portal-panel">
           <p className="portal-error" role="alert">
@@ -168,7 +220,7 @@ export function StudioHome() {
         <>
           <ul className="studio-grid" aria-label={zh ? "影片列表" : "Videos"}>
             {items.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} className="studio-card-item">
                 <Link className="studio-card" href={`/studio/p/${item.id}`}>
                   <span className="studio-card-thumb">
                     {mediaUrl(item.thumb_url) ? (
@@ -186,12 +238,30 @@ export function StudioHome() {
                     </span>
                   </span>
                   <span className="studio-card-body">
-                    <strong>{item.title || (zh ? "未命名影片" : "Untitled video")}</strong>
+                    <strong>{nameOf(item)}</strong>
                     <small>
                       {templateTitle(item.template_id)} · {timeLabel(item.updated_at, locale)}
                     </small>
                   </span>
                 </Link>
+                <div className="studio-card-actions">
+                  <button
+                    type="button"
+                    className="studio-card-action"
+                    aria-label={zh ? `重新命名「${nameOf(item)}」` : `Rename “${nameOf(item)}”`}
+                    onClick={() => setRenaming({ item, value: item.title ?? "", error: null, busy: false })}
+                  >
+                    {zh ? "重新命名" : "Rename"}
+                  </button>
+                  <button
+                    type="button"
+                    className="studio-card-action studio-card-action-danger"
+                    aria-label={zh ? `刪除「${nameOf(item)}」` : `Delete “${nameOf(item)}”`}
+                    onClick={() => setDeleting({ item, error: null, busy: false })}
+                  >
+                    {zh ? "刪除" : "Delete"}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -203,6 +273,55 @@ export function StudioHome() {
             </div>
           )}
         </>
+      )}
+      {renaming && (
+        <AdminDialog
+          title={zh ? "重新命名影片" : "Rename video"}
+          confirmLabel={renaming.busy ? (zh ? "儲存中…" : "Saving…") : zh ? "儲存" : "Save"}
+          cancelLabel={zh ? "取消" : "Cancel"}
+          inFlight={renaming.busy}
+          onClose={() => setRenaming(null)}
+          onConfirm={() => void saveTitle()}
+        >
+          <label className="studio-rename-field">
+            <span>{zh ? "影片名稱" : "Video title"}</span>
+            <input
+              type="text"
+              value={renaming.value}
+              maxLength={TITLE_MAX}
+              disabled={renaming.busy}
+              onChange={(event) => setRenaming({ ...renaming, value: event.target.value, error: null })}
+            />
+          </label>
+          <p className="portal-muted">{zh ? `最多 ${TITLE_MAX} 個字。` : `Up to ${TITLE_MAX} characters.`}</p>
+          {renaming.error && (
+            <p className="portal-error" role="alert">
+              {renaming.error}
+            </p>
+          )}
+        </AdminDialog>
+      )}
+      {deleting && (
+        <AdminDialog
+          title={zh ? `刪除「${nameOf(deleting.item)}」？` : `Delete “${nameOf(deleting.item)}”?`}
+          confirmLabel={deleting.busy ? (zh ? "刪除中…" : "Deleting…") : zh ? "刪除" : "Delete"}
+          cancelLabel={zh ? "取消" : "Cancel"}
+          inFlight={deleting.busy}
+          danger
+          onClose={() => setDeleting(null)}
+          onConfirm={() => void confirmDelete()}
+        >
+          <p>
+            {zh
+              ? `刪除不會退回已使用的點數。${TRASH_DAYS} 天內可以從回收區復原。`
+              : `Deleting does not refund credits already used. You can restore it from the trash within ${TRASH_DAYS} days.`}
+          </p>
+          {deleting.error && (
+            <p className="portal-error" role="alert">
+              {deleting.error}
+            </p>
+          )}
+        </AdminDialog>
       )}
     </>
   );

@@ -342,6 +342,85 @@
   border-color: rgb(141 125 255 / 45%);
 }
 
+/* ---------------------------------------------------------------- rename, delete, trash, closed */
+.studio-card-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.studio-card-item .studio-card {
+  flex: 1;
+}
+.studio-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.studio-card-action {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted, #aaa69e);
+  font-size: 12px;
+  cursor: pointer;
+}
+.studio-card-action:hover,
+.studio-card-action:focus-visible {
+  border-color: var(--line, #343336);
+  color: var(--ink, #eeebe5);
+}
+.studio-card-action-danger:hover,
+.studio-card-action-danger:focus-visible {
+  border-color: rgb(255 107 107 / 45%);
+  color: #ff9b9b;
+}
+.studio-card-deleted .studio-card-body button {
+  justify-self: start;
+  margin-top: 6px;
+}
+.studio-card-deleted .studio-card-thumb {
+  opacity: 0.55;
+}
+.studio-trash-left {
+  color: var(--studio-warn) !important;
+}
+.studio-notice {
+  margin: 0 0 20px;
+}
+.studio-rename-field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.studio-rename-field input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--line, #343336);
+  border-radius: 8px;
+  background: var(--studio-raised);
+  color: var(--ink, #eeebe5);
+  font: inherit;
+}
+.studio-closed {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: 640px;
+  margin: 24px auto 0;
+  padding: 48px 28px;
+  text-align: center;
+}
+.studio-closed h1 {
+  margin: 10px 0 4px;
+  font-size: 26px;
+}
+.studio-closed .portal-muted {
+  max-width: 480px;
+}
+
 /* ---------------------------------------------------------------- new */
 .studio-step {
   margin: 0 0 30px;

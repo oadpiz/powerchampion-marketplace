@@ -425,7 +425,8 @@ describe("video studio routes", () => {
     const gets = ["/studio/templates", "/studio/projects", "/studio/credits", `/studio/projects/${PID}`, `/studio/projects/${PID}/ops/${OP}`, "/admin/studio/usage"];
     for (const path of gets) expect((await GET(request(path))).status, path).toBe(200);
     const posts = ["/studio/projects", "/studio/uploads", `/studio/projects/${PID}/settings`, `/studio/projects/${PID}/quote`, `/studio/projects/${PID}/ops`,
-      `/studio/projects/${PID}/shots/0/edit`, `/studio/projects/${PID}/shots/12/edit`, "/admin/studio/credits/grant"];
+      `/studio/projects/${PID}/shots/0/edit`, `/studio/projects/${PID}/shots/12/edit`, "/admin/studio/credits/grant",
+      `/studio/projects/${PID}/delete`, `/studio/projects/${PID}/restore`];
     for (const path of posts) {
       expect((await POST(request(path, "POST", { idempotency_key: "abcdefgh" }))).status, path).toBe(200);
       expect((await POST(request(path, "POST", {}, { origin: "https://foreign.example" }))).status, path).toBe(403);
@@ -442,7 +443,8 @@ describe("video studio routes", () => {
       `/studio/projects/${PID}/internal`, "/studio/media/upload/token", "/media/x", "/studio", "/studio/", "/studio/projects/", `/studio/projects/${PID}/ops/${OP}/cancel`,
       `/studio/projects/${PID}/shots/x/edit`, `/studio/projects/${PID}/shots/1000/edit`, `/studio/projects/${PID}/shots/1`, "/studio/projects/a.b",
       `/studio/projects/${PID}%2F..%2Fcredits`, `/studio/projects/${PID}%2e%2e`, "/studio/projects/" + "a".repeat(65), "/admin/studio", "/admin/studio/credits",
-      "/admin/studio/usage/export", "/studio/usage", "/studio/ledger"];
+      "/admin/studio/usage/export", "/studio/usage", "/studio/ledger", "/studio/trash",
+      `/studio/projects/${PID}/purge`, `/studio/projects/${PID}/delete/now`, `/studio/projects/${PID}/restore/${OP}`];
     for (const path of internal) {
       expect((await GET(request(path))).status, path).toBe(404);
       expect((await POST(request(path, "POST", {}))).status, path).toBe(404);
@@ -450,8 +452,12 @@ describe("video studio routes", () => {
     }
     // Wrong method for a real route: reads are not mutations and mutations are POST only.
     for (const path of ["/studio/uploads", `/studio/projects/${PID}/settings`, `/studio/projects/${PID}/quote`, `/studio/projects/${PID}/ops`,
-      `/studio/projects/${PID}/shots/1/edit`, "/admin/studio/credits/grant"]) {
+      `/studio/projects/${PID}/shots/1/edit`, "/admin/studio/credits/grant", `/studio/projects/${PID}/delete`, `/studio/projects/${PID}/restore`]) {
       expect((await GET(request(path))).status, path).toBe(404);
+    }
+    // A soft delete is a POST, never the DELETE method.
+    for (const path of [`/studio/projects/${PID}/delete`, `/studio/projects/${PID}/restore`]) {
+      expect((await DELETE(request(path, "DELETE"))).status, path).toBe(404);
     }
     for (const path of ["/studio/templates", "/studio/credits", `/studio/projects/${PID}`, `/studio/projects/${PID}/ops/${OP}`, "/admin/studio/usage"]) {
       expect((await POST(request(path, "POST", {}))).status, path).toBe(404);
@@ -479,8 +485,16 @@ describe("video studio routes", () => {
     expect(fetchMock.mock.calls[4][0]).toBe(`${UP}/studio/credits`);
     expect((await POST(request("/studio/projects?cursor=1_a&limit=5", "POST", {}))).status).toBe(200);
     expect(fetchMock.mock.calls[5][0]).toBe(`${UP}/studio/projects`);
+    // The trash list: deleted=1 only, on the GET list only.
+    expect((await GET(request("/studio/projects?deleted=1&limit=20&cursor=1_a&evil=1"))).status).toBe(200);
+    expect(fetchMock.mock.calls[6][0]).toBe(`${UP}/studio/projects?cursor=1_a&limit=20&deleted=1`);
+    expect((await GET(request(`/studio/projects/${PID}?deleted=1`))).status).toBe(200);
+    expect(fetchMock.mock.calls[7][0]).toBe(`${UP}/studio/projects/${PID}`);
+    expect((await POST(request(`/studio/projects/${PID}/restore?deleted=1`, "POST", {}))).status).toBe(200);
+    expect(fetchMock.mock.calls[8][0]).toBe(`${UP}/studio/projects/${PID}/restore`);
     const calls = fetchMock.mock.calls.length;
-    for (const query of ["limit=0", "limit=51", "limit=5x", "limit=", "cursor=bad", "cursor=1_a%7Cb", "cursor=1_" + "a".repeat(65), "cursor=1234567890123_a"]) {
+    for (const query of ["limit=0", "limit=51", "limit=5x", "limit=", "cursor=bad", "cursor=1_a%7Cb", "cursor=1_" + "a".repeat(65), "cursor=1234567890123_a",
+      "deleted=0", "deleted=true", "deleted=", "deleted=11"]) {
       expect((await GET(request(`/studio/projects?${query}`))).status, query).toBe(400);
     }
     expect((await GET(request("/admin/studio/usage?month=2027-13"))).status).toBe(400);
@@ -500,5 +514,21 @@ describe("video studio routes", () => {
     const short = await POST(request(`/studio/projects/${PID}/ops`, "POST", { idempotency_key: "abcdefgh" }));
     expect(short.status).toBe(402);
     expect((await short.json()).error).toBe("studio_insufficient_credits");
+  });
+
+  it("passes studio_unconfigured through with its own fixed text, so the studio can say it is not open yet", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() =>
+      Promise.resolve(Response.json({ error: "studio_unconfigured", detail: "PC_STUDIO_AGENT_URL is empty at http://shortvideo-api:8081" }, { status: 503 }))));
+    for (const response of [await GET(request("/studio/credits")), await POST(request(`/studio/projects/${PID}/delete`, "POST", {}))]) {
+      expect(response.status).toBe(503);
+      const body = await response.json();
+      expect(body.error).toBe("studio_unconfigured");
+      expect(JSON.stringify(body)).not.toContain("shortvideo-api");
+      expect(JSON.stringify(body)).not.toContain("PC_STUDIO");
+    }
+    // Only for studio routes: elsewhere the code is not trusted and becomes the generic outage.
+    const other = await GET(request("/overview"));
+    expect((await other.json()).error).toBe("service_unavailable");
   });
 });

@@ -28,7 +28,7 @@ afterEach(() => {
 
 describe("studio error text", () => {
   const codes: [string, number, string][] = [
-    ["studio_unconfigured", 503, "影片工作室尚未開通"],
+    ["studio_unconfigured", 503, "影片工作室尚未開放"],
     ["studio_insufficient_credits", 402, "點數不足"],
     ["studio_busy", 409, "正在處理中"],
     ["studio_needs_render", 409, "產生全部"],

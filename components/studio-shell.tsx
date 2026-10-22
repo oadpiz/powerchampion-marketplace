@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { PortalError, portalErrorText, portalRequest, type PortalUser } from "../lib/portal-client";
-import { studioApi, type StudioCredits } from "../lib/studio-client";
+import { isStudioUnconfigured, studioApi, type StudioCredits } from "../lib/studio-client";
 import { useLocale } from "./locale-provider";
 
 type StudioSession = {
@@ -26,12 +26,42 @@ const NAV = [
   { href: "/studio", zh: "我的影片", en: "My videos" },
   { href: "/studio/new", zh: "新增影片", en: "New video" },
   { href: "/studio/credits", zh: "點數", en: "Credits" },
+  { href: "/studio/trash", zh: "回收區", en: "Trash" },
 ] as const;
 
 function currentNav(pathname: string) {
   if (pathname.startsWith("/studio/new")) return "/studio/new";
   if (pathname.startsWith("/studio/credits")) return "/studio/credits";
+  if (pathname.startsWith("/studio/trash")) return "/studio/trash";
   return "/studio";
+}
+
+/** Shown instead of every studio page while the portal has no video agent (503 studio_unconfigured). */
+function StudioClosed({ zh }: { zh: boolean }) {
+  return (
+    <section className="portal-panel studio-closed" aria-labelledby="studio-closed-title">
+      <div className="studio-empty-art" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+      <p className="portal-kicker">VIDEO STUDIO</p>
+      <h1 id="studio-closed-title">{zh ? "影片工作室尚未開放" : "The video studio is not open yet"}</h1>
+      <p className="portal-muted">
+        {zh
+          ? "我們正在準備影片工作室：輸入商品或主題，AI 寫分鏡，逐鏡修改後產生影片。開放後即可在這裡使用，你的帳號與 API 服務不受影響。"
+          : "We are getting the video studio ready: give a product or a topic, AI writes the storyboard, and you edit it shot by shot. It will open here; your account and API services are not affected."}
+      </p>
+      <div className="portal-actions">
+        <Link className="portal-button" href="/contact">
+          {zh ? "聯絡我們" : "Contact us"}
+        </Link>
+        <Link className="portal-button-secondary" href="/account">
+          {zh ? "回到帳戶" : "Back to account"}
+        </Link>
+      </div>
+    </section>
+  );
 }
 
 /** Shared by every /studio page: the client-side session check, the studio navigation and the credits badge. */
@@ -85,6 +115,10 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   const refreshCredits = useCallback(() => setCreditsRevision((value) => value + 1), []);
   const signedOut = sessionError instanceof PortalError && sessionError.status === 401;
   const active = currentNav(pathname);
+  // The first credits answer decides whether the studio is open at all, so pages wait for it
+  // instead of each asking the missing agent and showing an error.
+  const closed = isStudioUnconfigured(creditsError);
+  const creditsSettled = credits !== null || creditsError !== null;
 
   return (
     <main id="main-content" className="platform-page portal-page studio-page">
@@ -94,13 +128,13 @@ export function StudioFrame({ children }: { children: ReactNode }) {
             <span className="studio-brand-mark">▶</span>
             {zh ? "影片工作室" : "Video Studio"}
           </span>
-          {NAV.map((item) => (
+          {!closed && NAV.map((item) => (
             <Link key={item.href} href={item.href} aria-current={active === item.href ? "page" : undefined}>
               {zh ? item.zh : item.en}
             </Link>
           ))}
         </nav>
-        {user && (
+        {user && !closed && (
           <Link href="/studio/credits" className="studio-credit-badge" aria-label={zh ? "可用點數" : "Available credits"}>
             <span aria-hidden="true">◆</span>
             {credits ? (
@@ -150,6 +184,12 @@ export function StudioFrame({ children }: { children: ReactNode }) {
             {zh ? "重新載入" : "Try again"}
           </button>
         </section>
+      ) : closed ? (
+        <StudioClosed zh={zh} />
+      ) : !creditsSettled ? (
+        <p className="portal-empty" role="status">
+          {zh ? "正在載入影片工作室…" : "Loading the video studio…"}
+        </p>
       ) : (
         <StudioContext.Provider value={{ user, credits, creditsError, refreshCredits }}>{children}</StudioContext.Provider>
       )}

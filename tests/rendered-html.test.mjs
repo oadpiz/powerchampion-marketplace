@@ -211,7 +211,7 @@ test("keeps canonical URLs fixed and prevents preview and private-page indexing"
   assert.match(productionHtml, /name="robots" content="index, follow"/);
   assertRouteUrls(productionHtml, "/models", "https://powerchampion.ai");
 
-  for (const path of ["/console", "/account", "/admin", "/login", "/register", "/chat", "/agents/build", "/studio", "/studio/new", "/studio/credits", "/studio/p/p0123456789abcdef"]) {
+  for (const path of ["/console", "/account", "/admin", "/login", "/register", "/chat", "/agents/build", "/studio", "/studio/new", "/studio/credits", "/studio/trash", "/studio/p/p0123456789abcdef"]) {
     const response = await request(path, "powerchampion.ai", undefined, "https://powerchampion.ai");
     assert.equal(response.headers.get("X-Robots-Tag"), "noindex, nofollow", path);
     assert.match(await response.text(), /name="robots" content="noindex, nofollow"/, path);
@@ -219,7 +219,7 @@ test("keeps canonical URLs fixed and prevents preview and private-page indexing"
 });
 
 test("studio pages send a same-origin referrer policy so their POSTs keep an Origin", async () => {
-  for (const path of ["/studio", "/studio/new", "/studio/credits", "/studio/p/p0123456789abcdef"]) {
+  for (const path of ["/studio", "/studio/new", "/studio/credits", "/studio/trash", "/studio/p/p0123456789abcdef"]) {
     const response = await request(path, "powerchampion.ai", undefined, "https://powerchampion.ai");
     assert.equal(response.status, 200, path);
     assert.equal(response.headers.get("Referrer-Policy"), "same-origin", path);
@@ -231,6 +231,36 @@ test("studio pages send a same-origin referrer policy so their POSTs keep an Ori
   assert.equal(other.headers.get("Referrer-Policy"), null);
   const bad = await request("/studio/p/bad.id", "powerchampion.ai", undefined, "https://powerchampion.ai");
   assert.equal(bad.status, 404);
+});
+
+test("no server-rendered page outside the studio links to /studio (it is linked only after sign-in)", async () => {
+  // Crawl every internal link reachable from the main public routes (and the signed-out account and
+  // platform pages), the way a visitor or a search engine would before the studio opens.
+  const seeds = ["/", "/models", "/pricing", "/docs", "/docs/api", "/platform", "/compare", "/playground", "/integrations", "/status",
+    "/faq", "/company", "/contact", "/agents", "/trust", "/privacy", "/terms", "/infrastructure", "/solutions", "/en",
+    "/account", "/console", "/tasks", "/chat", "/login", "/register"];
+  const queue = [...seeds];
+  const seen = new Set();
+  const offenders = [];
+  while (queue.length && seen.size < 400) {
+    const path = queue.shift();
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const response = await render(path);
+    if (seeds.includes(path)) assert.equal(response.status, 200, path);
+    if (response.status !== 200 || !(response.headers.get("content-type") ?? "").includes("text/html")) continue;
+    const html = await response.text();
+    for (const [, href] of html.matchAll(/href="([^"]*)"/g)) {
+      const url = new URL(href.replace(/&amp;/g, "&"), "http://localhost");
+      if (url.origin !== "http://localhost" && url.hostname !== "powerchampion.ai") continue;
+      if (/^\/studio(\/|$)/.test(url.pathname)) offenders.push(`${path} -> ${href}`);
+      else if (!/^\/(api|_next|assets)\//.test(url.pathname) && !/\.[a-z0-9]{2,5}$/i.test(url.pathname) && !seen.has(url.pathname)) queue.push(url.pathname);
+    }
+    if (/<option[^>]*value="\/studio/.test(html)) offenders.push(`${path} -> <option value=/studio>`);
+  }
+  assert.ok(seen.size >= seeds.length, `crawled ${seen.size} pages`);
+  assert.deepEqual(offenders, []);
+  console.log(`studio link crawl: ${seen.size} pages, 0 links to /studio`);
 });
 
 test("measures public pages only, and only when the operator turns it on", async () => {

@@ -47,7 +47,15 @@ export type ProjectSummary = {
   status: string;
   thumb_url: string | null;
   updated_at: number | null;
+  /** Trash list only (?deleted=1): when it was deleted, and the last moment it can be restored. */
+  deleted_at?: number;
+  restore_until?: number;
 };
+
+/** A project title, as the portal accepts it (server/studio.py TITLE_MAX). */
+export const TITLE_MAX = 120;
+/** Deleted videos stay restorable this long (server/studio.py TRASH_S). */
+export const TRASH_DAYS = 30;
 
 export type SelfCheck = {
   verdict?: string;
@@ -150,11 +158,15 @@ export const studioApi = {
       setMediaOrigin(result.media_origin ?? null);
       return result;
     }),
-  projects: (cursor?: string | null, signal?: AbortSignal) =>
+  projects: (cursor?: string | null, signal?: AbortSignal, options: { deleted?: boolean } = {}) =>
     portalRequest<{ items: ProjectSummary[]; next: string | null }>(
-      `${S}/projects?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      `${S}/projects?limit=20${options.deleted ? "&deleted=1" : ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
       { signal },
     ),
+  rename: (id: string, title: string) => portalRequest<StudioProject>(`${S}/projects/${id}/settings`, json({ title })),
+  remove: (id: string) =>
+    portalRequest<{ id: string; deleted_at: number; restore_until: number }>(`${S}/projects/${id}/delete`, json({})),
+  restore: (id: string) => portalRequest<{ id: string; deleted_at: null; restore_until: null }>(`${S}/projects/${id}/restore`, json({})),
   project: (id: string, signal?: AbortSignal) => portalRequest<StudioProject>(`${S}/projects/${id}`, { signal }),
   credits: (signal?: AbortSignal) => portalRequest<StudioCredits>(`${S}/credits`, { signal }),
   create: (body: { template_id: string; inputs: Record<string, unknown>; aspect: string; idempotency_key: string }) =>
@@ -282,6 +294,23 @@ const STUDIO_ERRORS: Record<string, [string, string]> = {
 };
 
 /** Error text for the studio screens; `service_unavailable` here means the video service, not the account service. */
+export function isStudioUnconfigured(error: unknown): boolean {
+  return error instanceof PortalError && error.code === "studio_unconfigured";
+}
+
+/** A title the portal accepts: trimmed, 1 to TITLE_MAX characters, no control characters. */
+export function cleanTitle(value: string): string | null {
+  const title = value.trim();
+  // eslint-disable-next-line no-control-regex
+  return title.length >= 1 && title.length <= TITLE_MAX && !/[\u0000-\u001f\u007f]/.test(title) ? title : null;
+}
+
+/** Whole days left to restore a deleted video (0 = less than a day). */
+export function restoreDaysLeft(restoreUntil: number | undefined, nowSeconds = Date.now() / 1000): number {
+  if (!restoreUntil) return 0;
+  return Math.max(0, Math.floor((restoreUntil - nowSeconds) / 86400));
+}
+
 export function studioErrorText(error: unknown, locale: Locale): string {
   const zh = locale === "zh";
   if (error instanceof UploadError) {

@@ -58,9 +58,9 @@ export function portalErrorText(error: unknown, locale: "en" | "zh") {
   return portalErrorCodeText(error, locale) ?? portalErrorStatusText(error, locale);
 }
 
-/** Video studio error codes (server/studio.py); a 5xx reaches the browser as service_unavailable, see studioErrorText. */
+/** Video studio error codes (server/studio.py); a 5xx reaches the browser as service_unavailable (see studioErrorText), except studio_unconfigured. */
 const STUDIO_CODE_TEXT: Record<string, [string, string]> = {
-  studio_unconfigured: ["影片工作室尚未開通，請稍後再試或聯絡我們。", "The video studio is not connected yet. Try again later or contact us."],
+  studio_unconfigured: ["影片工作室尚未開放，開放後即可使用。如需提前試用，請聯絡我們。", "The video studio is not open yet. Contact us if you would like early access."],
   studio_unavailable: ["影片服務暫時無法連線，請稍後再試。", "The video service is unreachable right now. Try again in a moment."],
   studio_insufficient_credits: ["點數不足，無法執行這個步驟。", "You do not have enough credits for this step."],
   studio_busy: ["這支影片正在處理中，請等目前的步驟完成後再試。", "This video is busy. Wait for the current step to finish."],

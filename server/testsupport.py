@@ -411,7 +411,17 @@ class FakeStudioAgent:
 
     def edit_settings(self, owner, pid, body):
         self._enter("edit_settings", owner)
-        self._edit(owner, pid)["settings"].update(body)
+        body = dict(body)
+        if "title" in body:
+            # Like the agent: the title is a project field, not a setting, and renaming does not stale the storyboard.
+            p = self._project(owner, pid)
+            if self._active(pid):
+                raise self.AgentError("rejected", 409, "studio_busy")
+            if body["title"] == "BLOCKED":
+                raise self.AgentError("rejected", 400, "studio_invalid_input")
+            p["title"] = body.pop("title")
+        if body:
+            self._edit(owner, pid)["settings"].update(body)
         return self.doc(pid)
 
     def edit_shot(self, owner, pid, index, body):

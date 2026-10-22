@@ -157,9 +157,9 @@ class StudioConfigTests(PortalCase):
         customer = self.client()
         self.register(customer, "c@example.test")
         anonymous = self.client()
-        gets = ["/studio/templates", "/studio/projects", "/studio/credits", "/studio/projects/p1", "/studio/projects/p1/ops/o1"]
+        gets = ["/studio/templates", "/studio/projects", "/studio/projects?deleted=1", "/studio/credits", "/studio/projects/p1", "/studio/projects/p1/ops/o1"]
         posts = ["/studio/projects", "/studio/uploads", "/studio/projects/p1/settings", "/studio/projects/p1/shots/1/edit",
-                 "/studio/projects/p1/quote", "/studio/projects/p1/ops"]
+                 "/studio/projects/p1/quote", "/studio/projects/p1/ops", "/studio/projects/p1/delete", "/studio/projects/p1/restore"]
         for path in gets:
             self.assertEqual(anonymous.get(BASE + path).status_code, 401, path)
             response = customer.get(BASE + path)
@@ -757,6 +757,182 @@ class StudioReviewFixTests(StudioCase):
             t.join()
         self.assertEqual(results, [200] * 8)
         self.assertEqual(self.account(user_id)["balance"], 300)
+
+
+DAY = 86400
+
+
+class StudioProjectLifecycleTests(StudioCase):
+    """Rename, soft delete, the 30-day trash and restore (S4)."""
+
+    def money(self):
+        return rows(self.store, "studio_ledger"), rows(self.store, "studio_accounts"), rows(self.store, "studio_ops")
+
+    def project_row(self, pid):
+        return next(p for p in rows(self.store, "studio_projects") if p["id"] == pid)
+
+    def listed(self, client, query=""):
+        response = client.get(BASE + "/studio/projects" + query)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["items"]
+
+    def settled_render(self, client, pid):
+        op_id = self.submit(client, pid, self.quote(client, pid)).json()["op_id"]
+        self.agent.finish(op_id)
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op_id]["state"], "settled")
+
+    def test_rename_stores_the_title_in_the_portal_and_the_agent(self):
+        client, _ = self.customer()
+        pid = self.drafted(client)
+        response = self.post(client, "/studio/projects/" + pid + "/settings", {"title": "  夏日新品開箱  "})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["title"], "夏日新品開箱")
+        self.assertEqual(self.project_row(pid)["title"], "夏日新品開箱")
+        self.assertEqual(self.agent.projects[pid]["title"], "夏日新品開箱")
+        self.assertEqual(self.listed(client)[0]["title"], "夏日新品開箱")
+        long_ok = self.post(client, "/studio/projects/" + pid + "/settings", {"title": "長" * 120})
+        self.assertEqual(long_ok.status_code, 200, long_ok.text)
+        calls = len(self.agent.calls)
+        for bad in ("", "   ", "長" * 121, 7, None, "a\nb", "tab\there"):
+            response = self.post(client, "/studio/projects/" + pid + "/settings", {"title": bad})
+            self.assertEqual((response.status_code, response.json()["error"]), (400, "studio_invalid_input"), repr(bad))
+        self.assertEqual(len(self.agent.calls), calls, "an invalid title never reaches the agent")
+        # The agent's own refusal (a blocked name) keeps the old title in the portal.
+        refused = self.post(client, "/studio/projects/" + pid + "/settings", {"title": "BLOCKED"})
+        self.assertEqual((refused.status_code, refused.json()["error"]), (400, "studio_invalid_input"))
+        self.assertEqual(self.project_row(pid)["title"], "長" * 120)
+        # A later fetch of the project keeps the renamed title.
+        client.get(BASE + "/studio/projects/" + pid)
+        self.assertEqual(self.project_row(pid)["title"], "長" * 120)
+
+    def test_rename_is_owner_only_and_409_while_an_op_is_active(self):
+        client, _ = self.customer()
+        pid = self.drafted(client)
+        other, _ = self.customer("intruder@example.test")
+        response = self.post(other, "/studio/projects/" + pid + "/settings", {"title": "mine now"})
+        self.assertEqual((response.status_code, response.json()["error"]), (404, "studio_not_found"))
+        self.agent.submit_error, self.agent.submit_accepts = AgentError("timeout"), False
+        self.submit(client, pid, self.quote(client, pid))
+        response = self.post(client, "/studio/projects/" + pid + "/settings", {"title": "while busy"})
+        self.assertEqual((response.status_code, response.json()["error"]), (409, "studio_busy"))
+        self.assertEqual(self.project_row(pid)["title"], "tea")
+        self.now += 121
+        self.studio.sweep()
+
+    def test_delete_hides_the_project_and_restore_brings_it_back_without_touching_credits(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client, credits=100)
+        self.settled_render(client, pid)
+        before = self.money()
+        deleted = self.post(client, "/studio/projects/" + pid + "/delete", {})
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertEqual(deleted.json(), {"id": pid, "deleted_at": self.now, "restore_until": self.now + 30 * DAY})
+        self.assertEqual(self.money(), before, "deleting refunds nothing and charges nothing")
+        self.assertEqual(self.listed(client), [])
+        trash = self.listed(client, "?deleted=1")
+        self.assertEqual([(p["id"], p["title"], p["deleted_at"], p["restore_until"]) for p in trash],
+                         [(pid, "tea", self.now, self.now + 30 * DAY)])
+        # A deleted project cannot be opened, edited, quoted, submitted to or uploaded to (404, like someone else's).
+        calls = len(self.agent.calls)
+        quote = self.raw_quote(user_id, pid, 0)
+        for response in (client.get(BASE + "/studio/projects/" + pid),
+                         self.post(client, "/studio/projects/" + pid + "/settings", {"title": "x"}),
+                         self.post(client, "/studio/projects/" + pid + "/shots/1/edit", {"narration": "x"}),
+                         self.post(client, "/studio/projects/" + pid + "/quote", {"type": "render"}),
+                         self.submit(client, pid, quote),
+                         self.post(client, "/studio/uploads", {"purpose": "shot_image", "content_type": "image/png", "bytes": 10, "project_id": pid})):
+            self.assertEqual((response.status_code, response.json()["error"]), (404, "studio_not_found"), response.request.url)
+        with self.assertRaises(Exception) as caught:
+            self.studio.reserve(user_id, pid, self.raw_quote(user_id, pid, 0, quote_id="q_direct"), "direct-key-1")
+        self.assertEqual((caught.exception.code, caught.exception.status), ("studio_not_found", 404))
+        self.assertEqual(len(self.agent.calls), calls, "a deleted project never reaches the agent")
+        # Deleting twice is a no-op that keeps the first deletion time.
+        self.now += 60
+        again = self.post(client, "/studio/projects/" + pid + "/delete", {})
+        self.assertEqual((again.status_code, again.json()["deleted_at"]), (200, self.now - 60))
+        # Restored on day 29: back in the list and usable again; still no ledger change.
+        self.now += 29 * DAY
+        restored = self.post(client, "/studio/projects/" + pid + "/restore", {})
+        self.assertEqual((restored.status_code, restored.json()), (200, {"id": pid, "deleted_at": None, "restore_until": None}))
+        self.assertEqual(self.money(), before)
+        self.assertEqual([p["id"] for p in self.listed(client)], [pid])
+        self.assertEqual(self.listed(client, "?deleted=1"), [])
+        self.assertEqual(client.get(BASE + "/studio/projects/" + pid).status_code, 200)
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/restore", {}).status_code, 200)  # idempotent
+
+    def test_after_30_days_a_deleted_project_is_gone(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client, credits=100)
+        keep = self.drafted(client, credits=0)
+        before = self.money()
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/delete", {}).status_code, 200)
+        self.assertEqual(self.post(client, "/studio/projects/" + keep + "/delete", {}).status_code, 200)
+        self.now += 30 * DAY - 1
+        self.assertEqual(self.post(client, "/studio/projects/" + keep + "/restore", {}).status_code, 200)
+        self.now += 1
+        self.assertEqual(self.listed(client, "?deleted=1"), [])
+        for response in (self.post(client, "/studio/projects/" + pid + "/restore", {}),
+                         self.post(client, "/studio/projects/" + pid + "/delete", {}),
+                         client.get(BASE + "/studio/projects/" + pid)):
+            self.assertEqual((response.status_code, response.json()["error"]), (404, "studio_not_found"))
+        self.assertEqual([p["id"] for p in self.listed(client)], [keep])
+        self.assertEqual(self.money(), before)
+
+    def test_delete_and_restore_are_owner_only(self):
+        client, _ = self.customer()
+        pid = self.drafted(client)
+        other, _ = self.customer("intruder@example.test")
+        for action in ("delete", "restore"):
+            response = self.post(other, "/studio/projects/" + pid + "/" + action, {})
+            self.assertEqual((response.status_code, response.json()["error"]), (404, "studio_not_found"), action)
+        self.assertIsNone(self.project_row(pid)["deleted_at"])
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/delete", {}).status_code, 200)
+        self.assertEqual(self.listed(other, "?deleted=1"), [])
+        response = self.post(other, "/studio/projects/" + pid + "/restore", {})
+        self.assertEqual((response.status_code, response.json()["error"]), (404, "studio_not_found"))
+        self.assertIsNotNone(self.project_row(pid)["deleted_at"])
+        anonymous = self.client()
+        self.assertEqual(self.post(anonymous, "/studio/projects/" + pid + "/restore", {}).status_code, 401)
+        self.assertEqual(anonymous.get(BASE + "/studio/projects?deleted=1").status_code, 401)
+
+    def test_delete_is_409_while_an_op_is_active(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        self.agent.submit_error, self.agent.submit_accepts = AgentError("timeout"), False
+        op_id = self.submit(client, pid, self.quote(client, pid)).json()["op_id"]
+        self.assertEqual(self.ops()[op_id]["state"], "unknown")
+        before = self.money()
+        response = self.post(client, "/studio/projects/" + pid + "/delete", {})
+        self.assertEqual((response.status_code, response.json()["error"]), (409, "studio_busy"))
+        self.assertIsNone(self.project_row(pid)["deleted_at"])
+        self.assertEqual(self.money(), before)
+        self.now += 121
+        self.studio.sweep()  # the agent never saw it: refunded
+        self.assertEqual(self.ops()[op_id]["state"], "refunded")
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/delete", {}).status_code, 200)
+
+    def test_trash_query_is_validated_and_pages(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 100)
+        ids = []
+        for _ in range(3):
+            self.now += 1
+            created = self.create(client)
+            self.agent.finish(created.json()["op_id"])
+            self.studio.sweep()
+            ids.append(created.json()["id"])
+            self.assertEqual(self.post(client, "/studio/projects/" + ids[-1] + "/delete", {}).status_code, 200)
+        first = client.get(BASE + "/studio/projects?deleted=1&limit=2").json()
+        self.assertEqual([p["id"] for p in first["items"]], ids[::-1][:2])
+        second = client.get(BASE + "/studio/projects?deleted=1&limit=2&cursor=" + first["next"]).json()
+        self.assertEqual(([p["id"] for p in second["items"]], second["next"]), ([ids[0]], None))
+        calls = len(self.agent.calls)
+        self.now += 7200  # cached thumbnails expired: the trash shows none, and never asks the agent
+        self.assertTrue(all(p["thumb_url"] is None for p in self.listed(client, "?deleted=1")))
+        self.assertEqual(len(self.agent.calls), calls)
+        for query in ("deleted=0", "deleted=true", "deleted=", "deleted=11"):
+            self.assertEqual(client.get(BASE + "/studio/projects?" + query).status_code, 400, query)
 
 
 class StudioAdminTests(StudioCase):
