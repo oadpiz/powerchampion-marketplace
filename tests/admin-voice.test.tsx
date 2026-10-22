@@ -9,10 +9,11 @@ import {
   VOICE_INDUSTRIES,
   VOICE_NUMBER_PATTERN,
   VOICE_PURPOSES,
+  VOICE_SIGN_IN_PATH,
   VOICE_STATUSES,
   voiceAdminErrorText,
 } from "../components/admin-voice-dialogs";
-import { PortalError } from "../lib/portal-client";
+import { PortalError, safeAccountReturn } from "../lib/portal-client";
 import { adminFetch, customer, wrap, type Call } from "./support/admin-fetch";
 
 afterEach(() => {
@@ -472,14 +473,24 @@ describe("admin phone agent: opening a store", () => {
     expect(within(opened).getByText(password)).toBeVisible();
     expect(within(opened).getByText(/^Sign-in email: new@clinic\.example\. The temporary password below is shown only once/)).toBeVisible();
     expect(within(opened).getByText(/Give it to the store privately/)).toBeVisible();
+    // Verifier finding 2026-10-22: the store needs an address that leads to the phone agent, not the overview.
+    const signIn = `${window.location.origin}/login?next=/account/voice`;
+    expect(within(opened).getByText(signIn)).toBeVisible();
+    expect(safeAccountReturn(new URL(VOICE_SIGN_IN_PATH, "https://portal.example").searchParams.get("next"))).toBe("/account/voice");
+    expect(within(opened).getByText(/language switch at the top right changes it to 繁中/)).toBeVisible();
 
     await user.keyboard("{Escape}");
     expect(screen.getByRole("dialog", { name: `"${longName}" is open` })).toBeVisible();
     await user.click(within(opened).getByRole("button", { name: "Copy password" }));
     expect(writeText).toHaveBeenCalledWith(password);
     expect(within(opened).getByRole("button", { name: "Copied" })).toBeVisible();
+    await user.click(within(opened).getByRole("button", { name: "Copy sign-in address" }));
+    expect(writeText).toHaveBeenLastCalledWith(signIn);
+    expect(within(opened).getByRole("button", { name: "Address copied" })).toBeVisible();
     await user.click(within(opened).getByRole("button", { name: "I have given it to the store" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // Focus returns to the button that started it, not to <body>.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open a store" })));
 
     const table = await screen.findByRole("table", { name: "Stores" });
     const newest = bodyRows(table)[0];

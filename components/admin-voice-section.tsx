@@ -140,6 +140,15 @@ function StoresPanel({ resource }: { resource: Resource<{ stores: StoreItem[] }>
   const [industry, setIndustry] = useState("all");
   const [opening, setOpening] = useState(false);
   const [opened, setOpened] = useState<OpenedStore | null>(null);
+  // After "I have given it to the store", focus goes back to "Open a store": the dialog's own restore target was
+  // the open-store dialog's button, which is gone by then (verifier finding 2026-10-22: focus fell to <body>).
+  const openButton = useRef<HTMLButtonElement>(null);
+  const [refocusOpen, setRefocusOpen] = useState(false);
+  useEffect(() => {
+    if (!refocusOpen) return;
+    openButton.current?.focus();
+    setRefocusOpen(false);
+  }, [refocusOpen]);
   const [changing, setChanging] = useState<StoreItem | null>(null);
   const [selected, setSelected] = useState<StoreItem | null>(null);
   const [detailRevision, setDetailRevision] = useState(0);
@@ -163,6 +172,7 @@ function StoresPanel({ resource }: { resource: Resource<{ stores: StoreItem[] }>
             <div className="portal-panel-heading">
               <h2 id="voice-stores-title">{zh ? "店家" : "Stores"}</h2>
               <button
+                ref={openButton}
                 type="button"
                 className="portal-button"
                 onClick={() => {
@@ -310,7 +320,15 @@ function StoresPanel({ resource }: { resource: Resource<{ stores: StoreItem[] }>
           }}
         />
       )}
-      {opened !== null && <StoreOpenedDialog opened={opened} onClose={() => setOpened(null)} />}
+      {opened !== null && (
+        <StoreOpenedDialog
+          opened={opened}
+          onClose={() => {
+            setOpened(null);
+            setRefocusOpen(true);
+          }}
+        />
+      )}
       {changing !== null && (
         <StoreStatusDialog
           store={changing}
