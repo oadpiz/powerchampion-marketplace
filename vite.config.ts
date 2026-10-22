@@ -21,6 +21,26 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    environments: {
+      client: {
+        build: {
+          rolldownOptions: {
+            experimental: {
+              // rolldown 1.0.1 absorbs vinext's dynamically imported
+              // shims/navigation.js into the client entry chunk but rewrites
+              // `import("./navigation.js")` to the bare entry chunk without
+              // publishing the module namespace, so Link's
+              // `navigateClientSide` resolves to undefined and every client
+              // navigation throws "e is not a function" (rolldown #9446,
+              // fixed in 1.0.2 by #9448). Keep common chunks un-merged until
+              // the bundler is upgraded; tests/client-nav-chunks.test.mjs
+              // guards the output.
+              chunkOptimization: { mergeCommonChunks: false },
+            },
+          },
+        },
+      },
+    },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
