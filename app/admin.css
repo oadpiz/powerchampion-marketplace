@@ -20,3 +20,49 @@
   .admin-shell-sidebar { border-right: 0; border-bottom: 1px solid var(--line); flex-direction: row; align-items: center; justify-content: space-between; }
   .admin-shell-sidebar nav { flex-direction: row; flex-wrap: wrap; }
 }
+/* API keys page */
+.admin-keys-status { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 8px; }
+.admin-keys-status-button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 120px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+.admin-keys-status-button strong { font-size: 1.25rem; font-weight: 600; }
+.admin-keys-status-button:hover { background: var(--surface-raised); }
+.admin-keys-status-button[aria-pressed="true"] { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); }
+.admin-keys-status-low strong { color: #e8c27a; }
+.admin-keys-status-disabled strong { color: #dbab9c; }
+.admin-keys-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; margin-top: 12px; }
+.admin-keys-filters .portal-field { margin-bottom: 0; }
+.admin-keys-result { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+.admin-keys-result p { margin: 0; }
+.admin-keys-th-title { display: block; }
+.admin-keys-th-hint, .admin-keys-cell-hint { display: block; font-size: 10px; line-height: 1.5; color: var(--muted); white-space: normal; }
+.admin-keys-owner-name { display: block; }
+.admin-keys-owner-email { display: block; color: var(--muted); }
+.admin-keys-balance { display: block; font-size: 1.05rem; font-weight: 600 !important; font-variant-numeric: tabular-nums; }
+.admin-keys-balance-low { color: #e8c27a; }
+.admin-keys-balance-empty { color: #f0a493; }
+.portal-badge.admin-keys-badge-low { margin-top: 4px; border-color: #5e4a26; color: #e8c27a; }
+.portal-badge.admin-keys-badge-empty { margin-top: 4px; border-color: #60423d; color: #f0a493; }
+.portal-badge.admin-keys-badge-active { border-color: #3d5a3a; color: #b9f36b; }
+.admin-keys-table td .portal-badge + .portal-badge { margin-left: 6px; }
+.admin-keys-row-low > td { background: rgb(232 194 122 / 6%); }
+.admin-keys-row-empty > td { background: rgb(240 164 147 / 8%); }
+.admin-keys-row-disabled > td:not(:last-child) { opacity: 0.6; }
+.admin-keys-limits { white-space: nowrap; font-size: 11px; }
+.admin-keys-row-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 150px; }
+.admin-keys-action { min-height: 30px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.admin-keys-action:hover:not(:disabled) { background: var(--surface-raised); }
+.admin-keys-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.admin-keys-action:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.admin-keys-action-primary { border-color: var(--focus); color: var(--focus); }
+.admin-keys-action-danger { border-color: #60423d; color: #f0a493; }
+.admin-keys-env summary { cursor: pointer; }
+.admin-keys-env summary h2 { display: inline; margin: 0; }
+.admin-keys-env summary .admin-keys-cell-hint { margin-top: 6px; }
+.admin-keys-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
+.admin-keys-toast { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 12px; line-height: 1.6; box-shadow: 0 8px 24px rgb(0 0 0 / 35%); overflow-wrap: anywhere; }
+.admin-keys-toast-success { border-color: #3d5a3a; }
+.admin-keys-toast-error { border-color: #60423d; background: #2c211f; color: #edb7a7; }
+.admin-keys-toast .portal-text-button { padding: 0 4px; font-size: 14px !important; line-height: 1; color: inherit; cursor: pointer; }
+@media (max-width: 800px) {
+  .admin-keys-filters { grid-template-columns: 1fr; }
+  .admin-keys-status-button { min-width: calc(50% - 5px); flex: 1 1 calc(50% - 5px); }
+}

@@ -658,7 +658,10 @@ describe("admin keys section", () => {
     expect(screen.getByText("$12.50")).toBeVisible();
     expect(screen.getAllByText("Unassigned").length).toBeGreaterThan(0);
     expect(screen.getByText("Postpaid")).toBeVisible();
-    expect(screen.getByText("Disabled")).toBeVisible();
+    expect(within(screen.getByRole("table", { name: "Customer API keys" })).getByText("Disabled")).toBeVisible();
+    // Environment keys are collapsed until opened.
+    expect(screen.getByText("Env key")).not.toBeVisible();
+    fireEvent.click(screen.getByText(/Environment keys \(read-only, 1\)/));
     expect(screen.getByText("Env key")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("API keys");
   });
@@ -714,8 +717,10 @@ describe("admin keys section", () => {
         Response.json({ error: "account_disabled", detail: "Enable the account first." }, { status: 409 }),
     });
     wrap(<AdminPortal section="keys" />);
-    await user.click(await screen.findByRole("button", { name: "Enable" }));
-    expect(await screen.findByText("This key's account is disabled. Enable the account first.")).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Enable “Acme production”" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not enable “Acme production”: This key's account is disabled. Enable the account first.",
+    );
   });
 
   it("offers only active customer accounts, not administrators, when issuing a key", async () => {
@@ -783,11 +788,12 @@ describe("admin keys section", () => {
       "POST /admin/keys/gk-1/balance": { ok: true, balanceUsd: "17.5" },
     });
     wrap(<AdminPortal section="keys" />);
-    await user.click(await screen.findByRole("button", { name: "Disable" }));
+    await user.click(await screen.findByRole("button", { name: "Disable “Acme production”" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Disable key" }));
     await waitFor(() =>
       expect(calls.find((call) => call.path.endsWith("/disable"))?.body).toEqual({ disabled: true }),
     );
-    await user.click(await screen.findByRole("button", { name: "Limits" }));
+    await user.click(await screen.findByRole("button", { name: "Edit limits of “Acme production”" }));
     let dialog = await screen.findByRole("dialog");
     const rpm = within(dialog).getByLabelText("Requests per minute");
     await user.clear(rpm);
@@ -800,7 +806,7 @@ describe("admin keys section", () => {
         maxInflight: 0,
       }),
     );
-    await user.click(await screen.findByRole("button", { name: "Top up" }));
+    await user.click(await screen.findByRole("button", { name: "Top up “Acme production”" }));
     dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByLabelText("Amount (USD)"), "5");
     await user.click(within(dialog).getByRole("button", { name: "Add balance" }));
@@ -844,7 +850,7 @@ describe("admin amount validation", () => {
       "GET /admin/keys": { keys: [gatewayKey], envKeys: [], gatewayConfigured: true },
     });
     wrap(<AdminPortal section="keys" />);
-    await user.click(await screen.findByRole("button", { name: "Top up" }));
+    await user.click(await screen.findByRole("button", { name: "Top up “Acme production”" }));
     const dialog = await screen.findByRole("dialog");
     const amount = within(dialog).getByLabelText("Amount (USD)");
     for (const bad of ["2.005", "100000.01"]) {
@@ -880,7 +886,7 @@ describe("admin dialog shell", () => {
       "GET /admin/keys": { keys: [gatewayKey], envKeys: [], gatewayConfigured: true },
     });
     wrap(<AdminPortal section="keys" />);
-    const opener = await screen.findByRole("button", { name: "Top up" });
+    const opener = await screen.findByRole("button", { name: "Top up “Acme production”" });
     await user.click(opener);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByLabelText("Amount (USD)")).toHaveFocus();
