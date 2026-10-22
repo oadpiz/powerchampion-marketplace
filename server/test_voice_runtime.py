@@ -435,6 +435,24 @@ class ReportTests(VoiceCallsCase):
         # A number not in the table is the same.
         self.assertEqual(self.ok(self.report(orchestrator(call_id="1797815702.120", dialed="0227009999")), 201)["meter_reason"], "unknown_line")
 
+    def test_a_customer_number_without_a_store_is_an_unknown_line(self):
+        # One-phase A6 numbers may have no store (R1 answers number_unassigned); A6 refuses such a customer line, so
+        # the portal must not count it either (fix round: was 1 unit, store null, no flag).
+        self.seed_number("+886227001007", store_id=None)
+        self.seed_number("+886227001008", store_id=None, purpose="demo")
+        message = {"outcome": "message", "speech_ms": 6000, "recording_ms": 7000, "recording_saved": True}
+        created = self.ok(self.report(records(call_id="1797815702.130", dialed="0227001007", message=message)), 201)
+        self.assertEqual((created["store_id"], created["meter_units"], created["meter_reason"], created["flags"]),
+                         (None, 0, "unknown_line", ["unknown_number"]))
+        row = self.call("1797815702.130")
+        self.assertEqual((row["number_purpose"], row["outcome"]), ("customer", "message"))
+        # A demo line without a store stays what A6 calls it, and is not an unknown number.
+        demo = self.ok(self.report(records(call_id="1797815702.131", dialed="0227001008", message=message)), 201)
+        self.assertEqual((demo["meter_units"], demo["meter_reason"], demo["flags"]), (0, "non_customer_line", []))
+        # Control: the store's own customer number still counts.
+        own = self.ok(self.report(records(call_id="1797815702.132", message=message)), 201)
+        self.assertEqual((own["store_id"], own["meter_units"], own["meter_reason"]), (self.store_id, 1, "message"))
+
     def test_ended_at_is_compared_one_way_with_10_seconds_of_tolerance(self):
         now = int(time.time())
         rec = records(now)
