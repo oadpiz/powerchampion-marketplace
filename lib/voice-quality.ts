@@ -191,3 +191,39 @@ export type ListeningLog = {
 export type ListeningInput = Pick<ListeningLog, "title" | "kind" | "heldOn" | "sampleCount" | "raterCount" | "passed" | "summary" | "reportRef">;
 /** A13 answer, newest first, at most `limits.listeningMax`. */
 export type ListeningList = { logs: ListeningLog[] };
+
+/**
+ * A14/A15 field limits (phase2-contract §4.3; server/voice_calls.py LISTENING_TITLE_CHARS, LISTENING_SUMMARY_CHARS,
+ * LISTENING_REF_CHARS, LISTENING_SAMPLES_MAX, LISTENING_RATERS_MAX). A13 does not return them, so they are written
+ * here; tests/admin-voice-quality.test.tsx compares them with the backend file.
+ */
+export const LISTENING_FIELD_LIMITS = { titleChars: 60, summaryChars: 1000, reportRefChars: 200, samplesMax: 10000, ratersMax: 50 } as const;
+
+/**
+ * A note or summary that looks like a phone number (8 or more digits, spaces or dashes allowed between them): the
+ * backend answers 400 note_contains_number (phase2-contract §6.3; server/voice_calls.py PHONE_LIKE). The page checks
+ * first so the operator sees why before sending; the backend stays authoritative.
+ */
+export const NOTE_PHONE_PATTERN = /[0-9０-９][0-9０-９\s-]{6,}[0-9０-９]/;
+
+export type CsvValue = string | number | boolean | null | undefined;
+
+/**
+ * One CSV cell. Text that starts with = + - @ (or a tab or carriage return) gets a leading ' so a spreadsheet shows it
+ * instead of running it as a formula, the rule of the A6 statement CSVs (voice repo billing/statement.py `_cell`):
+ * a dialed "+886…" therefore reads '+886…. Numbers are written as they are; null and undefined are empty.
+ */
+export function csvCell(value: CsvValue): string {
+  if (value === null || value === undefined) return "";
+  let text = typeof value === "string" ? value : String(value);
+  if (typeof value === "string" && /^[=+\-@\t\r]/.test(text)) text = "'" + text;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/** The byte order mark that tells Excel the file is UTF-8 (written as a code so it stays visible in the source). */
+export const CSV_BOM = String.fromCharCode(0xfeff);
+
+/** A CSV file (header first, CRLF lines) with a BOM, so Excel opens Chinese text as UTF-8. */
+export function toCsv(header: string[], rows: CsvValue[][]): string {
+  return CSV_BOM + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
