@@ -285,7 +285,7 @@ describe("account phone agent shell", () => {
     expect(within(pages).getAllByRole("link").map((link) => link.textContent)).toEqual(["設定", "常見問答", "試打一通", "通話紀錄"]);
   });
 
-  // Phase 2 wiring (phase2-contract §10.2-§10.3): P2-2 replaces these placeholders; the shell and routing stay.
+  // Phase 2 wiring (phase2-contract §10.2-§10.3); the pages themselves are tested in account-voice-calls*.test.tsx.
   it.each([
     [undefined, "Calls"],
     ["a1b2c3d4e5f60718293a4b5c6d7e8f90", "Call details"],
@@ -300,7 +300,14 @@ describe("account phone agent shell", () => {
     expect(within(pages).getAllByRole("link").filter((link) => link.hasAttribute("aria-current"))).toHaveLength(1);
     expect(screen.queryByRole("heading", { level: 2, name: "Setup" })).not.toBeInTheDocument();
     if (callId) expect(screen.getByRole("link", { name: "← Calls" })).toHaveAttribute("href", "/account/voice/calls");
-    expect(calls.map((call) => call.path).filter((read) => read !== "/me/engineer")).toEqual(["/session", "/me/voice"]);
+    // Besides M1, only the page's own read: M14 for one call, M13 for the list (its effect may run after the heading).
+    await waitFor(() =>
+      expect(calls.map((call) => call.path).filter((read) => read !== "/me/engineer")).toEqual([
+        "/session",
+        "/me/voice",
+        callId ? `/me/voice/calls/${callId}` : expect.stringMatching(/^\/me\/voice\/calls\?month=\d{4}-\d{2}$/),
+      ]),
+    );
   });
 
   it("names the call records sub-page in Chinese", async () => {
