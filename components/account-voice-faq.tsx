@@ -268,14 +268,17 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
    * Element ids to focus after a write re-renders the list, first usable one wins. A save, delete or move removes
    * or moves the focused button, which left keyboard focus on <body> (verifier finding 2026-10-22).
    */
-  const [focusIds, setFocusIds] = useState<string[] | null>(null);
+  const focusIds = useRef<string[] | null>(null);
+  const setFocusIds = (ids: string[]) => {
+    focusIds.current = ids; // read by the effect below after the re-render the same handler causes
+  };
   useEffect(() => {
-    if (focusIds === null) return;
+    if (focusIds.current === null) return;
     const usable = (element: HTMLElement | null) => element !== null && !(element instanceof HTMLButtonElement && element.disabled);
-    const target = [...focusIds, "voice-faq-questions"].map((id) => document.getElementById(id)).find(usable);
+    const target = [...focusIds.current, "voice-faq-questions"].map((id) => document.getElementById(id)).find(usable);
+    focusIds.current = null;
     target?.focus();
-    setFocusIds(null);
-  }, [focusIds]);
+  });
 
   const [deleting, setDeleting] = useState<VoiceFaq | null>(null);
   const [deleteError, setDeleteError] = useState<unknown>(null);
