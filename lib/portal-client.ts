@@ -1,3 +1,4 @@
+import { isAdminSection } from "./admin-sections";
 import { taskEntry } from "./task-starters";
 
 export type PortalUser = {
@@ -193,7 +194,9 @@ export function engineerKeyStatusText(status: string, locale: "en" | "zh"): { la
 
 export function safeAccountReturn(value: string | null): string {
   if (!value) return "/account";
-  if (/^(?:\/account(?:\/(?:keys|usage|credits|security|ssh-key))?|\/admin(?:\/(?:customers|credits|audit))?|\/tasks|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)) return value;
+  if (/^(?:\/account(?:\/(?:keys|usage|credits|security|ssh-key))?|\/admin|\/tasks|\/agents\/build(?:\?template=(?:support|research|content|coding))?)$/.test(value)) return value;
+  const adminSection = /^\/admin\/([a-z]+)$/.exec(value)?.[1];
+  if (adminSection && isAdminSection(adminSection)) return value;
   if (value.startsWith("/tasks?")) {
     const search = value.slice("/tasks".length);
     const params = new URLSearchParams(search);

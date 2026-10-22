@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { AdminSection } from "../lib/admin-sections";
 import { PortalError, type PortalUser } from "../lib/portal-client";
 import { AdminAllocationSection } from "./admin-allocation-section";
 import { AdminEngineersSection } from "./admin-engineers-section";
@@ -16,18 +17,7 @@ import { AdminUsageSection } from "./admin-usage-section";
 import { useLocale } from "./locale-provider";
 import { ResourceState, usePortalResource } from "./admin-resource";
 
-export type AdminSection =
-  | "overview"
-  | "customers"
-  | "keys"
-  | "redeem"
-  | "usage"
-  | "gateway"
-  | "personas"
-  | "allocation"
-  | "engineers"
-  | "credits"
-  | "audit";
+export type { AdminSection };
 
 export function AdminPortal({
   section = "overview",
