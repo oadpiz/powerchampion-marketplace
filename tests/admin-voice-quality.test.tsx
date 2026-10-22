@@ -236,7 +236,7 @@ const mockLog = (n: number, overrides: Partial<Log> = {}): Log => ({
 });
 
 type Recorded = { method: string; path: string; body: unknown };
-type MediaBehaviour = "ok" | "not_ready" | "expire_once" | "expire_always" | "network";
+type MediaBehaviour = "ok" | "not_ready" | "expire_once" | "expire_always" | "network" | "wrong_shape";
 
 class QualityBackend {
   calls = seedCalls();
@@ -249,7 +249,9 @@ class QualityBackend {
   linkLimit = 60;
   media: MediaBehaviour = "ok";
   requests: Recorded[] = [];
-  mediaRequests: { url: string; auth: string | null; credentials: RequestCredentials | undefined }[] = [];
+  mediaRequests: { url: string; auth: string | null; credentials: RequestCredentials | undefined; redirect: RequestRedirect | undefined }[] = [];
+  /** Replaces an A12 answer's urls (e.g. a plain-http host the page must refuse to send the token to). */
+  linkUrls?: (urls: Record<string, string>) => Record<string, string>;
   serial = 0;
   tokens: string[] = [];
   private expiredOnce = new Set<string>();
@@ -398,13 +400,14 @@ class QualityBackend {
     const token = `eyJtest.sig${this.linksUsed}`;
     this.tokens.push(token);
     const kinds = [...(call.media.recording && call.content.hasRecording ? ["recording"] : []), "summary", "transcript"];
-    const urls = Object.fromEntries(kinds.map((kind) => [kind, `${MEDIA}/v1/calls/${encodeURIComponent(call.callId)}/${kind}`]));
+    const signed = Object.fromEntries(kinds.map((kind) => [kind, `${MEDIA}/v1/calls/${encodeURIComponent(call.callId)}/${kind}`]));
+    const urls = this.linkUrls ? this.linkUrls(signed) : signed;
     return Response.json({ media: { token, expiresAt: new Date(Date.now() + 300_000).toISOString(), kinds, urls } });
   }
 
   private mediaRoute(url: string, init?: RequestInit): Response {
     const auth = new Headers(init?.headers).get("Authorization");
-    this.mediaRequests.push({ url, auth, credentials: init?.credentials });
+    this.mediaRequests.push({ url, auth, credentials: init?.credentials, redirect: init?.redirect });
     if (this.media === "network") throw new TypeError("Failed to fetch");
     const token = auth?.replace(/^Bearer /, "") ?? "";
     if (!this.tokens.includes(token)) return Response.json({ error: "media_token_invalid" }, { status: 401 });
@@ -416,7 +419,10 @@ class QualityBackend {
     const [, callId, kind] = url.match(/\/v1\/calls\/([^/]+)\/(\w+)$/) ?? [];
     const call = this.calls.find((item) => encodeURIComponent(item.callId) === callId);
     if (!call) return Response.json({ error: "media_not_found" }, { status: 404 });
-    if (kind === "recording") return new Response("RIFF-test-audio", { headers: { "Content-Type": "audio/wav" } });
+    // "wrong_shape": an HTML page instead of audio, and JSON that is not the §8.3 transcript or summary.
+    if (kind === "recording")
+      return new Response("RIFF-test-audio", { headers: { "Content-Type": this.media === "wrong_shape" ? "text/html" : "audio/wav" } });
+    if (this.media === "wrong_shape") return Response.json({ call_id: call.callId, html: "<b>x</b>" });
     return Response.json(kind === "transcript" ? call.media.transcript : call.media.summary);
   }
 
@@ -794,6 +800,37 @@ describe("admin phone agent: call content (A12 and the Taiwan host)", () => {
     expect(revoke).not.toHaveBeenCalled();
     await user.click(within(drawer()).getByRole("button", { name: "Close" }));
     expect(revoke).toHaveBeenCalledWith("blob:recording");
+  });
+
+  it("reads like the store page: no redirects, audio only for the recording, the §8.3 shapes only, https links only", async () => {
+    const backend = new QualityBackend();
+    backend.media = "wrong_shape";
+    const user = await openContent(backend);
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = vi.fn(() => "blob:never");
+      static revokeObjectURL = vi.fn();
+    });
+    await user.click(within(drawer()).getByRole("button", { name: "Show content" }));
+    // Neither JSON body is a transcript or a summary: shown as unreadable, nothing of it on the page.
+    await waitFor(() => expect(within(drawer()).getAllByText("The content cannot be loaded right now. Try again later.")).toHaveLength(2));
+    expect(drawer().innerHTML).not.toContain("&lt;b&gt;");
+    await user.click(await within(drawer()).findByRole("button", { name: "Play recording" }));
+    // An HTML answer where audio was expected is not played.
+    await waitFor(() => expect(within(drawer()).getAllByText("The content cannot be loaded right now. Try again later.")).toHaveLength(3));
+    expect(drawer().querySelector("audio")).toBeNull();
+    expect(backend.mediaRequests.length).toBe(3);
+    for (const request of backend.mediaRequests) expect(request.redirect).toBe("error");
+    await user.click(within(drawer()).getByRole("button", { name: "Close" }));
+
+    // An A12 answer pointing at plain http: the token is sent nowhere.
+    const before = backend.mediaRequests.length;
+    backend.media = "ok";
+    backend.linkUrls = (urls) => Object.fromEntries(Object.entries(urls).map(([kind, url]) => [kind, url.replace("https://", "http://")]));
+    await user.click(document.getElementById(`voice-quality-open-${hex(1001)}`)!);
+    await within(drawer()).findByRole("heading", { level: 3, name: "Content" });
+    await user.click(within(drawer()).getByRole("button", { name: "Show content" }));
+    expect(await within(drawer()).findByRole("alert")).toHaveTextContent(/./);
+    expect(backend.mediaRequests.length).toBe(before);
   });
 
   it("renews an expired token once, and only once", async () => {
