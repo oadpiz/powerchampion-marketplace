@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import {
   localized,
+  mediaUrl,
   projectStatusLabel,
   studioApi,
   studioErrorText,
@@ -64,10 +65,29 @@ export function StudioHome() {
 
   // While a video is being drafted or generated, refresh the list now and then so its status moves on.
   const busy = items?.some((item) => BUSY.has(item.status)) ?? false;
+  // Paused while the tab is hidden (each refresh makes the portal re-read every busy project from the agent).
   useEffect(() => {
     if (!busy) return;
-    const timer = setTimeout(() => setRevision((value) => value + 1), LIST_POLL_MS);
-    return () => clearTimeout(timer);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (document.visibilityState === "hidden") return;
+      timer = setTimeout(() => {
+        // Hidden in the meantime: wait for visibilitychange instead.
+        if (document.visibilityState !== "hidden") setRevision((value) => value + 1);
+      }, LIST_POLL_MS);
+    };
+    const wake = () => {
+      if (document.visibilityState === "visible") setRevision((value) => value + 1);
+      else arm();
+    };
+    arm();
+    document.addEventListener("visibilitychange", wake);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
+    };
   }, [busy, items]);
 
   async function loadMore() {
@@ -151,10 +171,10 @@ export function StudioHome() {
               <li key={item.id}>
                 <Link className="studio-card" href={`/studio/p/${item.id}`}>
                   <span className="studio-card-thumb">
-                    {item.thumb_url ? (
+                    {mediaUrl(item.thumb_url) ? (
                       // Signed media URL from the studio media host; next/image cannot optimise it.
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.thumb_url} alt="" loading="lazy" />
+                      <img src={mediaUrl(item.thumb_url) ?? undefined} alt="" loading="lazy" />
                     ) : (
                       <span className="studio-card-placeholder" aria-hidden="true">
                         ▶

@@ -7,8 +7,12 @@ import {
   enumOptions,
   isVideoUrl,
   narrationFit,
+  downloadUrl,
+  isInternalVoice,
+  mediaUrl,
   opIsActive,
   partLabel,
+  setMediaOrigin,
   studioErrorText,
   uploadFile,
   UploadError,
@@ -40,6 +44,8 @@ describe("studio error text", () => {
     ["account_disabled", 403, "已被停用"],
     ["service_unavailable", 502, "影片服務暫時無法連線"],
     ["studio_unavailable", 503, "影片服務暫時無法連線"],
+    ["studio_voice_not_allowed", 403, "只供內部測試"],
+    ["studio_no_licensed_voice", 409, "目前沒有可對外使用的配音"],
   ];
   it.each(codes)("%s has its own text", (code, status, text) => {
     expect(studioErrorText(new PortalError(status, code, "detail"), "zh")).toContain(text);
@@ -95,6 +101,20 @@ describe("schema helpers", () => {
     expect(partLabel("image", "zh", parts)).toBe("動態鏡頭底圖");
     expect(partLabel("image", "en", ["image", "speech"])).toBe("Picture");
     expect(partLabel("clip", "zh")).toBe("動態影片");
+  });
+  it("only uses http(s) media URLs on the configured media host", () => {
+    setMediaOrigin(null);
+    expect(mediaUrl("https://any.test/media/a.png?sig=1")).toBe("https://any.test/media/a.png?sig=1");
+    expect(mediaUrl("javascript:alert(1)")).toBeNull();
+    expect(mediaUrl("data:image/png;base64,AA")).toBeNull();
+    setMediaOrigin("https://studio-media.test/");
+    expect(mediaUrl("https://any.test/media/a.png")).toBeNull();
+    expect(mediaUrl("https://studio-media.test/media/a.png")).toBe("https://studio-media.test/media/a.png");
+    setMediaOrigin(null);
+    expect(downloadUrl("https://m.test/e.mp4?exp=1&sig=2")).toBe("https://m.test/e.mp4?exp=1&sig=2&dl=1");
+    expect(isInternalVoice({ "x-internal-values": ["v9"] }, "v9")).toBe(true);
+    expect(isInternalVoice(undefined, "tw_ref")).toBe(true);
+    expect(isInternalVoice(undefined, "studio_female")).toBe(false);
   });
   it("tells clips from stills by the signed URL's path", () => {
     expect(isVideoUrl("https://m.test/media/a/x/clip.mp4?exp=1&sig=a")).toBe(true);

@@ -87,6 +87,8 @@ services:
       SHORTVIDEO_GRANT_SECRET: ${SHORTVIDEO_GRANT_SECRET:-}
       SHORTVIDEO_QUOTE_SECRET: ${SHORTVIDEO_QUOTE_SECRET:-}
       PC_STUDIO_SWEEPER: ${PC_STUDIO_SWEEPER:-1}
+      PC_STUDIO_INTERNAL_VOICES: ${PC_STUDIO_INTERNAL_VOICES:-tw_ref,test}
+      PC_STUDIO_MEDIA_ORIGIN: ${PC_STUDIO_MEDIA_ORIGIN:-}
     volumes:
       - portal-data:/data
     # No ports, no Traefik labels and not on dokploy-network: only the website

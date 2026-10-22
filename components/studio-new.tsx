@@ -39,6 +39,8 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
   const [busyFields, setBusyFields] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
+  // A create that failed after the agent attached the product images to its project: they must be uploaded again.
+  const [reupload, setReupload] = useState(false);
   // One key per filled-in form: a double click or a retry after a lost response creates one project.
   const [idempotencyKey, setIdempotencyKey] = useState(newIdempotencyKey);
   const [revision, setRevision] = useState(0);
@@ -104,6 +106,7 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
     if (Object.keys(found).length > 0) return;
     setSubmitting(true);
     setSubmitError(null);
+    setReupload(false);
     try {
       const created = await studioApi.create({
         template_id: template.id,
@@ -116,6 +119,15 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
     } catch (cause) {
       setSubmitError(cause);
       setSubmitting(false);
+      refreshCredits(); // a 402 usually means the balance shown was out of date
+      const images = values.image_ids;
+      if (Array.isArray(images) && images.length > 0) {
+        // The server ties the project, and the images attached to it, to this key. A retry with other inputs needs
+        // a new key, and the old images cannot follow it: clear them and ask for a fresh upload.
+        setValues((current) => ({ ...current, image_ids: [] }));
+        setIdempotencyKey(newIdempotencyKey());
+        setReupload(true);
+      }
     }
   }
 
@@ -163,8 +175,20 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
                 type="button"
                 role="radio"
                 aria-checked={item.id === template?.id}
+                tabIndex={item.id === (template?.id ?? templates[0]?.id) ? 0 : -1}
+                data-template={item.id}
                 className="studio-template"
                 onClick={() => pick(item)}
+                onKeyDown={(event) => {
+                  const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
+                  if (!step) return;
+                  event.preventDefault();
+                  const index = templates.findIndex((candidate) => candidate.id === item.id);
+                  const next = templates[(index + step + templates.length) % templates.length];
+                  pick(next);
+                  const group = event.currentTarget.parentElement;
+                  queueMicrotask(() => group?.querySelector<HTMLElement>(`[data-template="${next.id}"]`)?.focus());
+                }}
               >
                 <span className="studio-template-icon" aria-hidden="true">
                   ▣
@@ -244,7 +268,15 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
           <div className="studio-submit">
             {submitError !== null && (
               <p className="portal-error" role="alert">
-                {studioErrorText(submitError, locale)}
+                {submitError instanceof PortalError && submitError.code === "studio_not_found" && reupload
+                  ? zh
+                    ? "上傳的商品圖片已無法使用。"
+                    : "The uploaded product images can no longer be used."
+                  : studioErrorText(submitError, locale)}
+                {reupload &&
+                  (zh
+                    ? " 這次建立沒有完成，已上傳的圖片綁定在那次嘗試上，請重新上傳商品圖片後再送出。"
+                    : " This attempt did not finish and the uploaded images stay tied to it. Upload the product images again, then retry.")}
                 {insufficient && (
                   <>
                     {" "}

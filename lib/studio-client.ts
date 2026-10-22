@@ -145,7 +145,11 @@ const S = "/studio";
 const json = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 export const studioApi = {
-  templates: (signal?: AbortSignal) => portalRequest<{ items: StudioTemplate[] }>(`${S}/templates`, { signal }),
+  templates: (signal?: AbortSignal) =>
+    portalRequest<{ items: StudioTemplate[]; media_origin?: string | null }>(`${S}/templates`, { signal }).then((result) => {
+      setMediaOrigin(result.media_origin ?? null);
+      return result;
+    }),
   projects: (cursor?: string | null, signal?: AbortSignal) =>
     portalRequest<{ items: ProjectSummary[]; next: string | null }>(
       `${S}/projects?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
@@ -180,6 +184,35 @@ export function newIdempotencyKey(): string {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   return "k" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ---------------------------------------------------------------------------------------------- media URLs
+
+/** The media host the portal names (PC_STUDIO_MEDIA_ORIGIN); null = not configured, any http(s) URL is used. */
+let mediaOrigin: string | null = null;
+export function setMediaOrigin(origin: string | null) {
+  mediaOrigin = origin ? origin.replace(/\/$/, "") : null;
+}
+
+/** A signed media URL, or null when it is not http(s) or not on the configured media host (defence in depth). */
+export function mediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    if (mediaOrigin && parsed.origin !== mediaOrigin) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The export as a download: `dl=1` asks the media host for Content-Disposition: attachment (agent-side flag;
+ * the link also opens in a new tab, so without it the studio page is never replaced by the video).
+ */
+export function downloadUrl(url: string): string {
+  return url + (url.includes("?") ? "&" : "?") + "dl=1";
 }
 
 // ---------------------------------------------------------------------------------------------- uploads
@@ -223,6 +256,7 @@ export async function uploadFile(
     bytes: file.size,
     ...(projectId ? { project_id: projectId } : {}),
   }));
+  if (!mediaUrl(ticket.put_url)) throw new UploadError("put", "unexpected upload host");
   // The browser sets Content-Length from the File; the URL is signed and single use. No cookies go to the media host.
   const response = await put(ticket.put_url, {
     method: "PUT",
@@ -416,6 +450,12 @@ export function schemaTypes(schema: JsonSchema): string[] {
 const KNOWN_VOICES: Record<string, { zh: string; en: string; internal: boolean }> = {
   tw_ref: { zh: "內部測試", en: "Internal test", internal: true },
 };
+
+/** Whether a voice is for internal tests only (portal list in x-internal-values, plus the known table). */
+export function isInternalVoice(schema: JsonSchema | undefined, voice: unknown): boolean {
+  if (typeof voice !== "string") return false;
+  return (schema?.["x-internal-values"] ?? []).includes(voice) || !!KNOWN_VOICES[voice]?.internal;
+}
 
 export function enumOptions(name: string, schema: JsonSchema, locale: Locale, isAdmin: boolean) {
   const values = (schema.enum ?? []).filter((value): value is string => typeof value === "string");

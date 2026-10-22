@@ -29,6 +29,8 @@ export function useStudioProject(projectId: string, now: () => number = Date.now
   const [loading, setLoading] = useState(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef(false);
+  // A refresh asked for while a load is in flight: that load's (older) answer must not end the polling.
+  const again = useRef(false);
   const activeSince = useRef<number | null>(null);
   const stopped = useRef(false);
   const controller = useRef<AbortController | null>(null);
@@ -60,7 +62,10 @@ export function useStudioProject(projectId: string, now: () => number = Date.now
   );
 
   const load = useCallback(async () => {
-    if (inFlight.current) return;
+    if (inFlight.current) {
+      again.current = true;
+      return;
+    }
     inFlight.current = true;
     const abort = new AbortController();
     controller.current = abort;
@@ -81,8 +86,13 @@ export function useStudioProject(projectId: string, now: () => number = Date.now
       }
       latest = current.current;
     } finally {
-      inFlight.current = false;
+      if (controller.current === abort) inFlight.current = false;
       if (!abort.signal.aborted) setLoading(false);
+    }
+    if (again.current && !abort.signal.aborted) {
+      again.current = false;
+      void loadRef.current();
+      return;
     }
     settle(latest, failed);
   }, [projectId, settle]);
@@ -120,7 +130,11 @@ export function useStudioProject(projectId: string, now: () => number = Date.now
       document.removeEventListener("visibilitychange", wake);
       window.removeEventListener("focus", wake);
       if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
       controller.current?.abort();
+      // A remount must be able to load at once, not wait for the aborted request to unwind.
+      inFlight.current = false;
+      again.current = false;
     };
   }, [projectId]);
 

@@ -44,7 +44,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from .studio_agent import AgentError, StudioAgent
-from .support import PREFIX, body_json, fail, text_value
+from .support import PREFIX, PortalError, body_json, fail, text_value
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +80,8 @@ SHOT_INDEX = re.compile(r"^[0-9]{1,3}$")
 SIG = re.compile(r"^[0-9a-f]{64}$")
 ERROR_CODE = re.compile(r"^[a-z0-9_]{1,64}$")
 UPLOAD_PURPOSES = ("input_image", "shot_image", "music", "character_ref")
+# Op types that never synthesise narration (draft writes the script; add_aspect draws stills; export composes).
+VOICELESS_OPS = ("draft", "add_aspect", "export")
 UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # the agent enforces 10 MB (music 20 MB) exactly
 
 # Agent 4xx codes the browser may see, with the portal's own text (never the agent's message).
@@ -95,6 +97,15 @@ PASS_THROUGH = {
     "studio_daily_cap": (429, "The daily limit for video generation has been reached. Try again tomorrow."),
     "studio_too_large": (413, "The request is too large."),
 }
+
+
+def _mark_internal_voices(template, internal):
+    """Annotate the template's voice field with the portal's internal-voice list (x-internal-values)."""
+    schema = template.get("project_schema")
+    voice = schema.get("properties", {}).get("voice") if isinstance(schema, dict) and isinstance(schema.get("properties"), dict) else None
+    if isinstance(voice, dict):
+        template["project_schema"] = dict(schema, properties=dict(schema["properties"], voice=dict(voice, **{"x-internal-values": list(internal)})))
+    return template
 
 
 def agent_fail(error):
@@ -181,6 +192,10 @@ class Studio:
         self.max_active_per_user = MAX_ACTIVE_PER_USER
         self.limits = dict(LIMITS)
         self.orphan_s = ORPHAN_S
+
+    @property
+    def internal_voices(self):
+        return tuple(self.settings.studio_internal_voices)
 
     @property
     def sweeper_enabled(self):
@@ -564,7 +579,8 @@ def attach_studio(application, ctx, agent=None):
         if not isinstance(items, list):
             agent_fail(AgentError("invalid_response"))
         keys = ("id", "version", "title", "input_schema", "shot_schema", "project_schema", "aspects", "ops", "prices")
-        return {"items": [{k: t.get(k) for k in keys} for t in items if isinstance(t, dict)]}
+        return {"items": [_mark_internal_voices({k: t.get(k) for k in keys}, studio.internal_voices) for t in items if isinstance(t, dict)],
+                "media_origin": studio.settings.studio_media_origin or None}
 
     @application.get(S + "/projects")
     async def studio_projects(request: Request):
@@ -577,7 +593,11 @@ def attach_studio(application, ctx, agent=None):
             limit = int(raw_limit)
         else:
             _invalid("Choose a limit from 1 to 50.")
-        sql, params = "SELECT * FROM studio_projects WHERE user_id=? AND deleted_at IS NULL", [user["id"]]
+        # A project with no op at all is a create that failed (or crashed) before reserving its draft:
+        # nothing was charged and nothing was drafted, so it is not listed. Draft failures have an op and stay.
+        sql = ("SELECT * FROM studio_projects WHERE user_id=? AND deleted_at IS NULL "
+               "AND EXISTS (SELECT 1 FROM studio_ops o WHERE o.project_id=studio_projects.id)")
+        params = [user["id"]]
         cursor = request.query_params.get("cursor")
         if cursor is not None:
             match = CURSOR.fullmatch(cursor)
@@ -640,13 +660,19 @@ def attach_studio(application, ctx, agent=None):
             if error.kind == "rejected":
                 studio.drop_unused_project(user["id"], project_id)
             agent_fail(error)
-        raw = await studio.call("quote", user["id"], project_id, {"type": "draft"})
         try:
-            quote = studio.verify_quote(user["id"], project_id, raw)
-        except Exception:  # noqa: BLE001 - the agent's own quote failing our check = mismatched secrets
-            log.error("studio: the agent's draft quote failed verification (check SHORTVIDEO_QUOTE_SECRET)")
-            agent_fail(AgentError("invalid_response"))
-        op, created = studio.reserve(user["id"], project_id, quote, key)
+            raw = await studio.call("quote", user["id"], project_id, {"type": "draft"})
+            try:
+                quote = studio.verify_quote(user["id"], project_id, raw)
+            except Exception:  # noqa: BLE001 - the agent's own quote failing our check = mismatched secrets
+                log.error("studio: the agent's draft quote failed verification (check SHORTVIDEO_QUOTE_SECRET)")
+                agent_fail(AgentError("invalid_response"))
+            op, created = studio.reserve(user["id"], project_id, quote, key)
+        except PortalError:
+            # Nothing was reserved (402, busy, disabled, a refused quote): leave no portal project behind.
+            # The agent keeps its project and attached images; retrying with the same key reuses them.
+            studio.drop_unused_project(user["id"], project_id)
+            raise
         result = await studio.submit_async(op, quote) if created else {"op_id": op["op_id"], "state": op["state"]}
         return JSONResponse({"id": project_id, "op_id": result["op_id"], "status": "drafting", "state": result["state"]}, status_code=201)
 
@@ -688,10 +714,11 @@ def attach_studio(application, ctx, agent=None):
             doc["active_op"] = {"op_id": active["op_id"], "type": active["type"], "state": active["state"]}
         return doc
 
-    async def _edit(request, project_id, call, *args):
+    async def _edit(request, project_id, call, *args, body=None):
         user = current_user(request)
         studio.require()
-        body = await body_json(request)
+        if body is None:
+            body = await body_json(request)
         studio.owned_project(user["id"], project_id)
         if studio.active_op(project_id):
             fail("studio_busy", PASS_THROUGH["studio_busy"][1], 409)
@@ -701,7 +728,12 @@ def attach_studio(application, ctx, agent=None):
 
     @application.post(S + "/projects/{project_id}/settings")
     async def studio_settings(project_id: str, request: Request):
-        return await _edit(request, project_id, "edit_settings")
+        user = current_user(request)
+        studio.require()
+        body = await body_json(request)
+        if user["role"] != "admin" and body.get("voice") in studio.internal_voices:
+            fail("studio_voice_not_allowed", "That voice is for internal tests only.", 403)
+        return await _edit(request, project_id, "edit_settings", body=body)
 
     @application.post(S + "/projects/{project_id}/shots/{index}/edit")
     async def studio_edit_shot(project_id: str, index: str, request: Request):
@@ -721,6 +753,13 @@ def attach_studio(application, ctx, agent=None):
         target = _target(body.get("target"))
         studio.owned_project(user["id"], project_id)
         studio.consume(user["id"], "quote")
+        if user["role"] != "admin" and op_type not in VOICELESS_OPS:
+            # D-V4: no customer hears an internal voice. Today it is the agent's default, so a customer project
+            # keeps it until a licensed voice exists; steps that may synthesise narration are refused.
+            doc = await studio.call("get_project", user["id"], project_id)
+            settings = doc.get("settings") if isinstance(doc, dict) else None
+            if not isinstance(settings, dict) or settings.get("voice") in studio.internal_voices:
+                fail("studio_no_licensed_voice", "No licensed voice is available yet, so narration cannot be generated.", 409)
         data = await studio.call("quote", user["id"], project_id, {"type": op_type, "target": target})
         return {k: data.get(k) for k in ("quote_id", "type", "target", "credits", "breakdown", "storyboard_rev", "exp", "sig")}
 
@@ -778,30 +817,51 @@ def attach_studio(application, ctx, agent=None):
         except ValueError:
             fail("invalid_input", "Enter an account, a non-zero whole number of credits up to 1,000,000 and a valid plan.")
         note = text_value(body.get("note") or "", "note", 200, required=False) or None
+        request_key = body.get("idempotency_key")
+        if request_key is not None and (not isinstance(request_key, str) or not IDEMPOTENCY.fullmatch(request_key)):
+            fail("invalid_input", "Send an idempotency_key of 8 to 64 letters, digits, - or _.")
         now = studio.now()
         kind = "grant" if credits > 0 else "expire"
+
+        def account():
+            return {"account": {"user_id": user_id, **{k: v for k, v in studio.credits_json(user_id).items() if k != "recent"}}}
+
+        try:
+            return await run_in_threadpool(_grant, admin, user_id, credits, plan, period_end, note, request_key, now, kind, account)
+        except store.IntegrityError:
+            # A concurrent request with the same key won the race: this one is its replay.
+            return dict(account(), replayed=True)
+
+    def _grant(admin, user_id, credits, plan, period_end, note, request_key, now, kind, account):
         with store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
-            # current_user() ran before the write lock: re-check the caller inside it.
-            me = con.execute("SELECT role, disabled_at FROM users WHERE id=?", (admin["id"],)).fetchone()
-            if not me or me["role"] != "admin" or me["disabled_at"] is not None:
-                fail("admin_required", "Administrator access is required.", 403)
-            if not con.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone():
-                fail("customer_not_found", "Account not found.", 404)
-            con.execute("INSERT INTO studio_accounts (user_id,balance,reserved,plan,period_end,updated_at) VALUES (?,0,0,NULL,NULL,?) ON CONFLICT(user_id) DO NOTHING", (user_id, now))
-            before = con.execute("SELECT * FROM studio_accounts WHERE user_id=?", (user_id,)).fetchone()
-            if before["balance"] + credits < 0:
-                fail("studio_insufficient_credits", "The account does not have that many unreserved credits.", 409)
-            new_plan = plan or before["plan"] or DEFAULT_PLAN
-            new_end = period_end if period_end is not None else before["period_end"]
-            con.execute("UPDATE studio_accounts SET balance=balance+?, plan=?, period_end=?, updated_at=? WHERE user_id=?",
-                        (credits, new_plan, new_end, now, user_id))
-            con.execute("INSERT INTO studio_ledger (user_id,op_id,kind,delta,note,created_at) VALUES (?,NULL,?,?,?,?)",
-                        (user_id, kind, credits, note, now))
-            store.audit(con, "admin.studio_credits_" + kind, admin["id"], user_id,
-                        {"credits": credits, "note": note, "balance": [before["balance"], before["balance"] + credits],
-                         "plan": [before["plan"], new_plan], "period_end": [before["period_end"], new_end]})
-        return {"account": {"user_id": user_id, **{k: v for k, v in studio.credits_json(user_id).items() if k != "recent"}}}
+            replay = bool(request_key) and con.execute(
+                "SELECT 1 FROM studio_ledger WHERE user_id=? AND request_key=?", (user_id, request_key)).fetchone() is not None
+            if not replay:
+                _apply_grant(con, admin, user_id, credits, plan, period_end, note, request_key, now, kind)
+        # Read back after the write transaction ended (account() opens its own connection).
+        return dict(account(), replayed=replay)
+
+    def _apply_grant(con, admin, user_id, credits, plan, period_end, note, request_key, now, kind):
+        # current_user() ran before the write lock: re-check the caller inside it.
+        me = con.execute("SELECT role, disabled_at FROM users WHERE id=?", (admin["id"],)).fetchone()
+        if not me or me["role"] != "admin" or me["disabled_at"] is not None:
+            fail("admin_required", "Administrator access is required.", 403)
+        if not con.execute("SELECT 1 FROM users WHERE id=?", (user_id,)).fetchone():
+            fail("customer_not_found", "Account not found.", 404)
+        con.execute("INSERT INTO studio_accounts (user_id,balance,reserved,plan,period_end,updated_at) VALUES (?,0,0,NULL,NULL,?) ON CONFLICT(user_id) DO NOTHING", (user_id, now))
+        before = con.execute("SELECT * FROM studio_accounts WHERE user_id=?", (user_id,)).fetchone()
+        if before["balance"] + credits < 0:
+            fail("studio_insufficient_credits", "The account does not have that many unreserved credits.", 409)
+        new_plan = plan or before["plan"] or DEFAULT_PLAN
+        new_end = period_end if period_end is not None else before["period_end"]
+        con.execute("UPDATE studio_accounts SET balance=balance+?, plan=?, period_end=?, updated_at=? WHERE user_id=?",
+                    (credits, new_plan, new_end, now, user_id))
+        con.execute("INSERT INTO studio_ledger (user_id,op_id,kind,delta,note,created_at,request_key) VALUES (?,NULL,?,?,?,?,?)",
+                    (user_id, kind, credits, note, now, request_key))
+        store.audit(con, "admin.studio_credits_" + kind, admin["id"], user_id,
+                    {"credits": credits, "note": note, "balance": [before["balance"], before["balance"] + credits],
+                     "plan": [before["plan"], new_plan], "period_end": [before["period_end"], new_end]})
 
     @application.get(PREFIX + "/admin/studio/usage")
     async def studio_usage(request: Request):

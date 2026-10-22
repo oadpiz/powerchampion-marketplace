@@ -96,7 +96,10 @@ def upgrade():
         sa.Column("delta", sa.Integer(), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
         sa.Column("created_at", sa.Integer(), nullable=True),
+        # An administrator's grant idempotency key: a retried grant is applied once (NULL for op rows).
+        sa.Column("request_key", sa.Text(), nullable=True),
         sa.CheckConstraint("kind IN ('grant','reserve','settle','refund','expire')", name="studio_ledger_kind"),
+        sa.UniqueConstraint("user_id", "request_key", name="studio_ledger_request"),
     )
     op.create_index("ix_studio_ledger_user_created", "studio_ledger", ["user_id", "created_at"])
     op.create_table(

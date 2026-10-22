@@ -367,7 +367,8 @@ class FakeStudioAgent:
     def templates(self, owner):
         self._enter("templates", owner)
         return {"items": [{"id": "ecommerce", "version": 1, "title": {"zh": "電商商品影片", "en": "Product video"},
-                           "input_schema": {"type": "object"}, "shot_schema": {"type": "object"}, "project_schema": {"type": "object"},
+                           "input_schema": {"type": "object"}, "shot_schema": {"type": "object"},
+                           "project_schema": {"type": "object", "properties": {"voice": {"type": "string", "enum": ["tw_ref", "studio_female", "v1"]}}},
                            "aspects": ["9:16", "16:9"], "ops": [], "prices": {"draft": 2, "image": 1, "speech": 1, "clip": 8},
                            "rules": {"shots": [6, 10]}}]}
 

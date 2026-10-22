@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { PortalError } from "../lib/portal-client";
 import {
   aspectLabel,
+  downloadUrl,
+  isInternalVoice,
   isVideoUrl,
+  mediaUrl,
   kindLabel,
   localized,
   newIdempotencyKey,
@@ -31,6 +34,24 @@ import { useStudioProject } from "./use-studio-project";
 type Pending = { quote: Quote; key: string; label: string; error: unknown; busy: boolean; requoted: boolean };
 type Notice = { tone: "ok" | "warn" | "error"; text: string };
 const MEDIA_RETRY_MS = 30_000;
+/** How long the actions stay disabled after a submit if the reloaded document does not show the op yet. */
+const SUBMITTED_HOLD_MS = 15_000;
+const STOPPED = new Set([401, 403, 404]);
+
+/** Arrow-key navigation for a tablist (WAI-ARIA tabs with automatic activation). */
+function tabKeys(event: KeyboardEvent<HTMLElement>, order: string[], current: string, select: (value: string) => void) {
+  const index = order.indexOf(current);
+  let next = index;
+  if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (index + 1) % order.length;
+  else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (index - 1 + order.length) % order.length;
+  else if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = order.length - 1;
+  else return;
+  event.preventDefault();
+  select(order[next]);
+  const list = event.currentTarget.closest("[role=tablist]");
+  queueMicrotask(() => list?.querySelector<HTMLElement>(`[data-tab="${order[next]}"]`)?.focus());
+}
 
 function shotBadge(shot: StudioShot, zh: boolean) {
   if (shot.status === "rendering") return { cls: "studio-badge-busy", text: zh ? "產生中" : "Generating" };
@@ -57,6 +78,9 @@ export function StudioEditor({ projectId }: { projectId: string }) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [quoting, setQuoting] = useState<string | null>(null);
   const watched = useRef<string | null>(null);
+  const submitting = useRef(false);
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  const ids = useId();
   const mediaRetry = useRef(0);
 
   useEffect(() => {
@@ -76,8 +100,11 @@ export function StudioEditor({ projectId }: { projectId: string }) {
   const aspects = project?.aspects ?? (project ? [project.aspect] : []);
   const currentAspect = viewAspect && aspects.includes(viewAspect) ? viewAspect : (project?.aspect ?? "9:16");
   const shot = shots.find((item) => item.index === selected) ?? shots[0] ?? null;
-  const exported = project?.exports?.[currentAspect] ?? null;
+  const rawExport = project?.exports?.[currentAspect] ?? null;
+  const exported = rawExport && mediaUrl(rawExport.url) ? rawExport : null;
   const missingAspects = (template?.aspects ?? []).filter((aspect) => !aspects.includes(aspect));
+  // D-V4: a customer's project on an internal voice cannot be narrated (the portal refuses those quotes too).
+  const noVoice = !isAdmin && !!template && !!project && isInternalVoice(template.project_schema.properties?.voice, project.settings?.voice);
 
   // When an op this page saw running ends, tell the user what it cost (the portal's ledger is the truth).
   useEffect(() => {
@@ -120,9 +147,17 @@ export function StudioEditor({ projectId }: { projectId: string }) {
       .catch(() => {});
   }, [project, locale, zh, refreshCredits, template?.ops]);
 
+  // After a submit the actions stay disabled until the document shows the op (or that it already ended).
+  const holding = submitted !== null && project?.active_op?.op_id !== submitted && project?.last_op?.op_id !== submitted;
+  useEffect(() => {
+    if (!submitted) return;
+    const timer = setTimeout(() => setSubmitted(null), SUBMITTED_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [submitted]);
+
   // Prices for the top bar, once per storyboard revision while nothing runs (quotes are signed and short-lived).
   const rev = project?.storyboard_rev ?? -1;
-  const quoteRender = hasStoryboard && staleCount > 0 && !active;
+  const quoteRender = hasStoryboard && staleCount > 0 && !active && !noVoice;
   const quoteAspects = hasStoryboard && staleCount === 0 && !active ? missingAspects.join(",") : "";
   useEffect(() => {
     if (!project || active || !hasStoryboard) return;
@@ -153,7 +188,8 @@ export function StudioEditor({ projectId }: { projectId: string }) {
       const label = opTypeLabel(type, quote.target ?? target, locale, template?.ops);
       if (quote.credits === 0) {
         // Free steps (export) need no confirmation.
-        await studioApi.submit(project.id, quote, newIdempotencyKey());
+        const op = await studioApi.submit(project.id, quote, newIdempotencyKey());
+        setSubmitted(op.op_id);
         refresh();
       } else {
         setPending({ quote, key: newIdempotencyKey(), label, error: null, busy: false, requoted: false });
@@ -166,14 +202,20 @@ export function StudioEditor({ projectId }: { projectId: string }) {
   }
 
   async function confirm() {
-    if (!pending || !project || pending.busy) return;
+    // A ref, not state: two clicks in the same tick must not both submit.
+    if (!pending || !project || pending.busy || submitting.current) return;
+    submitting.current = true;
     setPending({ ...pending, busy: true, error: null });
     try {
-      await studioApi.submit(project.id, pending.quote, pending.key);
+      const op = await studioApi.submit(project.id, pending.quote, pending.key);
+      setSubmitted(op.op_id);
       setPending(null);
       refreshCredits();
       refresh();
     } catch (cause) {
+      // Whatever went wrong (402, busy, stale), the balance and the project may have moved on.
+      refreshCredits();
+      refresh();
       if (cause instanceof PortalError && cause.code === "studio_stale_quote") {
         // The storyboard changed under the quote: price it again and ask once more.
         try {
@@ -186,6 +228,8 @@ export function StudioEditor({ projectId }: { projectId: string }) {
         }
       }
       setPending({ ...pending, busy: false, error: cause });
+    } finally {
+      submitting.current = false;
     }
   }
 
@@ -223,8 +267,12 @@ export function StudioEditor({ projectId }: { projectId: string }) {
   const balance = credits?.balance ?? null;
   const draftPrice = template?.prices?.draft ?? 2;
   const renderLabel = fresh?.render ? (zh ? `產生全部（${fresh.render.credits} 點）` : `Generate all (${fresh.render.credits} credits)`) : zh ? "產生全部" : "Generate all";
+  const preview = mediaUrl(shot?.preview_url);
+  const stageKeys = (event: KeyboardEvent<HTMLElement>) =>
+    tabKeys(event, exported ? ["shot", "export"] : ["shot"], view, (value) => setView(value as "shot" | "export"));
   const lastFailed = !notice && !active && project.last_op?.state === "failed" ? project.last_op : null;
-  const busyNow = active || quoting !== null || pending?.busy === true;
+  const busyNow = active || quoting !== null || pending?.busy === true || holding;
+  const pollStopped = error instanceof PortalError && STOPPED.has(error.status);
 
   return (
     <div className="studio-editor-page">
@@ -253,7 +301,7 @@ export function StudioEditor({ projectId }: { projectId: string }) {
             </button>
           )}
           {hasStoryboard && (
-            <button type="button" className="portal-button" disabled={busyNow || staleCount === 0} onClick={() => void ask("render")}>
+            <button type="button" className="portal-button" disabled={busyNow || staleCount === 0 || noVoice} onClick={() => void ask("render")}>
               {renderLabel}
             </button>
           )}
@@ -292,7 +340,7 @@ export function StudioEditor({ projectId }: { projectId: string }) {
                   key={op.type}
                   type="button"
                   className="portal-button-secondary"
-                  disabled={busyNow}
+                  disabled={busyNow || noVoice}
                   onClick={() => void ask(op.type, op.target_kind === "shot" ? String(shot?.index ?? 1) : op.target_kind === "aspect" ? currentAspect : undefined)}
                 >
                   {localized(op.label, locale, op.type)}
@@ -343,11 +391,30 @@ export function StudioEditor({ projectId }: { projectId: string }) {
           )}
         </p>
       )}
-      {error !== null && (
+      {noVoice && (
         <p className="portal-note" role="status">
-          {zh ? "暫時無法更新狀態，會自動重試。" : "Could not refresh the status; retrying automatically."} {studioErrorText(error, locale)}
+          {zh
+            ? "目前沒有可對外使用的配音，暫時無法產生畫面與配音；你仍可編輯分鏡，開放授權配音後即可產生。"
+            : "No licensed voice is available yet, so pictures and narration cannot be generated for now. You can still edit the storyboard."}
         </p>
       )}
+      {error !== null &&
+        (pollStopped ? (
+          <p className="portal-error" role="alert">
+            {studioErrorText(error, locale)}
+          </p>
+        ) : active ? (
+          <p className="portal-note" role="status">
+            {zh ? "暫時無法更新狀態，會自動重試。" : "Could not refresh the status; retrying automatically."} {studioErrorText(error, locale)}
+          </p>
+        ) : (
+          <div className="studio-notice studio-notice-error" role="status">
+            <span>{studioErrorText(error, locale)}</span>
+            <button type="button" className="portal-text-button" onClick={refresh}>
+              {zh ? "重新載入" : "Reload"}
+            </button>
+          </div>
+        ))}
 
       {!hasStoryboard ? (
         <section className="portal-panel studio-drafting">
@@ -391,10 +458,10 @@ export function StudioEditor({ projectId }: { projectId: string }) {
                     }}
                   >
                     <span className="studio-shot-thumb">
-                      {item.thumb_url ? (
+                      {mediaUrl(item.thumb_url) ? (
                         // Signed media URL (studio media host).
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.thumb_url} alt="" loading="lazy" onError={mediaFailed} />
+                        <img src={mediaUrl(item.thumb_url) ?? undefined} alt="" loading="lazy" onError={mediaFailed} />
                       ) : (
                         <span aria-hidden="true">{item.index}</span>
                       )}
@@ -420,11 +487,36 @@ export function StudioEditor({ projectId }: { projectId: string }) {
           </ol>
 
           <section className="studio-stage" aria-label={zh ? "預覽" : "Preview"}>
-            <div className="studio-stage-tabs" role="tablist" aria-label={zh ? "預覽內容" : "Preview content"}>
-              <button type="button" role="tab" aria-selected={view === "shot"} onClick={() => setView("shot")}>
+            <div
+              className="studio-stage-tabs"
+              role="tablist"
+              aria-label={zh ? "預覽內容" : "Preview content"}
+            >
+              <button
+                type="button"
+                role="tab"
+                id={`${ids}-view-shot`}
+                data-tab="shot"
+                aria-controls={`${ids}-screen`}
+                aria-selected={view === "shot"}
+                tabIndex={view === "shot" ? 0 : -1}
+                onKeyDown={stageKeys}
+                onClick={() => setView("shot")}
+              >
                 {zh ? `第 ${shot?.index ?? 1} 鏡` : `Shot ${shot?.index ?? 1}`}
               </button>
-              <button type="button" role="tab" aria-selected={view === "export"} disabled={!exported} onClick={() => setView("export")}>
+              <button
+                type="button"
+                role="tab"
+                id={`${ids}-view-export`}
+                data-tab="export"
+                aria-controls={`${ids}-screen`}
+                aria-selected={view === "export"}
+                tabIndex={view === "export" ? 0 : -1}
+                onKeyDown={stageKeys}
+                disabled={!exported}
+                onClick={() => setView("export")}
+              >
                 {zh ? "成片" : "Final video"}
               </button>
               {aspects.length > 1 &&
@@ -434,16 +526,20 @@ export function StudioEditor({ projectId }: { projectId: string }) {
                   </button>
                 ))}
             </div>
-            <div className={`studio-screen studio-screen-${(view === "export" ? currentAspect : project.aspect).replace(":", "x")}`}>
+            <div
+              id={`${ids}-screen`}
+              role="tabpanel"
+              aria-labelledby={`${ids}-view-${view}`}
+              className={`studio-screen studio-screen-${(view === "export" ? currentAspect : project.aspect).replace(":", "x")}`}>
               {view === "export" && exported ? (
                 // Subtitles are burned into the export by default; the SRT is offered as a download below.
                 // eslint-disable-next-line jsx-a11y/media-has-caption
                 <video key={exported.url} src={exported.url} controls playsInline preload="metadata" onError={mediaFailed} />
-              ) : shot?.preview_url && isVideoUrl(shot.preview_url) ? (
-                <video key={shot.preview_url} src={shot.preview_url} controls muted loop playsInline preload="metadata" onError={mediaFailed} />
-              ) : shot?.preview_url ? (
+              ) : preview && isVideoUrl(preview) ? (
+                <video key={preview} src={preview} controls muted loop playsInline preload="metadata" onError={mediaFailed} />
+              ) : preview ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={shot.preview_url} alt={shot.visual_prompt ?? ""} onError={mediaFailed} />
+                <img src={preview} alt={shot?.visual_prompt ?? ""} onError={mediaFailed} />
               ) : (
                 <div className="studio-screen-empty">
                   <span aria-hidden="true">▣</span>
@@ -460,11 +556,11 @@ export function StudioEditor({ projectId }: { projectId: string }) {
             )}
             {exported && (
               <div className="studio-downloads">
-                <a className="portal-button-secondary" href={exported.url} download>
+                <a className="portal-button-secondary" href={downloadUrl(exported.url)} target="_blank" rel="noopener noreferrer">
                   {zh ? `下載 MP4（${currentAspect}）` : `Download MP4 (${currentAspect})`}
                 </a>
-                {exported.srt_url && (
-                  <a className="portal-text-link" href={exported.srt_url} download>
+                {mediaUrl(exported.srt_url) && (
+                  <a className="portal-text-link" href={mediaUrl(exported.srt_url) ?? undefined} target="_blank" rel="noopener noreferrer">
                     {zh ? "下載字幕 SRT" : "Download subtitles (SRT)"}
                   </a>
                 )}
@@ -478,14 +574,29 @@ export function StudioEditor({ projectId }: { projectId: string }) {
           </section>
 
           <aside className="studio-inspector" aria-label={zh ? "編輯" : "Inspector"}>
-            <div className="studio-inspector-tabs" role="tablist">
-              <button type="button" role="tab" aria-selected={tab === "shot"} onClick={() => setTab("shot")}>
-                {zh ? "鏡頭" : "Shot"}
-              </button>
-              <button type="button" role="tab" aria-selected={tab === "settings"} onClick={() => setTab("settings")}>
-                {zh ? "專案設定" : "Settings"}
-              </button>
+            <div
+              className="studio-inspector-tabs"
+              role="tablist"
+              aria-label={zh ? "編輯內容" : "Edit"}
+            >
+              {(["shot", "settings"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  id={`${ids}-tab-${value}`}
+                  data-tab={value}
+                  aria-controls={`${ids}-panel`}
+                  aria-selected={tab === value}
+                  tabIndex={tab === value ? 0 : -1}
+                  onKeyDown={(event) => tabKeys(event, ["shot", "settings"], tab, (next) => setTab(next as "shot" | "settings"))}
+                  onClick={() => setTab(value)}
+                >
+                  {value === "shot" ? (zh ? "鏡頭" : "Shot") : zh ? "專案設定" : "Settings"}
+                </button>
+              ))}
             </div>
+            <div id={`${ids}-panel`} role="tabpanel" aria-labelledby={`${ids}-tab-${tab}`}>
             {template === null ? (
               <p className="portal-empty" role="status">
                 {templates === null ? (zh ? "正在載入…" : "Loading…") : zh ? "找不到此影片的範本設定。" : "This video's template is not available."}
@@ -498,6 +609,7 @@ export function StudioEditor({ projectId }: { projectId: string }) {
                 schema={template.shot_schema}
                 isAdmin={isAdmin}
                 locked={active}
+                canRegenerate={!busyNow && !noVoice}
                 onSaved={setProject}
                 onRegenerate={(dirty) => {
                   if (dirty) {
@@ -511,6 +623,7 @@ export function StudioEditor({ projectId }: { projectId: string }) {
             ) : (
               <ProjectSettings key={project.id} project={project} schema={template.project_schema} isAdmin={isAdmin} locked={active} onSaved={setProject} />
             )}
+            </div>
           </aside>
         </div>
       )}
@@ -562,6 +675,12 @@ export function StudioEditor({ projectId }: { projectId: string }) {
           {pending.error !== null && !(pending.error instanceof PortalError && pending.error.code === "studio_stale_quote" && pending.requoted) && (
             <p className="portal-error" role="alert">
               {studioErrorText(pending.error, locale)}
+              {pending.error instanceof PortalError && pending.error.code === "studio_insufficient_credits" && (
+                <>
+                  {" "}
+                  <Link href="/studio/credits">{zh ? "查看點數" : "See credits"}</Link>
+                </>
+              )}
             </p>
           )}
         </AdminDialog>

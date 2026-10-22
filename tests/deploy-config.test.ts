@@ -90,6 +90,8 @@ describe("Dokploy deployment behind Traefik", () => {
       expect(compose.match(new RegExp(`^\\s+${name}\\s*:`, "gm"))).toHaveLength(1);
     }
     expect(portal).toMatch(/^\s+PC_STUDIO_SWEEPER:\s*\$\{PC_STUDIO_SWEEPER:-1\}\s*$/m);
+    expect(portal).toMatch(/^\s+PC_STUDIO_INTERNAL_VOICES:\s*\$\{PC_STUDIO_INTERNAL_VOICES:-tw_ref,test\}\s*$/m);
+    expect(portal).toMatch(/^\s+PC_STUDIO_MEDIA_ORIGIN:\s*\$\{PC_STUDIO_MEDIA_ORIGIN:-\}\s*$/m);
     expect(website).not.toMatch(/SHORTVIDEO_|PC_STUDIO_/);
   });
 });

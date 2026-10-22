@@ -118,7 +118,7 @@ export function studioFetch(routes: Record<string, Route>, role: "customer" | "a
       return Response.json({ error: "not_found", detail: "no route" }, { status: 404 });
     }
     const route = routes[key];
-    const value = typeof route === "function" ? (route as (body: unknown, call: Call) => unknown)(body, call) : route;
+    const value = await (typeof route === "function" ? (route as (body: unknown, call: Call) => unknown)(body, call) : route);
     return value instanceof Response ? value : Response.json(value);
   });
   vi.stubGlobal("fetch", mock);

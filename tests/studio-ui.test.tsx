@@ -305,7 +305,7 @@ describe("studio editor", () => {
     expect(await screen.findByRole("button", { name: "匯出 9:16" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "產生全部" })).toBeDisabled();
     await waitFor(() => expect(screen.getByRole("button", { name: "加做 16:9（4 點）" })).toBeEnabled());
-    expect(screen.getByRole("link", { name: "下載 MP4（9:16）" })).toHaveAttribute("href", "https://studio-media.test/media/e/v.mp4?exp=1&sig=x");
+    expect(screen.getByRole("link", { name: "下載 MP4（9:16）" })).toHaveAttribute("href", "https://studio-media.test/media/e/v.mp4?exp=1&sig=x&dl=1");
   });
 
   it("reports what a finished op charged and refunded", async () => {
@@ -377,8 +377,9 @@ describe("admin studio section", () => {
     await userEvent.selectOptions(screen.getByLabelText("方案（選填）"), "creator");
     await userEvent.type(screen.getByLabelText(/備註/), "匯款 0412");
     await userEvent.click(screen.getByRole("button", { name: "確認發放" }));
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "發放 1,000 點" }));
     expect(await screen.findByText(/已發放 1,000 點給 shop@example.com/)).toBeInTheDocument();
-    expect(calls.find((call) => call.path === "/admin/studio/credits/grant")?.body).toEqual({ user_id: "u7", credits: 1000, plan: "creator", note: "匯款 0412" });
+    expect(calls.find((call) => call.path === "/admin/studio/credits/grant")?.body).toMatchObject({ user_id: "u7", credits: 1000, plan: "creator", note: "匯款 0412" });
     const table = await screen.findByRole("table");
     expect(table).toHaveTextContent("$0.6200");
     expect(table).toHaveTextContent("$0.0809");

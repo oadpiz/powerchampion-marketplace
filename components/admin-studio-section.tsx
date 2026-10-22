@@ -2,7 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { portalRequest } from "../lib/portal-client";
-import { planLabel } from "../lib/studio-client";
+import { newIdempotencyKey, planLabel } from "../lib/studio-client";
+import { AdminDialog } from "./admin-dialog";
 import { ResourceState, errorMessage, usdLabel, usePortalResource } from "./admin-resource";
 import { useLocale } from "./locale-provider";
 
@@ -45,26 +46,42 @@ function GrantPanel() {
   const [error, setError] = useState<unknown>(null);
   const [check, setCheck] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  // One key per filled-in grant: a retry after a lost response is applied once (server-side dedupe).
+  const [requestKey, setRequestKey] = useState(newIdempotencyKey);
+  const credits = Number(amount);
+  const who = customers.data?.customers.find((item) => item.id === userId)?.email ?? userId;
+  const change = <T,>(setter: (value: T) => void) => (value: T) => {
+    setter(value);
+    setRequestKey(newIdempotencyKey());
+    setDone(null);
+  };
 
-  async function submit(event: FormEvent) {
+  function review(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const credits = Number(amount);
     if (!userId || !Number.isInteger(credits) || credits === 0 || Math.abs(credits) > 1_000_000) {
       setCheck(zh ? "請選擇帳號，並輸入不為 0 的整數點數（上限 1,000,000；負數為扣除）。" : "Choose an account and a non-zero whole number of credits (up to 1,000,000; negative removes).");
       return;
     }
     setCheck(null);
+    setError(null);
+    setConfirming(true);
+  }
+
+  async function submit() {
+    if (busy) return;
     setBusy(true);
     setError(null);
     setDone(null);
     try {
-      const body: Record<string, unknown> = { user_id: userId, credits };
+      const body: Record<string, unknown> = { user_id: userId, credits, idempotency_key: requestKey };
       if (plan) body.plan = plan;
       if (periodEnd) body.period_end = Math.floor(new Date(`${periodEnd}T23:59:59`).getTime() / 1000);
       if (note.trim()) body.note = note.trim();
       const result = await portalRequest<GrantResult>("/admin/studio/credits/grant", { method: "POST", body: JSON.stringify(body) });
-      const who = customers.data?.customers.find((item) => item.id === userId)?.email ?? userId;
+      setConfirming(false);
+      setRequestKey(newIdempotencyKey());
       setDone(
         zh
           ? `已${credits > 0 ? "發放" : "扣除"} ${Math.abs(credits).toLocaleString()} 點給 ${who}。目前可用 ${result.account.balance.toLocaleString()} 點，方案 ${planLabel(result.account.plan, "zh")}。`
@@ -88,10 +105,10 @@ function GrantPanel() {
           : "Studio credits are separate from API key balances. Every grant is audited; a negative number removes unused credits."}
       </p>
       <ResourceState {...customers}>
-        <form className="portal-form studio-grant-form" onSubmit={(event) => void submit(event)} noValidate>
+        <form className="portal-form studio-grant-form" onSubmit={review} noValidate>
           <label className="portal-field">
             {zh ? "帳號" : "Account"}
-            <select value={userId} onChange={(event) => setUserId(event.target.value)} disabled={busy}>
+            <select value={userId} onChange={(event) => change(setUserId)(event.target.value)} disabled={busy}>
               <option value="">{zh ? "請選擇帳號" : "Choose an account"}</option>
               {customers.data?.customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
@@ -104,11 +121,11 @@ function GrantPanel() {
           </label>
           <label className="portal-field">
             {zh ? "點數" : "Credits"}
-            <input type="number" inputMode="numeric" step={1} value={amount} onChange={(event) => setAmount(event.target.value)} disabled={busy} placeholder="1000" />
+            <input type="number" inputMode="numeric" step={1} value={amount} onChange={(event) => change(setAmount)(event.target.value)} disabled={busy} placeholder="1000" />
           </label>
           <label className="portal-field">
             {zh ? "方案（選填）" : "Plan (optional)"}
-            <select value={plan} onChange={(event) => setPlan(event.target.value)} disabled={busy}>
+            <select value={plan} onChange={(event) => change(setPlan)(event.target.value)} disabled={busy}>
               <option value="">{zh ? "不變更" : "Keep current"}</option>
               {PLANS.map((item) => (
                 <option key={item} value={item}>
@@ -119,18 +136,18 @@ function GrantPanel() {
           </label>
           <label className="portal-field">
             {zh ? "方案到期日（選填）" : "Plan period end (optional)"}
-            <input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} disabled={busy} />
+            <input type="date" value={periodEnd} onChange={(event) => change(setPeriodEnd)(event.target.value)} disabled={busy} />
           </label>
           <label className="portal-field studio-span">
             {zh ? "備註（選填，例如匯款編號）" : "Note (optional, e.g. a payment reference)"}
-            <input type="text" maxLength={200} value={note} onChange={(event) => setNote(event.target.value)} disabled={busy} />
+            <input type="text" maxLength={200} value={note} onChange={(event) => change(setNote)(event.target.value)} disabled={busy} />
           </label>
           {check && (
             <p className="portal-error studio-span" role="alert">
               {check}
             </p>
           )}
-          {error !== null && (
+          {error !== null && !confirming && (
             <p className="portal-error studio-span" role="alert">
               {errorMessage(error, zh)}
             </p>
@@ -147,6 +164,62 @@ function GrantPanel() {
           </div>
         </form>
       </ResourceState>
+      {confirming && (
+        <AdminDialog
+          title={zh ? "確認發放點數" : "Confirm credit grant"}
+          confirmLabel={
+            busy
+              ? zh
+                ? "處理中…"
+                : "Working…"
+              : credits > 0
+                ? zh
+                  ? `發放 ${credits.toLocaleString()} 點`
+                  : `Grant ${credits.toLocaleString()} credits`
+                : zh
+                  ? `扣除 ${Math.abs(credits).toLocaleString()} 點`
+                  : `Remove ${Math.abs(credits).toLocaleString()} credits`
+          }
+          cancelLabel={zh ? "取消" : "Cancel"}
+          danger={credits < 0}
+          inFlight={busy}
+          onClose={() => setConfirming(false)}
+          onConfirm={() => void submit()}
+        >
+          <dl className="portal-meta">
+            <dt>{zh ? "帳號" : "Account"}</dt>
+            <dd>{who}</dd>
+            <dt>{zh ? "點數" : "Credits"}</dt>
+            <dd>{credits > 0 ? `+${credits.toLocaleString()}` : credits.toLocaleString()}</dd>
+            {plan && (
+              <>
+                <dt>{zh ? "方案" : "Plan"}</dt>
+                <dd>{planLabel(plan, zh ? "zh" : "en")}</dd>
+              </>
+            )}
+            {periodEnd && (
+              <>
+                <dt>{zh ? "到期日" : "Period end"}</dt>
+                <dd>{periodEnd}</dd>
+              </>
+            )}
+            {note.trim() && (
+              <>
+                <dt>{zh ? "備註" : "Note"}</dt>
+                <dd>{note.trim()}</dd>
+              </>
+            )}
+          </dl>
+          <p className="portal-muted">
+            {zh ? "送出後會寫入操作紀錄；重複送出同一筆不會重複發放。" : "This is audited. Sending the same grant again does not apply it twice."}
+          </p>
+          {error !== null && (
+            <p className="portal-error" role="alert">
+              {errorMessage(error, zh)}
+            </p>
+          )}
+        </AdminDialog>
+      )}
     </section>
   );
 }

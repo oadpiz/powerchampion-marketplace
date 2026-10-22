@@ -231,13 +231,14 @@ class StudioFlowTests(StudioCase):
         client, user_id = self.customer()
         first = self.create(client, key="create-once")
         self.assertEqual((first.status_code, first.json()["error"]), (402, "studio_insufficient_credits"))
-        projects = rows(self.store, "studio_projects")
-        self.assertEqual(len(projects), 1)  # the empty project stays; no op, no ledger row
-        self.assertEqual((rows(self.store, "studio_ops"), rows(self.store, "studio_ledger")), ([], []))
+        # No portal row is left behind (no op, no ledger row); the agent keeps its project, which the same key reuses.
+        self.assertEqual((rows(self.store, "studio_projects"), rows(self.store, "studio_ops"), rows(self.store, "studio_ledger")), ([], [], []))
+        self.assertEqual(len(self.agent.projects), 1)
+        agent_project = next(iter(self.agent.projects))
         self.grant(user_id, 5)
         second = self.create(client, key="create-once")
         self.assertEqual(second.status_code, 201, second.text)
-        self.assertEqual(second.json()["id"], projects[0]["id"])
+        self.assertEqual(second.json()["id"], agent_project)
         replay = self.create(client, key="create-once")
         self.assertEqual(replay.status_code, 200)
         self.assertEqual((replay.json()["id"], replay.json()["op_id"]), (second.json()["id"], second.json()["op_id"]))
@@ -671,6 +672,91 @@ class StudioFlowTests(StudioCase):
         self.assertEqual(client.get(BASE + "/studio/projects/" + pid + "/ops/nope.x").status_code, 404)
         for body in ({"type": "Render"}, {"type": "render", "target": "a|b"}, {"type": "render", "target": True}):
             self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", body).status_code, 400, body)
+
+
+class StudioReviewFixTests(StudioCase):
+    """S3 review follow-ups: failed creates leave nothing in the list, internal voices, grant idempotency."""
+
+    def test_a_failed_create_leaves_no_portal_project_and_the_list_hides_projects_without_an_op(self):
+        client, user_id = self.customer()
+        for status, setup in ((402, lambda: None), (409, lambda: setattr(self.studio, "max_active_per_user", 0))):
+            setup()
+            response = self.create(client)
+            self.assertEqual(response.status_code, status, response.text)
+            self.assertEqual(rows(self.store, "studio_projects"), [], status)
+        self.studio.max_active_per_user = 2
+        # A quote the agent refuses after it created the project: no portal row either.
+        self.agent.prices = dict(self.agent.prices)
+        del self.agent.prices["draft"]
+        self.grant(user_id, 10)
+        self.assertEqual(self.create(client).status_code, 400)
+        self.assertEqual(rows(self.store, "studio_projects"), [])
+        self.agent.prices["draft"] = 2
+        # A crash between claim and reserve leaves a row with no op: the list does not show it.
+        self.add_project(user_id, "orphan01")
+        ok = self.create(client)
+        self.assertEqual(ok.status_code, 201, ok.text)
+        listed = [p["id"] for p in client.get(BASE + "/studio/projects").json()["items"]]
+        self.assertEqual(listed, [ok.json()["id"]])
+
+    def test_customers_cannot_choose_an_internal_voice_and_cannot_render_with_one(self):
+        self.assertEqual(Settings().studio_internal_voices, ("tw_ref", "test"))
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        voice = self.post(client, "/studio/projects/" + pid + "/settings", {"voice": "tw_ref"})
+        self.assertEqual((voice.status_code, voice.json()["error"]), (403, "studio_voice_not_allowed"))
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/settings", {"voice": "studio_female"}).status_code, 200)
+        # A project still on an internal voice (the agent's default today) cannot be rendered by a customer.
+        self.agent.projects[pid]["settings"]["voice"] = "tw_ref"
+        refused = self.post(client, "/studio/projects/" + pid + "/quote", {"type": "render"})
+        self.assertEqual((refused.status_code, refused.json()["error"]), (409, "studio_no_licensed_voice"))
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", {"type": "regenerate", "target": "1"}).status_code, 409)
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", {"type": "add_aspect", "target": "16:9"}).status_code, 200)
+        # Administrators may use internal voices (internal tests).
+        admin = self.admin_client()
+        apid = self.drafted(admin)
+        self.assertEqual(self.post(admin, "/studio/projects/" + apid + "/settings", {"voice": "tw_ref"}).status_code, 200)
+        self.assertEqual(self.post(admin, "/studio/projects/" + apid + "/quote", {"type": "render"}).status_code, 200)
+        # The templates say which voices are internal, from the same setting.
+        voice_schema = client.get(BASE + "/studio/templates").json()["items"][0]["project_schema"]["properties"]["voice"]
+        self.assertEqual(voice_schema["x-internal-values"], ["tw_ref", "test"])
+        self.assertEqual(self.agent.templates(user_id)["items"][0]["project_schema"]["properties"]["voice"].get("x-internal-values"), None)
+
+    def test_internal_voices_and_media_origin_come_from_the_environment(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"PC_STUDIO_INTERNAL_VOICES": " a , b,,", "PC_STUDIO_MEDIA_ORIGIN": "https://media.example/"}):
+            settings = Settings.from_env()
+        self.assertEqual((settings.studio_internal_voices, settings.studio_media_origin), (("a", "b"), "https://media.example"))
+        for bad in ("ftp://m.example", "https://m.example/path", "https://u:p@m.example", "https://m.example?x=1"):
+            with self.assertRaises(ValueError, msg=bad):
+                Settings(studio_media_origin=bad)
+        client, _ = self.customer()
+        self.assertIsNone(client.get(BASE + "/studio/templates").json()["media_origin"])
+
+    def test_grant_with_an_idempotency_key_is_applied_once(self):
+        _, user_id = self.customer()
+        admin = self.admin_client()
+        body = {"user_id": user_id, "credits": 100, "idempotency_key": "grant-0001"}
+        first = self.post(admin, "/admin/studio/credits/grant", body)
+        replay = self.post(admin, "/admin/studio/credits/grant", body)
+        self.assertEqual((first.status_code, replay.status_code), (200, 200), replay.text)
+        self.assertEqual(replay.json()["account"]["balance"], 100)
+        self.assertTrue(replay.json()["replayed"])
+        self.assertFalse(first.json()["replayed"])
+        self.assertEqual(len(self.audit("admin.studio_credits_grant")), 1)
+        self.assertEqual(self.post(admin, "/admin/studio/credits/grant", dict(body, idempotency_key="grant-0002")).json()["account"]["balance"], 200)
+        self.assertEqual(self.post(admin, "/admin/studio/credits/grant", dict(body, idempotency_key="bad key")).status_code, 400)
+        # Concurrent duplicates: still exactly one ledger row.
+        results = []
+        dup = dict(body, idempotency_key="grant-race1")
+        threads = [threading.Thread(target=lambda: results.append(self.post(admin, "/admin/studio/credits/grant", dup).status_code)) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(results, [200] * 8)
+        self.assertEqual(self.account(user_id)["balance"], 300)
 
 
 class StudioAdminTests(StudioCase):

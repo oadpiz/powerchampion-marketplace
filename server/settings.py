@@ -39,6 +39,10 @@ class Settings:
     # start it; from_env turns it on unless PC_STUDIO_SWEEPER=0.
     studio_sweeper: bool = False
     studio_sweep_interval: float = 10.0
+    # Voices for internal tests only (spec D-V4): customers may not choose them, nor render a project that uses one.
+    studio_internal_voices: tuple = ("tw_ref", "test")
+    # Public origin of the shortvideo media host; the UI only loads media and sends uploads there (empty: not checked).
+    studio_media_origin: str = ""
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -62,6 +66,10 @@ class Settings:
             agent = urlsplit(self.studio_agent_url)
             if agent.scheme not in ("http", "https") or not agent.hostname or agent.username or agent.password or agent.query or agent.fragment or agent.path not in ("", "/"):
                 raise ValueError("PC_STUDIO_AGENT_URL must be empty or an http(s) origin without credentials, path or query")
+        if self.studio_media_origin:
+            media = urlsplit(self.studio_media_origin)
+            if media.scheme not in ("http", "https") or not media.hostname or media.username or media.password or media.query or media.fragment or media.path not in ("", "/"):
+                raise ValueError("PC_STUDIO_MEDIA_ORIGIN must be empty or an http(s) origin without credentials, path or query")
         if self.studio_sweep_interval <= 0:
             raise ValueError("The studio sweep interval must be positive")
 
@@ -124,4 +132,6 @@ class Settings:
             studio_grant_secret=os.environ.get("SHORTVIDEO_GRANT_SECRET", ""),
             studio_quote_secret=os.environ.get("SHORTVIDEO_QUOTE_SECRET", ""),
             studio_sweeper=os.environ.get("PC_STUDIO_SWEEPER", "1") != "0",
+            studio_media_origin=os.environ.get("PC_STUDIO_MEDIA_ORIGIN", "").strip().rstrip("/"),
+            studio_internal_voices=tuple(v.strip() for v in os.environ.get("PC_STUDIO_INTERNAL_VOICES", "tw_ref,test").split(",") if v.strip()),
         )

@@ -59,6 +59,7 @@ export function ShotInspector({
   schema,
   isAdmin,
   locked,
+  canRegenerate = true,
   onSaved,
   onRegenerate,
 }: {
@@ -67,6 +68,7 @@ export function ShotInspector({
   schema: JsonSchema;
   isAdmin: boolean;
   locked: boolean;
+  canRegenerate?: boolean;
   onSaved: (doc: StudioProject) => void;
   onRegenerate: (dirty: boolean) => void;
 }) {
@@ -161,7 +163,7 @@ export function ShotInspector({
         <button
           type="button"
           className="portal-button"
-          disabled={locked || saving || uploading}
+          disabled={locked || saving || uploading || !canRegenerate}
           title={dirty ? (zh ? "請先儲存變更" : "Save your changes first") : undefined}
           onClick={() => onRegenerate(dirty)}
         >

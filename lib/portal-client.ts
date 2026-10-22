@@ -74,6 +74,11 @@ const STUDIO_CODE_TEXT: Record<string, [string, string]> = {
   studio_daily_cap: ["今日影片產生量已達上限，請明天再試。", "Today's video generation limit has been reached. Try again tomorrow."],
   studio_rate_limited: ["操作太頻繁，請稍等一下再試。", "Too many requests. Wait a moment and try again."],
   studio_too_large: ["檔案或內容太大。", "The file or request is too large."],
+  studio_voice_not_allowed: ["這個配音只供內部測試使用，請選擇其他配音。", "That voice is for internal tests only. Choose another voice."],
+  studio_no_licensed_voice: [
+    "目前沒有可對外使用的配音，暫時無法產生畫面與配音；開放授權配音後即可使用。",
+    "No licensed voice is available yet, so pictures and narration cannot be generated for now.",
+  ],
 };
 
 /** Copy for error codes that mean one specific thing; null when only the HTTP status is informative. */
