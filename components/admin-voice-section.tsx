@@ -232,7 +232,7 @@ function StoresPanel({ resource }: { resource: Resource<{ stores: StoreItem[] }>
                   <p className="portal-empty">{zh ? "沒有符合條件的店家。" : "No stores match these filters."}</p>
                 ) : (
                   <div className="portal-table-wrap">
-                    <table className="portal-table">
+                    <table className="portal-table voice-stack">
                       <caption className="sr-only">{zh ? "店家" : "Stores"}</caption>
                       <thead>
                         <tr>
@@ -251,19 +251,21 @@ function StoresPanel({ resource }: { resource: Resource<{ stores: StoreItem[] }>
                         {visible.map((store) => (
                           <tr key={store.id}>
                             <th scope="row">{store.name}</th>
-                            <td>{store.owner.email}</td>
-                            <td>{industryLabel(store.industry, zh)}</td>
-                            <td>
+                            <td data-label={zh ? "帳號 email" : "Account email"}>{store.owner.email}</td>
+                            <td data-label={zh ? "產業" : "Industry"}>{industryLabel(store.industry, zh)}</td>
+                            <td data-label={zh ? "狀態" : "Status"}>
                               <span className="portal-badge">{statusLabel(store.status, zh)}</span>
                             </td>
-                            <td>
+                            <td data-label={zh ? "設定版本" : "Version"}>
                               {store.currentVersion === null
                                 ? zh ? "未套用" : "Not applied"
                                 : zh ? `第 ${store.currentVersion} 版` : `v${store.currentVersion}`}
                             </td>
-                            <td>{count(store.faqCount)}</td>
-                            <td>{store.lastTryAt === null ? (zh ? "沒有試打過" : "Never") : dateLabel(store.lastTryAt, zh)}</td>
-                            <td>{store.aiAnswerEnabled ? (zh ? "開" : "On") : zh ? "關" : "Off"}</td>
+                            <td data-label={zh ? "問答數" : "FAQs"}>{count(store.faqCount)}</td>
+                            <td data-label={zh ? "最後試打" : "Last test call"}>
+                              {store.lastTryAt === null ? (zh ? "沒有試打過" : "Never") : dateLabel(store.lastTryAt, zh)}
+                            </td>
+                            <td data-label={zh ? "AI 回答" : "AI answers"}>{store.aiAnswerEnabled ? (zh ? "開" : "On") : zh ? "關" : "Off"}</td>
                             <td>
                               <div className="portal-actions">
                                 <button
@@ -531,7 +533,7 @@ function NumbersPanel({ stores }: { stores: StoreItem[] }) {
               </p>
             ) : (
               <div className="portal-table-wrap">
-                <table className="portal-table">
+                <table className="portal-table voice-stack">
                   <caption className="sr-only">{zh ? "號碼" : "Numbers"}</caption>
                   <thead>
                     <tr>
@@ -557,12 +559,12 @@ function NumbersPanel({ stores }: { stores: StoreItem[] }) {
                             </>
                           )}
                         </th>
-                        <td>{entry.storeName ?? (zh ? "不屬於任何店家" : "No store")}</td>
-                        <td>{purposeLabel(entry.purpose, zh)}</td>
-                        <td>{channelLabel(entry.channel, zh)}</td>
-                        <td>{entry.activeFrom}</td>
-                        <td>{entry.activeUntil ?? (zh ? "持續中" : "Ongoing")}</td>
-                        <td>{entry.note || "—"}</td>
+                        <td data-label={zh ? "店家" : "Store"}>{entry.storeName ?? (zh ? "不屬於任何店家" : "No store")}</td>
+                        <td data-label={zh ? "用途" : "Purpose"}>{purposeLabel(entry.purpose, zh)}</td>
+                        <td data-label={zh ? "通道" : "Channel"}>{channelLabel(entry.channel, zh)}</td>
+                        <td data-label={zh ? "計費起日" : "From"}>{entry.activeFrom}</td>
+                        <td data-label={zh ? "計費迄日" : "Until"}>{entry.activeUntil ?? (zh ? "持續中" : "Ongoing")}</td>
+                        <td data-label={zh ? "備註" : "Note"}>{entry.note || "—"}</td>
                         <td>
                           <div className="portal-actions">
                             <button
