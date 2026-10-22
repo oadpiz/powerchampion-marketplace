@@ -36,6 +36,11 @@ from .support import INVISIBLE_TEXT, PREFIX, UNSAFE_TEXT, body_json, fail
 STORE_NAME_NON_SPACE = 20
 TRY_LIMIT = 20
 TRY_WINDOW_SECONDS = 24 * 3600  # rolling 24 hours, not a calendar day (contract §1.5, §10 item 12)
+# Every new version stores its whole config (about 17 KB, up to about 85 KB for a full store), so new versions per
+# store are capped like test calls (security review 2026-10-22: 61 versions, 1 MB, in 0.3 s). Twenty test calls a day
+# never need more than a few dozen versions; an apply that changes nothing is not counted and never refused.
+PUBLISH_LIMIT = 60
+PUBLISH_WINDOW_SECONDS = 24 * 3600
 CSV_BODY_BYTES = 196608  # the whole import request, 192 KiB (the BFF uses the same number)
 CSV_ERRORS_MAX = 50
 CSV_DETAIL_ROWS = 10
@@ -742,6 +747,12 @@ def attach_voice_merchant(application, ctx):
                 if current is not None and vc.config_sha256(same) == current["config_sha256"]:
                     return {"changed": False, "version": current["version"], "configSha256": current["config_sha256"],
                             "publishedAt": iso(current["created_at"]), "warnings": same["warnings"]}
+            # Counted and reserved under the writer lock, like test calls: the audit row below is the reservation.
+            recent = con.execute("SELECT COUNT(*) FROM audit_events WHERE action='voice.published' AND target_id=? "
+                                 "AND created_at>?", (row["id"], int(time.time()) - PUBLISH_WINDOW_SECONDS)).fetchone()[0]
+            if recent >= PUBLISH_LIMIT:
+                fail("voice_publish_limit", "You have applied %d new versions in the last 24 hours. Try again later."
+                     % PUBLISH_LIMIT, 429)
             version = vs.add_config_version(con, row["id"], config, user["id"])
             store.audit(con, "voice.published", user["id"], row["id"],
                         {"version": version["version"], "configSha256": version["config_sha256"],

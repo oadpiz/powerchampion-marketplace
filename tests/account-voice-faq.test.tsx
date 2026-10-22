@@ -1097,6 +1097,7 @@ describe("FAQ helpers", () => {
       expect(text).not.toMatch(/Check that the fields meet the requirements/);
     }
     expect(voiceErrorText(new PortalError(413, "invalid_input", "x"), "zh")).toBe("內容太大。");
+    expect(voiceErrorText(new PortalError(429, "voice_publish_limit", "x"), "zh")).toBe("最近 24 小時套用太多次了，請稍後再試。");
     expect(voiceErrorText(new PortalError(400, "invalid_input", "x"), "en")).toMatch(/Check that the fields meet the requirements/);
   });
 

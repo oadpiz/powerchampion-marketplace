@@ -332,6 +332,8 @@ export function voiceErrorText(error: unknown, locale: Locale, limits: CapacityL
         );
       case "csv_invalid":
         return pick(locale, 'The CSV has problems; nothing was imported. Use "Check" first.', "CSV 有錯誤，沒有匯入任何資料。請先按「檢查」。");
+      case "voice_publish_limit":
+        return pick(locale, "You have applied many new versions in the last 24 hours. Try again later.", "最近 24 小時套用太多次了，請稍後再試。");
       case "invalid_input":
         if (error.status === 413) return pick(locale, "The content is too large.", "內容太大。");
         break;

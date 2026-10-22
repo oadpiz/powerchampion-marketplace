@@ -386,6 +386,10 @@ export function voiceErrorText(error: unknown, locale: "en" | "zh", limits?: Voi
       'Nothing is applied yet. Use "Save and apply" on Setup first.',
       "還沒有套用任何版本。請先到「設定」按「儲存並套用」。",
     ],
+    voice_publish_limit: [
+      "You have applied many new versions in the last 24 hours. Try again later.",
+      "最近 24 小時套用太多次了，請稍後再試。",
+    ],
   };
   if (text[code]) return text[code][zh ? 1 : 0];
   if (code === "invalid_input" && status === 413) return zh ? "內容太大。" : "The content is too large.";

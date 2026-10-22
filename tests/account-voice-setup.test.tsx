@@ -942,6 +942,7 @@ describe("lib/voice-setup", () => {
     expect(text(400, "kb_too_large")).toBe("The store description and all questions together can be up to 6,000 characters.");
     expect(text(409, "kb_empty", "zh")).toBe("還沒有任何內容。請先填店家介紹或新增問答。");
     expect(text(409, "not_published")).toBe('Nothing is applied yet. Use "Save and apply" on Setup first.');
+    expect(text(429, "voice_publish_limit", "zh")).toBe("最近 24 小時套用太多次了，請稍後再試。");
     expect(text(413, "invalid_input", "zh")).toBe("內容太大。");
     // Unknown codes fall back to the portal's status copy.
     expect(text(409, "something_new")).toBe("This record already exists or its status has changed. Refresh to check the latest state.");
