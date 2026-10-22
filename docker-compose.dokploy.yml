@@ -80,21 +80,27 @@ services:
       PC_RUNTIME_ENABLED: ${PC_RUNTIME_ENABLED:-0}
       PC_RUNTIME_ENCRYPTION_KEY: ${PC_RUNTIME_ENCRYPTION_KEY:-}
       # Video studio (server/studio.py). Empty keeps every /studio route at 503
-      # studio_unconfigured. The shortvideo services and the agent URL arrive in S4;
-      # the three secrets are set in Dokploy only (same values as shortvideo-api).
+      # studio_unconfigured, so missing values never block this stack. The agent is
+      # a separate Dokploy compose app (shortvideo-agent:docker-compose.studio.yml);
+      # set PC_STUDIO_AGENT_URL=http://shortvideo-api:8081 and the media origin once
+      # it runs. The three secrets are set in Dokploy only (same values as shortvideo-api).
       PC_STUDIO_AGENT_URL: ${PC_STUDIO_AGENT_URL:-}
       SHORTVIDEO_SERVICE_TOKEN: ${SHORTVIDEO_SERVICE_TOKEN:-}
       SHORTVIDEO_GRANT_SECRET: ${SHORTVIDEO_GRANT_SECRET:-}
       SHORTVIDEO_QUOTE_SECRET: ${SHORTVIDEO_QUOTE_SECRET:-}
       PC_STUDIO_SWEEPER: ${PC_STUDIO_SWEEPER:-1}
       PC_STUDIO_INTERNAL_VOICES: ${PC_STUDIO_INTERNAL_VOICES:-tw_ref,test}
+      # Free storyboard drafts per user per Asia/Taipei day (429 studio_draft_limit above it).
+      PC_STUDIO_DRAFTS_PER_DAY: ${PC_STUDIO_DRAFTS_PER_DAY:-30}
       PC_STUDIO_MEDIA_ORIGIN: ${PC_STUDIO_MEDIA_ORIGIN:-}
     volumes:
       - portal-data:/data
     # No ports, no Traefik labels and not on dokploy-network: only the website
-    # container can reach this service.
+    # container can reach this service. studio-internal is shared with
+    # shortvideo-api only (an external network the owner creates once).
     networks:
       - default
+      - studio-internal
 
   powerchampion-db:
     image: postgres:16-alpine
@@ -127,4 +133,8 @@ volumes:
 
 networks:
   dokploy-network:
+    external: true
+  # Created once on the host before deploying:
+  # docker network create --driver bridge --internal studio-internal
+  studio-internal:
     external: true
