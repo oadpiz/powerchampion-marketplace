@@ -6,6 +6,7 @@ import { codePoints, unsafeMessage } from "../lib/admin-text";
 import { PortalError, portalRequest } from "../lib/portal-client";
 import {
   codeError,
+  csvExampleHref,
   csvProblemText,
   draftIsValid,
   faqBody,
@@ -56,6 +57,7 @@ const T = {
   useTemplate: { en: "Use the template", zh: "從範本帶入" },
   importCsv: { en: "Import CSV", zh: "匯入 CSV" },
   empty: { en: "No questions yet. Start from the template or add them one by one.", zh: "還沒有常見問答。可以從範本帶入，或一題一題新增。" },
+  emptyNoTemplate: { en: "No questions yet. Add them one by one, or import a CSV.", zh: "還沒有常見問答。可以一題一題新增，或匯入 CSV。" },
   needsInput: { en: "Needs input", zh: "需要填寫" },
   onlyNeedsInput: { en: "Show only questions that need input", zh: "只顯示需要填寫的題目" },
   showAll: { en: "Show all questions", zh: "顯示全部題目" },
@@ -106,6 +108,7 @@ const T = {
     zh: "第一列是欄名：問題、答案、相似問法（可省略）。相似問法用「｜」分隔。請存成 UTF-8（Excel 選「CSV UTF-8」）。",
   },
   csvFile: { en: "CSV file", zh: "CSV 檔案" },
+  csvExample: { en: "Download an example CSV", zh: "下載範例 CSV" },
   csvMode: { en: "Import mode", zh: "匯入方式" },
   csvCheck: { en: "Check", zh: "檢查" },
   csvImport: { en: "Import", zh: "匯入" },
@@ -805,7 +808,8 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
               onClick={() => {
                 setTemplateOpen(true);
                 setTemplateMode("append");
-                setTemplateIntro(false);
+                // Also take the template's description when there is none yet; never replace one by default.
+                setTemplateIntro(intro.saved.trim() === "" && intro.draft.trim() === "");
                 setTemplateError(null);
                 setNotice(null);
               }}
@@ -832,7 +836,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
         )}
         {onlyNeedsInput && needsInputCount === 0 && <p className="portal-note">{t(T.allFilled)}</p>}
         {faqs.length === 0 ? (
-          <p className="portal-empty">{t(T.empty)}</p>
+          <p className="portal-empty">{t(template.available ? T.empty : T.emptyNoTemplate)}</p>
         ) : (
           <div className="portal-table-wrap">
             <table className="portal-table voice-stack voice-faq-table">
@@ -1037,6 +1041,11 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
         <Modal labelledBy="voice-faq-csv-title" busy={busy === "csv-check" || busy === "csv-import"} onClose={() => setCsvOpen(false)}>
           <h2 id="voice-faq-csv-title">{t(T.csvTitle)}</h2>
           <p>{t(T.csvFormat)}</p>
+          <p>
+            <a href={csvExampleHref()} download="faq-example.csv">
+              {t(T.csvExample)}
+            </a>
+          </p>
           <label className="portal-field">
             {t(T.csvFile)}
             <input

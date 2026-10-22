@@ -49,6 +49,20 @@ export type VoiceFaqDeleted = { ok: true; capacity: VoiceCapacity };
 
 /** `mode` of M8 and M9; the backend accepts exactly these two. */
 export const IMPORT_MODES = ["append", "replace"] as const;
+
+/**
+ * The example CSV the import dialog offers for download (verifier finding 2026-10-22: there was no sample file).
+ * server/test_voice_sync.py parses these rows with the real importer and expects no problems. No double quotes here.
+ */
+export const CSV_EXAMPLE_ROWS = [
+  "問題,答案,相似問法",
+  "洗牙多少錢？,健保洗牙每半年一次免費；自費洗牙 800 元。,洗牙費用｜洗牙要錢嗎",
+  "可以刷卡嗎？,可以，接受信用卡和行動支付。,",
+] as const;
+
+/** UTF-8 with a byte-order mark and CRLF line ends, which Excel opens as Chinese text. */
+export const csvExampleHref = () =>
+  `data:text/csv;charset=utf-8,${encodeURIComponent(`\uFEFF${CSV_EXAMPLE_ROWS.join("\r\n")}\r\n`)}`;
 export type ImportMode = (typeof IMPORT_MODES)[number];
 
 /** Every `problem` value M8 can report for a CSV row (contract §5.5). */

@@ -561,6 +561,36 @@ describe("phone agent FAQ page", () => {
     renderFaq(fake);
     await screen.findByText(/No questions yet/);
     expect(screen.queryByRole("button", { name: "Use the template" })).not.toBeInTheDocument();
+    // The empty state does not mention a template the page does not offer (verifier finding 2026-10-22).
+    expect(screen.getByText("No questions yet. Add them one by one, or import a CSV.")).toBeVisible();
+    expect(screen.queryByText(/Start from the template/)).not.toBeInTheDocument();
+  });
+
+  it("keeps an existing store description unless the store asks to replace it", async () => {
+    const user = userEvent.setup();
+    const fake = new FakeVoice();
+    fake.intro = "診所在台北市大安區。";
+    fake.install();
+    renderFaq(fake);
+    await user.click(await screen.findByRole("button", { name: "Use the template" }));
+    expect(within(screen.getByRole("dialog")).getByLabelText(/Also use the template's store description/)).not.toBeChecked();
+  });
+
+  it("offers an example CSV in UTF-8 with a BOM that the stand-in importer accepts", async () => {
+    const user = userEvent.setup();
+    const fake = new FakeVoice().install();
+    renderFaq(fake);
+    await user.click(await screen.findByRole("button", { name: "Import CSV" }));
+    const link = within(screen.getByRole("dialog")).getByRole("link", { name: "Download an example CSV" });
+    expect(link).toHaveAttribute("download", "faq-example.csv");
+    const href = link.getAttribute("href") ?? "";
+    expect(href.startsWith("data:text/csv;charset=utf-8,")).toBe(true);
+    const text = decodeURIComponent(href.slice("data:text/csv;charset=utf-8,".length));
+    expect(text.startsWith("\uFEFF問題,答案,相似問法\r\n")).toBe(true);
+    // Checked with the same dry run the dialog uses; server/test_voice_sync.py runs the real importer on it.
+    await user.upload(within(screen.getByRole("dialog")).getByLabelText("CSV file"), csvFile(text));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Check" }));
+    expect(await screen.findByText(/^2 questions can be imported\./)).toBeVisible();
   });
 
   it("turns the capacity line yellow above 90 percent", async () => {
@@ -794,7 +824,8 @@ describe("phone agent FAQ page", () => {
     expect(within(dialog).getByText(/Replace every "（請填入）" with your store's details/)).toBeVisible();
     expect(within(dialog).getByLabelText("Add after existing questions")).toBeChecked();
     await user.click(within(dialog).getByLabelText("Replace all questions"));
-    await user.click(within(dialog).getByLabelText(/Also use the template's store description/));
+    // The store has no description yet, so taking the template's one is the default (verifier finding 2026-10-22).
+    expect(within(dialog).getByLabelText(/Also use the template's store description/)).toBeChecked();
     await user.click(within(dialog).getByRole("button", { name: "Use template" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent("Added 3 questions; 2 need your input.");
