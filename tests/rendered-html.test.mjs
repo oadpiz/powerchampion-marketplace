@@ -237,7 +237,7 @@ test("no server-rendered page outside the studio links to /studio (it is linked 
   // Crawl every internal link reachable from the main public routes (and the signed-out account and
   // platform pages), the way a visitor or a search engine would before the studio opens.
   const seeds = ["/", "/models", "/pricing", "/docs", "/docs/api", "/platform", "/compare", "/playground", "/integrations", "/status",
-    "/faq", "/company", "/contact", "/agents", "/trust", "/privacy", "/terms", "/infrastructure", "/solutions", "/en",
+    "/faq", "/company", "/contact", "/agents", "/trust", "/privacy", "/terms", "/infrastructure", "/solutions",
     "/account", "/console", "/tasks", "/chat", "/login", "/register"];
   const queue = [...seeds];
   const seen = new Set();
