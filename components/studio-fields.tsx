@@ -6,9 +6,11 @@ import {
   enumOptions,
   fieldLabel,
   narrationFit,
+  RIGHTS_PURPOSES,
   schemaTypes,
   studioErrorText,
   uploadFile,
+  UploadError,
   type JsonSchema,
   type UploadPurpose,
 } from "../lib/studio-client";
@@ -178,6 +180,10 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
   const ids = multiple ? (Array.isArray(value) ? (value as string[]) : []) : typeof value === "string" ? [value] : [];
   const max = multiple ? (schema.maxItems ?? 5) : 1;
   const image = purpose !== "music";
+  // Product photos: the rights checkbox comes first; the file picker stays disabled until it is ticked.
+  const needsRights = RIGHTS_PURPOSES.includes(purpose);
+  const [rights, setRights] = useState(false);
+  const blocked = needsRights && !rights;
 
   const busy = pending > 0;
   useEffect(() => onBusy?.(busy), [busy, onBusy]);
@@ -193,6 +199,11 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
   async function choose(files: FileList | null) {
     if (!files?.length) return;
     setUploadError(null);
+    if (blocked) {
+      setUploadError(studioErrorText(new UploadError("rights", "rights not confirmed"), locale));
+      if (input.current) input.current.value = "";
+      return;
+    }
     const room = multiple ? max - ids.length : 1;
     const chosen = Array.from(files).slice(0, Math.max(0, room));
     if (chosen.length < files.length)
@@ -201,7 +212,7 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
     setPending((count) => count + chosen.length);
     for (const file of chosen) {
       try {
-        const uploadId = await uploadFile(file, purpose, projectId);
+        const uploadId = await uploadFile(file, purpose, projectId, undefined, { rightsConfirmed: needsRights && rights });
         if (image && typeof URL.createObjectURL === "function") {
           const url = URL.createObjectURL(file);
           setPreviews((current) => ({ ...current, [uploadId]: url }));
@@ -252,7 +263,7 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
           </div>
         ))}
         {ids.length < max && (
-          <label className="studio-upload-drop" htmlFor={inputId} aria-disabled={disabled || pending > 0}>
+          <label className="studio-upload-drop" htmlFor={inputId} aria-disabled={disabled || pending > 0 || blocked}>
             {pending > 0 ? (zh ? "上傳中…" : "Uploading…") : image ? (zh ? "選擇圖片" : "Choose image") : zh ? "選擇音樂檔" : "Choose music"}
             <input
               ref={input}
@@ -261,12 +272,22 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
               type="file"
               accept={acceptFor(purpose)}
               multiple={multiple}
-              disabled={disabled || pending > 0}
+              disabled={disabled || pending > 0 || blocked}
               onChange={(event) => void choose(event.target.files)}
             />
           </label>
         )}
       </div>
+      {needsRights && (
+        <label className="studio-upload-rights">
+          <input type="checkbox" checked={rights} disabled={disabled} onChange={(event) => setRights(event.target.checked)} />
+          <span>
+            {zh
+              ? "我擁有或已取得這張商品照片的使用權，並同意用於產生影片。"
+              : "I own or have obtained the rights to use this product photo, and agree to its use to generate videos."}
+          </span>
+        </label>
+      )}
       <span className="studio-field-hint">
         {image ? (zh ? "PNG、JPEG 或 WebP，每張 10 MB 以內。" : "PNG, JPEG or WebP, up to 10 MB each.") : zh ? "MP3、M4A 或 WAV，20 MB 以內。" : "MP3, M4A or WAV, up to 20 MB."}
       </span>

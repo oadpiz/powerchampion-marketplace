@@ -245,6 +245,8 @@ export function downloadUrl(url: string): string {
 // ---------------------------------------------------------------------------------------------- uploads
 
 export type UploadPurpose = "input_image" | "shot_image" | "music" | "character_ref";
+/** Product photos: the upload field asks for the rights checkbox first (server: 400 studio_rights_required). */
+export const RIGHTS_PURPOSES: readonly UploadPurpose[] = ["input_image", "shot_image"];
 export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export const AUDIO_TYPES = ["audio/mpeg", "audio/mp4", "audio/wav"];
 const LIMITS: Record<UploadPurpose, number> = {
@@ -255,7 +257,7 @@ const LIMITS: Record<UploadPurpose, number> = {
 };
 
 export class UploadError extends Error {
-  constructor(public readonly reason: "type" | "size" | "put", message: string) {
+  constructor(public readonly reason: "type" | "size" | "put" | "rights", message: string) {
     super(message);
     this.name = "UploadError";
   }
@@ -271,17 +273,21 @@ export async function uploadFile(
   purpose: UploadPurpose,
   projectId?: string,
   put: typeof fetch = (...args) => fetch(...args),
+  options: { rightsConfirmed?: boolean } = {},
 ): Promise<string> {
   const types = purpose === "music" ? AUDIO_TYPES : IMAGE_TYPES;
   // Browsers report .wav as audio/wav or audio/x-wav and .m4a as audio/x-m4a.
   const type = file.type === "audio/x-wav" ? "audio/wav" : file.type === "audio/x-m4a" ? "audio/mp4" : file.type;
   if (!types.includes(type)) throw new UploadError("type", "unsupported type");
   if (file.size < 1 || file.size > LIMITS[purpose]) throw new UploadError("size", "too large");
+  // Product photos need the user's rights declaration (the checkbox in the upload field); the portal refuses the ticket without it.
+  if (RIGHTS_PURPOSES.includes(purpose) && options.rightsConfirmed !== true) throw new UploadError("rights", "rights not confirmed");
   const ticket = await portalRequest<{ upload_id: string; put_url: string; expires_at: number }>(`${S}/uploads`, json({
     purpose,
     content_type: type,
     bytes: file.size,
     ...(projectId ? { project_id: projectId } : {}),
+    ...(RIGHTS_PURPOSES.includes(purpose) ? { rights_confirmed: true } : {}),
   }));
   if (!mediaUrl(ticket.put_url)) throw new UploadError("put", "unexpected upload host");
   // The browser sets Content-Length from the File; the URL is signed and single use. No cookies go to the media host.
@@ -340,6 +346,7 @@ export function studioErrorText(error: unknown, locale: Locale): string {
       return zh ? "不支援這種檔案格式。圖片請用 PNG、JPEG 或 WebP；音樂請用 MP3、M4A 或 WAV。" : "That file type is not supported. Use PNG, JPEG or WebP images, or MP3, M4A or WAV music.";
     if (error.reason === "size")
       return zh ? "檔案太大：圖片上限 10 MB，音樂上限 20 MB。" : "The file is too large: images up to 10 MB, music up to 20 MB.";
+    if (error.reason === "rights") return zh ? "請先勾選「我擁有或已取得這張商品照片的使用權，並同意用於產生影片。」再上傳。" : "Tick “I own or have obtained the rights to use this product photo” before uploading.";
     return zh ? "檔案上傳失敗，請重新選擇檔案再試一次。" : "The upload failed. Choose the file again and retry.";
   }
   if (error instanceof PortalError && STUDIO_ERRORS[error.code]) return STUDIO_ERRORS[error.code][zh ? 0 : 1];

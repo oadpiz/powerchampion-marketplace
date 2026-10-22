@@ -564,13 +564,13 @@ class StudioFlowTests(StudioCase):
         for response in (other.get(BASE + "/studio/projects/" + pid), other.get(BASE + "/studio/projects/" + pid + "/ops/" + op_id),
                          self.post(other, "/studio/projects/" + pid + "/quote", {"type": "render"}),
                          self.post(other, "/studio/projects/" + pid + "/settings", {"voice": "v2"}),
-                         self.post(other, "/studio/uploads", {"purpose": "shot_image", "content_type": "image/png", "bytes": 10, "project_id": pid})):
+                         self.post(other, "/studio/uploads", {"purpose": "shot_image", "content_type": "image/png", "bytes": 10, "project_id": pid, "rights_confirmed": True})):
             self.assertEqual((response.status_code, response.json()["error"]), (404, "studio_not_found"))
         self.assertEqual(other.get(BASE + "/studio/projects").json()["items"], [])
 
     def test_uploads(self):
         client, user_id = self.customer()
-        response = self.post(client, "/studio/uploads", {"purpose": "input_image", "content_type": "image/png", "bytes": 1000})
+        response = self.post(client, "/studio/uploads", {"purpose": "input_image", "content_type": "image/png", "bytes": 1000, "rights_confirmed": True})
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(set(response.json()), {"upload_id", "put_url", "expires_at"})
         for body in ({"purpose": "input_image", "content_type": "image/png", "bytes": 1000, "project_id": "p1"},
@@ -596,7 +596,7 @@ class StudioFlowTests(StudioCase):
         self.now += 60
         self.quote(client, pid)
         self.studio.limits["upload"] = (1, 3600)
-        upload = {"purpose": "input_image", "content_type": "image/png", "bytes": 10}
+        upload = {"purpose": "input_image", "content_type": "image/png", "bytes": 10, "rights_confirmed": True}
         self.assertEqual(self.post(client, "/studio/uploads", upload).status_code, 201)
         self.assertEqual(self.post(client, "/studio/uploads", upload).status_code, 429)
         self.studio.limits["project"] = (2, 3600)  # one already used by drafted()
@@ -676,6 +676,93 @@ class StudioFlowTests(StudioCase):
         self.assertEqual(client.get(BASE + "/studio/projects/" + pid + "/ops/nope.x").status_code, 404)
         for body in ({"type": "Render"}, {"type": "render", "target": "a|b"}, {"type": "render", "target": True}):
             self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", body).status_code, 400, body)
+
+
+class StudioUploadRightsTests(StudioCase):
+    """Product photos (input_image, shot_image): the ticket needs rights_confirmed, and the first reference
+    to the upload writes the studio.upload_rights_confirmed audit (with the file's sha256 when the agent has it)."""
+    PHOTO = {"purpose": "input_image", "content_type": "image/png", "bytes": 1234}
+
+    def ticket(self, client, body):
+        response = self.post(client, "/studio/uploads", body)
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()["upload_id"]
+
+    def create_with(self, client, image_ids, key):
+        return self.post(client, "/studio/projects", {"template_id": "ecommerce", "aspect": "9:16", "inputs": {"topic": "tea", "image_ids": image_ids},
+                                                      "idempotency_key": key})
+
+    def confirmed(self):
+        return [dict(e, details=json.loads(e["details"])) for e in self.audit("studio.upload_rights_confirmed")]
+
+    def test_a_photo_ticket_without_the_rights_checkbox_is_refused(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        calls = len(self.agent.calls)
+        for value in (None, False, "true", 1, "yes"):
+            for body in (self.PHOTO, {"purpose": "shot_image", "content_type": "image/jpeg", "bytes": 10, "project_id": pid}):
+                body = dict(body) if value is None else dict(body, rights_confirmed=value)
+                response = self.post(client, "/studio/uploads", body)
+                self.assertEqual((response.status_code, response.json()["error"]), (400, "studio_rights_required"), body)
+        self.assertEqual(len(self.agent.calls), calls)  # refused before the agent is asked
+        self.assertEqual(self.audit("studio.upload_declared"), [])
+        # Music has its own checkbox in the project settings; character references are not product photos.
+        self.ticket(client, {"purpose": "music", "content_type": "audio/mpeg", "bytes": 10, "project_id": pid})
+        self.ticket(client, {"purpose": "character_ref", "content_type": "image/png", "bytes": 10, "project_id": pid})
+        upload_id = self.ticket(client, dict(self.PHOTO, rights_confirmed=True))
+        declared = self.audit("studio.upload_declared")
+        self.assertEqual([(e["actor_id"], e["target_id"]) for e in declared], [(user_id, upload_id)])
+        self.assertEqual(json.loads(declared[0]["details"]),
+                         {"purpose": "input_image", "content_type": "image/png", "bytes": 1234, "project_id": None, "rights_confirmed": True, "at": T0})
+
+    def test_the_first_reference_records_the_audit_with_the_hash(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 100)
+        upload_id = self.ticket(client, dict(self.PHOTO, rights_confirmed=True))
+        self.agent.upload_hashes[upload_id] = "ab" * 32  # the browser PUT the file; the agent hashed it
+        self.now += 30
+        created = self.create_with(client, [upload_id], "rights-key-1")
+        self.assertEqual(created.status_code, 201, created.text)
+        pid = created.json()["id"]
+        rows_ = self.confirmed()
+        self.assertEqual([(e["actor_id"], e["target_id"]) for e in rows_], [(user_id, upload_id)])
+        self.assertEqual(rows_[0]["details"], {"upload_id": upload_id, "purpose": "input_image", "content_type": "image/png", "bytes": 1234,
+                                               "sha256": "ab" * 32, "declared_at": T0, "confirmed_at": T0 + 30, "project_id": pid,
+                                               "via": "project_create"})
+        # Referencing it again (a replayed create, a shot edit) does not write a second record.
+        self.assertEqual(self.create_with(client, [upload_id], "rights-key-1").status_code, 200)
+        self.agent.finish(created.json()["op_id"])
+        self.studio.sweep()
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/shots/1/edit", {"image_upload_id": upload_id}).status_code, 200)
+        self.assertEqual(len(self.confirmed()), 1)
+        # A shot photo uploaded in the editor is recorded on its first shot edit.
+        shot_photo = self.ticket(client, {"purpose": "shot_image", "content_type": "image/webp", "bytes": 77, "project_id": pid, "rights_confirmed": True})
+        self.agent.upload_hashes[shot_photo] = "cd" * 32
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/shots/2/edit", {"image_upload_id": shot_photo}).status_code, 200)
+        latest = next(e for e in self.confirmed() if e["target_id"] == shot_photo)
+        self.assertEqual((latest["details"]["purpose"], latest["details"]["bytes"], latest["details"]["sha256"], latest["details"]["via"]),
+                         ("shot_image", 77, "cd" * 32, "shot_edit"))
+
+    def test_the_audit_is_written_without_a_hash_when_the_agent_does_not_expose_it(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 100)
+        self.agent.upload_lookup = False  # today's agent: no GET /internal/v1/uploads/{id}
+        upload_id = self.ticket(client, dict(self.PHOTO, rights_confirmed=True))
+        self.assertEqual(self.create_with(client, [upload_id], "rights-key-2").status_code, 201)
+        (row,) = self.confirmed()
+        self.assertEqual((row["target_id"], row["details"]["sha256"], row["details"]["bytes"]), (upload_id, None, 1234))
+
+    def test_another_users_upload_cannot_be_referenced(self):
+        owner, owner_id = self.customer("owner@example.test")
+        upload_id = self.ticket(owner, dict(self.PHOTO, rights_confirmed=True))
+        other, other_id = self.customer("intruder@example.test")
+        self.grant(other_id, 100)
+        refused = self.create_with(other, [upload_id], "rights-key-3")
+        self.assertEqual((refused.status_code, refused.json()["error"]), (404, "studio_not_found"))
+        pid = self.drafted(other)
+        edited = self.post(other, "/studio/projects/" + pid + "/shots/1/edit", {"image_upload_id": upload_id})
+        self.assertEqual((edited.status_code, edited.json()["error"]), (404, "studio_not_found"))
+        self.assertEqual(self.confirmed(), [])
 
 
 class StudioReviewFixTests(StudioCase):
@@ -845,7 +932,7 @@ class StudioProjectLifecycleTests(StudioCase):
                          self.post(client, "/studio/projects/" + pid + "/shots/1/edit", {"narration": "x"}),
                          self.post(client, "/studio/projects/" + pid + "/quote", {"type": "render"}),
                          self.submit(client, pid, quote),
-                         self.post(client, "/studio/uploads", {"purpose": "shot_image", "content_type": "image/png", "bytes": 10, "project_id": pid})):
+                         self.post(client, "/studio/uploads", {"purpose": "shot_image", "content_type": "image/png", "bytes": 10, "project_id": pid, "rights_confirmed": True})):
             self.assertEqual((response.status_code, response.json()["error"]), (404, "studio_not_found"), response.request.url)
         with self.assertRaises(Exception) as caught:
             self.studio.reserve(user_id, pid, self.raw_quote(user_id, pid, 0, quote_id="q_direct"), "direct-key-1")
@@ -1264,6 +1351,13 @@ class StudioAgentClientTests(unittest.TestCase):
         self.agent(handler).purge_project("user1", "p1")
         self.assertEqual((seen[2].method, str(seen[2].url)), ("POST", "http://shortvideo-api:8081/internal/v1/projects/p1/purge"))
         self.assertEqual(seen[2].headers["x-studio-owner"], "user1")
+        # The upload record (for the sha256 in the rights audit): owner-scoped GET; a bad id never leaves the portal.
+        self.agent(handler).get_upload("user1", "u_abc123")
+        self.assertEqual((seen[3].method, str(seen[3].url), seen[3].headers["x-studio-owner"]),
+                         ("GET", "http://shortvideo-api:8081/internal/v1/uploads/u_abc123", "user1"))
+        with self.assertRaises(AgentError):
+            self.agent(handler).get_upload("user1", "../x")
+        self.assertEqual(len(seen), 4)
 
     def test_error_mapping(self):
         cases = ((lambda r: httpx.Response(409, json={"error": {"code": "studio_stale_quote", "message": "m"}}), ("rejected", 409, "studio_stale_quote")),

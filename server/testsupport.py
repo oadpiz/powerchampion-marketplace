@@ -346,6 +346,10 @@ class FakeStudioAgent:
         self.purge_errors = {}
         self.created = []
         self.usage_value = None
+        # sha256 per upload id, as the media host records it after the browser's PUT. upload_lookup False
+        # = the agent has no GET /internal/v1/uploads/{id} yet (a plain 404, no error code).
+        self.upload_hashes = {}
+        self.upload_lookup = True
 
     def _enter(self, name, owner=None):
         try:
@@ -401,9 +405,26 @@ class FakeStudioAgent:
         self.uploads[upload_id] = dict(body, owner=owner)
         return {"upload_id": upload_id, "put_url": "https://media.test/media/upload/" + secrets.token_hex(8), "expires_at": int(self.clock()) + 900}
 
+    def _owned_upload(self, owner, upload_id):
+        """Like the agent's owner-scoped upload check: someone else's (or an unknown) upload is a 404."""
+        upload = self.uploads.get(upload_id) if isinstance(upload_id, str) else None
+        if upload is None or upload["owner"] != owner:
+            raise self._missing()
+        return upload
+
+    def get_upload(self, owner, upload_id):
+        self._enter("get_upload", owner)
+        if not self.upload_lookup:
+            raise self.AgentError("rejected", 404, None)
+        upload = self._owned_upload(owner, upload_id)
+        return {"upload_id": upload_id, "purpose": upload["purpose"], "project_id": upload.get("project_id"), "content_type": upload["content_type"],
+                "bytes": upload["bytes"], "sha256": self.upload_hashes.get(upload_id), "status": "ready" if upload_id in self.upload_hashes else "pending"}
+
     def create_project(self, owner, body):
         self._enter("create_project", owner)
         self.created.append(dict(body))
+        for upload_id in (body.get("inputs") or {}).get("image_ids") or []:
+            self._owned_upload(owner, upload_id)
         pid = body["project_id"]
         if pid in self.projects:
             if self.projects[pid]["owner"] != owner:
@@ -461,6 +482,8 @@ class FakeStudioAgent:
     def edit_shot(self, owner, pid, index, body):
         self._enter("edit_shot", owner)
         p = self._project(owner, pid)
+        if body.get("image_upload_id") is not None:
+            self._owned_upload(owner, body["image_upload_id"])
         if not 1 <= index <= p["shots"]:
             raise self._missing()
         self._edit(owner, pid)
