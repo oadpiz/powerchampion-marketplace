@@ -110,19 +110,24 @@ describe("account phone agent tab", () => {
 });
 
 describe("account phone agent shell", () => {
+  // The third column is the endpoint the real sub-page reads on mount (T7 M2, T8 M4); Try reads only the shell's M1.
   it.each([
-    [undefined, "Setup"],
-    ["setup", "Setup"],
-    ["faq", "FAQ"],
-    ["try", "Try a call"],
-  ] as const)("renders sub-page %s inside the shell", async (sub, title) => {
+    [undefined, "Setup", "/me/voice/setup"],
+    ["setup", "Setup", "/me/voice/setup"],
+    ["faq", "FAQ", "/me/voice/faqs"],
+    ["try", "Try a call", null],
+  ] as const)("renders sub-page %s inside the shell", async (sub, title, ownRead) => {
     const calls = stubPortal({ "GET /session": () => ({ user: customer }), "GET /me/voice": () => summary() });
     wrap(<AccountPortal section="voice" voiceSub={sub} />);
     expect(await screen.findByRole("heading", { level: 2, name: title })).toBeVisible();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Phone agent");
     expect(screen.getByRole("heading", { level: 2, name: /晴光牙醫診所/ })).toHaveTextContent("Draft");
     expect(screen.getByText(/^Applied: version 2 \(/)).toBeVisible();
-    expect(screen.getByText("Under construction")).toBeVisible();
+    // The T6 placeholder is gone: the shell mounts the real sub-page, which reads only its own endpoint.
+    expect(screen.queryByText("Under construction")).not.toBeInTheDocument();
+    const subReads = () => calls.map((call) => call.path).filter((path) => path.startsWith("/me/voice/"));
+    if (ownRead) await waitFor(() => expect(subReads()).toEqual([ownRead]));
+    else expect(screen.getByText("17 test calls left in the last 24 hours (limit 20)")).toBeVisible();
     const pages = screen.getByRole("navigation", { name: "Phone agent pages" });
     const links = within(pages).getAllByRole("link");
     expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
@@ -133,8 +138,12 @@ describe("account phone agent shell", () => {
     expect(within(pages).getByRole("link", { name: title })).toHaveAttribute("aria-current", "page");
     expect(within(screen.getByRole("navigation", { name: "Account navigation" })).getByRole("link", { name: "Phone agent" }))
       .toHaveAttribute("aria-current", "page");
-    // The shell reads only M1; the section load does not call a "/voice" list endpoint.
-    expect(calls.map((call) => call.path).filter((path) => path !== "/me/engineer")).toEqual(["/session", "/me/voice"]);
+    // Apart from the sub-page's own read, the shell reads only M1; the section load does not call a "/voice" list endpoint.
+    expect(calls.map((call) => call.path).filter((path) => path !== "/me/engineer" && !path.startsWith("/me/voice/"))).toEqual([
+      "/session",
+      "/me/voice",
+    ]);
+    expect(subReads()).toEqual(ownRead ? [ownRead] : []);
   });
 
   it("explains a direct visit by an account without a store", async () => {
@@ -190,7 +199,8 @@ describe("account phone agent shell", () => {
     expect(await screen.findByRole("heading", { level: 2, name: "試打一通" })).toBeVisible();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("電話客服");
     expect(screen.getByText(/^目前套用：第 2 版（/)).toBeVisible();
-    expect(screen.getByText("建置中")).toBeVisible();
+    expect(screen.queryByText("建置中")).not.toBeInTheDocument();
+    expect(screen.getByText("24 小時內還可以試打 17 次（上限 20 次）")).toBeVisible();
     const pages = screen.getByRole("navigation", { name: "電話客服頁面" });
     expect(within(pages).getAllByRole("link").map((link) => link.textContent)).toEqual(["設定", "常見問答", "試打一通"]);
   });
@@ -211,7 +221,16 @@ describe("phone agent summary refresh", () => {
   it("updates the shell in place and keeps the last summary when a refresh fails", async () => {
     const user = userEvent.setup();
     const answers: unknown[] = [summary(), summary({ currentVersion: 3, hasUnpublishedChanges: false }), Response.json({ error: "x" }, { status: 503 })];
-    stubPortal({ "GET /me/voice": () => answers.shift() });
+    stubPortal({
+      "GET /me/voice": () => answers.shift(),
+      // The FAQ sub-page (T8) loads its own list (M4); an empty one keeps this test about the shell.
+      "GET /me/voice/faqs": () => ({
+        introText: "",
+        faqs: [],
+        capacity: { kbChars: 0, kbCharsMax: 6000, faqCount: 0, faqMax: 120, introChars: 0 },
+        template: { available: false },
+      }),
+    });
     wrap(<Harness />);
     expect(await screen.findByText(/^Applied: version 2 \(/)).toBeVisible();
     const page = screen.getByRole("heading", { level: 2, name: "FAQ" });
