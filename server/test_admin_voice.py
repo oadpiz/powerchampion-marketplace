@@ -526,7 +526,7 @@ class NumberTests(AdminVoiceCase):
         for label, (change, status, code) in cases.items():
             with self.subTest(label):
                 self.error(self.post(operator, "/admin/voice/numbers", number_body(**change)), status, code)
-        for key in ("storeId", "purpose", "channel", "activeFrom", "activeUntil", "note"):
+        for key in ("purpose", "channel", "activeFrom"):
             with self.subTest(missing=key):
                 body = number_body()
                 del body[key]
@@ -534,6 +534,26 @@ class NumberTests(AdminVoiceCase):
         self.assertEqual(self.written(), before)
         # The edges are allowed: the last day of 2037 (active_to still fits a 32-bit column) and an 80-character note.
         self.add_number(operator, activeFrom="2000-01-01", activeUntil="2037-12-31", note="備" * 80)
+
+    def test_a6_may_leave_out_store_until_and_note_but_a7_must_send_them(self):
+        # Contract §4.6 (storeId and activeUntil may be null) and §4.7 (a change sends every field).
+        operator = self.admin()
+        body = {"number": "+886227356688", "purpose": "test", "channel": "online", "activeFrom": "2026-11-01"}
+        response = self.post(operator, "/admin/voice/numbers", body)
+        self.assertEqual(response.status_code, 201, response.text)
+        created = response.json()["number"]
+        self.assertEqual({key: created[key] for key in ("storeId", "storeName", "activeUntil", "note")},
+                         {"storeId": None, "storeName": None, "activeUntil": None, "note": ""})
+        self.assertIsNone(rows(self.store, "voice_numbers")[0]["active_to"])
+        before = self.written()
+        for key in ("storeId", "activeUntil", "note"):
+            with self.subTest(missing=key):
+                body = number_body()
+                del body[key]
+                response = self.post(operator, "/admin/voice/numbers/" + created["id"], body)
+                self.error(response, 400, "invalid_input")
+                self.assertIn(key, response.json()["detail"])
+        self.assertEqual(self.written(), before)
 
     def test_overlapping_periods_of_one_number_are_409(self):
         operator = self.admin()
