@@ -26,6 +26,7 @@ import functools
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import date
 from pathlib import Path
 
@@ -89,6 +90,14 @@ WEEKDAYS = ("週一", "週二", "週三", "週四", "週五", "週六", "週日"
 # name, the questions the AI must not answer) also has 「」 turned into 『』, so it cannot close the quote early;
 # it is single-line text (UNSAFE_TEXT refuses newlines), so it cannot start a numbered rule either. Only the
 # prompt is changed: stored values, shop_name, opening and rules.no_ai_questions keep the store's own text.
+# Vertical and halfwidth presentation forms (︻︼ ︗︘ ﹁﹂ ﹃﹄ ｢｣ …) stand for the same brackets: NFKC folds ︻ to 【,
+# ﹁ and ｢ to 「. They are folded first, so ︻目前情境︼ cannot forge a header and ｣ or ﹂ cannot close a quote
+# (security review 2026-10-22). Only these three small blocks are folded, not the whole text: NFKC would also
+# change full-width letters, digits and the （請填入） brackets the store sees in the preview.
+# Blocks: Vertical Forms, CJK Compatibility Forms, halfwidth CJK punctuation (｡｢｣､).
+PRESENTATION_BLOCKS = (range(0xFE10, 0xFE20), range(0xFE30, 0xFE50), range(0xFF61, 0xFF65))
+PRESENTATION_FORMS = {code: unicodedata.normalize("NFKC", chr(code)) for block in PRESENTATION_BLOCKS for code in block
+                      if unicodedata.normalize("NFKC", chr(code)) != chr(code)}
 SECTION_BRACKETS = str.maketrans({"【": "「", "】": "」", "〖": "「", "〗": "」"})
 QUOTE_BRACKETS = str.maketrans({"【": "『", "】": "』", "〖": "『", "〗": "』", "「": "『", "」": "』"})
 
@@ -295,13 +304,13 @@ def _faqs(value):
 
 
 def _as_data(text):
-    """Store text for the 【店家資料】 part: no 【】 section brackets."""
-    return text.translate(SECTION_BRACKETS)
+    """Store text for the 【店家資料】 part: no 【】 section brackets, in any of their forms."""
+    return text.translate(PRESENTATION_FORMS).translate(SECTION_BRACKETS)
 
 
 def _in_quote(text):
     """Store text that sits inside a 「…」 quote in the rule part: no brackets that close or forge anything."""
-    return text.translate(QUOTE_BRACKETS)
+    return text.translate(PRESENTATION_FORMS).translate(QUOTE_BRACKETS)
 
 
 def _spoken_time(minute):

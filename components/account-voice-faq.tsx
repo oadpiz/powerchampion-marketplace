@@ -127,8 +127,8 @@ const T = {
   previewHide: { en: "Hide what the AI receives", zh: "收合 AI 會收到的內容" },
   previewLoading: { en: "Compiling the draft…", zh: "正在整理草稿…" },
   previewBrackets: {
-    en: "In what the AI receives, 【】 and 〖〗 in your text become 「」, and brackets inside quotes become 『』, so store text cannot pose as rules. What you saved is not changed.",
-    zh: "AI 收到的內容裡，你寫的【】和〖〗會換成「」，引號裡面的括號會換成『』，避免店家文字被當成規則。你存的原文不會被改。",
+    en: "In what the AI receives, 【】 and 〖〗 in your text become 「」 (so do their vertical and half-width forms, such as ︻︼ and ｢｣), and brackets inside quotes become 『』, so store text cannot pose as rules. What you saved is not changed.",
+    zh: "AI 收到的內容裡，你寫的【】和〖〗會換成「」（直書、半形的同類括號如︻︼、｢｣也一樣），引號裡面的括號會換成『』，避免店家文字被當成規則。你存的原文不會被改。",
   },
   previewOpening: { en: "Opening", zh: "開場" },
   previewPrompt: { en: "Rules and store details", zh: "規則與店家資料" },
