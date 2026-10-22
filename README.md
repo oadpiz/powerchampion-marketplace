@@ -43,6 +43,38 @@ This standalone site is not the existing production homepage and is not deployed
 by this project. Any deployment, DNS, or Dokploy change requires a separate
 deployment checkpoint after local verification.
 
+## Phone agent local smoke
+
+`scripts/voice/` starts the portal on loopback and runs an end-to-end smoke of the
+phone agent (voice phase 1) through the frontend BFF, with the feature switch on
+and then off on the same database.
+
+```bash
+export VOICE_PYTHON=/path/to/python
+export VOICE_SMOKE_DIR=/tmp/pc-voice-smoke
+scripts/voice/run-local.sh on --fresh
+"$VOICE_PYTHON" scripts/voice/smoke.py on
+scripts/voice/stop-local.sh
+scripts/voice/run-local.sh off
+"$VOICE_PYTHON" scripts/voice/smoke.py off
+scripts/voice/stop-local.sh
+```
+
+- `VOICE_PYTHON` is a Python with `server/requirements.txt` installed (default
+  `python3`); the frontend uses this checkout's `node_modules`.
+- `VOICE_SMOKE_DIR` (default `$TMPDIR/pc-voice-smoke`) holds the SQLite database,
+  PID files, logs, cookie jars and `smoke-report.md`. It must be outside the
+  repository; both scripts refuse a directory inside it.
+- The backend listens on 127.0.0.1:3910 and the frontend on 127.0.0.1:3911
+  (`VOICE_SMOKE_BACKEND_PORT`, `VOICE_SMOKE_FRONTEND_PORT`). `run-local.sh` writes
+  `.dev.vars` (gitignored) only when it is absent or its own, and `stop-local.sh`
+  removes it and stops only the PIDs `run-local.sh` recorded.
+- Nothing reaches production: the gateway origin is `https://gateway.invalid`,
+  Grafana is off, and the try-ticket secret is a test-only value. Account
+  passwords are generated per run, kept in `db/smoke-secrets.json` (mode 0600)
+  inside the run directory, and redacted from the report together with tickets.
+- `smoke.py` exits 0 only when every check passes, and prints the failed ones.
+
 ## Dependency audit status
 
 As of 2026-08-11, the full `npm audit` reports 17 findings (2 low, 2 moderate,
