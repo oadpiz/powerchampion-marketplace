@@ -33,6 +33,7 @@ import {
   qualityErrorText,
   say,
   taipeiDate,
+  taipeiSeconds,
   taipeiTime,
   working,
   type Copy,
@@ -83,9 +84,11 @@ const D = {
   meterLine: { zh: "預估 {units} 則（{reason}，規則 {rule}）", en: "Estimated {units} ({reason}, rule {rule})" },
   retention: { zh: "保存", en: "Retention" },
   retentionLine: {
-    zh: "逐字稿到 {transcript}・錄音到 {recording}・明細到 {detail}・錄音天數：店家 {snap}，上報 {rep}",
-    en: "Transcript until {transcript} · Recording until {recording} · Record until {detail} · Recording days: store {snap}, reported {rep}",
+    zh: "逐字稿到 {transcript}・{recording}・明細到 {detail}・錄音天數：店家 {snap}，上報 {rep}",
+    en: "Transcript until {transcript} · {recording} · Record until {detail} · Recording days: store {snap}, reported {rep}",
   },
+  retentionRecording: { zh: "錄音到 {date}", en: "Recording until {date}" },
+  retentionNoRecording: { zh: "錄音：無", en: "Recording: none" },
   storeFlag: { zh: "店家標記", en: "Store flag" },
   storeFlagLine: { zh: "店家在 {time} 標記「答錯了」：{note}", en: "The store flagged this as a wrong answer on {time}: {note}" },
   storeFlagBare: { zh: "店家在 {time} 標記「答錯了」。", en: "The store flagged this as a wrong answer on {time}." },
@@ -204,6 +207,19 @@ function CallFacts({ detail, zh }: { detail: QualityDetail; zh: boolean }) {
   if (message.callbackConfirmed) messageParts.push(t(D.callback, { via: message.callbackVia && VIA[message.callbackVia] ? say(VIA[message.callbackVia], zh) : "—" }));
   if (message.recordingDeclined) messageParts.push(say(D.declined, zh));
   const sep = zh ? "・" : " · ";
+  const handoffText = call.handoff
+    ? t(D.handoff, { reason: call.handoffReason && HANDOFF_LABEL[call.handoffReason] ? say(HANDOFF_LABEL[call.handoffReason], zh) : "—" })
+    : null;
+  const fallbackText = call.degraded
+    ? t(D.fallback, { reason: call.degradeReason && DEGRADE_LABEL[call.degradeReason] ? say(DEGRADE_LABEL[call.degradeReason], zh) : "—" })
+    : null;
+  // "Handed off · Handed off: the caller asked" says it twice: the reason line already names the result.
+  const repeats = (call.outcome === "handoff" && handoffText !== null) || (call.outcome === "degraded" && fallbackText !== null);
+  const resultParts = [
+    ...(repeats ? [] : [OUTCOME_LABEL[call.outcome] ? say(OUTCOME_LABEL[call.outcome], zh) : call.outcome]),
+    ...(handoffText ? [handoffText] : []),
+    ...(fallbackText ? [fallbackText] : []),
+  ];
   const received = (source: QualityDetail["sources"]["orchestrator"]) => (source ? taipeiTime(source.receivedAt, zh) : say(D.notReceived, zh));
   return (
     <dl className="portal-meta">
@@ -220,9 +236,9 @@ function CallFacts({ detail, zh }: { detail: QualityDetail; zh: boolean }) {
       <dt>{say(D.times, zh)}</dt>
       <dd>
         {t(D.timesLine, {
-          start: taipeiTime(call.startedAt, zh),
-          answered: taipeiTime(call.answeredAt, zh),
-          ended: taipeiTime(call.endedAt, zh),
+          start: taipeiSeconds(call.startedAt, zh),
+          answered: taipeiSeconds(call.answeredAt, zh),
+          ended: taipeiSeconds(call.endedAt, zh),
           length,
         })}
       </dd>
@@ -234,11 +250,7 @@ function CallFacts({ detail, zh }: { detail: QualityDetail; zh: boolean }) {
       </dd>
       <dt>{say(D.result, zh)}</dt>
       <dd>
-        {[
-          OUTCOME_LABEL[call.outcome] ? say(OUTCOME_LABEL[call.outcome], zh) : call.outcome,
-          ...(call.handoff ? [t(D.handoff, { reason: call.handoffReason && HANDOFF_LABEL[call.handoffReason] ? say(HANDOFF_LABEL[call.handoffReason], zh) : "—" })] : []),
-          ...(call.degraded ? [t(D.fallback, { reason: call.degradeReason && DEGRADE_LABEL[call.degradeReason] ? say(DEGRADE_LABEL[call.degradeReason], zh) : "—" })] : []),
-        ].join(sep)}
+        {resultParts.join(sep)}
         {call.urgent && (
           <>
             <br />
@@ -261,15 +273,8 @@ function CallFacts({ detail, zh }: { detail: QualityDetail; zh: boolean }) {
         })}
       </dd>
       <dt>{say(D.message, zh)}</dt>
-      <dd>
-        {messageParts.join(sep)}
-        {!message.final && (
-          <>
-            <br />
-            {say(D.pending, zh)}
-          </>
-        )}
-      </dd>
+      {/* Until the records sender's final report the numbers are all zero: say only that the result is pending. */}
+      <dd>{message.final ? messageParts.join(sep) : say(D.pending, zh)}</dd>
       {call.autoFlags.length > 0 && (
         <>
           <dt>{say(D.flags, zh)}</dt>
@@ -298,7 +303,9 @@ function CallFacts({ detail, zh }: { detail: QualityDetail; zh: boolean }) {
       <dd>
         {t(D.retentionLine, {
           transcript: taipeiDate(call.retention.transcriptUntil, zh),
-          recording: taipeiDate(call.retention.recordingUntil, zh),
+          recording: message.recordingSaved
+            ? t(D.retentionRecording, { date: taipeiDate(call.retention.recordingUntil, zh) })
+            : say(D.retentionNoRecording, zh),
           detail: taipeiDate(call.retention.detailUntil, zh),
           snap: call.retention.snapshotDays,
           rep: dash(call.retention.reportedDays),
@@ -337,6 +344,14 @@ function ReviewForm({
   const [status, setStatus] = useState<ReviewStatus>(current?.status ?? "done");
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const saveRef = useRef<HTMLButtonElement>(null);
+  /** The save button is disabled while saving, which drops keyboard focus to <body>; it gets focus back after. */
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (busy || !refocus.current) return;
+    refocus.current = false;
+    saveRef.current?.focus();
+  }, [busy]);
   const [message, setMessage] = useState<{ kind: "error" | "status"; text: string } | null>(null);
   const t = (copy: Copy, values: Record<string, string | number> = {}) => fill(say(copy, zh), values);
   const maxLabels = limits.reviewLabelsMax;
@@ -374,6 +389,7 @@ function ReviewForm({
       setMessage({ kind: "error", text: qualityErrorText(error, locale) });
     } finally {
       busyRef.current = false;
+      refocus.current = true;
       setBusy(false);
     }
   }
@@ -451,7 +467,7 @@ function ReviewForm({
         </p>
       )}
       <div className="portal-actions">
-        <button type="submit" className="portal-button" disabled={busy}>
+        <button type="submit" className="portal-button" disabled={busy} ref={saveRef}>
           {busy ? working(zh) : say(D.save, zh)}
         </button>
       </div>

@@ -5,7 +5,7 @@
  * left without copy. Values the contract gives no wording for are marked "not in the contract" below.
  */
 import { PortalError } from "../lib/portal-client";
-import type { CallEntry, CallOutcome, HandoffReason, MeterReason } from "../lib/voice-calls";
+import { callTime, dateText, type CallEntry, type CallOutcome, type HandoffReason, type MeterReason } from "../lib/voice-calls";
 import type { AutoFlag, DegradeReason, ListeningKind, MessageOutcome, ReviewLabel, ReviewStatus } from "../lib/voice-quality";
 import { errorMessage } from "./admin-resource";
 import { voiceAdminErrorText, voiceFeatureOff } from "./admin-voice-dialogs";
@@ -145,21 +145,15 @@ export const passedLabel = (passed: boolean | null, zh: boolean) =>
 /** §11.3 "店家空白": the dialed number is not in the number table, so the call has no store. */
 export const NO_STORE: Copy = { zh: "（號碼不在表上）", en: "(number not in table)" };
 
-/** Taipei time (contract §1.4: fixed UTC+8) for one instant, in the page's language. */
-export function taipeiTime(value: string | null, zh: boolean): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(zh ? "zh-TW" : "en-US", { timeZone: "Asia/Taipei", dateStyle: "medium", timeStyle: "short" }).format(date);
-}
-
-/** Taipei date only. */
-export function taipeiDate(value: string | null, zh: boolean): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(zh ? "zh-TW" : "en-US", { timeZone: "Asia/Taipei", dateStyle: "medium" }).format(date);
-}
+/**
+ * Taipei time (contract §1.4: fixed UTC+8) for one instant: the store pages' 24-hour format with the year
+ * ("2026 年 10 月 22 日 14:04" / "Oct 22, 2026, 14:04"), so an operator and a store read the same time the same way.
+ */
+export const taipeiTime = (value: string | null, zh: boolean) => callTime(value, zh);
+/** The same with seconds (the drawer's time line: several calls can share a minute). */
+export const taipeiSeconds = (value: string | null, zh: boolean) => callTime(value, zh, true, true);
+/** Taipei date only, as the store pages write it. */
+export const taipeiDate = (value: string | null, zh: boolean) => dateText(value, zh);
 
 /** "2026-12-21 09:15:02" in Taipei, for files (the same text whatever the browser's time zone or language). */
 export function taipeiStamp(value: string | null): string {

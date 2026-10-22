@@ -297,11 +297,14 @@ export function monthLabel(month: string, zh: boolean): string {
   return zh ? `${year} 年 ${number} 月` : `${MONTHS_EN[number - 1]} ${year}`;
 }
 
-/** A Taipei date and time; the list leaves the year out (the month is the filter). "—" when it does not parse. */
-export function callTime(value: string | null, zh: boolean, withYear = true): string {
+/**
+ * A Taipei date and 24-hour time; the store list leaves the year out (the month is the filter). "—" when it does not
+ * parse. The operators' Quality tab uses the same format, with seconds where several calls share a minute.
+ */
+export function callTime(value: string | null, zh: boolean, withYear = true, withSeconds = false): string {
   const parts = taipeiParts(value);
   if (!parts) return "—";
-  const time = `${parts.hour}:${parts.minute}`;
+  const time = `${parts.hour}:${parts.minute}${withSeconds ? `:${parts.second}` : ""}`;
   if (zh) return `${withYear ? `${parts.year} 年 ` : ""}${parts.month} 月 ${parts.day} 日 ${time}`;
   return `${short(parts.month)} ${parts.day}${withYear ? `, ${parts.year}` : ""}, ${time}`;
 }

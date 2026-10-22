@@ -317,10 +317,12 @@ function ShownContent({ shown, zh }: { shown: Shown; zh: boolean }) {
       ))}
       {summary && (
         <>
+          {/* The heading names the block once; the summary text follows it without a second "Summary" label. */}
           <h4>{zh ? "摘要" : "Summary"}</h4>
+          <p style={{ whiteSpace: "pre-wrap" }} data-voice-summary="">
+            {summary.summary || "—"}
+          </p>
           <dl className="portal-meta">
-            <dt>{zh ? "摘要" : "Summary"}</dt>
-            <dd style={{ whiteSpace: "pre-wrap" }}>{summary.summary || "—"}</dd>
             <dt>{zh ? "回電號碼" : "Callback number"}</dt>
             <dd>{summary.callback_number || "—"}</dd>
             <dt>{zh ? "留言內容" : "Message"}</dt>

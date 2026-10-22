@@ -291,9 +291,10 @@ export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; co
             <>
               <h4>{say(C.summary, zh)}</h4>
               {summary.ok ? (
+                // The heading names the block once; the summary text follows it without a second "Summary" label.
+                <>
+                <p className="voice-quality-summary">{summary.value.summary || "—"}</p>
                 <dl className="portal-meta">
-                  <dt>{say(C.summary, zh)}</dt>
-                  <dd>{summary.value.summary || "—"}</dd>
                   <dt>{say(C.callback, zh)}</dt>
                   <dd>{summary.value.callbackNumber ?? "—"}</dd>
                   <dt>{say(C.message, zh)}</dt>
@@ -305,6 +306,7 @@ export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; co
                     </>
                   )}
                 </dl>
+                </>
               ) : (
                 <p className="portal-error" role="alert">
                   {mediaErrorText(summary.code, zh)}
