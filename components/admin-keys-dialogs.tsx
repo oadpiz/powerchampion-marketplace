@@ -27,6 +27,8 @@ export type GatewayKey = {
   owner: GatewayOwner | null;
   portalKeyId: string | null;
   portalStatus: "active" | "revoked" | null;
+  /** Internal key billed at GPU cost instead of list price (gateway cost_only, D-V8). */
+  costOnly: boolean;
 };
 type CustomerOption = {
   id: string;
@@ -35,7 +37,24 @@ type CustomerOption = {
   role: "customer" | "admin";
   status: "active" | "disabled";
 };
-export type IssuedKey = { secret: string; label: string; prefix: string };
+export type IssuedKey = {
+  secret: string;
+  label: string;
+  prefix: string;
+  /** Cost price was asked for but the gateway did not confirm it: the key bills at list price. */
+  costOnlyUnconfirmed?: boolean;
+};
+
+/** What turning cost price on means, shown wherever it can be turned on. */
+export const COST_ONLY_ON_TEXT: [string, string] = [
+  "這把金鑰之後的用量會照 GPU 成本扣款，不算營收；只給公司內部用的金鑰使用。",
+  "Usage on this key from now on is charged at GPU cost and does not count as revenue. Use this only for the company's own internal keys.",
+];
+export const COST_ONLY_OFF_TEXT: [string, string] = [
+  "這把金鑰之後的用量會改回照牌價扣款，並算進營收。",
+  "Usage on this key from now on is charged at list price and counts as revenue.",
+];
+export const COST_ONLY_TAG: [string, string] = ["內部・成本價", "Internal · cost price"];
 
 function parseOptionalCount(value: string): number | undefined | null {
   if (value.trim() === "") return undefined;
@@ -80,6 +99,7 @@ export function IssueKeyDialog({
   const [daily, setDaily] = useState("");
   const [rpm, setRpm] = useState("");
   const [inflight, setInflight] = useState("");
+  const [costOnly, setCostOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const active = (customers.data?.customers ?? []).filter(
@@ -104,6 +124,7 @@ export function IssueKeyDialog({
       const result = await portalRequest<{
         key: { label: string; prefix: string };
         secret: string;
+        costOnly?: boolean;
       }>(`/admin/customers/${encodeURIComponent(userId)}/keys`, {
         method: "POST",
         body: JSON.stringify({
@@ -112,9 +133,15 @@ export function IssueKeyDialog({
           ...(dailyTokenLimit !== undefined && { dailyTokenLimit }),
           ...(rpmLimit !== undefined && { rpm: rpmLimit }),
           ...(maxInflight !== undefined && { maxInflight }),
+          ...(costOnly && { costOnly: true }),
         }),
       });
-      onIssued({ secret: result.secret, label: result.key.label, prefix: result.key.prefix });
+      onIssued({
+        secret: result.secret,
+        label: result.key.label,
+        prefix: result.key.prefix,
+        costOnlyUnconfirmed: costOnly && result.costOnly !== true,
+      });
     } catch (reason: unknown) {
       setMessage(portalErrorText(reason, locale));
       setBusy(false);
@@ -172,6 +199,13 @@ export function IssueKeyDialog({
         {zh ? "同時處理上限：請求數（選填）" : "Max in-flight requests (optional)"}
         <input type="number" min="0" step="1" value={inflight} disabled={busy} onChange={(event) => setInflight(event.target.value)} />
       </label>
+      <label className="portal-field">
+        <span>
+          <input type="checkbox" checked={costOnly} disabled={busy} onChange={(event) => setCostOnly(event.target.checked)} />{" "}
+          {zh ? "內部金鑰：照 GPU 成本扣款（選填）" : "Internal key: charge at GPU cost (optional)"}
+        </span>
+      </label>
+      {costOnly && <p className="portal-note">{COST_ONLY_ON_TEXT[zh ? 0 : 1]}</p>}
       <ErrorLine message={customers.error ? portalErrorText(customers.error, locale) : message} />
     </AdminDialog>
   );
@@ -307,6 +341,73 @@ export function TopUpDialog({
         {zh ? "金額（USD）" : "Amount (USD)"}
         <input type="number" min="0.01" max="100000" step="0.01" value={amount} disabled={busy} onChange={(event) => setAmount(event.target.value)} />
       </label>
+      <ErrorLine message={message} />
+    </AdminDialog>
+  );
+}
+
+/** Asks before switching a key between internal cost price and list price, then sends the change. */
+export function CostOnlyDialog({
+  target,
+  onClose,
+  onDone,
+}: {
+  target: GatewayKey;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const locale = useLocale().locale;
+  const zh = locale === "zh";
+  const turnOn = !target.costOnly;
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const owner = target.owner
+    ? target.owner.name
+      ? zh ? `${target.owner.name}（${target.owner.email}）` : `${target.owner.name} (${target.owner.email})`
+      : target.owner.email
+    : null;
+
+  async function submit() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await portalRequest(`/admin/keys/${encodeURIComponent(target.gatewayKeyId)}/limits`, {
+        method: "POST",
+        body: JSON.stringify({ costOnly: turnOn }),
+      });
+      onDone();
+    } catch (reason: unknown) {
+      setMessage(portalErrorText(reason, locale));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AdminDialog
+      title={
+        turnOn
+          ? zh ? `把「${target.label}」設為內部成本價？` : `Charge “${target.label}” at internal cost price?`
+          : zh ? `把「${target.label}」改回牌價？` : `Switch “${target.label}” back to list price?`
+      }
+      confirmLabel={turnOn ? (zh ? "確認設為成本價" : "Charge at cost price") : zh ? "確認改回牌價" : "Switch to list price"}
+      cancelLabel={zh ? "取消" : "Cancel"}
+      onConfirm={submit}
+      onClose={onClose}
+      inFlight={busy}
+      danger={turnOn}
+    >
+      <p>{(turnOn ? COST_ONLY_ON_TEXT : COST_ONLY_OFF_TEXT)[zh ? 0 : 1]}</p>
+      <p className="portal-hint">
+        {zh ? `金鑰開頭 ${target.prefix}，` : `Key starts with ${target.prefix}; `}
+        {owner ? (zh ? `屬於客戶 ${owner}。` : `belongs to ${owner}.`) : zh ? "未歸屬客戶。" : "not assigned to a customer."}
+      </p>
+      {turnOn && owner && (
+        <p className="portal-note">
+          {zh
+            ? "這把金鑰掛在客戶帳號下。請確認它真的是公司內部用的金鑰，不是客戶在用的。"
+            : "This key is on a customer account. Make sure it really is an internal company key and not one a customer uses."}
+        </p>
+      )}
       <ErrorLine message={message} />
     </AdminDialog>
   );

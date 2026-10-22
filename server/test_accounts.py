@@ -578,6 +578,143 @@ class AdminKeysTests(_PortalCase):
         self.assertEqual((self.gateway.enabled, self.audit("admin.key_enabled"), rows(self.store, "key_reservations")), ([], [], []))
 
 
+class AdminCostOnlyTests(_PortalCase):
+    """D-V8 internal keys: the admin sets the gateway's cost_only flag (billed at GPU cost, not revenue)."""
+
+    def listed(self, gid, cost_only=False, **extra):
+        item = {"key_id": gid, "prefix": "sk-test-1", "label": "portal:x:A", "daily_token_limit": 0, "rpm": 0, "max_inflight": 0,
+                "prepaid_nano_usd": 5000000000, "created_at": 1700000000, "expires_at": None, "disabled_at": None,
+                "last_used_at": None, "model_ids": [], "cost_only": cost_only}
+        item.update(extra)
+        return item
+
+    def setup_key(self, cost_only=False):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        issued = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "A", "prepaidUsd": 5}).json()
+        gid = issued["key"]["gatewayKeyId"]
+        self.gateway.listing = {"keys": [self.listed(gid, cost_only)], "env_keys": []}
+        return admin, gid
+
+    def test_listing_passes_cost_only_through(self):
+        admin, gid = self.setup_key(cost_only=True)
+        self.gateway.listing["keys"].append(self.listed("manual-key"))
+        self.gateway.listing["env_keys"] = [{"key_id": "env-1", "prefix": "sk-env", "label": "environment", "unmanaged": True}]
+        body = admin.get(BASE + "/admin/keys").json()
+        by_id = {k["gatewayKeyId"]: k for k in body["keys"]}
+        self.assertIs(by_id[gid]["costOnly"], True)
+        self.assertIs(by_id["manual-key"]["costOnly"], False)
+        self.assertIs(body["envKeys"][0]["costOnly"], False)
+
+    def test_toggle_on_and_off_sends_the_flag_and_audits_before_and_after(self):
+        admin, gid = self.setup_key()
+        admin_id = self.user_id("admin@example.test")
+        r = self.post(admin, f"/admin/keys/{gid}/limits", {"costOnly": True})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), {"ok": True, "costOnly": True, "changed": True})
+        self.assertEqual(self.gateway.cost_only_calls, [(gid, True)])
+        self.assertEqual(self.gateway.limits, [], "the limits must not be touched")
+        r = self.post(admin, f"/admin/keys/{gid}/limits", {"costOnly": False})
+        self.assertEqual(r.json(), {"ok": True, "costOnly": False, "changed": True})
+        self.assertEqual(self.gateway.cost_only_calls, [(gid, True), (gid, False)])
+        events = self.audit("admin.key_cost_only")
+        recorded = sorted(((e["actor_id"], e["target_id"], json.loads(e["details"])) for e in events), key=lambda t: t[2]["before"])
+        self.assertEqual(recorded, [(admin_id, gid, {"before": False, "after": True}), (admin_id, gid, {"before": True, "after": False})])
+        self.assertEqual(self.audit("admin.key_limits"), [])
+
+    def test_setting_the_current_value_changes_nothing(self):
+        admin, gid = self.setup_key(cost_only=True)
+        r = self.post(admin, f"/admin/keys/{gid}/limits", {"costOnly": True})
+        self.assertEqual(r.json(), {"ok": True, "costOnly": True, "changed": False})
+        self.assertEqual(self.gateway.cost_only_calls, [])
+        self.assertEqual(self.audit("admin.key_cost_only"), [])
+
+    def test_only_a_strict_boolean_is_accepted(self):
+        admin, gid = self.setup_key()
+        for bad in ({"costOnly": "true"}, {"costOnly": 1}, {"costOnly": None}, {"costOnly": "false"},
+                    {"costOnly": True, "rpm": 5}):
+            self.assertEqual(self.post(admin, f"/admin/keys/{gid}/limits", bad).status_code, 422, bad)
+        self.assertEqual((self.gateway.cost_only_calls, self.gateway.limits), ([], []))
+        self.assertEqual(self.audit("admin.key_cost_only"), [])
+
+    def test_unknown_key_and_outdated_gateway(self):
+        admin, gid = self.setup_key()
+        r = self.post(admin, "/admin/keys/no-such-key/limits", {"costOnly": True})
+        self.assertEqual((r.status_code, r.json()["error"]), (404, "key_not_found"))
+        # A gateway without the flag (before sell-panel PR #30) would ignore it silently: refuse instead.
+        item = self.gateway.listing["keys"][0]
+        del item["cost_only"]
+        r = self.post(admin, f"/admin/keys/{gid}/limits", {"costOnly": True})
+        self.assertEqual((r.status_code, r.json()["error"]), (409, "gateway_unsupported"))
+        self.assertEqual(self.gateway.cost_only_calls, [])
+        self.assertEqual(self.audit("admin.key_cost_only"), [])
+
+    def test_gateway_errors_change_nothing_and_leak_nothing(self):
+        admin, gid = self.setup_key()
+        for error, status, code in ((GatewayError("rejected", 400, "cost_only must be true or false."), 400, "gateway_rejected"),
+                                    (GatewayError("unavailable", detail="private upstream token must never escape"), 503, "gateway_unavailable")):
+            with self.subTest(code=code):
+                self.gateway.cost_only_error = error
+                r = self.post(admin, f"/admin/keys/{gid}/limits", {"costOnly": True})
+                self.assertEqual((r.status_code, r.json()["error"]), (status, code))
+                self.assertNotIn("private upstream token", r.text)
+        self.assertIs(self.gateway.listing["keys"][0]["cost_only"], False)
+        self.assertEqual(self.audit("admin.key_cost_only"), [])
+        self.gateway.cost_only_error = None
+        self.gateway.fail = True
+        r = self.post(admin, f"/admin/keys/{gid}/limits", {"costOnly": True})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(self.audit("admin.key_cost_only"), [])
+
+    def test_customer_and_anonymous_are_refused(self):
+        _admin, gid = self.setup_key()
+        client = self.client()
+        user = self.register(client, "b@example.test")
+        self.assertEqual(self.post(client, f"/admin/keys/{gid}/limits", {"costOnly": True}).status_code, 403)
+        self.assertEqual(self.post(client, f"/admin/customers/{user['id']}/keys", {"label": "x", "prepaidUsd": 5, "costOnly": True}).status_code, 403)
+        anonymous = self.client()
+        self.assertEqual(self.post(anonymous, f"/admin/keys/{gid}/limits", {"costOnly": True}).status_code, 401)
+        self.assertEqual(self.post(anonymous, f"/admin/customers/{user['id']}/keys", {"label": "x", "prepaidUsd": 5, "costOnly": True}).status_code, 401)
+        self.assertEqual(self.gateway.cost_only_calls, [])
+        self.assertEqual([i for i in self.gateway.issued if i["cost_only"]], [])
+
+    def test_issue_with_cost_only_sends_the_flag_and_audits_it(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        r = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "Ops", "prepaidUsd": 5, "costOnly": True})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertIs(r.json()["costOnly"], True)
+        self.assertIs(self.gateway.issued[-1]["cost_only"], True)
+        event = self.audit("admin.key_issued")[-1]
+        self.assertEqual(json.loads(event["details"]), {"costOnly": {"before": None, "after": True}})
+        r = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "Plain", "prepaidUsd": 5})
+        self.assertIs(r.json()["costOnly"], False)
+        self.assertIs(self.gateway.issued[-1]["cost_only"], False)
+        for bad in ("true", 1, None):
+            self.assertEqual(self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "x", "prepaidUsd": 5, "costOnly": bad}).status_code, 422, bad)
+        self.assertEqual(len(self.gateway.issued), 2)
+
+    def test_issue_reports_when_the_gateway_did_not_confirm_cost_only(self):
+        admin = self.admin()
+        user = self.register(self.client(), "a@example.test")
+        self.gateway.confirm_cost_only = False
+        r = self.post(admin, f"/admin/customers/{user['id']}/keys", {"label": "Ops", "prepaidUsd": 5, "costOnly": True})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertIs(r.json()["costOnly"], False)
+        event = self.audit("admin.key_issued")[-1]
+        self.assertEqual(json.loads(event["details"]), {"costOnly": {"before": None, "after": False, "requested": True}})
+
+    def test_customer_self_service_cannot_ask_for_cost_only(self):
+        self.settings = Settings(db_path=self.settings.db_path, allowed_origins=(ORIGIN,), customer_key_issuance=True)
+        self.app = create_app(self.settings, gateway=self.gateway)
+        self.store = self.app.state.store
+        client = self.client()
+        self.register(client, "a@example.test")
+        r = self.post(client, "/keys", {"label": "mine", "costOnly": True, "cost_only": True})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertIs(self.gateway.issued[-1]["cost_only"], False)
+
+
 class AdminUsageTests(_PortalCase):
     def test_month_report_with_ownership_and_totals(self):
         self.store.create_user("admin@example.test", "Admin", PASSWORD, role="admin")

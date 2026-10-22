@@ -137,6 +137,10 @@ export function portalErrorCodeText(error: unknown, locale: "en" | "zh"): string
       : "The gateway did not answer in time. The model may still have run and used tokens; check usage before retrying.";
   if (code === "target_not_customer")
     return locale === "zh" ? "金鑰只能簽發給客戶帳號。" : "Keys can only be issued to customer accounts.";
+  if (code === "gateway_unsupported")
+    return locale === "zh"
+      ? "閘道版本太舊，還不支援內部成本價金鑰，請先更新閘道。"
+      : "The gateway does not support internal cost-price keys yet. Update the gateway first.";
   if (code === "key_not_found")
     return locale === "zh" ? "閘道上已找不到此 API 金鑰。" : "That API key no longer exists on the gateway.";
   if (code === "customer_not_found")

@@ -20,6 +20,8 @@ import {
 } from "../lib/admin-keys-view";
 import { portalErrorText, portalRequest } from "../lib/portal-client";
 import {
+  COST_ONLY_TAG,
+  CostOnlyDialog,
   DisableKeyDialog,
   IssueKeyDialog,
   LimitsDialog,
@@ -47,7 +49,8 @@ type Dialog =
   | { kind: "issue"; initial?: { userId: string; label: string; replaces: string } }
   | { kind: "limits"; key: GatewayKey }
   | { kind: "balance"; key: GatewayKey }
-  | { kind: "disable"; key: GatewayKey };
+  | { kind: "disable"; key: GatewayKey }
+  | { kind: "costOnly"; key: GatewayKey };
 type Toast = { id: number; tone: "success" | "error"; text: string };
 
 const STATUS_LABEL: Record<StatusFilter, [string, string]> = {
@@ -55,6 +58,7 @@ const STATUS_LABEL: Record<StatusFilter, [string, string]> = {
   active: ["Active", "使用中"],
   disabled: ["Disabled", "已停用"],
   low: ["Low balance", "餘額偏低"],
+  internal: [COST_ONLY_TAG[1], COST_ONLY_TAG[0]],
 };
 
 function limitLine(value: number, zh: boolean, unitZh: string, unitEn: string) {
@@ -358,6 +362,14 @@ export function AdminKeysSection() {
                                       {disabled ? (zh ? "已停用" : "Disabled") : zh ? "使用中" : "Active"}
                                     </span>
                                     {isExpired(item) && <span className="portal-badge portal-danger">{zh ? "已過期" : "Expired"}</span>}
+                                    {item.costOnly && (
+                                      <span
+                                        className="portal-badge admin-keys-badge-internal"
+                                        title={zh ? "照 GPU 成本扣款，不算營收" : "Charged at GPU cost; not revenue"}
+                                      >
+                                        {COST_ONLY_TAG[zh ? 0 : 1]}
+                                      </span>
+                                    )}
                                   </td>
                                   <td><LastUsed value={item.lastUsedAt} zh={zh} /></td>
                                   <td>
@@ -379,6 +391,18 @@ export function AdminKeysSection() {
                                         onClick={() => setDialog({ kind: "limits", key: item })}
                                       >
                                         {zh ? "調整上限" : "Edit limits"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="admin-keys-action"
+                                        aria-label={
+                                          item.costOnly
+                                            ? zh ? `把「${item.label}」改回牌價` : `Switch “${item.label}” back to list price`
+                                            : zh ? `把「${item.label}」設為內部成本價` : `Charge “${item.label}” at internal cost price`
+                                        }
+                                        onClick={() => setDialog({ kind: "costOnly", key: item })}
+                                      >
+                                        {item.costOnly ? (zh ? "改回牌價" : "Use list price") : zh ? "設為內部成本價" : "Set internal cost price"}
                                       </button>
                                       {disabled ? (
                                         <button
@@ -490,6 +514,13 @@ export function AdminKeysSection() {
           onIssued={(result) => {
             setDialog(null);
             setIssued(result);
+            if (result.costOnlyUnconfirmed)
+              notify(
+                "error",
+                zh
+                  ? `「${result.label}」已簽發，但閘道沒有確認成本價，目前照牌價扣款。請在清單裡確認，再按「設為內部成本價」。`
+                  : `“${result.label}” was issued, but the gateway did not confirm the cost price, so it bills at list price. Check the list and use “Set internal cost price”.`,
+              );
             void reload();
           }}
         />
@@ -519,6 +550,23 @@ export function AdminKeysSection() {
               zh
                 ? `已為「${label}」加值${now ? `，現在餘額 ${now}` : ""}。`
                 : `Topped up “${label}”${now ? `; the balance is now ${now}` : ""}.`,
+            );
+            void reload();
+          }}
+        />
+      )}
+      {dialog?.kind === "costOnly" && (
+        <CostOnlyDialog
+          target={dialog.key}
+          onClose={() => setDialog(null)}
+          onDone={() => {
+            const { label, costOnly } = dialog.key;
+            setDialog(null);
+            notify(
+              "success",
+              costOnly
+                ? zh ? `「${label}」已改回照牌價扣款。` : `“${label}” is now charged at list price.`
+                : zh ? `「${label}」已改為照內部成本價扣款。` : `“${label}” is now charged at internal cost price.`,
             );
             void reload();
           }}

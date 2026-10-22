@@ -80,6 +80,10 @@ class FakeGateway:
         self.activity_value = {"status": "ok", "stale": False, "generated_at": 1792607481.9, "age_s": 1.0, "errors": {}, "truncated": False,
                                "nodes": [], "gpu_usage": [], "logins": [], "alerts": [], "deploys": []}
         self.activity_calls = 0
+        # cost_only (D-V8): calls made, a GatewayError raised by set_cost_only only, and whether create_key confirms the flag.
+        self.cost_only_calls = []
+        self.cost_only_error = None
+        self.confirm_cost_only = True
 
     def _maybe_fail(self):
         if self.reject is not None:
@@ -89,15 +93,16 @@ class FakeGateway:
         if self.fail:
             raise GatewayError("unavailable", detail="private upstream token must never escape")
 
-    async def create_key(self, label, prepaid_usd, limits=None):
+    async def create_key(self, label, prepaid_usd, limits=None, cost_only=False):
         if self.create_delay:
             await asyncio.sleep(self.create_delay)
         self._maybe_fail()
         with self.issue_lock:
             number = len(self.issued) + 1
             result = {"key_id": "gateway-key-%d" % number, "prefix": "sk-test-%d" % number,
-                      "secret": "sk-test-secret-unique-%d" % number, "balance_nano_usd": int(round(float(prepaid_usd) * 1e9))}
-            self.issued.append({"label": label, "prepaid_usd": prepaid_usd, "limits": limits or {}, **result})
+                      "secret": "sk-test-secret-unique-%d" % number, "balance_nano_usd": int(round(float(prepaid_usd) * 1e9)),
+                      "cost_only": cost_only is True and self.confirm_cost_only}
+            self.issued.append({"label": label, "prepaid_usd": prepaid_usd, "limits": limits or {}, **result, "cost_only": cost_only})
         return result
 
     async def set_key_disabled(self, key_id, disabled):
@@ -112,6 +117,16 @@ class FakeGateway:
     async def update_limits(self, key_id, limits):
         self._maybe_fail()
         self.limits.append((key_id, dict(limits)))
+
+    async def set_cost_only(self, key_id, cost_only):
+        self._maybe_fail()
+        if self.cost_only_error is not None:
+            raise self.cost_only_error
+        item = next((k for k in self.listing["keys"] if k.get("key_id") == key_id), None)
+        if item is None:
+            raise GatewayError("rejected", 404, "No such key.")
+        item["cost_only"] = cost_only
+        self.cost_only_calls.append((key_id, cost_only))
 
     async def adjust_balance(self, key_id, *, add_usd=None, set_usd=None):
         self._maybe_fail()

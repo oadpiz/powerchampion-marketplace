@@ -690,6 +690,43 @@ class GatewayAdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await self.gateway.update_limits("k", {})
 
+    async def test_cost_only_uses_the_gateway_limits_route_with_only_the_flag(self):
+        with self.transport(lambda _: httpx.Response(200, json={"ok": True})):
+            await self.gateway.set_cost_only("key-123", True)
+            await self.gateway.set_cost_only("key-123", False)
+        self.assertEqual([(r.method, r.url.path, json.loads(r.content)) for r in self.requests],
+                         [("POST", "/api/keys/key-123/limits", {"cost_only": True}),
+                          ("POST", "/api/keys/key-123/limits", {"cost_only": False})])
+        self.assertEqual(self.requests[0].headers["X-Admin-Token"], "adapter-test-admin-token")
+        for bad in ("true", 1, None):
+            with self.assertRaises(ValueError):
+                await self.gateway.set_cost_only("key-123", bad)
+        with self.assertRaises(GatewayError):
+            await self.gateway.set_cost_only("../keys", True)
+        self.assertEqual(len(self.requests), 2)
+        with self.transport(lambda _: httpx.Response(400, json={"detail": "cost_only must be true or false."})):
+            with self.assertRaises(GatewayError) as caught:
+                await self.gateway.set_cost_only("key-123", True)
+        self.assertEqual((caught.exception.code, caught.exception.status), ("rejected", 400))
+        with self.transport(lambda _: httpx.Response(200, json={"ok": False})):
+            with self.assertRaises(GatewayError):
+                await self.gateway.set_cost_only("key-123", True)
+
+    async def test_create_key_sends_cost_only_only_when_asked_and_reports_the_confirmation(self):
+        reply = {"key": "sk-local-test-customer-secret", "key_id": "key-123", "label": "x", "cost_only": True}
+        with self.transport(lambda _: httpx.Response(200, json=reply)):
+            result = await self.gateway.create_key("x", prepaid_usd=5, cost_only=True)
+            plain = await self.gateway.create_key("x", prepaid_usd=5)
+        self.assertIs(json.loads(self.requests[0].content)["cost_only"], True)
+        self.assertNotIn("cost_only", json.loads(self.requests[1].content))
+        self.assertIs(result["cost_only"], True)
+        self.assertIs(plain["cost_only"], False)
+        with self.transport(lambda _: httpx.Response(200, json=dict(reply, cost_only=None))):
+            unconfirmed = await self.gateway.create_key("x", prepaid_usd=5, cost_only=True)
+        self.assertIs(unconfirmed["cost_only"], False)
+        with self.assertRaises(ValueError):
+            await self.gateway.create_key("x", prepaid_usd=5, cost_only="true")
+
     async def test_dot_segment_identifiers_are_rejected_before_network_request(self):
         with self.transport(lambda _: httpx.Response(200, json={"ok": True})):
             for model_id in ("a/../b", "..", "../keys", "../../state", "a//b", ".", "a/./b", "/a", "a/"):

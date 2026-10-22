@@ -133,6 +133,7 @@ def gateway_key_json(item, owner_row=None):
             "balanceUsd": usd_from_nano(item.get("prepaid_nano_usd")), "createdAt": iso(item.get("created_at")),
             "expiresAt": iso(item.get("expires_at")), "disabledAt": iso(item.get("disabled_at")), "lastUsedAt": iso(item.get("last_used_at")),
             "modelIds": [m for m in item.get("model_ids", []) if isinstance(m, str)],
+            "costOnly": item.get("cost_only") is True,
             "owner": owner_json(owner_row),
             "portalKeyId": owner_row["id"] if owner_row else None, "portalStatus": owner_row["status"] if owner_row else None}
 
@@ -231,18 +232,20 @@ class PortalContext:
         except ValueError:
             fail("invalid_input", "Check the request details.", 422)
 
-    async def provision_key(self, owner_id, label, prepaid_usd, limits, actor_id, audit_action):
+    async def provision_key(self, owner_id, label, prepaid_usd, limits, actor_id, audit_action, cost_only=False):
         """Create a gateway key and record its owner. Returns (local row, gateway result).
 
         The gateway key is created first and revoked again if the local write fails, so a
-        secret is never handed out for a key that no account owns."""
+        secret is never handed out for a key that no account owns. cost_only is for admin
+        routes only (an internal key billed at GPU cost); the audit row records what the gateway confirmed."""
         store = self.store
         reservation = store.reserve_key_slot(owner_id)
         if not reservation:
             fail("key_limit", "Revoke an unused key before creating another.", 409)
         try:
             try:
-                created = await self.gateway.create_key("portal:" + owner_id[:12] + ":" + label, prepaid_usd=prepaid_usd, limits=limits or None)
+                extra = {"cost_only": True} if cost_only else {}
+                created = await self.gateway.create_key("portal:" + owner_id[:12] + ":" + label, prepaid_usd=prepaid_usd, limits=limits or None, **extra)
             except GatewayError as error:
                 if error.code == "rejected" and error.status in (401, 403):
                     fail("gateway_auth_failed", "The portal's gateway token was rejected. Check PC_GATEWAY_ADMIN_TOKEN.", 503)
@@ -259,7 +262,11 @@ class PortalContext:
                         raise RuntimeError("reservation expired")
                     con.execute("INSERT INTO gateway_keys VALUES (?,?,?,?,?,?,?,NULL)", (key_id, owner_id, created["key_id"], label, created["prefix"], "active", int(time.time())))
                     con.execute("DELETE FROM key_reservations WHERE id=?", (reservation,))
-                    store.audit(con, audit_action, actor_id, key_id)
+                    details = None
+                    if cost_only:
+                        confirmed = created.get("cost_only") is True
+                        details = {"costOnly": {"before": None, "after": confirmed, **({} if confirmed else {"requested": True})}}
+                    store.audit(con, audit_action, actor_id, key_id, details)
                     row = con.execute("SELECT * FROM gateway_keys WHERE id=?", (key_id,)).fetchone()
             except Exception:
                 # Compensate if the gateway succeeded but local ownership persistence failed.
