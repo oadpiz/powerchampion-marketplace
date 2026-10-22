@@ -814,7 +814,9 @@ def has_phone_number(text):
 
 
 def _seconds(milliseconds):
-    return round(milliseconds / 1000, 1)
+    """Seconds to one decimal, rounded down like every ms <-> s conversion (§1.4), so 2999 ms shows 2.9, never 3.0
+    next to "less than 3 seconds of speech"."""
+    return (milliseconds // 100) / 10
 
 
 def call_item(row):

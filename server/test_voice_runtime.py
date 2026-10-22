@@ -812,6 +812,11 @@ class PureRuleTests(unittest.TestCase):
         self.assertEqual(sorted(vc.PHONE_NUMERALS), list("0123456789"))
         self.assertEqual(vc.phone_text("零一二三四五六七八九"), "0123456789")
 
+    def test_seconds_are_rounded_down(self):
+        # §1.4: one decimal, never up, so 2999 ms is not shown as 3.0 next to "less than 3 seconds" (fix round).
+        self.assertEqual([vc._seconds(ms) for ms in (0, 99, 2960, 2999, 3000, 41250, 53550, 14400000)],
+                         [0.0, 0.0, 2.9, 2.9, 3.0, 41.2, 53.5, 14400.0])
+
 
 if __name__ == "__main__":
     unittest.main()
