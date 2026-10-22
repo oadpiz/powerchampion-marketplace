@@ -927,6 +927,37 @@ describe("phone agent FAQ page", () => {
     expect(screen.queryByRole("button", { name: /Show only questions/ })).not.toBeInTheDocument();
   });
 
+  // Verifier finding 2026-10-22: with the filter on, Move down sent "one place down" in the whole list, so 甲 swapped
+  // with the hidden 乙 and nothing on screen changed. It now swaps with the next question the store can see.
+  it("moves a question past the hidden ones while showing only the questions that need input", async () => {
+    const user = userEvent.setup();
+    const fake = new FakeVoice();
+    const [a, b, c] = [fake.add("甲？", "（請填入）"), fake.add("乙？", "二。"), fake.add("丙？", "（請填入：價格）")];
+    fake.install();
+    renderFaq(fake);
+    await user.click(await screen.findByRole("button", { name: "Show only questions that need input (2)" }));
+    expect(questionCells()).toEqual(["甲？", "丙？"]);
+    expect(within(rowOf("甲？")!).getByRole("button", { name: /^Move up: / })).toBeDisabled();
+    expect(within(rowOf("丙？")!).getByRole("button", { name: /^Move down: / })).toBeDisabled();
+
+    await user.click(within(rowOf("甲？")!).getByRole("button", { name: /^Move down: / }));
+    await waitFor(() => expect(questionCells()).toEqual(["丙？", "甲？"]));
+    expect(fake.faqs.map((faq) => faq.id)).toEqual([b.id, c.id, a.id]);
+    // 丙 is second in the whole list but first on screen: its Move up is disabled.
+    expect(within(rowOf("甲？")!).getByRole("button", { name: /^Move down: / })).toBeDisabled();
+    expect(within(rowOf("丙？")!).getByRole("button", { name: /^Move up: / })).toBeDisabled();
+
+    await user.click(within(rowOf("甲？")!).getByRole("button", { name: /^Move up: / }));
+    await waitFor(() => expect(questionCells()).toEqual(["甲？", "丙？"]));
+    expect(fake.faqs.map((faq) => faq.id)).toEqual([b.id, a.id, c.id]);
+    expect(fake.writes().map((call) => [call.path, call.body])).toEqual([
+      [`/me/voice/faqs/${a.id}`, { position: 2 }],
+      [`/me/voice/faqs/${a.id}`, { position: 1 }],
+    ]);
+    // The order numbers are still those of the whole list.
+    expect(within(rowOf("甲？")!).getAllByRole("cell")[0]).toHaveTextContent("2");
+  });
+
   it("shows template_not_found from the server", async () => {
     const user = userEvent.setup();
     const fake = new FakeVoice().install();
