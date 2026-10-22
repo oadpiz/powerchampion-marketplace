@@ -456,6 +456,17 @@ def run_on(m, state, admin_jar, a_jar, b_jar):
             and m13["summary"].get("meterUnits") == 3, "summary %s" % (m.short(m13.get("summary"), 120) if isinstance(m13, dict) else got))
     state["c1_body"] = c1
 
+    R.section("20b. A caller's mobile number sent as dialed is kept as its last 4 digits only")
+    swapped = dict(c1, call_id=run + ".196", dialed="0912345678")
+    got, payload = orch.send(swapped)
+    R.check("R2 with dialed 0912345678 (not in the number table) -> 201, unknown_line, unknown_number",
+            got == 201 and payload.get("meter_reason") == "unknown_line" and "unknown_number" in payload.get("flags", []),
+            "got %d %s" % (got, m.short(payload, 120)))
+    got, a10 = m.call("GET", "/admin/voice/quality/calls/" + payload.get("id", "0" * 32), admin_jar)
+    shown = json.dumps(a10, ensure_ascii=False)
+    R.check("A10 shows dialed ******5678 and never the whole number", got == 200 and a10.get("call", {}).get("dialed") == "******5678"
+            and "0912345678" not in shown and "912345678" not in shown, "got %d dialed %s" % (got, a10.get("call", {}).get("dialed")))
+
 
 # ---------------------------------------------------------------- notoken (PC_VOICE_RUNTIME_TOKEN unset)
 

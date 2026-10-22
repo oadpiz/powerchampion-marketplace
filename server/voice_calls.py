@@ -122,6 +122,10 @@ PHONE_INVISIBLE = re.compile("[\u200b-\u200f\u2060\u061c\ufeff\u00ad]")
 PHONE_NUMERALS = {"0": "零〇○洞", "1": "一壹么幺", "2": "二貳兩", "3": "三參叁", "4": "四肆", "5": "五伍", "6": "六陸", "7": "七柒",
                   "8": "八捌", "9": "九玖"}
 PHONE_NUMERAL_TABLE = str.maketrans({char: digit for digit, chars in PHONE_NUMERALS.items() for char in chars})
+# §3.2 (amended): a dialed number that is not in the number table and reads as a Taiwan mobile number is most likely
+# the caller's (a reporter that swapped src and dst); only its last 4 digits are kept.
+MOBILE_DIGITS = re.compile(r"(?:886|0)?9[0-9]{8}")
+MASKED_DIALED_PREFIX = "******"
 
 REPORT_KEYS = ("schema", "source", "call_id", "entry", "dialed", "store_id", "started_at", "answered_at", "ended_at",
                "sent_at", "disposition", "caller_tail", "caller_kind", "config", "disclosure_version", "ai", "message",
@@ -596,9 +600,31 @@ def _write(con, row_id, columns, *, insert):
                     tuple(columns[name] for name in names) + (row_id,))
 
 
-def _source_columns(source, body, now):
-    text = canonical(stored_report(body)).decode("utf-8")
+def _source_columns(source, kept, body, now):
+    """The source's stored report (`kept`: the body after private_dialed) and the sha256 of what was sent (`body`),
+    so a resend of the same report is still a duplicate."""
+    text = canonical(stored_report(kept)).decode("utf-8")
     return {"report_" + source: text, "report_%s_sha256" % source: part_sha256(body), "report_%s_at" % source: now}
+
+
+def private_dialed(con, body):
+    """§3.2 (amended): the report as it is kept. A dialed number that is not in the number table and reads as a Taiwan
+    mobile number keeps only its last 4 digits, in the row and in the stored report: it is most likely the caller's."""
+    dialed = body["dialed"]
+    masked = masked_dialed(dialed) if body["entry"] != "try" else None
+    if masked is None:
+        return body
+    normalized = normalize_number(dialed)
+    if normalized and vs.find_active_number(con, normalized, epoch(body["started_at"])):
+        return body
+    return dict(body, dialed=masked)
+
+
+def _same_facts(stored, body):
+    """§3.4 step 2 for the records sender's pending -> final update; a stored report may hold the masked dialed."""
+    if stored["dialed"] != body["dialed"] and masked_dialed(body["dialed"]) == stored["dialed"]:
+        body = dict(body, dialed=stored["dialed"])
+    return facts_sha256(stored) == facts_sha256(body)
 
 
 def _reports(row, source=None, body=None):
@@ -625,14 +651,15 @@ def ingest(con, parsed, now, audit=None):
     `audit(con, action, actor_id, target_id, details)` records a call that moved to another store (Store.audit)."""
     body = parsed["body"]
     source = body["source"]
+    kept = private_dialed(con, body)
     row = con.execute("SELECT * FROM voice_calls WHERE call_id=?", (body["call_id"],)).fetchone()
     if row is None:
         if body["entry"] == "try" and vs.get_store(con, body["store_id"]) is None:
             _invalid("unknown store_id")
         reports = {name: None for name in SOURCES}
-        reports[source] = stored_report(body)
+        reports[source] = stored_report(kept)
         columns = merged_columns(con, reports["orchestrator"], reports["records"], None)
-        columns.update(_source_columns(source, body, now), call_id=body["call_id"], received_at=now, updated_at=now)
+        columns.update(_source_columns(source, kept, body, now), call_id=body["call_id"], received_at=now, updated_at=now)
         row_id = uuid.uuid4().hex
         _write(con, row_id, columns, insert=True)
         return 201, _answer("created", get_call(con, row_id))
@@ -647,7 +674,7 @@ def ingest(con, parsed, now, audit=None):
         return 200, _answer("duplicate", row)
     elif source == "records":
         stored = json.loads(row["report_records"])
-        if facts_sha256(stored) == facts_sha256(body):
+        if _same_facts(stored, body):
             if stored["message_final"] is False and body["message_final"] is True:
                 result = "updated"
             elif stored["message_final"] is True and body["message_final"] is False:
@@ -655,9 +682,9 @@ def ingest(con, parsed, now, audit=None):
     if result is None:
         fail("call_conflict", "This call_id was already reported with other content (stored %s, received %s)."
              % (stored_sha[:8], received_sha[:8]), 409)
-    reports = _reports(row, source, body)
+    reports = _reports(row, source, kept)
     columns = merged_columns(con, reports["orchestrator"], reports["records"], row)
-    columns.update(_source_columns(source, body, now), updated_at=now)
+    columns.update(_source_columns(source, kept, body, now), updated_at=now)
     moved = row["store_id"] is not None and columns["store_id"] != row["store_id"]
     if moved:
         # The first report's number pointed at another store (the two sources disagree on dialed; the records
@@ -824,6 +851,15 @@ def phone_text(text):
 
 def has_phone_number(text):
     return bool(PHONE_LIKE.search(phone_text(text)))
+
+
+def masked_dialed(value):
+    """`******` and the last 4 digits when `value` reads as a Taiwan mobile number (09XXXXXXXX, +8869XXXXXXXX,
+    8869XXXXXXXX, with or without separators), else None."""
+    if not isinstance(value, str):
+        return None
+    digits = re.sub(r"[^0-9]", "", value)
+    return MASKED_DIALED_PREFIX + digits[-4:] if MOBILE_DIGITS.fullmatch(digits) else None
 
 
 # ---------------------------------------------------------------- JSON shapes (§6, §7)
