@@ -47,6 +47,8 @@ export type ProjectSummary = {
   status: string;
   thumb_url: string | null;
   updated_at: number | null;
+  /** The agent's retention deleted this project's media (cached by the portal). */
+  expired?: boolean;
   /** Trash list only (?deleted=1): when it was deleted, and the last moment it can be restored. */
   deleted_at?: number;
   restore_until?: number;
@@ -85,7 +87,14 @@ export type StudioShot = {
 };
 
 export type ActiveOp = { op_id: string; type: string; state: string };
-export type ExportInfo = { url: string; srt_url?: string | null; rendered_at?: number; duration?: number } | null;
+export type ExportInfo = {
+  url: string;
+  srt_url?: string | null;
+  rendered_at?: number;
+  duration?: number;
+  /** The project changed since (e.g. a caption-only edit in no-voice mode): export again, free. null = unknown. */
+  outdated?: boolean | null;
+} | null;
 
 export type StudioProject = {
   id: string;
@@ -103,6 +112,8 @@ export type StudioProject = {
   characters?: unknown[];
   settings: Record<string, unknown>;
   exports?: Record<string, ExportInfo>;
+  /** Retention (30 idle days) deleted its media; generating again is charged normally. */
+  expired?: boolean;
   total_seconds?: number | null;
   style?: string | null;
   updated_at?: number;

@@ -14,7 +14,7 @@ EXPECTED_TABLES = {
     "runtime_approvals", "runtime_artifacts", "alloc_engineers", "alloc_nodes", "alloc_meta",
     "studio_accounts", "studio_projects", "studio_ops", "studio_ledger", "studio_rate",
 }
-HEAD = "0005_studio"
+HEAD = "0006_studio_expired"
 
 
 class MigrationTests(unittest.TestCase):

@@ -1082,6 +1082,43 @@ class StudioOwnerDecisionTests(StudioCase):
         self.assertEqual(self.post(client, "/studio/projects/" + pid + "/settings", {"voice": "none"}).status_code, 200)
         self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", {"type": "render"}).status_code, 200)
 
+    def test_purge_is_retried_while_the_owner_has_any_active_op(self):
+        client, user_id = self.customer()
+        gone = self.drafted(client)
+        self.post(client, "/studio/projects/" + gone + "/delete", {})
+        self.now += 30 * DAY
+        other = self.create(client)  # an active op on ANOTHER project of the same owner
+        self.assertEqual(other.status_code, 201, other.text)
+        self.assertEqual(self.studio.purge(), 0)
+        self.assertEqual(self.agent.calls[-1][0], "purge_project")
+        self.assertNotEqual(self.project_row(gone)["status"], "purged")
+        self.assertIn(gone, self.agent.projects)
+        self.agent.finish(other.json()["op_id"])
+        self.studio.last_purge = self.now  # settle the op only; the next purge pass is the explicit one below
+        self.studio.sweep()
+        self.assertEqual(self.studio.purge(), 1)
+        self.assertEqual(self.project_row(gone)["status"], "purged")
+
+    def test_the_fake_agent_matches_the_real_voice_labels_and_free_draft(self):
+        client, user_id = self.customer()
+        voice = client.get(BASE + "/studio/templates").json()["items"][0]["project_schema"]["properties"]["voice"]
+        self.assertEqual(voice["x-enum-labels"]["none"], {"zh": "無配音（只有字幕）", "en": "No voiceover (subtitles only)"})
+        response = self.create(client)
+        self.assertNotIn("voice", self.agent.created[-1])  # the portal never sends a voice; the agent defaults it
+        self.assertEqual(self.ops()[response.json()["op_id"]]["credits"], 0)
+
+    def test_an_expired_project_is_flagged_in_the_list(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        self.assertFalse(self.listed(client)[0]["expired"])
+        self.agent.projects[pid]["expired"] = True  # retention deleted its media after 30 idle days
+        self.assertTrue(client.get(BASE + "/studio/projects/" + pid).json()["expired"])
+        self.assertEqual(self.project_row(pid)["expired"], 1)
+        self.assertTrue(self.listed(client)[0]["expired"])
+        self.agent.projects[pid]["expired"] = False  # re-rendered: whole again
+        client.get(BASE + "/studio/projects/" + pid)
+        self.assertFalse(self.listed(client)[0]["expired"])
+
     # helpers shared with the lifecycle tests
     money = StudioProjectLifecycleTests.money
     project_row = StudioProjectLifecycleTests.project_row

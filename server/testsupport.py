@@ -329,6 +329,7 @@ class FakeStudioAgent:
         # Drafts are free (owner decision Q3); the portal caps them per day instead.
         self.prices = {"draft": 0, "render": 10, "regenerate": 10, "export": 0, "add_aspect": 4}
         self.purge_errors = {}
+        self.created = []
         self.usage_value = None
 
     def _enter(self, name, owner=None):
@@ -360,7 +361,7 @@ class FakeStudioAgent:
         shots = [{"index": i, "kind": "image", "seconds": 5, "narration": "n", "stale": not p["rendered"], "status": "ready",
                   "thumb_url": "https://media.test/media/" + pid + "-" + str(i) + "?exp=" + str(exp) + "&sig=" + "0" * 64}
                  for i in range(1, p["shots"] + 1)]
-        return {"id": pid, "template_id": p["template_id"], "title": p["title"], "status": "drafting" if active and active["type"] == "draft" else "rendering" if active else p["status"],
+        return {"id": pid, "template_id": p["template_id"], "title": p["title"], "expired": bool(p.get("expired")), "status": "drafting" if active and active["type"] == "draft" else "rendering" if active else p["status"],
                 "aspect": p["aspect"], "aspects": [p["aspect"]], "storyboard_rev": p["rev"], "queue": None,
                 "active_op": {"op_id": active["op_id"], "type": active["type"], "state": active["state"]} if active else None,
                 "shots": shots, "characters": [], "settings": dict(p["settings"]), "exports": {p["aspect"]: None},
@@ -387,6 +388,7 @@ class FakeStudioAgent:
 
     def create_project(self, owner, body):
         self._enter("create_project", owner)
+        self.created.append(dict(body))
         pid = body["project_id"]
         if pid in self.projects:
             if self.projects[pid]["owner"] != owner:
@@ -435,6 +437,9 @@ class FakeStudioAgent:
         if pid in self.purge_errors:
             raise self.purge_errors[pid]
         self._project(owner, pid)
+        if any(o["owner"] == owner and o["state"] in ("queued", "running") for o in self.ops.values()):
+            # Like the agent (2e7c38e): no purge while the owner has ANY active op, on any project.
+            raise self.AgentError("rejected", 409, "studio_busy")
         del self.projects[pid]
         return {"id": pid, "purged": True}
 

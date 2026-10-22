@@ -379,9 +379,10 @@ class Studio:
         status = doc.get("status") if isinstance(doc.get("status"), str) else None
         updated = doc.get("updated_at")
         updated = int(updated) if isinstance(updated, (int, float)) and not isinstance(updated, bool) else self.now()
+        expired = 1 if doc.get("expired") is True else 0  # retention deleted its media (re-rendering is charged)
         with self.store.connect() as con:
-            con.execute("UPDATE studio_projects SET title=?, status=?, thumb_url=?, thumb_exp=?, updated_at=? WHERE id=?",
-                        (title[:200] if title else None, status, thumb, _url_exp(thumb) if thumb else None, updated, project_id))
+            con.execute("UPDATE studio_projects SET title=?, status=?, thumb_url=?, thumb_exp=?, updated_at=?, expired=? WHERE id=?",
+                        (title[:200] if title else None, status, thumb, _url_exp(thumb) if thumb else None, updated, expired, project_id))
 
     # -- quotes and the reserve primitive --------------------------------------------------------
 
@@ -614,6 +615,7 @@ class Studio:
             try:
                 self.agent.purge_project(row["user_id"], row["id"])
             except AgentError as error:
+                # 409 studio_busy: the owner has an active op somewhere; like any other failure, retried on a later pass.
                 if not (error.kind == "rejected" and error.status == 404 and error.code == "studio_not_found"):
                     log.warning("studio purge of %s failed (%s %s %s); retried later", row["id"], error.kind, error.status, error.code)
                     continue
@@ -755,7 +757,7 @@ def attach_studio(application, ctx, agent=None):
                 status = "drafting" if active[r["id"]] == "draft" else "rendering"
             item = {"id": r["id"], "title": r["title"], "template_id": r["template_id"], "status": status or "empty",
                     "thumb_url": r["thumb_url"] if r["thumb_url"] and (r["thumb_exp"] or 0) > now else None,
-                    "updated_at": r["updated_at"]}
+                    "updated_at": r["updated_at"], "expired": bool(r["expired"])}
             if trash:
                 item.update(deleted_at=r["deleted_at"], restore_until=r["deleted_at"] + TRASH_S)
             items.append(item)

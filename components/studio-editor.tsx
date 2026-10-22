@@ -320,6 +320,9 @@ export function StudioEditor({ projectId }: { projectId: string }) {
               onClick={() => void ask("export", currentAspect)}
             >
               {quoting === `export${currentAspect}` ? (zh ? "準備中…" : "Preparing…") : zh ? `匯出 ${currentAspect}` : `Export ${currentAspect}`}
+              {rawExport?.outdated === true && (
+                <small className="studio-export-hint">{zh ? "字幕已更新，重新匯出（免費）" : "Captions changed: export again (free)"}</small>
+              )}
             </button>
           )}
           {hasStoryboard &&
@@ -394,6 +397,13 @@ export function StudioEditor({ projectId }: { projectId: string }) {
             studioErrorText(actionError, locale)
           )}
           {actionError instanceof PortalError && actionError.code === "studio_insufficient_credits" && <TopUpLinks zh={zh} />}
+        </p>
+      )}
+      {project?.expired && (
+        <p className="portal-note studio-expired-note" role="status">
+          {zh
+            ? "此專案的素材已超過保存期限被清除，重新產生需要點數。"
+            : "This project's media passed its retention period and was deleted. Generating it again costs credits."}
         </p>
       )}
       {noVoice && (

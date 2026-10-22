@@ -158,3 +158,55 @@ describe("no narration (voice none)", () => {
     expect(await screen.findByText(/改成「無配音（只有字幕）」/)).toBeInTheDocument();
   });
 });
+
+describe("agent 2e7c38e shapes: outdated exports and expired projects", () => {
+  const exported = (outdated: boolean | null) => ({
+    "9:16": { url: "https://studio-media.test/media/a/v.mp4?exp=1&sig=" + "0".repeat(64), rendered_at: 1, duration: 30, outdated },
+    "16:9": null,
+  });
+
+  it("asks for a free re-export after a caption-only edit", async () => {
+    window.history.replaceState({}, "", "/studio/p/p1");
+    studioFetch({ "GET /studio/projects/p1": project({ exports: exported(true) }) });
+    inFrame(<StudioEditor projectId="p1" />);
+    const button = await screen.findByRole("button", { name: /匯出 9:16/ });
+    expect(button).toHaveTextContent("字幕已更新，重新匯出（免費）");
+  });
+
+  it("shows no hint for an export that is current", async () => {
+    window.history.replaceState({}, "", "/studio/p/p1");
+    studioFetch({ "GET /studio/projects/p1": project({ exports: exported(false) }) });
+    inFrame(<StudioEditor projectId="p1" />);
+    await screen.findByRole("button", { name: /匯出 9:16/ });
+    expect(screen.queryByText(/字幕已更新/)).not.toBeInTheDocument();
+  });
+
+  it("explains an expired project in the editor, in both languages", async () => {
+    window.history.replaceState({}, "", "/studio/p/p1");
+    studioFetch({ "GET /studio/projects/p1": project({ expired: true }) });
+    const zh = inFrame(<StudioEditor projectId="p1" />);
+    expect(await screen.findByText("此專案的素材已超過保存期限被清除，重新產生需要點數。")).toBeInTheDocument();
+    zh.unmount();
+    localStorage.setItem("pc-locale", "en");
+    inFrame(<StudioEditor projectId="p1" />);
+    expect(
+      await screen.findByText("This project's media passed its retention period and was deleted. Generating it again costs credits."),
+    ).toBeInTheDocument();
+  });
+
+  it("badges an expired project in the list", async () => {
+    window.history.replaceState({}, "", "/studio");
+    studioFetch({
+      "GET /studio/projects?limit=20": {
+        items: [
+          { id: "p1", title: "舊影片", template_id: "ecommerce", status: "ready", thumb_url: null, updated_at: 1, expired: true },
+          { id: "p2", title: "新影片", template_id: "ecommerce", status: "ready", thumb_url: null, updated_at: 2, expired: false },
+        ],
+        next: null,
+      },
+    });
+    inFrame(<StudioHome />);
+    expect(await screen.findByRole("link", { name: /舊影片/ })).toHaveTextContent("素材已清除");
+    expect(screen.getByRole("link", { name: /新影片/ })).not.toHaveTextContent("素材已清除");
+  });
+});

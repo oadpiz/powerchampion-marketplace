@@ -237,6 +237,11 @@ export function StudioHome() {
                       {BUSY.has(item.status) && <span className="studio-pulse" aria-hidden="true" />}
                       {projectStatusLabel(item.status, locale)}
                     </span>
+                    {item.expired && (
+                      <span className="studio-status studio-status-expired" title={zh ? "素材已超過保存期限被清除，重新產生需要點數" : "Media deleted after the retention period; generating again costs credits"}>
+                        {zh ? "素材已清除" : "Media deleted"}
+                      </span>
+                    )}
                   </span>
                   <span className="studio-card-body">
                     <strong>{nameOf(item)}</strong>
