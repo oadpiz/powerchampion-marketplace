@@ -28,6 +28,7 @@ from .admin_redeem import attach_admin_redeem
 from .admin_engineers import attach_admin_engineers
 from .runtime_api import attach_runtime
 from .allocation import attach_allocation
+from .voice_merchant import attach_voice_merchant
 
 
 def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=None, runtime_tools=None):
@@ -392,6 +393,7 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
     attach_admin_engineers(application, ctx)
     attach_runtime(application, store, settings, agents, current_user, body_json, runtime_model, runtime_tools)
     attach_allocation(application, store, current_user, body_json, PREFIX)
+    attach_voice_merchant(application, ctx)
     return application
 
 
