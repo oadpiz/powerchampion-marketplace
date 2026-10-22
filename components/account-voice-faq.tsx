@@ -264,6 +264,18 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
 
   // Verifier finding 2026-10-22: a template brings 27 questions to fill among 37; this shows just those.
   const [onlyNeedsInput, setOnlyNeedsInput] = useState(false);
+  /**
+   * Element ids to focus after a write re-renders the list, first usable one wins. A save, delete or move removes
+   * or moves the focused button, which left keyboard focus on <body> (verifier finding 2026-10-22).
+   */
+  const [focusIds, setFocusIds] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (focusIds === null) return;
+    const usable = (element: HTMLElement | null) => element !== null && !(element instanceof HTMLButtonElement && element.disabled);
+    const target = [...focusIds, "voice-faq-questions"].map((id) => document.getElementById(id)).find(usable);
+    target?.focus();
+    setFocusIds(null);
+  }, [focusIds]);
 
   const [deleting, setDeleting] = useState<VoiceFaq | null>(null);
   const [deleteError, setDeleteError] = useState<unknown>(null);
@@ -360,6 +372,12 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
   const label = (key: string, copy: Copy) => (busy === key ? t(T.working) : t(copy));
   /** Row buttons carry their question, so a screen reader's button list tells the 37 "Edit"s apart. */
   const rowLabel = (text: string, faq: VoiceFaq) => (zh ? `${text}：${faq.question}` : `${text}: ${faq.question}`);
+  /** The Edit button of the row at `anchor` in `faqs` if it is shown, else of the next shown row, else the one before. */
+  const rowFocus = (faqs: VoiceFaq[], anchor: number) => {
+    const shown = (faq: VoiceFaq) => !onlyNeedsInput || faq.needsInput;
+    const row = faqs.slice(Math.max(0, anchor)).find(shown) ?? faqs.slice(0, Math.max(0, anchor)).reverse().find(shown);
+    return row ? [`voice-faq-edit-${row.id}`] : [];
+  };
 
   // ---------- store description ----------
   async function saveIntro(event: FormEvent) {
@@ -413,8 +431,10 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
       } else setFormError(result.error);
       return;
     }
-    setFaqs(placeFaq(list.faqs, result.value.faq), result.value.capacity);
+    const next = placeFaq(list.faqs, result.value.faq);
+    setFaqs(next, result.value.capacity);
     setEditing(null);
+    setFocusIds(rowFocus(next, next.findIndex((item) => item.id === result.value.faq.id)));
     onChanged();
   }
 
@@ -430,6 +450,8 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
       return;
     }
     setFaqs(placeFaq(list.faqs, result.value.faq), result.value.capacity);
+    // The same button again if it can still be pressed (not at the top or bottom now), else the row's Edit.
+    setFocusIds([`voice-faq-${key.split("-")[0]}-${faq.id}`, `voice-faq-edit-${faq.id}`]);
     onChanged();
   }
 
@@ -447,9 +469,11 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
       } else setDeleteError(result.error);
       return;
     }
-    setFaqs(removeFaq(list.faqs, target.id), result.value.capacity);
+    const next = removeFaq(list.faqs, target.id);
+    setFaqs(next, result.value.capacity);
     setDeleting(null);
     if (editing?.id === target.id) setEditing(null);
+    setFocusIds(rowFocus(next, list.faqs.findIndex((item) => item.id === target.id)));
     onChanged();
   }
 
@@ -740,6 +764,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
             onClick={() => {
               setEditing(null);
               setFormError(null);
+              setFocusIds(faq ? [`voice-faq-edit-${faq.id}`] : ["voice-faq-add"]);
             }}
           >
             {t(T.cancel)}
@@ -795,10 +820,12 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
 
       <section className="portal-panel" aria-labelledby="voice-faq-questions">
         <div className="portal-panel-heading">
-          <h3 id="voice-faq-questions">{t(T.questionsTitle)}</h3>
+          <h3 id="voice-faq-questions" tabIndex={-1}>
+            {t(T.questionsTitle)}
+          </h3>
         </div>
         <div className="portal-actions">
-          <button className="portal-button" disabled={disabled} onClick={startNew}>
+          <button id="voice-faq-add" className="portal-button" disabled={disabled} onClick={startNew}>
             {t(T.add)}
           </button>
           {template.available && (
@@ -884,6 +911,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
                       <td>
                         <div className="portal-actions">
                           <button
+                            id={`voice-faq-edit-${faq.id}`}
                             className="portal-text-button"
                             disabled={disabled}
                             aria-label={rowLabel(t(T.edit), faq)}
@@ -892,6 +920,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
                             {t(T.edit)}
                           </button>
                           <button
+                            id={`voice-faq-up-${faq.id}`}
                             className="portal-text-button"
                             disabled={disabled || index === 0}
                             aria-label={rowLabel(label(`up-${faq.id}`, T.moveUp), faq)}
@@ -900,6 +929,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
                             {label(`up-${faq.id}`, T.moveUp)}
                           </button>
                           <button
+                            id={`voice-faq-down-${faq.id}`}
                             className="portal-text-button"
                             disabled={disabled || index === faqs.length - 1}
                             aria-label={rowLabel(label(`down-${faq.id}`, T.moveDown), faq)}

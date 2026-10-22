@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { codePoints, unsafeMessage } from "../lib/admin-text";
 import { PortalError, portalRequest } from "../lib/portal-client";
 import {
@@ -87,6 +87,13 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   const [preview, setPreview] = useState<PreviewState>({ status: "loading" });
+  // The form is disabled while saving, which takes focus off the pressed button (verifier finding 2026-10-22: it
+  // fell to <body>). When the request ends, focus goes to the result, which a screen reader then reads.
+  const resultRef = useRef<HTMLElement>(null);
+  const [focusResult, setFocusResult] = useState(0);
+  useEffect(() => {
+    if (focusResult > 0) resultRef.current?.focus();
+  }, [focusResult]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -199,6 +206,7 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
       } else setActionError(cause);
     } finally {
       setBusy(null);
+      setFocusResult((value) => value + 1);
     }
   }
 
@@ -712,7 +720,7 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
       </fieldset>
 
       {(actionError !== null || notice) && (
-        <section className="portal-panel" aria-label={zh ? "結果" : "Result"}>
+        <section ref={resultRef} tabIndex={-1} className="portal-panel" aria-label={zh ? "結果" : "Result"}>
           {actionError !== null && (
             <p className="portal-error" role="alert">
               {errorText(actionError)}

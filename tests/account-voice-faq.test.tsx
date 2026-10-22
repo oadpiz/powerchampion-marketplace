@@ -541,6 +541,45 @@ describe("phone agent FAQ page", () => {
     expect(css).toMatch(/\.voice-faq-table td:first-child:not\(\[colspan\]\) \{[^}]*min-width: 0;/);
   });
 
+  // Verifier finding 2026-10-22: after saving a question or confirming a delete, focus fell to <body>.
+  it("keeps keyboard focus on a row after saving, cancelling, moving and deleting", async () => {
+    const user = userEvent.setup();
+    const fake = new FakeVoice();
+    fake.add("甲？", "一。");
+    fake.add("乙？", "二。");
+    fake.add("丙？", "三。");
+    fake.install();
+    renderFaq(fake);
+    const focused = () => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent;
+
+    await user.click(await screen.findByRole("button", { name: "Edit: 乙？" }));
+    const form = screen.getByRole("form", { name: "Edit question" });
+    await user.type(within(form).getByLabelText("Answer"), "加。");
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(focused()).toBe("Edit: 乙？"));
+
+    await user.click(screen.getByRole("button", { name: "Add a question" }));
+    await user.click(within(screen.getByRole("form", { name: "New question" })).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(focused()).toBe("Add a question"));
+
+    await user.click(screen.getByRole("button", { name: "Move down: 甲？" }));
+    await waitFor(() => expect(questionCells()).toEqual(["乙？", "甲？", "丙？"]));
+    await waitFor(() => expect(focused()).toBe("Move down: 甲？"));
+    await user.click(screen.getByRole("button", { name: "Move down: 甲？" }));
+    // Now at the bottom, Move down is disabled: the row's Edit takes the focus.
+    await waitFor(() => expect(focused()).toBe("Edit: 甲？"));
+
+    await user.click(screen.getByRole("button", { name: "Delete: 乙？" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(focused()).toBe("Edit: 丙？"));
+    await user.click(screen.getByRole("button", { name: "Delete: 甲？" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(focused()).toBe("Edit: 丙？"));
+    await user.click(screen.getByRole("button", { name: "Delete: 丙？" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Questions" })));
+  });
+
   it("names the row buttons in Chinese", async () => {
     localStorage.setItem("pc-locale", "zh");
     window.history.replaceState({}, "", "/account/voice/faq");

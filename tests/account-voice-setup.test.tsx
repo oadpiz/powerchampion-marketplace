@@ -701,6 +701,19 @@ describe("setup page: messages, recording and retention", () => {
 });
 
 describe("setup page: save and apply", () => {
+  // Verifier finding 2026-10-22: the form is disabled while saving, so focus fell to <body>.
+  it("moves focus to the result after Save and after Save and apply", async () => {
+    const { user } = await renderSetup();
+    setValue(greetingBox(), "請問要掛號嗎？");
+    await user.click(saveButton());
+    const result = await screen.findByRole("region", { name: "Result" });
+    await waitFor(() => expect(document.activeElement).toBe(result));
+    expect(result).toHaveTextContent('Saved. Use "Save and apply" so test calls use it.');
+    await user.click(applyButton());
+    expect(await screen.findByText(/^Version 3 is applied\./)).toBeVisible();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "Result" })));
+  });
+
   it("saves only the changed fields, then applies, and reports the warnings", async () => {
     const { user, calls, onChanged } = await renderSetup({
       setup: { introText: "診所電話（請填入：電話）。", hours: [] },
