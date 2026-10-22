@@ -307,6 +307,64 @@ describe("portal service boundary", () => {
     expect(fetchMock).toHaveBeenCalledTimes(get.length + post.length);
   });
 
+  it("proxies only the phone agent routes it knows, by method", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    const id = "c".repeat(32);
+    const get = ["/me/voice", "/me/voice/setup", "/me/voice/faqs", "/me/voice/preview",
+      "/admin/voice/stores", "/admin/voice/numbers", `/admin/voice/stores/${id}`];
+    const post = ["/me/voice/setup", "/me/voice/faqs", "/me/voice/faqs/import", "/me/voice/faqs/from-template", "/me/voice/publish",
+      "/me/voice/try", `/me/voice/faqs/${id}`, "/admin/voice/stores", "/admin/voice/numbers", `/admin/voice/stores/${id}/status`,
+      `/admin/voice/numbers/${id}`];
+    const del = [`/me/voice/faqs/${id}`, `/admin/voice/numbers/${id}`];
+    for (const path of get) expect((await GET(request(path))).status, path).toBe(200);
+    for (const path of post) expect((await POST(request(path, "POST", {}))).status, path).toBe(200);
+    for (const path of del) expect((await DELETE(request(path, "DELETE"))).status, path).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => [call[1].method, call[0]])).toEqual([
+      ...get.map((path) => ["GET", path]), ...post.map((path) => ["POST", path]), ...del.map((path) => ["DELETE", path]),
+    ].map(([method, path]) => [method, `http://127.0.0.1:3020/api/portal${path}`]));
+    const calls = fetchMock.mock.calls.length;
+    // /voice-runtime is the edge hosts' API: it must never be reachable through the browser boundary.
+    // (A bare "%2e%2e" segment is a dot segment to the URL parser, which resolves it before the proxy sees the path.)
+    const blocked = ["/voice-runtime/config", "/voice-runtime/stores", "/me/voice/faqs/../x", "/me/voice/faqs/%2e%2e%2fsetup",
+      "/me/voice/faqs/..%2fsetup", "/me/voice/faqs/%2E%2E%5Csetup", `/me/voice/faqs/${"A".repeat(32)}`, `/me/voice/faqs/${"c".repeat(31)}`, `/me/voice/faqs/${id}/extra`,
+      "/me/voice/x", "/me/voices", "/me/voice/", "/me/voice/faqs/import/x", "/admin/voice", "/admin/voice/x",
+      `/admin/voice/stores/${id}/delete`, `/admin/voice/numbers/${id}/status`, `/admin/voice/stores/${id}%2fstatus`, "/admin/voice/stores/not-hex"];
+    for (const path of blocked) {
+      expect((await GET(request(path))).status, path).toBe(404);
+      expect((await POST(request(path, "POST", {}))).status, path).toBe(404);
+      expect((await DELETE(request(path, "DELETE"))).status, path).toBe(404);
+    }
+    // Right shape, wrong method.
+    expect((await DELETE(request("/me/voice/setup", "DELETE"))).status).toBe(404);
+    expect((await GET(request("/me/voice/try"))).status).toBe(404);
+    expect((await GET(request("/me/voice/publish"))).status).toBe(404);
+    expect((await GET(request("/me/voice/faqs/import"))).status).toBe(404);
+    expect((await GET(request(`/me/voice/faqs/${id}`))).status).toBe(404);
+    expect((await POST(request("/me/voice", "POST", {}))).status).toBe(404);
+    expect((await POST(request("/me/voice/preview", "POST", {}))).status).toBe(404);
+    expect((await GET(request(`/admin/voice/stores/${id}/status`))).status).toBe(404);
+    expect((await GET(request(`/admin/voice/numbers/${id}`))).status).toBe(404);
+    expect((await DELETE(request(`/admin/voice/stores/${id}`, "DELETE"))).status).toBe(404);
+    expect((await POST(request("/me/voice/setup", "POST", {}, { origin: "https://foreign.example" }))).status).toBe(403);
+    expect(fetchMock).toHaveBeenCalledTimes(calls);
+  });
+
+  it("allows 192 KiB only for the phone agent CSV import", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    // JSON.stringify adds 14 bytes around the padding ({"padding":"…"}); 196608 bytes is the exact ceiling.
+    expect((await POST(request("/me/voice/faqs/import", "POST", { padding: "x".repeat(196608 - 14) }))).status).toBe(200);
+    expect((await POST(request("/me/voice/faqs/import", "POST", { padding: "x".repeat(196608 - 13) }))).status).toBe(413);
+    expect((await POST(request("/me/voice/faqs/import", "POST", { csv: "問題,答案\n".repeat(9000) }))).status).toBe(200);
+    for (const path of ["/me/voice/faqs", "/me/voice/setup", `/me/voice/faqs/${"d".repeat(32)}`, "/admin/voice/stores"]) {
+      expect((await POST(request(path, "POST", { padding: "x".repeat(65536) }))).status, path).toBe(413);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("proxies the read-only engineers overview as one exact GET without a query", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", "");
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ engineers: [] })));
