@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PortalError, portalRequest } from "../lib/portal-client";
-import type { CallContent, ContentLink, MediaKind } from "../lib/voice-calls";
+import type { CallContent, MediaKind } from "../lib/voice-calls";
+import { parseLink, readMedia, type MediaFailure, type MediaLink } from "../lib/voice-media";
 import { fill, qualityErrorText, say, taipeiDate, type Copy } from "./admin-voice-quality-labels";
 import { useLocale } from "./locale-provider";
 
@@ -10,7 +11,9 @@ import { useLocale } from "./locale-provider";
  * The drawer's "Content" block (phase2-contract §7.4 A12, §8.3, §11.2 and §11.3 "內容"). The portal keeps no
  * transcript, summary or recording: A12 signs a 5-minute token and the browser reads each kind from the Taiwan host
  * with it. The token lives only in a ref and in the Authorization header: never in a URL, state that renders, a log
- * or an error message (§6.5). The recording is fetched as a blob (an <audio src> cannot carry a header) and its
+ * or an error message (§6.5). The link and every read go through lib/voice-media.ts, like the store page: the link is
+ * checked before anything is sent, a redirect is an error, a recording must be audio/* and a transcript or summary
+ * must have the §8.3 shape. The recording is fetched as a blob (an <audio src> cannot carry a header) and its
  * object URL is revoked when the drawer closes. Every A12 is audited and counted (60 per hour per account), so a
  * token that expired is renewed once automatically and never more.
  */
@@ -53,7 +56,6 @@ const SPEAKER: Record<string, Copy> = {
   system: { zh: "系統", en: "System" },
 };
 
-type Media = ContentLink["media"];
 type Segment = { speaker: string; startMs: number | null; text: string };
 type Summary = { summary: string; callbackNumber: string | null; messageText: string | null; urgent: boolean };
 /** One kind's result: its data, or the Taiwan host's error code ("network" for no answer or a 5xx). */
@@ -97,13 +99,26 @@ function summaryOf(data: unknown): Summary | null {
   return { summary: text("summary") ?? "", callbackNumber: text("callback_number"), messageText: text("message_text"), urgent: value.urgent === true };
 }
 
+/** lib/voice-media.ts failures as the codes mediaErrorText words (§8.3). */
+const FAILURE_CODE: Record<MediaFailure, string> = {
+  token_expired: "media_token_expired",
+  token_again: "expired_again",
+  invalid: "media_token_invalid",
+  not_ready: "media_not_ready",
+  not_found: "media_not_found",
+  expired: "media_expired",
+  unreachable: "network",
+};
+
 const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 
 export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; content: CallContent }) {
   const locale = useLocale().locale;
   const zh = locale === "zh";
-  const media = useRef<Media | null>(null);
-  const renewing = useRef<Promise<Media> | null>(null);
+  const media = useRef<MediaLink | null>(null);
+  const renewing = useRef<Promise<MediaLink> | null>(null);
+  /** Aborted when the drawer closes, so no read outlives it. */
+  const reads = useRef(new AbortController());
   const busyRef = useRef(false);
   const [busy, setBusy] = useState<"show" | "play" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -113,22 +128,26 @@ export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; co
   const [recording, setRecording] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const objectUrl = useRef<string | null>(null);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    const controller = new AbortController();
+    reads.current = controller;
+    return () => {
+      controller.abort();
       if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
       objectUrl.current = null;
       media.current = null;
-    },
-    [],
-  );
+    };
+  }, []);
 
-  /** A12: a new token (one audited, counted request; concurrent renewals share it). */
-  function requestLink(): Promise<Media> {
-    renewing.current ??= portalRequest<ContentLink>(`/admin/voice/quality/calls/${rowId}/content-link`, { method: "POST", body: "{}" })
+  /** A12: a new token (one audited, counted request; concurrent renewals share it). A malformed answer is not used. */
+  function requestLink(): Promise<MediaLink> {
+    renewing.current ??= portalRequest<unknown>(`/admin/voice/quality/calls/${rowId}/content-link`, { method: "POST", body: "{}" })
       .then((result) => {
-        media.current = result.media;
-        setKinds(result.media.kinds);
-        return result.media;
+        const link = parseLink(result);
+        if (!link) throw new PortalError(502, "service_unavailable", "Unexpected answer.");
+        media.current = link;
+        setKinds(link.kinds);
+        return link;
       })
       .finally(() => {
         renewing.current = null;
@@ -140,27 +159,9 @@ export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; co
     const current = media.current;
     const url = current?.urls[kind];
     if (!current || !url) return { ok: false, code: "media_not_found" };
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: { Authorization: `Bearer ${current.token}` },
-        credentials: "omit",
-        referrerPolicy: "no-referrer",
-        cache: "no-store",
-      });
-    } catch {
-      return { ok: false, code: "network" };
-    }
-    if (response.ok) {
-      try {
-        return { ok: true, value: kind === "recording" ? await response.blob() : await response.json() };
-      } catch {
-        return { ok: false, code: "media_token_invalid" };
-      }
-    }
-    const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-    const code = typeof body?.error === "string" ? body.error : response.status >= 500 ? "network" : "unknown";
-    if (code !== "media_token_expired") return { ok: false, code };
+    const result = await readMedia(url, current.token, kind, reads.current.signal);
+    if (result.ok) return result;
+    if (result.failure !== "token_expired") return { ok: false, code: FAILURE_CODE[result.failure] };
     if (retried) return { ok: false, code: "expired_again" };
     try {
       await requestLink();
@@ -196,6 +197,7 @@ export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; co
         setSummary(readSummary.ok ? (parsed ? { ok: true, value: parsed } : { ok: false, code: "unknown" }) : readSummary);
       }
     } catch (error: unknown) {
+      if (reads.current.signal.aborted) return;
       setMessage(linkErrorText(error));
     } finally {
       busyRef.current = false;
@@ -211,7 +213,7 @@ export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; co
     try {
       // A token about to expire is renewed first rather than spent on a download that may fail half-way.
       const current = media.current;
-      if (!current || Date.parse(current.expiresAt) - Date.now() < 10_000) await requestLink();
+      if (!current || current.expiresAt - Date.now() < 10_000) await requestLink();
       const result = await read("recording");
       if (!result.ok) {
         setRecordingError(mediaErrorText(result.code, zh));
@@ -221,6 +223,7 @@ export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; co
       objectUrl.current = URL.createObjectURL(result.value as Blob);
       setRecording(objectUrl.current);
     } catch (error: unknown) {
+      if (reads.current.signal.aborted) return;
       setRecordingError(linkErrorText(error));
     } finally {
       busyRef.current = false;
