@@ -428,6 +428,13 @@ class QualityTests(CallRoutesCase):
             with self.subTest(params=params):
                 self.error(self.get(self.operator, "/admin/voice/quality/calls", **params), 400, "invalid_input")
 
+    def test_seconds_are_rounded_down_on_both_pages(self):
+        row_id = self.new_call(records(message={"outcome": "message", "speech_ms": 2999, "recording_ms": 3000, "recording_saved": True}))
+        call = self.ok(self.get(self.owner, "/me/voice/calls/" + row_id))["call"]
+        self.assertEqual((call["messageSeconds"], call["recordingSeconds"], call["meterReason"]), (2.9, 3.0, "short_speech"))
+        detail = self.ok(self.get(self.operator, "/admin/voice/quality/calls/" + row_id))["call"]
+        self.assertEqual((detail["callSpeechSeconds"], detail["message"]["speechSeconds"]), (2.9, 2.9))
+
     def test_reviews_move_calls_out_of_the_open_lists(self):
         path = "/admin/voice/quality/calls/%s/review" % self.flagged
         body = self.ok(self.post(self.operator, path, {"score": 2, "labels": ["slow", "wrong_answer"], "note": "價格題答錯；回應 p95 偏高",
