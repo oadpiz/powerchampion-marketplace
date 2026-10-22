@@ -16,7 +16,7 @@ import httpx
 from server import voice_calls as vc
 from server import voice_store as vs
 from server.settings import Settings
-from server.testsupport import BASE, ORIGIN, PASSWORD, FakeGateway, PortalCase, fresh_database, rows
+from server.testsupport import BASE, ORIGIN, PASSWORD, FakeGateway, PortalCase, database_text, fresh_database, rows
 
 TAIPEI = timezone(timedelta(hours=8))
 # Test-only values from the contract (§1.7); they are not secrets anywhere.
@@ -453,6 +453,35 @@ class ReportTests(VoiceCallsCase):
         own = self.ok(self.report(records(call_id="1797815702.132", message=message)), 201)
         self.assertEqual((own["store_id"], own["meter_units"], own["meter_reason"]), (self.store_id, 1, "message"))
 
+    def test_an_unknown_mobile_dialed_number_keeps_only_its_last_4_digits(self):
+        # A reporter that swapped caller and callee sends the caller's mobile number as dialed (fix round: was stored whole).
+        now = int(time.time())
+        orch = orchestrator(now, call_id="1797815702.140", dialed="0912345678")
+        created = self.ok(self.report(orch), 201)
+        self.assertEqual((created["store_id"], created["meter_reason"], created["flags"]), (None, "unknown_line", ["unknown_number"]))
+        row = self.call("1797815702.140")
+        self.assertEqual(row["dialed"], "******5678")
+        self.assertEqual(json.loads(row["report_orchestrator"])["dialed"], "******5678")
+        self.assertEqual(row["report_orchestrator_sha256"], vc.part_sha256(orch))
+        self.assertEqual(self.ok(self.report(dict(orch, sent_at=at(now + 1))))["result"], "duplicate")
+        # The records sender's pending then final report of the same call: still an update, not a conflict.
+        pending = records(now, final=False, call_id="1797815702.140", dialed="+886912345678")
+        self.assertEqual(self.ok(self.report(pending))["result"], "merged")
+        final = records(now, call_id="1797815702.140", dialed="+886912345678", message={"outcome": "message", "speech_ms": 5000})
+        self.assertEqual(self.ok(self.report(final))["result"], "updated")
+        row = self.call("1797815702.140")
+        self.assertEqual((row["dialed"], json.loads(row["report_records"])["dialed"], row["mismatch"]), ("******5678", "******5678", "[]"))
+        for form in ("0912345678", "+886912345678", "912345678", "12345678"):
+            with self.subTest(form=form):
+                self.assertNotIn(form, database_text(self.store))
+        # Not a mobile number, or a mobile number that is the store's line: kept as sent.
+        self.assertEqual(self.ok(self.report(orchestrator(now, call_id="1797815702.141", dialed="0227009999")), 201)["meter_reason"], "unknown_line")
+        self.assertEqual(self.call("1797815702.141")["dialed"], "+886227009999")
+        self.seed_number("+886987654321", store_id=self.store_id)
+        line = self.ok(self.report(orchestrator(now, call_id="1797815702.142", dialed="0987654321")), 201)
+        self.assertEqual((line["store_id"], line["meter_reason"]), (self.store_id, "ai_speech"))
+        self.assertEqual(self.call("1797815702.142")["dialed"], "+886987654321")
+
     def test_ended_at_is_compared_one_way_with_10_seconds_of_tolerance(self):
         now = int(time.time())
         rec = records(now)
@@ -816,6 +845,15 @@ class PureRuleTests(unittest.TestCase):
         # §1.4: one decimal, never up, so 2999 ms is not shown as 3.0 next to "less than 3 seconds" (fix round).
         self.assertEqual([vc._seconds(ms) for ms in (0, 99, 2960, 2999, 3000, 41250, 53550, 14400000)],
                          [0.0, 0.0, 2.9, 2.9, 3.0, 41.2, 53.5, 14400.0])
+
+    def test_masked_dialed(self):
+        for value in ("0912345678", "+886912345678", "886912345678", "0912-345-678", "912345678"):
+            with self.subTest(value=value):
+                self.assertEqual(vc.masked_dialed(value), "******5678")
+        for value in ("0227001001", "+886227001001", "ext:6201", "0912345", "09123456789", None):
+            with self.subTest(value=value):
+                self.assertIsNone(vc.masked_dialed(value))
+        self.assertIsNone(vc.normalize_number("******5678"))
 
 
 if __name__ == "__main__":
