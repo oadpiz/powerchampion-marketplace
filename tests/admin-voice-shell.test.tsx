@@ -26,19 +26,20 @@ describe("admin phone agent section", () => {
     expect(within(nav).getByRole("link", { name: label })).toHaveAttribute("aria-current", "page");
   });
 
-  it("renders the page title and the placeholder for an administrator", async () => {
+  it("renders the page title and the section for an administrator", async () => {
+    // T10 filled the section in: with no backend route (404 not_found) it says the feature is off.
     const calls = adminFetch({});
     wrap(<AdminPortal section="voice" />);
-    expect(await screen.findByText("Under construction")).toBeVisible();
+    expect(await screen.findByText("The phone agent feature is off (PC_VOICE_ENABLED is not 1).")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Phone agent");
-    expect(calls.map((call) => call.path)).toEqual(["/session"]);
+    expect(calls.map((call) => call.path)).toEqual(["/session", "/admin/voice/stores"]);
   });
 
   it("does not show the section to a customer", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ user: customer })));
     wrap(<AdminPortal section="voice" />);
     expect(await screen.findByText("Administrator access required")).toBeVisible();
-    expect(screen.queryByText("Under construction")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
