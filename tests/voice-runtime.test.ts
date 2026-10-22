@@ -211,6 +211,88 @@ describe("voice runtime route (server to server)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("allows GET deletions and POST deletions/<id>/ack for the records sender (§16.3), nothing near them", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", PORTAL);
+    const fetchMock = portal(() => Response.json({ ok: true }));
+    const id = "0123456789abcdef0123456789abcdef";
+    const ack = (path: string, method = "POST") =>
+      new Request(`${SITE}/api/voice-runtime/${path}`, {
+        method, body: method === "GET" || method === "HEAD" ? undefined : "{}",
+        headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", "Content-Length": "2" },
+      });
+    const refused = [
+      GET(get("", {}, "/api/voice-runtime/deletions/")), GET(get("", {}, `/api/voice-runtime/deletions/${id}`)),
+      GET(get("", {}, `/api/voice-runtime/deletions/${id}/ack`)), POST(ack("deletions")), POST(ack(`deletions/${id}`)),
+      POST(ack(`deletions/${id.toUpperCase()}/ack`)), POST(ack(`deletions/${id.slice(1)}/ack`)), POST(ack(`deletions/${id}x/ack`)),
+      POST(ack(`deletions/${id}/ack/x`)), POST(ack(`deletions/${id}/ack/`)), POST(ack(`deletions/%2e%2e/${id}/ack`)),
+      DELETE(ack(`deletions/${id}`, "DELETE")), PUT(ack(`deletions/${id}/ack`, "PUT")), DELETE(ack("deletions", "DELETE")),
+    ];
+    for (const response of await Promise.all(refused)) {
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "not_found", detail: "This runtime endpoint does not exist." });
+      fixedHeaders(response);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await GET(get("", {}, "/api/voice-runtime/deletions"))).status).toBe(200);
+    expect((await POST(ack(`deletions/${id}/ack`))).status).toBe(200);
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init.method])).toEqual([
+      [`${PORTAL}/api/portal/voice/runtime/deletions`, "GET"],
+      [`${PORTAL}/api/portal/voice/runtime/deletions/${id}/ack`, "POST"],
+    ]);
+  });
+
+  it("forwards only a checked after and limit when pulling deletions", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", PORTAL);
+    const page = { schema: "voice.deletions/v1", deletions: [], cursor: "12", more: false };
+    const fetchMock = portal(() => Response.json(page));
+    const response = await GET(get("?after=12&limit=100&store=x&call_id=1", { Cookie: "pc_portal_session=abc", "X-Forwarded-For": "203.0.113.9" },
+      "/api/voice-runtime/deletions"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(page);
+    fixedHeaders(response);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${PORTAL}/api/portal/voice/runtime/deletions?after=12&limit=100`);
+    expect(init.headers).toEqual({ Accept: "application/json", Authorization: `Bearer ${TOKEN}`, Origin: SITE });
+    await GET(get("?limit=5", {}, "/api/voice-runtime/deletions"));
+    expect(fetchMock.mock.calls[1][0]).toBe(`${PORTAL}/api/portal/voice/runtime/deletions?limit=5`);
+    for (const query of ["?after=-1", "?after=x", `?after=${"1".repeat(19)}`, "?after=", "?limit=0", "?limit=501", "?limit=1.5", "?limit=",
+      "?limit=0100"]) {
+      const refused = await GET(get(query, {}, "/api/voice-runtime/deletions"));
+      expect(refused.status).toBe(400);
+      expect((await refused.json()).error).toBe("invalid_input");
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks an acknowledgement's type and size (1024 bytes) and passes the portal's answer through", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", PORTAL);
+    const id = "0123456789abcdef0123456789abcdef";
+    const path = `/api/voice-runtime/deletions/${id}/ack`;
+    const fetchMock = portal(() => Response.json({ id, result: "acked", status: "done", done_at: "2026-10-23T01:00:00Z" }));
+    const body = '{"files_deleted":3,"rows_deleted":2}';
+    const response = await POST(post(body, {}, path));
+    expect(response.status).toBe(200);
+    expect((await response.json()).result).toBe("acked");
+    expect(fetchMock.mock.calls[0][1].body).toBe(body);
+    const exact = `{"pad":"${"x".repeat(1024 - 10)}"}`;
+    expect(new TextEncoder().encode(exact).length).toBe(1024);
+    expect((await POST(post(exact, {}, path))).status).toBe(200);
+    const over = `{"pad":"${"x".repeat(1025 - 10)}"}`;
+    const statuses = [];
+    for (const refused of [await POST(post(over, {}, path)), await POST(post("{}", { "Content-Type": "text/plain" }, path))]) {
+      statuses.push(refused.status);
+      expect((await refused.json()).error).toBe("invalid_input");
+    }
+    expect(statuses).toEqual([413, 415]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [status, error] of [[404, "deletion_not_found"], [400, "invalid_input"], [429, "rate_limited"]] as const) {
+      portal(() => Response.json({ error, detail: "from the portal" }, { status }));
+      const answer = await POST(post(body, {}, path));
+      expect(answer.status).toBe(status);
+      expect(await answer.json()).toEqual({ error, detail: "from the portal" });
+    }
+  });
+
   it("logs nothing, so neither the token nor a report can end up in a log", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", PORTAL);
     const spies = (["log", "info", "warn", "error", "debug"] as const).map((name) => vi.spyOn(console, name).mockImplementation(() => undefined));

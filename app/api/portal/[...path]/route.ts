@@ -36,7 +36,8 @@ const VOICE_GET = [/^\/me\/voice(\/(setup|faqs|preview))?$/, /^\/admin\/voice\/(
 const VOICE_POST = [/^\/me\/voice\/(setup|faqs|faqs\/import|faqs\/from-template|publish|try)$/, new RegExp(`^/me/voice/faqs/${AGENT}$`), /^\/admin\/voice\/(stores|numbers)$/, new RegExp(`^/admin/voice/stores/${AGENT}/status$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`),
   // M15, M17, A11, A12, A14, A15.
   new RegExp(`^/me/voice/calls/${AGENT}/(flag|content-link)$`), new RegExp(`^/admin/voice/quality/calls/${AGENT}/(review|content-link)$`), /^\/admin\/voice\/quality\/listening$/, new RegExp(`^/admin/voice/quality/listening/${AGENT}$`)];
-const VOICE_DELETE = [new RegExp(`^/me/voice/faqs/${AGENT}$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`), new RegExp(`^/me/voice/calls/${AGENT}/flag$`), new RegExp(`^/admin/voice/quality/listening/${AGENT}$`)];
+// DELETE /me/voice/calls/<id> is M18 (phase2-contract §16.2): the store deletes the call's recording and text.
+const VOICE_DELETE = [new RegExp(`^/me/voice/faqs/${AGENT}$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`), new RegExp(`^/me/voice/calls/${AGENT}(/flag)?$`), new RegExp(`^/admin/voice/quality/listening/${AGENT}$`)];
 // M13 and A9 filters (phase2-contract §10.1, §2): only these are forwarded, each checked; anything else is dropped.
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const CALL_FILTERS: readonly (readonly [string, RegExp])[] = [

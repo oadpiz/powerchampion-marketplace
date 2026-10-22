@@ -28,6 +28,7 @@ const C = {
   loading: { zh: "正在讀取內容…", en: "Loading content…" },
   none: { zh: "這通沒有保存內容。", en: "No content was kept for this call." },
   expired: { zh: "內容已超過保存期限，不能再查看。", en: "The content is past its retention period and can no longer be viewed." },
+  deleted: { zh: "店家已刪除這通的錄音與文字，不能再查看。", en: "The store deleted this call's recording and text; it can no longer be viewed." },
   // §11.2 says "your recording setting" to the store; here the operator reads about the store's setting.
   noRecording: {
     zh: "這通沒有錄音（依店家的錄音設定，或客人要求不錄音）。",
@@ -239,6 +240,8 @@ export function AdminVoiceQualityContent({ rowId, content }: { rowId: string; co
         <p className="portal-muted">{say(C.none, zh)}</p>
       ) : content.state === "expired" ? (
         <p className="portal-muted">{say(C.expired, zh)}</p>
+      ) : content.state === "deleted" ? (
+        <p className="portal-muted">{say(C.deleted, zh)}</p>
       ) : (
         <>
           <p className="portal-muted">

@@ -7,7 +7,10 @@
   Call it inside BEGIN IMMEDIATE; `voice_calls.call_id` UNIQUE is the last line of defence;
 - `merged_columns`: §3.5, the merge of the two sources, the outcome and the meter. The portal computes them from
   the reported facts and never takes a result or a unit count from a reporter;
-- retention (§9), the media token (§8) and the JSON shapes of M13-M17 and A9-A16 (§6, §7).
+- retention (§9), the media token (§8) and the JSON shapes of M13-M18 and A9-A16 (§6, §7, §16).
+
+A call whose content was deleted (the store's M18, or the 90-day expiry; voice_retention.py) keeps its reports with
+caller_tail null, and every later report of it is compared and kept the same way (`content_cleared`, `redact_report`).
 
 Times are epoch seconds (fractions dropped); dates and months are Taipei time (fixed UTC+8).
 """
@@ -21,6 +24,7 @@ import uuid
 from datetime import datetime
 
 from . import voice_store as vs
+from .settings import VOICE_CALL_RETENTION_DAYS_DEFAULT
 from .store import iso
 from .support import fail
 from .voice_ticket import b64u
@@ -51,7 +55,8 @@ REVIEW_LABELS = ("wrong_answer", "made_up", "missed_handoff", "over_refusal", "n
                  "unnatural_voice", "disclosure_missing", "other")
 REVIEW_STATUSES = ("open", "done")
 LISTENING_KINDS = ("tts_voice", "call_sample", "prompt_audio", "other")
-CONTENT_STATES = ("none", "expired", "available")
+# "deleted": the store deleted the call's content (M18); only operators see the call then (A10), the store gets 404.
+CONTENT_STATES = ("none", "expired", "available", "deleted")
 MEDIA_KINDS = ("recording", "summary", "transcript")
 MISMATCH_FIELDS = ("started_at", "entry", "dialed", "caller_tail", "caller_kind", "ended_at", "ai_answered", "ai_speech_ms")
 
@@ -72,7 +77,9 @@ VOICE_BILLABLE_ENTRIES = ("pstn",)  # A6 billable_channels default
 METER_RULE = "q5-draft-1"
 RETENTION_DAYS_UNASSIGNED = vs.RETENTION_DAYS_MAX  # §4.1: a row without a store keeps the platform maximum
 TRANSCRIPT_DAYS = 90
-CALL_DETAIL_DAYS = 400
+# voice_calls rows are kept PC_VOICE_CALL_RETENTION_DAYS (Settings.voice_call_retention_days, 5 years by default,
+# pending the lawyer; phase2-contract §16.5). Routes pass the setting; this is only the default.
+CALL_DETAIL_DAYS_DEFAULT = VOICE_CALL_RETENTION_DAYS_DEFAULT
 DAY_SECONDS = 86400
 CONTENT_LINK_TTL_SECONDS = 300
 CONTENT_LINKS_PER_HOUR = 60
@@ -694,6 +701,23 @@ def _answer(result, row):
             "flags": json.loads(row["auto_flags"])}
 
 
+def content_cleared(row):
+    """The portal cleared this call's content-like columns: the store deleted its content (M18) or it is past 90 days
+    (the schedule queued its deletion). Reports that arrive later are redacted the same way before they are compared or
+    kept, so a resend is still a duplicate and the records sender's final report still updates the meter."""
+    return row["store_deleted_at"] is not None or row["content_expiry_queued_at"] is not None
+
+
+def redact_report(body):
+    """A report without the caller's last 3 digits (the only caller data a report carries)."""
+    return dict(body, caller_tail=None)
+
+
+def store_visible(row):
+    """The store may see this call: the records sender reported it (`confirmed`) and the store did not delete it."""
+    return confirmed(row) and row["store_deleted_at"] is None
+
+
 def confirmed(row):
     """A store may see a call once the Taiwan host's records sender has reported it (or it is the store's own test
     call, which only the orchestrator reports, with the store's id). Until then the store is only the one the
@@ -713,8 +737,10 @@ def ingest(con, parsed, now, audit=None):
     `audit(con, action, actor_id, target_id, details)` records a call that moved to another store (Store.audit)."""
     body = parsed["body"]
     source = body["source"]
-    kept = private_dialed(con, body)
     row = con.execute("SELECT * FROM voice_calls WHERE call_id=?", (body["call_id"],)).fetchone()
+    if row is not None and content_cleared(row):
+        body = redact_report(body)
+    kept = private_dialed(con, body)
     if row is None:
         if body["entry"] == "try" and vs.get_store(con, body["store_id"]) is None:
             _invalid("unknown store_id")
@@ -818,17 +844,17 @@ def recording_days(row, store_retention_days):
     return snapshot if store_retention_days is None else min(snapshot, store_retention_days)
 
 
-def retention_json(row, store_retention_days):
+def retention_json(row, store_retention_days, detail_days=CALL_DETAIL_DAYS_DEFAULT):
     started = row["started_at"]
     return {"snapshotDays": row["retention_days_snapshot"], "reportedDays": row["retention_days_reported"],
             "transcriptUntil": iso(started + TRANSCRIPT_DAYS * DAY_SECONDS),
             "recordingUntil": iso(started + recording_days(row, store_retention_days) * DAY_SECONDS),
-            "detailUntil": iso(started + CALL_DETAIL_DAYS * DAY_SECONDS)}
+            "detailUntil": iso(started + detail_days * DAY_SECONDS)}
 
 
 def content_kinds(row, store_retention_days, now):
-    """The kinds still viewable now (sorted, §8.1); [] when nothing is (or nothing was kept)."""
-    if not row["content_expected"]:
+    """The kinds still viewable now (sorted, §8.1); [] when nothing is (or nothing was kept, or the store deleted it)."""
+    if not row["content_expected"] or row["store_deleted_at"] is not None:
         return []
     kinds = []
     if row["recording_saved"] and now < row["started_at"] + recording_days(row, store_retention_days) * DAY_SECONDS:
@@ -841,7 +867,10 @@ def content_kinds(row, store_retention_days, now):
 def content_json(row, store_retention_days, now, link_available):
     expected = bool(row["content_expected"])
     kinds = content_kinds(row, store_retention_days, now)
-    state = "none" if not expected else ("available" if kinds else "expired")
+    if row["store_deleted_at"] is not None:
+        state = "deleted"
+    else:
+        state = "none" if not expected else ("available" if kinds else "expired")
     recording_until = None
     if row["recording_saved"]:
         recording_until = iso(row["started_at"] + recording_days(row, store_retention_days) * DAY_SECONDS)
@@ -1012,11 +1041,13 @@ def quality_item(row):
             "dialed": row["dialed"], "numberPurpose": row["number_purpose"], "outcome": row["outcome"],
             "degraded": bool(row["degraded"]), "degradeReason": row["degrade_reason"], "handoff": bool(row["handoff"]),
             "handoffReason": row["handoff_reason"], "urgent": bool(row["urgent"]), "autoFlags": json.loads(row["auto_flags"]),
-            "storeFlag": flag, "review": review, "meterUnits": row["meter_units"], "meterReason": row["meter_reason"]}
+            "storeFlag": flag, "review": review, "meterUnits": row["meter_units"], "meterReason": row["meter_reason"],
+            "storeDeletedAt": iso(row["store_deleted_at"])}
 
 
-def quality_detail(row, store_retention_days, now, link_available):
-    """A10 (§7.2): QualityItem plus the call's facts, content, retention and the two sources (never their text)."""
+def quality_detail(row, store_retention_days, now, link_available, *, deletions=(), detail_days=CALL_DETAIL_DAYS_DEFAULT):
+    """A10 (§7.2, §16): QualityItem plus the call's facts, content, retention, the two sources (never their text) and
+    the call's deletion requests (`deletions`, voice_retention.deletions_json)."""
     call = dict(quality_item(row), answeredAt=iso(row["answered_at"]), endedAt=iso(row["ended_at"]),
                 configVersion=row["config_version"], configSha256=row["config_sha256"],
                 disclosureVersion=row["disclosure_version"], turns=row["turns"], aiAnswered=bool(row["ai_answered"]),
@@ -1027,11 +1058,12 @@ def quality_detail(row, store_retention_days, now, link_available):
                          "speechSeconds": _seconds(row["message_speech_ms"]), "recordingSeconds": _seconds(row["recording_ms"]),
                          "callbackConfirmed": bool(row["callback_confirmed"]), "callbackVia": row["callback_via"],
                          "recordingSaved": bool(row["recording_saved"]), "recordingDeclined": bool(row["recording_declined"])},
-                mismatch=json.loads(row["mismatch"]), retention=retention_json(row, store_retention_days),
-                meterRule=row["meter_rule"])
+                mismatch=json.loads(row["mismatch"]), retention=retention_json(row, store_retention_days, detail_days),
+                meterRule=row["meter_rule"], contentPurgedAt=iso(row["content_purged_at"]))
     sources = {name: ({"receivedAt": iso(row["report_%s_at" % name]), "sha256": row["report_%s_sha256" % name]}
                       if row["report_%s_sha256" % name] else None) for name in SOURCES}
-    return {"call": call, "content": content_json(row, store_retention_days, now, link_available), "sources": sources}
+    return {"call": call, "content": content_json(row, store_retention_days, now, link_available), "sources": sources,
+            "deletions": list(deletions)}
 
 
 def listening_json(row):

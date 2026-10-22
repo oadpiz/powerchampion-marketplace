@@ -1,5 +1,5 @@
 /**
- * A contract-faithful stand-in for the BFF, the store call routes M13-M17 (server/voice_call_routes.py,
+ * A contract-faithful stand-in for the BFF, the store call routes M13-M18 (server/voice_call_routes.py,
  * server/voice_calls.py) and the Taiwan host's media endpoint (phase2-contract §6, §8.3, §9, §10.1).
  * The checks run in the backend's order and answer the backend's codes; the content-link count is checked and taken in
  * one step like the backend's writer lock. It is a test fixture: "secrets" here are fake and not secrets.
@@ -42,6 +42,8 @@ export type Row = {
   retentionSnapshot: number;
   flag: { kind: "wrong_answer"; note: string; flaggedAt: number } | null;
   reviewStatus: "open" | "done" | null;
+  /** M18: when the store deleted the call's recording and text; the store no longer finds the call (§16.2). */
+  deletedAt: number | null;
 };
 
 /** What the Taiwan host answers for one read: the normal content, or one of its §8.3 errors. */
@@ -57,6 +59,7 @@ export type Backend = {
   linksUsed: number;
   pageSize: number;
   flagNoteChars: number;
+  callDetailDays: number;
   tokens: Map<string, { exp: number; kinds: MediaKind[]; callId: string }>;
   /** Per kind, the answers the Taiwan host gives in order; once used up it answers "ok". */
   media: Partial<Record<MediaKind, MediaAnswer[]>>;
@@ -100,6 +103,7 @@ export function row(n: number, values: Partial<Row> = {}): Row {
     retentionSnapshot: 30,
     flag: null,
     reviewStatus: null,
+    deletedAt: null,
     ...values,
   };
 }
@@ -115,6 +119,7 @@ export function backend(values: Partial<Backend> = {}): Backend {
     linksUsed: 0,
     pageSize: 50,
     flagNoteChars: 100,
+    callDetailDays: 1825,
     tokens: new Map(),
     media: {},
     gates: [],
@@ -214,8 +219,10 @@ async function list(state: Backend, url: URL): Promise<Response> {
   const outcome = url.searchParams.get("outcome");
   const flagged = url.searchParams.get("flagged");
   const before = url.searchParams.get("before");
+  // The month's totals still count the calls the store deleted (they are still billed); the list does not show them.
   const inMonth = state.rows.filter((r) => r.storeId === STORE_ID && r.startedAt >= start && r.startedAt < end);
-  let rows = inMonth.filter((r) => (!outcome || r.outcome === outcome) && (!flagged || r.flag !== null));
+  const visible = inMonth.filter((r) => r.deletedAt === null);
+  let rows = visible.filter((r) => (!outcome || r.outcome === outcome) && (!flagged || r.flag !== null));
   if (before) {
     const [at, id] = [Number(before.slice(0, 10)), before.slice(11)];
     rows = rows.filter((r) => r.startedAt < at || (r.startedAt === at && r.id < id));
@@ -234,13 +241,15 @@ async function list(state: Backend, url: URL): Promise<Response> {
     next,
     summary: {
       month, total: inMonth.length, byOutcome, meterUnits: inMonth.reduce((sum, r) => sum + r.meterUnits, 0),
-      flagged: inMonth.filter((r) => r.flag !== null).length,
+      flagged: visible.filter((r) => r.flag !== null).length, deleted: inMonth.length - visible.length,
     },
-    limits: { callsPageSize: state.pageSize, flagNoteChars: state.flagNoteChars },
+    limits: { callsPageSize: state.pageSize, flagNoteChars: state.flagNoteChars, callDetailDays: state.callDetailDays },
   });
 }
 
-const ownCall = (state: Backend, id: string) => (/^[a-f0-9]{32}$/.test(id) ? state.rows.find((r) => r.id === id && r.storeId === STORE_ID) : undefined);
+/** The store's call; a call it deleted is found only by M18 (`deleted`), so it is 404 everywhere else (§16.2). */
+const ownCall = (state: Backend, id: string, deleted = false) =>
+  /^[a-f0-9]{32}$/.test(id) ? state.rows.find((r) => r.id === id && r.storeId === STORE_ID && (deleted || r.deletedAt === null)) : undefined;
 
 function jsonBody(init: RequestInit | undefined): Record<string, unknown> | Response {
   if (!(new Headers(init?.headers).get("Content-Type") ?? "").startsWith("application/json")) return failure(415, "invalid_input");
@@ -287,6 +296,19 @@ function unflag(state: Backend, id: string): Response {
   if (r.flag === null) return Response.json({ changed: false });
   r.flag = null;
   return Response.json({ changed: true });
+}
+
+/** M18: no body; refuses a temporary password but not a suspended store; deleting again answers changed: false. */
+function deleteCall(state: Backend, id: string): Response {
+  const refused = lock(state, false);
+  if (refused) return refused;
+  const r = ownCall(state, id, true);
+  if (!r) return failure(404, "call_not_found");
+  if (r.deletedAt !== null) return Response.json({ changed: false, deletedAt: iso(r.deletedAt) });
+  r.deletedAt = now();
+  r.caller = { ...r.caller, tail: null };
+  if (r.flag) r.flag = { ...r.flag, note: "" };
+  return Response.json({ changed: true, deletedAt: iso(r.deletedAt) });
 }
 
 const b64u = (text: string) =>
@@ -371,6 +393,7 @@ export function stubPortal(state: Backend) {
         const r = ownCall(state, found[1]);
         return r ? Response.json(detailOf(state, r)) : failure(404, "call_not_found");
       }
+      if (method === "DELETE" && found) return deleteCall(state, found[1]);
       found = /^\/me\/voice\/calls\/([a-f0-9]{32})\/flag$/.exec(route);
       if (found && method === "POST") return flag(state, found[1], init);
       if (found && method === "DELETE") return unflag(state, found[1]);

@@ -362,7 +362,8 @@ describe("portal service boundary", () => {
       `/admin/voice/quality/calls/${id}`];
     const post = [`/me/voice/calls/${id}/flag`, `/me/voice/calls/${id}/content-link`, `/admin/voice/quality/calls/${id}/review`,
       `/admin/voice/quality/calls/${id}/content-link`, "/admin/voice/quality/listening", `/admin/voice/quality/listening/${id}`];
-    const del = [`/me/voice/calls/${id}/flag`, `/admin/voice/quality/listening/${id}`];
+    // M18 (§16.2): DELETE /me/voice/calls/<id> deletes the call's recording and text.
+    const del = [`/me/voice/calls/${id}/flag`, `/admin/voice/quality/listening/${id}`, `/me/voice/calls/${id}`];
     for (const path of get) expect((await GET(request(path))).status, path).toBe(200);
     for (const path of post) expect((await POST(request(path, "POST", {}))).status, path).toBe(200);
     for (const path of del) expect((await DELETE(request(path, "DELETE"))).status, path).toBe(200);
@@ -383,7 +384,7 @@ describe("portal service boundary", () => {
     }
     // Right shape, wrong method.
     const wrongMethod: [typeof GET, string, string][] = [
-      [GET, "GET", `/me/voice/calls/${id}/content-link`], [GET, "GET", `/me/voice/calls/${id}/flag`], [DELETE, "DELETE", `/me/voice/calls/${id}`],
+      [GET, "GET", `/me/voice/calls/${id}/content-link`], [GET, "GET", `/me/voice/calls/${id}/flag`], [DELETE, "DELETE", "/me/voice/calls"],
       [POST, "POST", "/me/voice/calls"], [POST, "POST", `/me/voice/calls/${id}`], [DELETE, "DELETE", `/me/voice/calls/${id}/content-link`],
       [GET, "GET", `/admin/voice/quality/calls/${id}/review`], [GET, "GET", `/admin/voice/quality/calls/${id}/content-link`],
       [POST, "POST", "/admin/voice/quality/calls"], [POST, "POST", `/admin/voice/quality/calls/${id}`],
@@ -395,6 +396,7 @@ describe("portal service boundary", () => {
     }
     expect((await POST(request(`/me/voice/calls/${id}/flag`, "POST", {}, { origin: "https://foreign.example" }))).status).toBe(403);
     expect((await DELETE(request(`/me/voice/calls/${id}/flag`, "DELETE", undefined, { origin: "https://foreign.example" }))).status).toBe(403);
+    expect((await DELETE(request(`/me/voice/calls/${id}`, "DELETE", undefined, { origin: "https://foreign.example" }))).status).toBe(403);
     expect(fetchMock).toHaveBeenCalledTimes(calls);
   });
 

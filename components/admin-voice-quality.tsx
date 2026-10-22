@@ -103,6 +103,7 @@ const T = {
   open: { zh: "查看", en: "Open" },
   openLabel: { zh: "查看通話：{store}・{time}", en: "Open call: {store} · {time}" },
   storeFlag: { zh: "店家：答錯了", en: "Store: wrong answer" },
+  storeDeleted: { zh: "店家已刪除內容", en: "Store deleted the content" },
   urgent: { zh: "緊急", en: "Urgent" },
   empty: {
     zh: "沒有符合條件的通話。店家標記或系統自動標記的通話會出現在這裡。",
@@ -114,7 +115,7 @@ const T = {
   showing: { zh: "已載入 {n} 通", en: "{n} calls loaded" },
 } satisfies Record<string, Copy>;
 
-/** The last 13 Taipei months, newest first (call details are kept 400 days, §9). */
+/** The last 13 Taipei months, newest first (the month filter; "All months" reaches older calls, kept 5 years by default, §16.5). */
 function recentMonths(today = taipeiToday()): string[] {
   const [year, month] = today.split("-").map(Number);
   return Array.from({ length: 13 }, (_, back) => {
@@ -140,9 +141,9 @@ function queryOf(filters: Filters, before?: string): string {
 /** True for errors that mean "the list could not be read" rather than a specific refusal. */
 const loadFailed = (error: unknown) => !(error instanceof PortalError) || error.status >= 500 || error.code === "unavailable";
 
-/** What one row says in the "Flags" column: the store's flag first, then the system's. */
+/** What one row says in the "Flags" column: a store deletion (§16.2), the store's flag, then the system's. */
 function flagTexts(item: QualityItem, zh: boolean): string[] {
-  const texts = item.storeFlag ? [say(T.storeFlag, zh)] : [];
+  const texts = [...(item.storeDeletedAt ? [say(T.storeDeleted, zh)] : []), ...(item.storeFlag ? [say(T.storeFlag, zh)] : [])];
   return texts.concat(item.autoFlags.map((flag) => (AUTO_FLAG_LABEL[flag] ? say(AUTO_FLAG_LABEL[flag], zh) : flag)));
 }
 

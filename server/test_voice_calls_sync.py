@@ -13,6 +13,7 @@ from pathlib import Path
 
 from server import voice_call_routes as vcr
 from server import voice_calls as vc
+from server import voice_retention as vrt
 
 # PC_VOICE_FRONTEND_ROOT points the front-end half at another checkout (used to prove the checks can fail).
 ROOT = Path(os.environ.get("PC_VOICE_FRONTEND_ROOT") or Path(__file__).resolve().parents[1])
@@ -39,7 +40,8 @@ SHARED_CODES = ("call_not_found", "note_contains_number", "call_content_unavaila
 # call before the records sender has reported it, so M17 answers 404 call_not_found for it, like any call it may not see.)
 STORE_ONLY_CODES = ()
 STORE_CODES = SHARED_CODES + STORE_ONLY_CODES
-QUALITY_CODES = SHARED_CODES + ("listening_not_found", "listening_limit")
+# 410 call_content_deleted: A12 on a call whose content the store deleted (M18, §16.2); the store itself gets 404.
+QUALITY_CODES = SHARED_CODES + ("listening_not_found", "listening_limit", "call_content_deleted")
 NUMBER_CODES = ("number_in_use",)
 
 
@@ -81,10 +83,11 @@ class VoiceCallEnumSyncTests(unittest.TestCase):
                 self.assertTrue(path.is_file(), "%s is missing; the merged branch must carry both halves" % path)
 
     def test_call_enums(self):
-        # §10.4 counts: outcome 9, entry 4, meterReason 14, handoffReason 5, callerKind 5, flag kind 1, content.state 3.
+        # §10.4 counts: outcome 9, entry 4, meterReason 14, handoffReason 5, callerKind 5, flag kind 1, content.state 4
+        # (§16 added "deleted").
         for name, backend, size in (("OUTCOMES", vc.OUTCOMES, 9), ("ENTRIES", vc.ENTRIES, 4), ("METER_REASONS", vc.METER_REASONS, 14),
                                     ("HANDOFF_REASONS", vc.HANDOFF_REASONS, 5), ("CALLER_KINDS", vc.CALLER_KINDS, 5),
-                                    ("FLAG_KINDS", vc.FLAG_KINDS, 1), ("CONTENT_STATES", vc.CONTENT_STATES, 3),
+                                    ("FLAG_KINDS", vc.FLAG_KINDS, 1), ("CONTENT_STATES", vc.CONTENT_STATES, 4),
                                     ("MEDIA_KINDS", vc.MEDIA_KINDS, 3)):
             with self.subTest(name=name):
                 self.assertEqual(ts_const(CALLS, name), list(backend))
@@ -98,7 +101,8 @@ class VoiceCallEnumSyncTests(unittest.TestCase):
                                     ("QUALITY_FLAG_FILTERS", vcr.QUALITY_FLAG_FILTERS, 5),
                                     ("QUALITY_REVIEWED_FILTERS", vcr.QUALITY_REVIEWED_FILTERS, 3),
                                     ("MISMATCH_FIELDS", vc.MISMATCH_FIELDS, 8), ("METRIC_KEYS", vc.METRIC_KEYS, 6),
-                                    ("MESSAGE_OUTCOMES", vc.MESSAGE_OUTCOMES, 6), ("CALLBACK_VIA", vc.CALLBACK_VIA, 2)):
+                                    ("MESSAGE_OUTCOMES", vc.MESSAGE_OUTCOMES, 6), ("CALLBACK_VIA", vc.CALLBACK_VIA, 2),
+                                    ("DELETION_REASONS", vrt.REASONS, 3), ("DELETION_STATUSES", vrt.STATUSES, 2)):
             with self.subTest(name=name):
                 self.assertEqual(ts_const(QUALITY, name), list(backend))
                 self.assertEqual(len(backend), size)
@@ -150,7 +154,8 @@ class VoiceCallLimitSyncTests(unittest.TestCase):
 
     def test_store_page_limits(self):
         self.assertEqual(ts_int(CALLS, r"^export const FLAG_NOTE_CHARS_DEFAULT = (\d+);"), vc.FLAG_NOTE_CHARS)
-        self.assertEqual(ts_int(STORE_LIST, r"^const CALL_DETAIL_DAYS = (\d+);"), vc.CALL_DETAIL_DAYS)
+        # The list reads M13's limits.callDetailDays (PC_VOICE_CALL_RETENTION_DAYS); this is only its fallback.
+        self.assertEqual(ts_int(STORE_LIST, r"^const CALL_DETAIL_DAYS_DEFAULT = (\d+);"), vc.CALL_DETAIL_DAYS_DEFAULT)
 
     def test_store_test_backend_answers_like_the_backend(self):
         # tests/support/voice-calls-backend.ts stands in for M13-M17; its limits must be the backend's (LESSONS 2026-10-21).

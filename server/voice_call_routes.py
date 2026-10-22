@@ -1,4 +1,4 @@
-"""Call records for stores (M13-M17) and call quality for operators (A9-A16): phase2-contract.md §6, §7.
+"""Call records for stores (M13-M18) and call quality for operators (A9-A16): phase2-contract.md §6, §7, §16.
 
 Store routes follow voice_merchant.py's order (contract §1.1): switch (404) -> sign-in (401) -> the caller's own
 store (404 voice_store_not_found) -> body -> BEGIN IMMEDIATE with the account and store re-read there. A call is
@@ -12,6 +12,8 @@ Operator routes follow admin_voice.py's order: admin first (401/403 whatever the
 
 A call is the store's only once the records sender has reported it (voice_calls.confirmed): the orchestrator's number
 alone could be another store's, and M13-M17 would show that store's caller (§3.5, fix round). Operators see every call.
+Once the store deleted a call's content (M18, §16.2) the store no longer finds it (404, like a call that is not its own)
+but the month's totals still count it: its billing is unchanged. Operators see that the store deleted it.
 
 Content links (M17, A12) are counted per account from audit_events and the audit row is written under the same
 lock, so the 60-per-hour limit cannot be passed by concurrent requests. Audit details hold counts, ids and enum
@@ -29,6 +31,7 @@ from fastapi.responses import JSONResponse
 from . import admin_voice as av
 from . import voice_calls as vc
 from . import voice_merchant as vm
+from . import voice_retention as vrt
 from . import voice_store as vs
 from .store import iso
 from .support import PREFIX, body_json, fail
@@ -42,6 +45,7 @@ QUALITY_REVIEWED_FILTERS = ("0", "1", "all")
 CALL_REF = re.compile(r"[a-f0-9]{8}")
 LISTENING_NOT_FOUND = "This entry no longer exists. Reload the page."
 MEDIA_UNAVAILABLE = "Viewing call content is not available yet."
+CONTENT_DELETED = "The store deleted this call's recording and text."
 NUMBER_IN_NOTE = "Do not put phone numbers in the note."
 
 QUALITY_SELECT = (
@@ -56,6 +60,9 @@ HAS_AUTO_FLAG = "c.auto_flags <> '[]'"
 # voice_calls.confirmed as SQL: a store's list and totals only hold calls the records sender has reported (and its own
 # test calls). Unqualified column names: the store queries read voice_calls alone.
 CONFIRMED = "(entry='try' OR report_records_sha256 IS NOT NULL)"
+# voice_calls.store_visible as SQL: confirmed and not deleted by the store (M18). The list shows these; the month's
+# totals count every confirmed call, deleted ones included (they are still billed).
+VISIBLE = CONFIRMED + " AND store_deleted_at IS NULL"
 
 
 def _query(request, name, allowed=None):
@@ -186,6 +193,8 @@ def _check_content(settings, row, store_retention_days, con, user_id, now):
     Taiwan host still compares the token's store_id with its own record of the call (§8.3)."""
     if not settings.voice_media_available:
         fail("voice_media_unavailable", MEDIA_UNAVAILABLE, 503)
+    if row["store_deleted_at"] is not None:  # only A12 gets here: a store does not find a call it deleted
+        fail("call_content_deleted", CONTENT_DELETED, 410)
     if not row["content_expected"]:
         fail("call_content_unavailable", "No content was kept for this call.", 404)
     if not vc.content_kinds(row, store_retention_days, now):
@@ -212,11 +221,12 @@ def attach_voice_calls(application, ctx):
             fail("voice_store_not_found", vm.STORE_NOT_FOUND, 404)
         return row
 
-    def own_call(con, store_row, row_id):
-        """The store's call, or 404 call_not_found: another store's, an unknown id and a call the records sender has not
-        reported yet (not `confirmed`) all look the same."""
+    def own_call(con, store_row, row_id, *, deleted=False):
+        """The store's call, or 404 call_not_found: another store's, an unknown id, a call the records sender has not
+        reported yet (not `confirmed`) and a call the store deleted (M18) all look the same. `deleted=True` (M18 only)
+        also finds a call the store deleted, so deleting it again is answered, not refused."""
         row = vc.get_call(con, row_id)
-        if row is None or row["store_id"] != store_row["id"] or not vc.confirmed(row):
+        if row is None or row["store_id"] != store_row["id"] or not (vc.confirmed(row) if deleted else vc.store_visible(row)):
             fail("call_not_found", vc.CALL_NOT_FOUND, 404)
         return row
 
@@ -247,7 +257,7 @@ def attach_voice_calls(application, ctx):
             outcome = _query(request, "outcome", vc.OUTCOMES)
             flagged = _query(request, "flagged", ("1",))
             cursor = _cursor(request)
-            where, args = ["store_id=?", CONFIRMED, "started_at>=?", "started_at<?"], [store_row["id"], start, end]
+            where, args = ["store_id=?", VISIBLE, "started_at>=?", "started_at<?"], [store_row["id"], start, end]
             if outcome:
                 where.append("outcome=?")
                 args.append(outcome)
@@ -259,7 +269,8 @@ def attach_voice_calls(application, ctx):
             rows = con.execute("SELECT * FROM voice_calls WHERE " + " AND ".join(where) + " ORDER BY started_at DESC, id DESC "
                                "LIMIT %d" % (vc.STORE_PAGE_SIZE + 1), tuple(args)).fetchall()
             totals = con.execute("SELECT outcome, COUNT(*) AS calls, SUM(meter_units) AS units, "
-                                 "SUM(CASE WHEN store_flag_kind IS NOT NULL THEN 1 ELSE 0 END) AS flagged FROM voice_calls "
+                                 "SUM(CASE WHEN store_flag_kind IS NOT NULL AND store_deleted_at IS NULL THEN 1 ELSE 0 END) AS flagged, "
+                                 "SUM(CASE WHEN store_deleted_at IS NOT NULL THEN 1 ELSE 0 END) AS deleted FROM voice_calls "
                                  "WHERE store_id=? AND " + CONFIRMED + " AND started_at>=? AND started_at<? GROUP BY outcome",
                                  (store_row["id"], start, end)).fetchall()
         page, next_cursor = _page(rows, vc.STORE_PAGE_SIZE)
@@ -268,9 +279,10 @@ def attach_voice_calls(application, ctx):
             by_outcome[total["outcome"]] = int(total["calls"])
         summary = {"month": month, "total": sum(by_outcome.values()), "byOutcome": by_outcome,
                    "meterUnits": sum(int(total["units"] or 0) for total in totals),
-                   "flagged": sum(int(total["flagged"] or 0) for total in totals)}
+                   "flagged": sum(int(total["flagged"] or 0) for total in totals),
+                   "deleted": sum(int(total["deleted"] or 0) for total in totals)}
         return {"calls": [vc.call_item(row) for row in page], "next": next_cursor, "summary": summary,
-                "limits": dict(vc.STORE_LIMITS)}
+                "limits": dict(vc.STORE_LIMITS, callDetailDays=ctx.settings.voice_call_retention_days)}
 
     # M14
     @application.get(mine + "/{row_id}")
@@ -334,6 +346,22 @@ def attach_voice_calls(application, ctx):
                                       store_retention_days=store_row["retention_days"], now=now)
             store.audit(con, "voice.call_content_link", user["id"], row["id"], {"kinds": kinds, "storeId": row["store_id"]})
         return {"media": media}
+
+    # M18
+    @application.delete(mine + "/{row_id}")
+    async def voice_call_delete(row_id: str, request: Request):
+        """Delete this call's recording and text (§16.2). Refuses a temporary password (like every write) but not a
+        suspended store: a store that may still look at its records (M17) may also delete them. Reads no body."""
+        user = owner(request)
+        with store.connect() as con:
+            store_row = owner_lock(con, user, refuse_suspended=False)
+            row = own_call(con, store_row, row_id, deleted=True)
+            if row["store_deleted_at"] is not None:
+                return {"changed": False, "deletedAt": iso(row["store_deleted_at"])}
+            now = int(time.time())
+            queued = vrt.delete_for_store(con, row, user["id"], now)
+            store.audit(con, "voice.call_content_deleted", user["id"], row["id"], {"requestId": queued["id"], "storeId": row["store_id"]})
+        return {"changed": True, "deletedAt": iso(now)}
 
     # ------------------------------------------------------------ operators
 
@@ -420,7 +448,9 @@ def attach_voice_calls(application, ctx):
         admin(request)
         with store.connect() as con:
             row = quality_row(con, row_id)
-            return vc.quality_detail(row, row["store_retention_days"], int(time.time()), ctx.settings.voice_media_available)
+            return vc.quality_detail(row, row["store_retention_days"], int(time.time()), ctx.settings.voice_media_available,
+                                     deletions=vrt.deletions_json(con, row["call_id"]),
+                                     detail_days=ctx.settings.voice_call_retention_days)
 
     # A11
     @application.post(quality + "/calls/{row_id}/review")

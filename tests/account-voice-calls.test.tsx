@@ -121,6 +121,26 @@ describe("store call records list", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 
+  it("leaves out calls the store deleted, while the month still counts and bills them", async () => {
+    const state = month();
+    state.rows[0].deletedAt = Math.floor(NOW.getTime() / 1000) - 60;
+    state.rows[5].deletedAt = Math.floor(NOW.getTime() / 1000) - 60; // the flagged one
+    renderCalls(state);
+    expect(await screen.findByText("This month: 6 calls. Answered 3, messages 1, handed off 1, fallback 1. Estimated billable: 4.")).toBeVisible();
+    expect(screen.getByText("You deleted the recording and text of 2 of these calls; they are not on the list but still count above, billing included.")).toBeVisible();
+    expect(bodyRows()).toHaveLength(4);
+    expect(screen.queryByRole("link", { name: /Dec 21, 09:15/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Flagged")).not.toBeInTheDocument();
+    cleanup();
+    chinese();
+    renderCalls(state);
+    expect(await screen.findByText("其中 2 通你已刪除錄音與文字，不在清單上，但仍算在上面的通數與計費裡。")).toBeVisible();
+    cleanup();
+    renderCalls(month());
+    await screen.findByText(/^本月 6 通/);
+    expect(screen.queryByText(/已刪除錄音與文字/)).not.toBeInTheDocument();
+  });
+
   it("speaks Traditional Chinese", async () => {
     chinese();
     renderCalls(month());
@@ -169,9 +189,10 @@ describe("store call records list", () => {
     ]);
   });
 
-  it("moves between months, not past this month nor before the 400 days a call is kept", async () => {
+  it("moves between months, not past this month nor before the days a call is kept (M13 limits.callDetailDays)", async () => {
     const user = userEvent.setup();
-    const requests = renderCalls(month());
+    // PC_VOICE_CALL_RETENTION_DAYS=400 on this portal (5 years by default): the list reads it from M13's limits.
+    const requests = renderCalls({ ...month(), callDetailDays: 400 });
     await screen.findByText(/^This month: 6 calls\./);
     const previous = screen.getByRole("button", { name: "Previous month" });
     const next = screen.getByRole("button", { name: "Next month" });
@@ -208,9 +229,10 @@ describe("store call records list", () => {
     expect(screen.getByText("November 2026")).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Result" })).toHaveValue("answered");
     expect(screen.getByRole("checkbox", { name: "Only calls I flagged" })).toBeChecked();
-    // A kept value that no longer fits (older than 400 days, an unknown result) starts from this month instead.
+    // A kept value that no longer fits (older than the 5 years a call is kept by default, an unknown result) starts from
+    // this month instead.
     cleanup();
-    sessionStorage.setItem("pc-voice-calls-filters", JSON.stringify({ month: "2024-01", outcome: "bogus", flagged: "yes" }));
+    sessionStorage.setItem("pc-voice-calls-filters", JSON.stringify({ month: "2021-11", outcome: "bogus", flagged: "yes" }));
     const fresh = renderCalls(state);
     await waitFor(() => expect(listReads(fresh)).toEqual(["/me/voice/calls?month=2026-12"]));
   });

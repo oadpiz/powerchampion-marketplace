@@ -21,6 +21,8 @@ import { AdminVoiceQualityContent } from "./admin-voice-quality-content";
 import {
   AUTO_FLAG_LABEL,
   DEGRADE_LABEL,
+  DELETION_REASON_LABEL,
+  DELETION_STATUS_LABEL,
   ENTRY_LABEL,
   HANDOFF_LABEL,
   MESSAGE_OUTCOME_LABEL,
@@ -96,6 +98,13 @@ const D = {
   storeFlag: { zh: "店家標記", en: "Store flag" },
   storeFlagLine: { zh: "店家在 {time} 標記「答錯了」：{note}", en: "The store flagged this as a wrong answer on {time}: {note}" },
   storeFlagBare: { zh: "店家在 {time} 標記「答錯了」。", en: "The store flagged this as a wrong answer on {time}." },
+  deletion: { zh: "刪除", en: "Deletion" },
+  storeDeleted: {
+    zh: "店家已刪除內容：店家在 {time} 刪除了這通的錄音與文字；計費紀錄保留，店家的頁面看不到這通。",
+    en: "The store deleted the content: on {time} the store deleted this call's recording and text; billing is kept and the store no longer sees the call.",
+  },
+  deletionLine: { zh: "{reason}・{status}（要求 {requested}）", en: "{reason} · {status} (requested {requested})" },
+  deletionDone: { zh: "{reason}・{status}（{done}，{files} 個檔案、{rows} 列）", en: "{reason} · {status} ({done}, {files} files, {rows} rows)" },
   review: { zh: "審查", en: "Review" },
   score: { zh: "分數（1 很差～5 很好）", en: "Score (1 poor – 5 good)" },
   labels: { zh: "標籤（最多 {n} 個）", en: "Labels (up to {n})" },
@@ -329,6 +338,26 @@ function CallFacts({ detail, zh }: { detail: QualityDetail; zh: boolean }) {
             {call.storeFlag.note
               ? t(D.storeFlagLine, { time: taipeiTime(call.storeFlag.flaggedAt, zh), note: call.storeFlag.note })
               : t(D.storeFlagBare, { time: taipeiTime(call.storeFlag.flaggedAt, zh) })}
+          </dd>
+        </>
+      )}
+      {(call.storeDeletedAt || (detail.deletions ?? []).length > 0) && (
+        <>
+          <dt>{say(D.deletion, zh)}</dt>
+          <dd>
+            {call.storeDeletedAt && <strong>{t(D.storeDeleted, { time: taipeiTime(call.storeDeletedAt, zh) })}</strong>}
+            {(detail.deletions ?? []).map((deletion) => {
+              const reason = DELETION_REASON_LABEL[deletion.reason] ? say(DELETION_REASON_LABEL[deletion.reason], zh) : deletion.reason;
+              const status = DELETION_STATUS_LABEL[deletion.status] ? say(DELETION_STATUS_LABEL[deletion.status], zh) : deletion.status;
+              return (
+                <span key={deletion.id}>
+                  <br />
+                  {deletion.status === "done" && deletion.doneAt
+                    ? t(D.deletionDone, { reason, status, done: taipeiTime(deletion.doneAt, zh), files: dash(deletion.filesDeleted), rows: dash(deletion.rowsDeleted) })
+                    : t(D.deletionLine, { reason, status, requested: taipeiTime(deletion.requestedAt, zh) })}
+                </span>
+              );
+            })}
           </dd>
         </>
       )}

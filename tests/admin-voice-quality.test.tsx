@@ -7,6 +7,8 @@ import { AdminPortal } from "../components/admin-portal";
 import {
   AUTO_FLAG_LABEL,
   DEGRADE_LABEL,
+  DELETION_REASON_LABEL,
+  DELETION_STATUS_LABEL,
   ENTRY_LABEL,
   HANDOFF_LABEL,
   LISTENING_KIND_LABEL,
@@ -14,11 +16,15 @@ import {
   METER_REASON_LABEL,
   OUTCOME_LABEL,
   REVIEW_LABEL_COPY,
+  qualityErrorText,
 } from "../components/admin-voice-quality-labels";
+import { PortalError } from "../lib/portal-client";
 import { ENTRIES, HANDOFF_REASONS, METER_REASONS, OUTCOMES, callTime, hasPhoneNumber } from "../lib/voice-calls";
 import {
   AUTO_FLAGS,
   DEGRADE_REASONS,
+  DELETION_REASONS,
+  DELETION_STATUSES,
   LISTENING_FIELD_LIMITS,
   LISTENING_KINDS,
   MESSAGE_OUTCOMES,
@@ -120,11 +126,15 @@ type MockCall = {
   meterRule: string;
   content: { expected: boolean; hasRecording: boolean; transcriptUntil: string | null; recordingUntil: string | null; state: string; linkAvailable: boolean };
   sources: { orchestrator: { receivedAt: string; sha256: string } | null; records: { receivedAt: string; sha256: string } | null };
+  // §16: the store's deletion (A9 item and A10), the Taiwan host's confirmation and the requests (A10 only).
+  storeDeletedAt: string | null;
+  contentPurgedAt: string | null;
+  deletions: { id: string; reason: string; kinds: string[]; status: string; requestedAt: string; doneAt: string | null; filesDeleted: number | null; rowsDeleted: number | null }[];
   /** What the Taiwan host has for this call. */
   media: { transcript?: unknown; summary?: unknown; recording?: boolean };
 };
 const ITEM_KEYS = ["id", "callId", "store", "startedAt", "durationSeconds", "entry", "dialed", "numberPurpose", "outcome", "degraded", "degradeReason",
-  "handoff", "handoffReason", "urgent", "autoFlags", "storeFlag", "review", "meterUnits", "meterReason"] as const;
+  "handoff", "handoffReason", "urgent", "autoFlags", "storeFlag", "review", "meterUnits", "meterReason", "storeDeletedAt"] as const;
 
 function mockCall(n: number, overrides: Partial<MockCall>): MockCall {
   const startedAt = overrides.startedAt ?? "2026-10-21T01:15:02Z";
@@ -165,6 +175,9 @@ function mockCall(n: number, overrides: Partial<MockCall>): MockCall {
     meterRule: "q5-draft-1",
     content: { expected: true, hasRecording: true, transcriptUntil: "2027-01-19T01:15:02Z", recordingUntil: "2026-11-20T01:15:02Z", state: "available", linkAvailable: true },
     sources: { orchestrator: { receivedAt: "2026-10-21T01:17:45Z", sha256: "f".repeat(64) }, records: null },
+    storeDeletedAt: null,
+    contentPurgedAt: null,
+    deletions: [],
     media: {
       transcript: { call_id: "x", segments: [{ speaker: "caller", start_ms: 0, text: "洗牙多少錢？" }, { speaker: "ai", start_ms: 2100, text: "洗牙是 800 元。" }] },
       summary: { call_id: "x", summary: "問洗牙價格", callback_number: null, message_text: null, urgent: false },
@@ -294,9 +307,9 @@ class QualityBackend {
       const call = this.calls.find((item) => item.id === match![1]);
       if (!call) return fail(404, "call_not_found", "This call does not exist.");
       if (!match[2]) {
-        const { content, sources, media: _media, ...rest } = call;
+        const { content, sources, deletions, media: _media, ...rest } = call;
         void _media;
-        return Response.json({ call: rest, content, sources });
+        return Response.json({ call: rest, content, sources, deletions });
       }
       return match[2] === "review" ? this.review(call, body) : this.contentLink(call);
     }
@@ -391,9 +404,10 @@ class QualityBackend {
     return Response.json({ changed, review: call.review });
   }
 
-  /** A12 after call_not_found: 503 (as the BFF shows it) -> 404 unavailable -> 410 expired -> 429 -> sign. */
+  /** A12 after call_not_found: 503 (as the BFF shows it) -> 410 deleted -> 404 unavailable -> 410 expired -> 429 -> sign. */
   private contentLink(call: MockCall): Response {
     if (!this.mediaAvailable) return fail(503, "service_unavailable", "This service is unavailable or has not been configured yet. Please try again later.");
+    if (call.storeDeletedAt) return fail(410, "call_content_deleted", "The store deleted this call's recording and text.");
     if (!call.content.expected) return fail(404, "call_content_unavailable", "No content was kept for this call.");
     if (call.content.state === "expired") return fail(410, "call_content_expired", "The content is past its retention period and can no longer be viewed.");
     if (this.linksUsed >= this.linkLimit) return fail(429, "voice_content_link_limit", "Too many views. Try again in an hour.");
@@ -929,6 +943,45 @@ describe("admin phone agent: call content (A12 and the Taiwan host)", () => {
     expect(within(drawer()).queryByRole("button", { name: "Show content" })).not.toBeInTheDocument();
   });
 
+  it("says the store deleted a call's content in the list and the drawer, with the Taiwan host's confirmation (§16)", async () => {
+    const backend = new QualityBackend();
+    const deleted = backend.calls[0];
+    Object.assign(deleted, {
+      storeDeletedAt: "2026-10-21T03:00:00Z",
+      content: { ...deleted.content, state: "deleted" },
+      deletions: [{ id: hex(77), reason: "store_deleted", kinds: ["recording", "summary", "transcript"], status: "pending", requestedAt: "2026-10-21T03:00:00Z",
+        doneAt: null, filesDeleted: null, rowsDeleted: null }],
+    });
+    const user = await openQuality(backend);
+    const table = await callsTable();
+    const row = bodyRows(table).find((tr) => within(tr).queryByRole("button", { name: `Open call: 晴光牙醫診所 · ${T1}` }))!;
+    expect(row.textContent).toContain("Store deleted the content");
+    expect(bodyRows(table).filter((tr) => (tr.textContent ?? "").includes("Store deleted the content"))).toHaveLength(1);
+    await user.click(document.getElementById(`voice-quality-open-${deleted.id}`)!);
+    await within(drawer()).findByText(/^Call ID /);
+    let text = drawer().textContent ?? "";
+    expect(text).toContain(`The store deleted the content: on ${taipei("2026-10-21T03:00:00Z")} the store deleted this call's recording and text; billing is kept and the store no longer sees the call.`);
+    expect(text).toContain(`Deleted by the store · Waiting for the records host (requested ${taipei("2026-10-21T03:00:00Z")})`);
+    expect(within(drawer()).getByText("The store deleted this call's recording and text; it can no longer be viewed.")).toBeVisible();
+    expect(within(drawer()).queryByRole("button", { name: "Show content" })).not.toBeInTheDocument();
+    await user.click(within(drawer()).getByRole("button", { name: "Close" }));
+    deleted.deletions = [{ ...deleted.deletions[0], status: "done", doneAt: "2026-10-21T03:05:00Z", filesDeleted: 4, rowsDeleted: 3 },
+      { id: hex(78), reason: "content_expired", kinds: ["recording", "summary", "transcript"], status: "pending", requestedAt: "2027-01-19T01:15:02Z",
+        doneAt: null, filesDeleted: null, rowsDeleted: null }];
+    await user.click(document.getElementById(`voice-quality-open-${deleted.id}`)!);
+    await within(drawer()).findByText(/^Call ID /);
+    text = drawer().textContent ?? "";
+    expect(text).toContain(`Deleted by the store · Deleted by the records host (${taipei("2026-10-21T03:05:00Z")}, 4 files, 3 rows)`);
+    expect(text).toContain(`Content past its date (90 days) · Waiting for the records host (requested ${taipei("2027-01-19T01:15:02Z")})`);
+    // A call nobody deleted has no deletion line.
+    await user.click(within(drawer()).getByRole("button", { name: "Close" }));
+    await user.click(document.getElementById(`voice-quality-open-${hex(1002)}`)!);
+    await within(drawer()).findByText(/^Call ID /);
+    expect(drawer().textContent ?? "").not.toContain("Deletion");
+    expect(qualityErrorText(new PortalError(410, "call_content_deleted", "x"), "zh")).toBe("店家已刪除這通的錄音與文字，不能再查看。");
+    expect(qualityErrorText(new PortalError(410, "call_content_deleted", "x"), "en")).toBe("The store deleted this call's recording and text; it can no longer be viewed.");
+  });
+
   it("keeps Show content disabled while the media host is not configured", async () => {
     const backend = new QualityBackend();
     backend.calls[0].content = { ...backend.calls[0].content, linkAvailable: false, hasRecording: false };
@@ -1066,6 +1119,8 @@ describe("admin phone agent: quality copy and limits stay in step with the backe
     expect(keys(REVIEW_LABEL_COPY)).toEqual([...REVIEW_LABELS]);
     expect(keys(LISTENING_KIND_LABEL)).toEqual([...LISTENING_KINDS]);
     expect(keys(MESSAGE_OUTCOME_LABEL)).toEqual([...MESSAGE_OUTCOMES]);
+    expect(keys(DELETION_REASON_LABEL)).toEqual([...DELETION_REASONS]);
+    expect(keys(DELETION_STATUS_LABEL)).toEqual([...DELETION_STATUSES]);
     // The contract lists (written out above) are the ones the page offers.
     expect([...REVIEW_LABELS]).toEqual(CONTRACT.reviewLabels);
     expect([...LISTENING_KINDS]).toEqual(CONTRACT.listeningKinds);

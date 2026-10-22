@@ -25,8 +25,15 @@ import { useLocale } from "./locale-provider";
 export type VoiceCallsProps = VoiceSubProps & { callId?: string };
 
 const DAY_MS = 86400 * 1000;
-/** §1.5 callDetailDays: a call's row is kept 400 days, so months before that have nothing to show. */
-const CALL_DETAIL_DAYS = 400;
+/**
+ * §16.5 callDetailDays: a call's row is kept PC_VOICE_CALL_RETENTION_DAYS (5 years by default), so months before that
+ * have nothing to show. M13's `limits.callDetailDays` replaces this as soon as the list answers.
+ */
+const CALL_DETAIL_DAYS_DEFAULT = 1825;
+const detailDays = (list: CallList | null) => {
+  const days = list?.limits.callDetailDays;
+  return typeof days === "number" && Number.isInteger(days) && days >= 90 && days <= 3660 ? days : CALL_DETAIL_DAYS_DEFAULT;
+};
 
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -123,8 +130,9 @@ function CallsList(): ReactElement {
   // Read once: the current month and the oldest month that can still have calls.
   const [now] = useState(() => Date.now());
   const current = taipeiMonth(now);
-  const oldest = taipeiMonth(now - CALL_DETAIL_DAYS * DAY_MS);
-  const [filters, setFilters] = useState<Filters>(() => savedFilters(current, oldest));
+  const [days, setDays] = useState(CALL_DETAIL_DAYS_DEFAULT);
+  const oldest = taipeiMonth(now - days * DAY_MS);
+  const [filters, setFilters] = useState<Filters>(() => savedFilters(current, taipeiMonth(now - CALL_DETAIL_DAYS_DEFAULT * DAY_MS)));
   useEffect(() => saveFilters(filters), [filters]);
   const [reload, setReload] = useState(0);
   const [load, setLoad] = useState<Load>({ status: "loading" });
@@ -146,6 +154,7 @@ function CallsList(): ReactElement {
         const list = await portalRequest<unknown>(listPath(filters), { signal: controller.signal });
         if (controller.signal.aborted) return;
         if (!isCallList(list)) throw new PortalError(502, "service_unavailable", "Unexpected answer.");
+        setDays(detailDays(list));
         setLoad({ status: "ready", list, more: "idle" });
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -319,6 +328,13 @@ function CallsTable({
           ? "計費則數以月結明細為準；試打、測試號碼和網頁通話不計費。"
           : "Billing follows the monthly statement; test calls, test numbers and web calls are not billed."}
       </p>
+      {(summary.deleted ?? 0) > 0 && (
+        <p className="portal-hint">
+          {zh
+            ? `其中 ${summary.deleted} 通你已刪除錄音與文字，不在清單上，但仍算在上面的通數與計費裡。`
+            : `You deleted the recording and text of ${summary.deleted} of these calls; they are not on the list but still count above, billing included.`}
+        </p>
+      )}
       {calls.length === 0 ? (
         <p className="portal-empty">
           {filtered ? (

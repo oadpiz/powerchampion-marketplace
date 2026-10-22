@@ -935,15 +935,19 @@ class PureRuleTests(unittest.TestCase):
     def test_v7_and_v8(self):
         started = 1797815702
         row = {"started_at": started, "retention_days_snapshot": 30, "retention_days_reported": None, "recording_saved": 1,
-               "content_expected": 1}
+               "content_expected": 1, "store_deleted_at": None}
         self.assertEqual(vc.retention_json(row, 14)["recordingUntil"], "2027-01-04T01:15:02Z")
         self.assertEqual(vc.retention_json(row, 60)["recordingUntil"], "2027-01-20T01:15:02Z")
         self.assertEqual(vc.retention_json(dict(row, retention_days_snapshot=90), None)["recordingUntil"], "2027-03-21T01:15:02Z")
         self.assertEqual(vc.retention_json(row, 14)["transcriptUntil"], "2027-03-21T01:15:02Z")
-        self.assertEqual(vc.retention_json(row, 14)["detailUntil"], "2028-01-25T01:15:02Z")
+        # The vector's 400 days (phase2-contract appendix A V7); the row is kept PC_VOICE_CALL_RETENTION_DAYS, 1825 by default.
+        self.assertEqual(vc.retention_json(row, 14, 400)["detailUntil"], "2028-01-25T01:15:02Z")
+        self.assertEqual(vc.retention_json(row, 14)["detailUntil"], "2031-12-20T01:15:02Z")
         self.assertEqual(vc.content_kinds(row, 14, started + 14 * 86400 - 1), ["recording", "summary", "transcript"])
         self.assertEqual(vc.content_kinds(row, 14, started + 14 * 86400), ["summary", "transcript"])
         self.assertEqual(vc.content_kinds(row, 14, started + 90 * 86400), [])
+        # A store deletion (M18) ends every kind at once, whatever the dates say.
+        self.assertEqual(vc.content_kinds(dict(row, store_deleted_at=started + 60), 14, started + 61), [])
         self.assertEqual(vc.cursor_of({"started_at": started, "id": "a1b2c3d4e5f60718293a4b5c6d7e8f90"}),
                          "1797815702-a1b2c3d4e5f60718293a4b5c6d7e8f90")
         self.assertEqual(vc.parse_cursor("1797815702-a1b2c3d4e5f60718293a4b5c6d7e8f90"), (1797815702, "a1b2c3d4e5f60718293a4b5c6d7e8f90"))

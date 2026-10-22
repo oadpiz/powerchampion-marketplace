@@ -13,6 +13,25 @@ VOICE_TRY_SECRET_MIN = 32
 VOICE_A6_RC_VERSION = re.compile(r"[0-9]{1,4}")
 VOICE_A6_RC_REQUIRED = 4
 VOICE_TRY_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+# PC_VOICE_CALL_RETENTION_DAYS (phase2-contract §16.5): how long the portal keeps a call's billing and metadata row
+# (voice_calls: times, lengths, result, meter). 5 years by default, pending the lawyer's answer. Never under 90 days:
+# a call's content (recordings, transcripts and summaries, on the Taiwan host) is kept up to 90 days, and its row must
+# not go before the content's deletion is queued. At most 3660 days (10 years).
+VOICE_CALL_RETENTION_DAYS_DEFAULT = 1825
+VOICE_CALL_RETENTION_DAYS_MIN = 90
+VOICE_CALL_RETENTION_DAYS_MAX = 3660
+
+
+def voice_call_retention_days(text):
+    """PC_VOICE_CALL_RETENTION_DAYS as an int: unset or empty is the default; anything but a whole number of days in
+    range stops the portal from starting (a wrong value would delete billing rows early or keep caller data too long)."""
+    text = (text or "").strip()
+    if not text:
+        return VOICE_CALL_RETENTION_DAYS_DEFAULT
+    if not re.fullmatch(r"[0-9]{1,5}", text):
+        raise ValueError("PC_VOICE_CALL_RETENTION_DAYS must be a whole number of days from %d to %d"
+                         % (VOICE_CALL_RETENTION_DAYS_MIN, VOICE_CALL_RETENTION_DAYS_MAX))
+    return int(text)
 
 
 def voice_try_origin(url):
@@ -84,6 +103,8 @@ class Settings:
     # PC_VOICE_A6_RC_VERSION: the RC version A6 meters with. Until it is at least 4 (A6 counts AI-answered calls by Q5
     # and does not bill a call whose only push is missing), R1 never answers answer_mode "ai" (phase2-contract §15).
     voice_a6_rc_version: str = ""
+    # PC_VOICE_CALL_RETENTION_DAYS: see VOICE_CALL_RETENTION_DAYS_DEFAULT (checked in __post_init__).
+    voice_call_retention_days: int = VOICE_CALL_RETENTION_DAYS_DEFAULT
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -99,6 +120,10 @@ class Settings:
             raise ValueError("Trial request limits must be nonnegative globally and positive per session")
         if self.database_url and not self.database_url.startswith(("sqlite:///", "postgres://", "postgresql://", "postgresql+psycopg://")):
             raise ValueError("PC_PORTAL_DATABASE_URL must be a sqlite:/// or postgresql:// (or postgres://) URL")
+        if (isinstance(self.voice_call_retention_days, bool) or not isinstance(self.voice_call_retention_days, int)
+                or not VOICE_CALL_RETENTION_DAYS_MIN <= self.voice_call_retention_days <= VOICE_CALL_RETENTION_DAYS_MAX):
+            raise ValueError("PC_VOICE_CALL_RETENTION_DAYS must be a whole number of days from %d to %d"
+                             % (VOICE_CALL_RETENTION_DAYS_MIN, VOICE_CALL_RETENTION_DAYS_MAX))
         if self.grafana_url:
             grafana = urlsplit(self.grafana_url)
             if grafana.scheme != "https" or not grafana.hostname or grafana.username or grafana.password or grafana.query or grafana.fragment or grafana.path not in ("", "/"):
@@ -218,4 +243,5 @@ class Settings:
             voice_media_url=os.environ.get("PC_VOICE_MEDIA_URL", "").strip(),
             voice_media_secret=os.environ.get("PC_VOICE_MEDIA_SECRET", ""),
             voice_a6_rc_version=os.environ.get("PC_VOICE_A6_RC_VERSION", "").strip(),
+            voice_call_retention_days=voice_call_retention_days(os.environ.get("PC_VOICE_CALL_RETENTION_DAYS")),
         )

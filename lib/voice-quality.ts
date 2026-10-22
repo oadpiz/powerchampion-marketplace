@@ -12,6 +12,7 @@ import type {
   CallEntry,
   CallOutcome,
   HandoffReason,
+  MediaKind,
   MeterReason,
   FlagKind,
 } from "./voice-calls";
@@ -59,6 +60,10 @@ export const METRIC_KEYS = ["reply_p50_ms", "reply_p95_ms", "barge_ins", "filler
 /** A10 `message.outcome`. */
 export const MESSAGE_OUTCOMES = ["none", "message", "callback_only", "no_speech", "notice_hangup", "error"] as const;
 export const CALLBACK_VIA = ["dtmf", "speech"] as const;
+/** §16: why a deletion request exists (voice_deletion_requests.reason): the store deleted the call, or a date passed. */
+export const DELETION_REASONS = ["store_deleted", "recording_expired", "content_expired"] as const;
+/** §16: pending until the Taiwan host's records sender acknowledges the deletion. */
+export const DELETION_STATUSES = ["pending", "done"] as const;
 
 export type AutoFlag = (typeof AUTO_FLAGS)[number];
 export type DegradeReason = (typeof DEGRADE_REASONS)[number];
@@ -71,6 +76,20 @@ export type MismatchField = (typeof MISMATCH_FIELDS)[number];
 export type MetricKey = (typeof METRIC_KEYS)[number];
 export type MessageOutcome = (typeof MESSAGE_OUTCOMES)[number];
 export type CallbackVia = (typeof CALLBACK_VIA)[number];
+export type DeletionReason = (typeof DELETION_REASONS)[number];
+export type DeletionStatus = (typeof DELETION_STATUSES)[number];
+
+/** A10 `deletions`: the call's deletion requests, oldest first (§16.4). The counts are what the Taiwan host reported. */
+export type CallDeletion = {
+  id: string;
+  reason: DeletionReason;
+  kinds: MediaKind[];
+  status: DeletionStatus;
+  requestedAt: string;
+  doneAt: string | null;
+  filesDeleted: number | null;
+  rowsDeleted: number | null;
+};
 
 /** An operator's review (A9 item, A10, A11). The backend also returns `note` here. */
 export type CallReview = {
@@ -104,6 +123,8 @@ export type QualityItem = {
   review: CallReview | null;
   meterUnits: 0 | 1;
   meterReason: MeterReason;
+  /** When the store deleted the call's recording and text (M18, §16.2); null if it did not. */
+  storeDeletedAt: string | null;
 };
 
 /** A9 `limits`; read them from the response, never hard-code them. */
@@ -164,9 +185,12 @@ export type QualityDetail = {
       detailUntil: string;
     };
     meterRule: string;
+    /** When the Taiwan host confirmed that all of the call's content is deleted (a store deletion or the 90-day expiry). */
+    contentPurgedAt: string | null;
   };
   content: CallContent;
   sources: { orchestrator: ReportSource; records: ReportSource };
+  deletions: CallDeletion[];
 };
 
 /** A11 body. `note` is multi-line, at most `limits.reviewNoteChars`, and must not hold a phone number. */

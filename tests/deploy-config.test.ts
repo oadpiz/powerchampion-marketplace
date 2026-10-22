@@ -112,6 +112,14 @@ describe("Dokploy deployment behind Traefik", () => {
     }
   });
 
+  it("wires PC_VOICE_CALL_RETENTION_DAYS into the portal only, 1825 days (5 years) by default (§16.5)", () => {
+    // The portal refuses to start on a value outside 90-3660; `:-1825` keeps an unset or empty variable at the default.
+    const name = "PC_VOICE_CALL_RETENTION_DAYS";
+    expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-1825\\}\\s*$`, "m"));
+    expect(compose).not.toMatch(new RegExp(`^\\s+${name}\\s*:\\s*(?!\\$\\{${name}:-1825\\}\\s*$)\\S`, "m"));
+    expect(website).not.toMatch(new RegExp(name));
+  });
+
   it("wires PC_VOICE_A6_RC_VERSION into the portal only, empty by default, so AI answers stay off until A6 meters them (§15)", () => {
     // Fix round: R1 answers answer_mode "ai" only when this is at least 4. An empty default is what keeps production
     // on message_only; a `:-4` default, a `:?` or a literal value here would turn AI answers on without a decision.

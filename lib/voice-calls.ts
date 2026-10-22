@@ -1,7 +1,7 @@
 /**
  * Phone agent call records (phase 2): the enums and API shapes the store's "Calls" page (/account/voice/calls, P2-2)
  * and the operators' "Quality" tab (/admin/voice, P2-6, see lib/voice-quality.ts) share. Shapes follow
- * phase2-contract.md §6 (M13-M17) and the backend's JSON (server/voice_calls.py call_item, call_detail,
+ * phase2-contract.md §6 (M13-M17), §16 (M18) and the backend's JSON (server/voice_calls.py call_item, call_detail,
  * content_json, store_flag_json); the backend is authoritative.
  *
  * Each enum is written as `export const NAME = [...] as const;` on purpose: server/test_voice_calls_sync.py reads
@@ -34,8 +34,11 @@ export const HANDOFF_REASONS = ["requested", "no_answer", "no_ai_question", "urg
 export const CALLER_KINDS = ["mobile", "landline", "hidden", "web", "unknown"] as const;
 /** M15: phase 2 has one kind of store flag. */
 export const FLAG_KINDS = ["wrong_answer"] as const;
-/** M14 content.state: none (nothing kept), expired (past every retention date), available. */
-export const CONTENT_STATES = ["none", "expired", "available"] as const;
+/**
+ * M14 content.state: none (nothing kept), expired (past every retention date), available; deleted (the store deleted
+ * the call's recording and text, M18) only reaches operators (A10): the store no longer finds the call.
+ */
+export const CONTENT_STATES = ["none", "expired", "available", "deleted"] as const;
 /** What a content link (M17, A12) can open on the Taiwan host. */
 export const MEDIA_KINDS = ["recording", "summary", "transcript"] as const;
 
@@ -66,10 +69,14 @@ export type CallItem = {
   meterReason: MeterReason;
 };
 
-/** M13 `limits`; read them from the response, never hard-code them. */
-export type CallLimits = { callsPageSize: number; flagNoteChars: number };
+/** M13 `limits`; read them from the response, never hard-code them. `callDetailDays` is PC_VOICE_CALL_RETENTION_DAYS. */
+export type CallLimits = { callsPageSize: number; flagNoteChars: number; callDetailDays: number };
 
-/** M13 GET /me/voice/calls. `summary` covers `month` only; `next` is the `before` cursor of the next page or null. */
+/**
+ * M13 GET /me/voice/calls. `summary` covers `month` only; `next` is the `before` cursor of the next page or null.
+ * `summary.total`, `byOutcome` and `meterUnits` still count calls the store deleted (they are still billed, §16.2);
+ * `deleted` says how many, `flagged` counts only calls still on the list.
+ */
 export type CallList = {
   calls: CallItem[];
   next: string | null;
@@ -79,6 +86,7 @@ export type CallList = {
     byOutcome: Record<CallOutcome, number>;
     meterUnits: number;
     flagged: number;
+    deleted: number;
   };
   limits: CallLimits;
 };
@@ -120,6 +128,8 @@ export type CallFlagInput = { kind: FlagKind; note?: string };
 export type CallFlagResult = { changed: boolean; flag: CallFlag };
 /** M16 answer. */
 export type CallUnflagResult = { changed: boolean };
+/** M18 DELETE /me/voice/calls/{id} answer: `changed` is false when the store had deleted it already (§16.2). */
+export type CallDeleteResult = { changed: boolean; deletedAt: string };
 
 /**
  * M17 and A12 answer. The token is a secret for 5 minutes: send it only as `Authorization: Bearer …` to the URLs

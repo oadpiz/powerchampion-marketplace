@@ -16,6 +16,7 @@ import {
   durationText,
   hasPhoneNumber,
   taipeiParts,
+  type CallDeleteResult,
   type CallDetail,
   type CallFlag,
   type CallFlagResult,
@@ -94,7 +95,7 @@ function Modal({ labelledBy, busy, onClose, children }: { labelledBy: string; bu
  * §12.1 and phase 1 §9 copy for the errors this page can get; the temporary-password one links to Security. `action`
  * names a write that failed with a network error or 5xx, so it does not read like the list's load failure.
  */
-function callErrorText(error: unknown, locale: "en" | "zh", action?: "flag" | "unflag"): ReactNode {
+function callErrorText(error: unknown, locale: "en" | "zh", action?: "flag" | "unflag" | "delete"): ReactNode {
   const zh = locale === "zh";
   const code = error instanceof PortalError ? error.code : "";
   if (code === "call_not_found")
@@ -110,6 +111,8 @@ function callErrorText(error: unknown, locale: "en" | "zh", action?: "flag" | "u
     );
   if (code === "voice_store_not_found" || code === "store_suspended") return voiceErrorText(error, locale);
   // Not in the contract's §11.2 (fix round): a flag that did not go through is not a page that did not load.
+  if (action === "delete" && (!(error instanceof PortalError) || error.status >= 500))
+    return zh ? "刪除沒有送出，請稍後再試。" : "The deletion was not sent. Try again later.";
   if (action && (!(error instanceof PortalError) || error.status >= 500))
     return action === "flag"
       ? zh
@@ -123,11 +126,16 @@ function callErrorText(error: unknown, locale: "en" | "zh", action?: "flag" | "u
   return voiceErrorText(error, locale);
 }
 
-type Load = { status: "loading" } | { status: "error"; error: unknown } | { status: "ready"; detail: CallDetail };
+type Load =
+  | { status: "loading" }
+  | { status: "error"; error: unknown }
+  | { status: "ready"; detail: CallDetail }
+  | { status: "deleted" };
 
 /**
  * /account/voice/calls/<id>, one call (phase2-contract §6.2-§6.5, §11.2): its facts and estimated billing, the
- * content read from the Taiwan host on request (CallContentPanel), and the store's "wrong answer" flag (M15, M16).
+ * content read from the Taiwan host on request (CallContentPanel), the store's "wrong answer" flag (M15, M16) and
+ * "delete this call's recording and text" (M18, §16.2), after which the page says the deletion was sent.
  */
 export function AccountVoiceCallDetail({ summary, onChanged, callId }: VoiceSubProps & { callId: string }): ReactElement {
   const { locale } = useLocale();
@@ -163,6 +171,7 @@ export function AccountVoiceCallDetail({ summary, onChanged, callId }: VoiceSubP
   );
   // The route only lets 32 lowercase hex through; anything else is the not-found case without asking the backend.
   const shown: Load = valid ? load : { status: "error", error: new PortalError(404, "call_not_found", "Not found.") };
+  if (shown.status === "deleted") return <DeletedView back={back} />;
   if (shown.status !== "ready")
     return (
       <section className="portal-panel" aria-labelledby="voice-call-title">
@@ -196,8 +205,31 @@ export function AccountVoiceCallDetail({ summary, onChanged, callId }: VoiceSubP
       locked={summary.account.passwordChangeRequired}
       back={back}
       onFlag={(flag) => setLoad({ status: "ready", detail: { ...detail, flag, call: { ...detail.call, flagged: flag !== null } } })}
+      onDeleted={() => setLoad({ status: "deleted" })}
       onChanged={onChanged}
     />
+  );
+}
+
+/** After M18: the call is no longer the store's to see (404 from now on), so the page says so and links back. */
+function DeletedView({ back }: { back: ReactNode }) {
+  const { locale } = useLocale();
+  const zh = locale === "zh";
+  const heading = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => heading.current?.focus(), []);
+  return (
+    <section className="portal-panel" aria-labelledby="voice-call-deleted-title">
+      {back}
+      <h2 id="voice-call-deleted-title" ref={heading} tabIndex={-1}>
+        {zh ? "已送出刪除" : "Deletion requested"}
+      </h2>
+      {/* Honest about what is done: the Taiwan host deletes the content when it picks the request up (§16.3). */}
+      <p role="status">
+        {zh
+          ? "錄音、逐字稿和摘要會從保存處刪除，你已經不能再查看；計費紀錄會保留，這通也不會再出現在通話紀錄清單。"
+          : "The recording, transcript and summary will be deleted where they are kept, and you can no longer view them. The billing record is kept, and the call no longer appears in your call list."}
+      </p>
+    </section>
   );
 }
 
@@ -207,6 +239,7 @@ function CallView({
   locked,
   back,
   onFlag,
+  onDeleted,
   onChanged,
 }: {
   detail: CallDetail;
@@ -214,6 +247,7 @@ function CallView({
   locked: boolean;
   back: ReactNode;
   onFlag: (flag: CallFlag | null) => void;
+  onDeleted: () => void;
   onChanged: () => void;
 }) {
   const { locale } = useLocale();
@@ -305,7 +339,114 @@ function CallView({
       {(call.configVersion !== null || flag !== null) && (
         <FlagPanel callRowId={call.id} flag={flag} suspended={suspended} locked={locked} onFlag={onFlag} onChanged={onChanged} />
       )}
+      <DeletePanel callRowId={call.id} locked={locked} onDeleted={onDeleted} onChanged={onChanged} />
     </>
+  );
+}
+
+/**
+ * §16.2 M18: delete this call's recording and text, after a confirmation that says it cannot be undone and that the
+ * billing record is kept. Allowed while the store is suspended (it may still look at its records); not with a
+ * temporary password. The dialog opens on Cancel, the safe choice.
+ */
+function DeletePanel({
+  callRowId,
+  locked,
+  onDeleted,
+  onChanged,
+}: {
+  callRowId: string;
+  locked: boolean;
+  onDeleted: () => void;
+  onChanged: () => void;
+}) {
+  const { locale } = useLocale();
+  const zh = locale === "zh";
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  async function remove() {
+    if (inFlight.current || locked) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      // M18 reads no body; deleting a call deleted already (another tab) answers changed: false, which is the same end.
+      await portalRequest<CallDeleteResult>(`/me/voice/calls/${callRowId}`, { method: "DELETE" });
+      if (!mounted.current) return;
+      setOpen(false);
+      onDeleted();
+    } catch (cause) {
+      if (!mounted.current) return;
+      setError(cause);
+      if (cause instanceof PortalError && ["password_change_required", "voice_store_not_found"].includes(cause.code)) onChanged();
+    } finally {
+      inFlight.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+
+  return (
+    <section className="portal-panel" aria-labelledby="voice-call-delete-title">
+      <h3 id="voice-call-delete-title">{zh ? "刪除這通的錄音與文字" : "Delete this call's recording and text"}</h3>
+      <p className="portal-muted">
+        {zh
+          ? "刪除後無法復原；計費紀錄會保留。這通也會從通話紀錄清單移除。"
+          : "This cannot be undone; the billing record is kept. The call also leaves your call list."}
+      </p>
+      <div className="portal-actions">
+        <button
+          id="voice-call-delete-open"
+          type="button"
+          className="portal-button-secondary"
+          disabled={locked || busy}
+          onClick={() => {
+            setError(null);
+            setOpen(true);
+          }}
+        >
+          {zh ? "刪除這通的錄音與文字" : "Delete this call's recording and text"}
+        </button>
+      </div>
+      {!open && error !== null && (
+        <p className="portal-error" role="alert">
+          {callErrorText(error, locale, "delete")}
+        </p>
+      )}
+      {open && (
+        <Modal labelledBy="voice-call-delete-dialog-title" busy={busy} onClose={() => setOpen(false)}>
+          <h2 id="voice-call-delete-dialog-title">{zh ? "要刪除這通的錄音與文字嗎？" : "Delete this call's recording and text?"}</h2>
+          <p>
+            {zh
+              ? "錄音、逐字稿和摘要都會刪除，刪除後無法復原；計費紀錄會保留。"
+              : "The recording, transcript and summary are deleted. This cannot be undone; the billing record is kept."}
+          </p>
+          {error !== null && (
+            <p className="portal-error" role="alert">
+              {callErrorText(error, locale, "delete")}
+            </p>
+          )}
+          <div className="portal-actions">
+            <button type="button" className="portal-button-secondary" disabled={busy} onClick={() => setOpen(false)}>
+              {zh ? "取消" : "Cancel"}
+            </button>
+            <button type="button" className="portal-button portal-button-danger" disabled={busy || locked} onClick={() => void remove()}>
+              {busy ? (zh ? "處理中…" : "Working…") : zh ? "刪除" : "Delete"}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </section>
   );
 }
 

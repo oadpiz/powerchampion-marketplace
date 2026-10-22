@@ -63,7 +63,7 @@ class GrafanaUrlSettingTests(unittest.TestCase):
 
 TEST_SECRET = "test-only-not-a-secret-0000000000"
 VOICE_ENV = ("PC_VOICE_ENABLED", "PC_VOICE_TRY_SECRET", "PC_VOICE_TRY_URL", "PC_VOICE_RUNTIME_TOKEN", "PC_VOICE_MEDIA_URL",
-             "PC_VOICE_MEDIA_SECRET", "PC_VOICE_A6_RC_VERSION")
+             "PC_VOICE_MEDIA_SECRET", "PC_VOICE_A6_RC_VERSION", "PC_VOICE_CALL_RETENTION_DAYS")
 RUNTIME_TOKEN = "test-only-runtime-token-0000000000"
 
 
@@ -186,6 +186,23 @@ class VoiceRuntimeSettingTests(unittest.TestCase):
                 self.assertTrue(self.from_env(PC_VOICE_A6_RC_VERSION=value).voice_a6_ready)
         self.assertTrue(Settings(voice_a6_rc_version="4").voice_a6_ready)
         self.assertFalse(Settings(voice_a6_rc_version="3").voice_a6_ready)
+
+    def test_call_retention_days_default_range_and_bad_values(self):
+        # phase2-contract §16.5: 5 years by default, pending the lawyer; 90 days at least (the content's longest date),
+        # 10 years at most. A wrong value stops the portal: it would delete billing rows early or keep data too long.
+        for s in (Settings(), self.from_env(), self.from_env(PC_VOICE_CALL_RETENTION_DAYS=""), self.from_env(PC_VOICE_CALL_RETENTION_DAYS="  ")):
+            self.assertEqual(s.voice_call_retention_days, 1825)
+        for value, days in (("90", 90), ("400", 400), (" 1825 ", 1825), ("3660", 3660), ("0400", 400)):
+            with self.subTest(value=value):
+                self.assertEqual(self.from_env(PC_VOICE_CALL_RETENTION_DAYS=value).voice_call_retention_days, days)
+        for value in ("89", "0", "3661", "-1", "1.5", "5y", "abc", "1e3", "٤٠٠", "100000"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    self.from_env(PC_VOICE_CALL_RETENTION_DAYS=value)
+        for value in (89, 3661, True, 400.0, "400"):
+            with self.subTest(direct=value):
+                with self.assertRaises(ValueError):
+                    Settings(voice_call_retention_days=value)
 
     def test_secrets_are_not_in_repr(self):
         text = repr(Settings(voice_runtime_token=RUNTIME_TOKEN, voice_media_secret=TEST_SECRET))

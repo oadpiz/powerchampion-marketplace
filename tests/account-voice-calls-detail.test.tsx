@@ -521,3 +521,122 @@ describe("flag as wrong answer", () => {
     expect(requests).toHaveLength(1);
   });
 });
+
+describe("delete this call's recording and text (M18, §16.2)", () => {
+  const deleteButton = () => screen.findByRole("button", { name: "Delete this call's recording and text" });
+
+  it("asks first, says it cannot be undone and that billing is kept, then deletes and leaves the call", async () => {
+    const user = userEvent.setup();
+    const state = oneCall();
+    const { requests } = renderCall(state);
+    const open = await deleteButton();
+    expect(screen.getByText("This cannot be undone; the billing record is kept. The call also leaves your call list.")).toBeVisible();
+    await user.click(open);
+    const dialog = screen.getByRole("dialog", { name: "Delete this call's recording and text?" });
+    expect(within(dialog).getByText("The recording, transcript and summary are deleted. This cannot be undone; the billing record is kept.")).toBeVisible();
+    // The safe choice has the focus.
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(requests.filter((request) => request.method === "DELETE")).toHaveLength(0);
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const done = await screen.findByRole("heading", { level: 2, name: "Deletion requested" });
+    expect(document.activeElement).toBe(done);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The recording, transcript and summary will be deleted where they are kept, and you can no longer view them. The billing record is kept, and the call no longer appears in your call list.",
+    );
+    expect(screen.getByRole("link", { name: "← Calls" })).toHaveAttribute("href", "/account/voice/calls");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Call on/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show content" })).not.toBeInTheDocument();
+    const removals = requests.filter((request) => request.method === "DELETE");
+    expect(removals.map((request) => [request.path, request.body])).toEqual([[`/me/voice/calls/${ID}`, null]]);
+    expect(state.rows[0].deletedAt).toBe(NOW_S);
+  });
+
+  it("speaks Traditional Chinese", async () => {
+    chinese();
+    const user = userEvent.setup();
+    const state = oneCall();
+    renderCall(state);
+    await user.click(await screen.findByRole("button", { name: "刪除這通的錄音與文字" }));
+    expect(screen.getByText("刪除後無法復原；計費紀錄會保留。這通也會從通話紀錄清單移除。")).toBeVisible();
+    const dialog = screen.getByRole("dialog", { name: "要刪除這通的錄音與文字嗎？" });
+    expect(within(dialog).getByText("錄音、逐字稿和摘要都會刪除，刪除後無法復原；計費紀錄會保留。")).toBeVisible();
+    await user.click(within(dialog).getByRole("button", { name: "刪除" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "已送出刪除" })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("錄音、逐字稿和摘要會從保存處刪除，你已經不能再查看；計費紀錄會保留，這通也不會再出現在通話紀錄清單。");
+    expect(screen.getByRole("link", { name: "← 通話紀錄" })).toBeVisible();
+    expect(state.rows[0].deletedAt).toBe(NOW_S);
+  });
+
+  it("changes nothing on Cancel or Escape and gives focus back; works from the keyboard", async () => {
+    const user = userEvent.setup();
+    const state = oneCall();
+    const { requests } = renderCall(state);
+    const open = await deleteButton();
+    await user.click(open);
+    fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(document.activeElement).toBe(open);
+    await user.click(open);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(open);
+    expect(requests.filter((request) => request.method === "DELETE")).toHaveLength(0);
+    expect(state.rows[0].deletedAt).toBeNull();
+    // Keyboard only: Enter opens, Tab moves from Cancel to Delete, Enter deletes.
+    open.focus();
+    await user.keyboard("{Enter}");
+    expect(document.activeElement).toBe(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    await user.tab();
+    expect(document.activeElement).toBe(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("heading", { level: 2, name: "Deletion requested" })).toBeVisible();
+    expect(state.rows[0].deletedAt).toBe(NOW_S);
+  });
+
+  it("is off with a temporary password and allowed while the store is suspended", async () => {
+    const user = userEvent.setup();
+    const { requests } = renderCall(oneCall({}, { passwordChangeRequired: true }));
+    expect(await deleteButton()).toBeDisabled();
+    expect(requests).toHaveLength(1);
+    cleanup();
+    const state = oneCall({}, { storeStatus: "suspended" });
+    renderCall(state);
+    const open = await deleteButton();
+    expect(open).toBeEnabled();
+    await user.click(open);
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "Deletion requested" })).toBeVisible();
+    expect(state.rows[0].deletedAt).toBe(NOW_S);
+  });
+
+  it("says a deletion that did not go through was not sent, and keeps the call", async () => {
+    const user = userEvent.setup();
+    const state = oneCall();
+    renderCall(state);
+    await user.click(await deleteButton());
+    const inner = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) =>
+      init?.method === "DELETE" ? Response.json({ error: "service_unavailable", detail: "down" }, { status: 502 }) : inner(input, init),
+    );
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent("The deletion was not sent. Try again later.");
+    expect(screen.queryByText("Calls could not be loaded. Reload the page.")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Call on/ })).toBeVisible();
+    expect(state.rows[0].deletedAt).toBeNull();
+  });
+
+  it("shows the deleted state when another tab deleted the call first, and the call is gone on the next visit", async () => {
+    const user = userEvent.setup();
+    const state = oneCall();
+    renderCall(state);
+    await user.click(await deleteButton());
+    state.rows[0].deletedAt = NOW_S - 60; // deleted in another tab meanwhile: M18 answers changed: false
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByRole("heading", { level: 2, name: "Deletion requested" })).toBeVisible();
+    expect(state.rows[0].deletedAt).toBe(NOW_S - 60);
+    cleanup();
+    renderCall(state);
+    expect(await screen.findByRole("alert")).toHaveTextContent("This call does not exist or does not belong to your store.");
+  });
+});

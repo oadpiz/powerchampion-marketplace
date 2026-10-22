@@ -6,7 +6,16 @@
  */
 import { PortalError } from "../lib/portal-client";
 import { callTime, dateText, type CallEntry, type CallOutcome, type HandoffReason, type MeterReason } from "../lib/voice-calls";
-import type { AutoFlag, DegradeReason, ListeningKind, MessageOutcome, ReviewLabel, ReviewStatus } from "../lib/voice-quality";
+import type {
+  AutoFlag,
+  DegradeReason,
+  DeletionReason,
+  DeletionStatus,
+  ListeningKind,
+  MessageOutcome,
+  ReviewLabel,
+  ReviewStatus,
+} from "../lib/voice-quality";
 import { errorMessage } from "./admin-resource";
 import { voiceAdminErrorText, voiceFeatureOff } from "./admin-voice-dialogs";
 
@@ -80,6 +89,17 @@ export const REVIEW_LABEL_COPY: Record<ReviewLabel, Copy> = {
 export const REVIEW_STATUS_LABEL: Record<ReviewStatus, Copy> = {
   open: { zh: "待處理", en: "Open" },
   done: { zh: "已處理", en: "Done" },
+};
+
+/** §16 A10 "刪除": why the portal asked the Taiwan host to delete content, and how far it got. */
+export const DELETION_REASON_LABEL: Record<DeletionReason, Copy> = {
+  store_deleted: { zh: "店家刪除", en: "Deleted by the store" },
+  recording_expired: { zh: "錄音到期", en: "Recording past its date" },
+  content_expired: { zh: "內容到期（90 天）", en: "Content past its date (90 days)" },
+};
+export const DELETION_STATUS_LABEL: Record<DeletionStatus, Copy> = {
+  pending: { zh: "等紀錄端刪除", en: "Waiting for the records host" },
+  done: { zh: "紀錄端已刪除", en: "Deleted by the records host" },
 };
 
 /** §11.3 list column "狀態": a call without a finished review is still to review. */
@@ -188,6 +208,8 @@ export function qualityErrorText(error: unknown, locale: "en" | "zh"): string {
       return zh ? "這通沒有保存內容。" : "No content was kept for this call.";
     case "call_content_expired":
       return zh ? "內容已超過保存期限，不能再查看。" : "The content is past its retention period and can no longer be viewed.";
+    case "call_content_deleted":
+      return zh ? "店家已刪除這通的錄音與文字，不能再查看。" : "The store deleted this call's recording and text; it can no longer be viewed.";
     case "voice_content_link_limit":
       return zh ? "查看次數太多了，請 1 小時後再試。" : "Too many views. Try again in an hour.";
     case "listening_not_found":

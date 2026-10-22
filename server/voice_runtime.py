@@ -2,6 +2,8 @@
 
     R1 GET  /api/portal/voice/runtime/config?number=<dialed>[&have=<state_sha256>]
     R2 POST /api/portal/voice/runtime/calls      (one voice.call-report/v1 per request)
+    R3 GET  /api/portal/voice/runtime/deletions?after=<cursor>&limit=<1-500>   (the records sender, §16.3)
+    R4 POST /api/portal/voice/runtime/deletions/{id}/ack                       (the records sender, §16.3)
 
 Only the website's server-side route /api/voice-runtime/* calls these (the browser BFF does not list them). In this
 order (§1.1), steps 1-5 synchronously before the route's first await, so the rate limit is checked and reserved
@@ -13,7 +15,8 @@ atomically (asyncio runs one handler at a time between awaits):
    hmac.compare_digest (no early exit on length) -> 401 runtime_auth. Failures draw from their own bucket; past
    60 a minute they answer 429, and a correct token is not affected;
 4. the route's bucket (600 a minute) -> 429 rate_limited;
-5. R2: Content-Length missing or above 8192 -> 413 before any byte is read; then body_json (415/413/400).
+5. R2: Content-Length missing or above 8192 -> 413 before any byte is read; then body_json (415/413/400). R4 the
+   same with 1024 bytes.
 The routes read no cookie, never call current_user, set no cookie and write no audit row (the call rows are the
 record). No IP address is used for anything: the portal only sees the website container's address (§3.6).
 
@@ -29,12 +32,13 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from . import voice_calls as vc
+from . import voice_retention as vrt
 from .support import PREFIX, body_json, fail
 from .voice_merchant import NOT_FOUND_DETAIL
 
 AUTHORIZATION = re.compile(r"Bearer ([\x21-\x7e]{32,256})")
 HAVE = re.compile(r"[a-f0-9]{64}")
-LIMITS = {"config": 600, "calls": 600, "auth_failures": 60}  # per 60 seconds (§1.5)
+LIMITS = {"config": 600, "calls": 600, "deletions": 600, "deletion_acks": 600, "auth_failures": 60}  # per 60 seconds (§1.5, §16.3)
 WINDOW_SECONDS = 60.0
 
 
@@ -110,3 +114,24 @@ def attach_voice_runtime(application, ctx):
             con.execute("BEGIN IMMEDIATE")
             status, payload = vc.ingest(con, parsed, now, audit=store.audit)
         return JSONResponse(payload, status_code=status)
+
+    # R3
+    @application.get(base + "/deletions")
+    async def voice_runtime_deletions(request: Request):
+        gate(request, "deletions")
+        after, limit = vrt.parse_pull(request.query_params.get("after"), request.query_params.get("limit"))
+        with store.connect() as con:
+            return vrt.pull(con, after, limit)
+
+    # R4
+    @application.post(base + "/deletions/{request_id}/ack")
+    async def voice_runtime_deletion_ack(request_id: str, request: Request):
+        gate(request, "deletion_acks")
+        length = request.headers.get("content-length", "")
+        if not length.isdigit() or int(length) > vrt.ACK_BODY_BYTES:
+            fail("invalid_input", "Send Content-Length; an acknowledgement is at most %d bytes." % vrt.ACK_BODY_BYTES, 413)
+        body = await body_json(request, vrt.ACK_BODY_BYTES)
+        now = int(time.time())
+        with store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            return vrt.ack(con, request_id, body, now)

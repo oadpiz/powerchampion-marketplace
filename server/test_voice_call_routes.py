@@ -27,9 +27,10 @@ CALL_ITEM_KEYS = {"id", "ref", "startedAt", "durationSeconds", "entry", "caller"
 DETAIL_EXTRA_KEYS = {"answeredAt", "endedAt", "configVersion", "handoffReason", "callbackConfirmed", "messageSeconds", "recordingSeconds"}
 CONTENT_KEYS = {"expected", "hasRecording", "transcriptUntil", "recordingUntil", "state", "linkAvailable"}
 QUALITY_ITEM_KEYS = {"id", "callId", "store", "startedAt", "durationSeconds", "entry", "dialed", "numberPurpose", "outcome", "degraded",
-                     "degradeReason", "handoff", "handoffReason", "urgent", "autoFlags", "storeFlag", "review", "meterUnits", "meterReason"}
+                     "degradeReason", "handoff", "handoffReason", "urgent", "autoFlags", "storeFlag", "review", "meterUnits", "meterReason",
+                     "storeDeletedAt"}
 QUALITY_DETAIL_EXTRA = {"answeredAt", "endedAt", "configVersion", "configSha256", "disclosureVersion", "turns", "aiAnswered",
-                        "aiSpeechSeconds", "callSpeechSeconds", "metrics", "message", "mismatch", "retention", "meterRule"}
+                        "aiSpeechSeconds", "callSpeechSeconds", "metrics", "message", "mismatch", "retention", "meterRule", "contentPurgedAt"}
 LISTENING_BODY = {"title": "G0 聲音盲聽", "kind": "tts_voice", "heldOn": "2026-10-22", "sampleCount": 20, "raterCount": 3,
                   "passed": True, "summary": "三位評分人都選 B。", "reportRef": "docs/g0-listening.md"}
 
@@ -88,7 +89,7 @@ class SwitchTests(CallRoutesCase):
     def routes(self, row_id, log_id):
         store = [("GET", "/me/voice/calls", None), ("GET", "/me/voice/calls/" + row_id, None),
                  ("POST", "/me/voice/calls/%s/flag" % row_id, {"kind": "wrong_answer"}), ("DELETE", "/me/voice/calls/%s/flag" % row_id, None),
-                 ("POST", "/me/voice/calls/%s/content-link" % row_id, {})]
+                 ("POST", "/me/voice/calls/%s/content-link" % row_id, {}), ("DELETE", "/me/voice/calls/" + row_id, None)]
         admin = [("GET", "/admin/voice/quality/calls", None), ("GET", "/admin/voice/quality/calls/" + row_id, None),
                  ("POST", "/admin/voice/quality/calls/%s/review" % row_id, {"score": 3, "status": "open"}),
                  ("POST", "/admin/voice/quality/calls/%s/content-link" % row_id, {}), ("GET", "/admin/voice/quality/listening", None),
@@ -130,7 +131,8 @@ class SwitchTests(CallRoutesCase):
         self.post(owner, "/auth/login", {"email": "owner@clinic.example", "password": PASSWORD})
         operator = self.client()
         self.post(operator, "/auth/login", {"email": "admin@example.test", "password": PASSWORD})
-        for client, routes in ((owner, store_routes), (operator, admin_routes)):
+        # Operators first: the store's last route (M18) deletes the call's content, which A12 then refuses (410).
+        for client, routes in ((operator, admin_routes), (owner, store_routes)):
             for method, path, body in routes:
                 with self.subTest(on=path, method=method):
                     self.assertIn(self.send(client, method, path, body).status_code, (200, 201))
@@ -159,7 +161,7 @@ class StoreListTests(CallRoutesCase):
         self.ok(self.post(self.owner, "/me/voice/calls/%s/flag" % answered, {"kind": "wrong_answer"}))
         body = self.ok(self.get(self.owner, "/me/voice/calls"))
         self.assertEqual(set(body), {"calls", "next", "summary", "limits"})
-        self.assertEqual(body["limits"], {"callsPageSize": 50, "flagNoteChars": 100})
+        self.assertEqual(body["limits"], {"callsPageSize": 50, "flagNoteChars": 100, "callDetailDays": 1825})
         self.assertIsNone(body["next"])
         self.assertEqual(len(body["calls"]), 4)
         self.assertEqual({c["id"] for c in body["calls"]}, {answered, message, missed, self.call(try_id)["id"]})
@@ -168,7 +170,7 @@ class StoreListTests(CallRoutesCase):
             self.assertEqual(item["ref"], item["id"][:8])
         summary = body["summary"]
         self.assertEqual(summary["month"], vc.taipei_month(now))
-        self.assertEqual((summary["total"], summary["meterUnits"], summary["flagged"]), (4, 2, 1))
+        self.assertEqual((summary["total"], summary["meterUnits"], summary["flagged"], summary["deleted"]), (4, 2, 1, 0))
         self.assertEqual(summary["byOutcome"], {"answered": 2, "message": 1, "handoff": 0, "degraded": 0, "not_answered": 1,
                                                 "hangup_early": 0, "no_speech": 0, "error": 0, "unknown": 0})
         self.assertEqual([c["id"] for c in self.ok(self.get(self.owner, "/me/voice/calls", outcome="message"))["calls"]], [message])
@@ -751,7 +753,8 @@ class QualityTests(CallRoutesCase):
         row_id = self.new_call(orchestrator(now), records(now, message={"outcome": "message", "speech_ms": 12300, "recording_ms": 15000,
                                                                         "recording_saved": True}))
         body = self.ok(self.get(self.operator, "/admin/voice/quality/calls/" + row_id))
-        self.assertEqual(set(body), {"call", "content", "sources"})
+        self.assertEqual(set(body), {"call", "content", "sources", "deletions"})
+        self.assertEqual(body["deletions"], [])
         call = body["call"]
         self.assertEqual(set(call), QUALITY_ITEM_KEYS | QUALITY_DETAIL_EXTRA)
         self.assertEqual((call["aiAnswered"], call["aiSpeechSeconds"], call["callSpeechSeconds"], call["turns"], call["meterRule"]),

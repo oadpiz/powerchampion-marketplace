@@ -33,6 +33,7 @@ from .voice_merchant import attach_voice_merchant
 from .admin_voice import attach_admin_voice
 from .voice_runtime import attach_voice_runtime
 from .voice_call_routes import attach_voice_calls
+from . import voice_retention
 
 
 def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=None, runtime_tools=None, studio_agent=None):
@@ -50,6 +51,10 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
         if application.state.studio.sweeper_enabled:
             # Settles studio ops left reserved/submitted/unknown (PC_STUDIO_SWEEPER=0 turns it off).
             workers.append(asyncio.create_task(application.state.studio.serve(stop)))
+        if settings.voice_enabled:
+            # Phone agent retention (phase2-contract §16.4, §16.5): queue expired content for the Taiwan host and delete
+            # call rows past PC_VOICE_CALL_RETENTION_DAYS, a minute after start and then every hour.
+            workers.append(asyncio.create_task(voice_retention.serve(store, settings, stop)))
         try:
             yield
         finally:

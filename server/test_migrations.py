@@ -15,9 +15,10 @@ EXPECTED_TABLES = {
     "studio_accounts", "studio_projects", "studio_ops", "studio_ledger", "studio_rate",
 }
 VOICE_TABLES = {"voice_stores", "voice_store_hours", "voice_store_closures", "voice_faqs", "voice_config_versions", "voice_numbers"}
-CALL_TABLES = {"voice_calls", "voice_call_reviews", "voice_listening_logs"}
+# 0009's three tables and 0011's deletion requests
+CALL_TABLES = {"voice_calls", "voice_call_reviews", "voice_listening_logs", "voice_deletion_requests"}
 EXPECTED_TABLES = EXPECTED_TABLES | VOICE_TABLES | CALL_TABLES
-HEAD = "0010_voice_call_digests"
+HEAD = "0011_voice_deletions"
 AUDIT_INDEXES = ["audit_events_action_actor_time", "audit_events_action_target_time"]
 
 
@@ -49,8 +50,9 @@ class MigrationTests(unittest.TestCase):
         # 13 legacy indexes + alloc_nodes_engineer (0003) + 5 studio indexes (0005)
         # + voice_faqs_store, voice_numbers_number (0007)
         # + audit_events_action_target_time (0008) + voice_calls_store_time, voice_calls_time, voice_calls_number,
-        # audit_events_action_actor_time (0009)
-        self.assertEqual(len(names), 26, names)
+        # audit_events_action_actor_time (0009) + voice_calls_content_expiry, voice_calls_recording_expiry,
+        # voice_deletion_requests_status_seq (0011)
+        self.assertEqual(len(names), 29, names)
         self.assertLessEqual({"ux_studio_ops_active", "ix_studio_ops_state", "ix_studio_ops_user_state",
                               "ix_studio_projects_user_created", "ix_studio_ledger_user_created"}, names)
 
@@ -399,13 +401,15 @@ class MigrationTests(unittest.TestCase):
             con.execute("INSERT INTO voice_calls (" + ",".join(names) + ") VALUES (" + ",".join("?" * len(names)) + ")",
                         tuple(bare[name] for name in names))
 
+        later = ("store_deleted_at", "recording_expiry_queued_at", "content_expiry_queued_at")  # 0011's columns, all NULL here
+
         def snapshot(skip=()):
             with store.connect() as con:
-                return [{k: v for k, v in dict(r).items() if k not in skip}
+                return [{k: v for k, v in dict(r).items() if k not in skip + later}
                         for r in con.execute("SELECT * FROM voice_calls ORDER BY id").fetchall()]
 
         digests = ("report_orchestrator_sha256", "report_records_sha256")
-        others_before, tables_before = snapshot(digests), self._snapshot(store, set(self.db.table_names()) - {"alembic_version", "voice_calls"})
+        others_before, tables_before = snapshot(digests), self._snapshot(store, set(self.db.table_names()) - {"alembic_version", "voice_calls", "voice_deletion_requests"})
         upgrade_to_head(self.db.url)
         self.assertEqual(self._versions(store), [HEAD])
         with store.connect() as con:
@@ -418,7 +422,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual((rows["e" * 32]["report_orchestrator_sha256"], rows["e" * 32]["report_records_sha256"]), (None, None))
         self.assertNotIn(old, {r["report_orchestrator_sha256"] for r in rows.values()})
         self.assertEqual(snapshot(digests), others_before)  # only the two digest columns changed
-        self.assertEqual(self._snapshot(store, set(self.db.table_names()) - {"alembic_version", "voice_calls"}), tables_before)
+        self.assertEqual(self._snapshot(store, set(self.db.table_names()) - {"alembic_version", "voice_calls", "voice_deletion_requests"}), tables_before)
         after = snapshot()
         # Downgrade changes nothing (the old digests cannot be rebuilt); upgrading again rewrites the same values.
         downgrade_to(self.db.url, "0009_voice_calls")
@@ -427,6 +431,71 @@ class MigrationTests(unittest.TestCase):
         upgrade_to_head(self.db.url)
         self.assertEqual(self._versions(store), [HEAD])
         self.assertEqual(snapshot(), after)
+
+    def test_voice_deletions_upgrade_and_downgrade(self):
+        # 0011 (phase2-contract §16): three nullable columns on voice_calls and the deletion request table. Downgrade must
+        # keep every call row and review (SQLite drops the columns in place; a table rebuild would cascade to reviews).
+        from server.store import Store
+        store = Store(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        added = {"store_deleted_at", "recording_expiry_queued_at", "content_expiry_queued_at"}
+        self.assertLessEqual(added, self._columns(store, "voice_calls"))
+        call = {"id": "c" * 32, "call_id": "1797815702.118", "entry": "pstn", "started_at": 100, "disposition": "ANSWERED",
+                "caller_kind": "mobile", "outcome": "answered", "retention_days_snapshot": 90, "meter_units": 1,
+                "meter_reason": "ai_speech", "meter_rule": "q5-draft-1", "received_at": 300, "updated_at": 300,
+                "store_deleted_at": 400, "content_purged_at": 500}
+        request = {"id": "r" * 32, "seq": 1, "call_id": "1797815702.118", "reason": "store_deleted",
+                   "kinds": '["recording","summary","transcript"]', "requested_by": "u1", "status": "pending", "requested_at": 400}
+
+        def insert(con, table, values):
+            names = sorted(values)
+            con.execute("INSERT INTO " + table + " (" + ",".join(names) + ") VALUES (" + ",".join("?" * len(names)) + ")",
+                        tuple(values[n] for n in names))
+
+        with store.connect() as con:
+            con.execute("INSERT INTO users (id,email,name,password_hash,role,created_at) VALUES (?,?,?,?,?,?)",
+                        ("u1", "ops@example.test", "ops", "unused", "admin", 1))
+            insert(con, "voice_calls", call)
+            con.execute("INSERT INTO voice_call_reviews (call_row_id,score,status,reviewer_id,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+                        ("c" * 32, 3, "open", "u1", 1, 1))
+            insert(con, "voice_deletion_requests", request)
+        for values in (dict(request, id="a" * 32, seq=2),  # one request per (call_id, reason)
+                       dict(request, id="a" * 32, reason="content_expired"),  # seq is unique
+                       dict(request, id="a" * 32, seq=0, reason="content_expired"),
+                       dict(request, id="a" * 32, seq=2, reason="expired"),
+                       dict(request, id="a" * 32, seq=2, reason="content_expired", status="failed"),
+                       dict(request, id="a" * 32, seq=2, reason="content_expired", status="done"),  # done needs done_at and counts
+                       dict(request, id="a" * 32, seq=2, reason="content_expired", status="done", done_at=1, files_deleted=-1, rows_deleted=0),
+                       dict(request, id="a" * 32, seq=2, reason="content_expired", files_deleted=0)):  # pending has no counts
+            with self.assertRaises(store.IntegrityError, msg=values):
+                with store.connect() as con:
+                    insert(con, "voice_deletion_requests", values)
+        with store.connect() as con:
+            insert(con, "voice_deletion_requests", dict(request, id="a" * 32, seq=2, reason="content_expired", status="done", done_at=1,
+                                                        files_deleted=0, rows_deleted=0))
+        others = set(self.db.table_names()) - {"alembic_version", "voice_deletion_requests", "voice_calls"}
+        before = self._snapshot(store, others)
+        with store.connect() as con:
+            calls_before = [{k: v for k, v in dict(r).items() if k not in added} for r in con.execute("SELECT * FROM voice_calls").fetchall()]
+        downgrade_to(self.db.url, "0010_voice_call_digests")
+        self.assertEqual(self._versions(store), ["0010_voice_call_digests"])
+        self.assertNotIn("voice_deletion_requests", self.db.table_names())
+        self.assertFalse(added & self._columns(store, "voice_calls"))
+        self.assertEqual(self._snapshot(store, others), before)  # the review is still there
+        with store.connect() as con:
+            self.assertEqual([dict(r) for r in con.execute("SELECT * FROM voice_calls").fetchall()], calls_before)
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        with store.connect() as con:
+            row = con.execute("SELECT store_deleted_at, recording_expiry_queued_at, content_expiry_queued_at, content_purged_at "
+                              "FROM voice_calls").fetchone()
+            self.assertEqual(tuple(row), (None, None, None, 500))
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM voice_deletion_requests").fetchone()[0], 0)
+            if self.db.backend == "sqlite":
+                plan = " ".join(str(r[-1]) for r in con.execute(
+                    "EXPLAIN QUERY PLAN SELECT * FROM voice_calls WHERE content_expiry_queued_at IS NULL AND started_at<=?", (1,)).fetchall())
+                self.assertIn("voice_calls_content_expiry", plan)
+        self.assertEqual(self._snapshot(store, others), before)
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":
