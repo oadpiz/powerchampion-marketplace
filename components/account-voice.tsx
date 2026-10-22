@@ -156,25 +156,30 @@ function dateTime(value: string | null, zh: boolean) {
 export function VoiceStart({ summary, zh }: { summary: VoiceSummary; zh: boolean }) {
   const { store, account } = summary;
   const status = STATUS[store.status]?.[zh ? 1 : 0] ?? store.status;
+  // A suspended store can only look (verifier finding 2026-10-22): same words as the Try page, and no "try a call".
+  const suspended = store.status === "suspended";
+  const text = suspended
+    ? zh
+      ? `這家店的電話客服已暫停，暫時不能試打，也不能套用新內容。有問題請聯絡我們。${account.passwordChangeRequired ? "臨時密碼仍請到「安全性」換掉。" : ""}`
+      : `Phone agent is suspended for this store: test calls and applying changes are paused. Contact us if you have questions.${account.passwordChangeRequired ? " Please still replace the temporary password under Security." : ""}`
+    : account.passwordChangeRequired
+      ? zh
+        ? "第一步：到「安全性」把我們給你的臨時密碼換掉。接著到電話客服完成設定，試打一通聽聽看。"
+        : "First, replace the temporary password we gave you under Security. Then finish the phone agent setup and try a call."
+      : store.currentVersion === null
+        ? zh
+          ? "到電話客服完成設定、帶入常見問答，按「套用」後就能試打一通聽聽看。"
+          : 'Finish the setup and add your questions, then use "Apply" and try a call.'
+        : zh
+          ? `目前套用第 ${store.currentVersion} 版。可以繼續修改，或試打一通聽聽看。`
+          : `Version ${store.currentVersion} is applied. Keep editing, or try a call.`;
   return (
     <section className="portal-panel" aria-labelledby="voice-start-title" data-voice-start="">
       <div className="portal-panel-heading">
         <h2 id="voice-start-title">{zh ? `電話客服：${store.name}` : `Phone agent: ${store.name}`}</h2>
         <span className="portal-badge">{status}</span>
       </div>
-      <p>
-        {account.passwordChangeRequired
-          ? zh
-            ? "第一步：到「安全性」把我們給你的臨時密碼換掉。接著到電話客服完成設定，試打一通聽聽看。"
-            : "First, replace the temporary password we gave you under Security. Then finish the phone agent setup and try a call."
-          : store.currentVersion === null
-            ? zh
-              ? "到電話客服完成設定、帶入常見問答，按「套用」後就能試打一通聽聽看。"
-              : 'Finish the setup and add your questions, then use "Apply" and try a call.'
-            : zh
-              ? `目前套用第 ${store.currentVersion} 版。可以繼續修改，或試打一通聽聽看。`
-              : `Version ${store.currentVersion} is applied. Keep editing, or try a call.`}
-      </p>
+      <p>{text}</p>
       <div className="portal-actions">
         {account.passwordChangeRequired && (
           <Link className="portal-button" href="/account/security">
@@ -182,7 +187,13 @@ export function VoiceStart({ summary, zh }: { summary: VoiceSummary; zh: boolean
           </Link>
         )}
         <Link className={account.passwordChangeRequired ? "portal-button-secondary" : "portal-button"} href="/account/voice">
-          {zh ? "前往電話客服設定" : "Open the phone agent setup"}
+          {suspended
+            ? zh
+              ? "查看電話客服設定"
+              : "View the phone agent settings"
+            : zh
+              ? "前往電話客服設定"
+              : "Open the phone agent setup"}
         </Link>
       </div>
     </section>

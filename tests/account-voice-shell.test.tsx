@@ -81,6 +81,19 @@ describe("account phone agent tab", () => {
     [{}, { passwordChangeRequired: true }, /^First, replace the temporary password/, ["Change the temporary password", "Open the phone agent setup"]],
     [{ currentVersion: null, hasUnpublishedChanges: true }, {}, /^Finish the setup and add your questions/, ["Open the phone agent setup"]],
     [{ currentVersion: 3 }, {}, /^Version 3 is applied/, ["Open the phone agent setup"]],
+    // Verifier finding 2026-10-22: a suspended store was told to "try a call". Same words as the Try page now.
+    [
+      { status: "suspended", currentVersion: 3 },
+      {},
+      /^Phone agent is suspended for this store: test calls and applying changes are paused\. Contact us if you have questions\.$/,
+      ["View the phone agent settings"],
+    ],
+    [
+      { status: "suspended", currentVersion: null, hasUnpublishedChanges: true },
+      { passwordChangeRequired: true },
+      /^Phone agent is suspended for this store: .* Please still replace the temporary password under Security\.$/,
+      ["Change the temporary password", "View the phone agent settings"],
+    ],
   ])("puts the phone agent first on the overview of a store account (%j, %j)", async (store, account, text, links) => {
     stubPortal({ "GET /session": () => ({ user: customer }), "GET /overview": () => overview, "GET /me/voice": () => summary(store, account) });
     wrap(<AccountPortal section="overview" />);
