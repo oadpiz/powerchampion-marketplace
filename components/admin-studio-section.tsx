@@ -4,7 +4,8 @@ import { useState, type FormEvent } from "react";
 import { portalRequest } from "../lib/portal-client";
 import { newIdempotencyKey, planLabel } from "../lib/studio-client";
 import { AdminDialog } from "./admin-dialog";
-import { ResourceState, errorMessage, usdLabel, usePortalResource } from "./admin-resource";
+import { reportCsv, taipeiDate, taipeiMonth, type StudioReport } from "../lib/studio-report";
+import { ResourceState, downloadText, errorMessage, usdLabel, usePortalResource } from "./admin-resource";
 import { useLocale } from "./locale-provider";
 
 type Customer = { id: string; email: string; name: string; role: string; status: string };
@@ -298,26 +299,183 @@ function UsagePanel({ month }: { month: string }) {
   );
 }
 
-/** Admin: the video studio's credit grants and per-account usage (credits vs list cost vs estimated GPU cost). */
+function MonthField({ month, onChange }: { month: string; onChange: (month: string) => void }) {
+  const zh = useLocale().locale === "zh";
+  return (
+    <label className="portal-field portal-month-field">
+      {zh ? "月份" : "Month"}
+      <input
+        type="month"
+        value={month}
+        onChange={(event) => {
+          if (/^\d{4}-\d{2}$/.test(event.target.value)) onChange(event.target.value);
+        }}
+      />
+    </label>
+  );
+}
+
+/** The monthly credits report the owner issues invoices from (Asia/Taipei months, from the credit ledger). */
+function ReportPanel({ month }: { month: string }) {
+  const zh = useLocale().locale === "zh";
+  const report = usePortalResource<StudioReport>(`/admin/studio/report?month=${encodeURIComponent(month)}`);
+  const number = (value: number) => value.toLocaleString(zh ? "zh-TW" : "en-US");
+  const data = report.data;
+  return (
+    <ResourceState {...report}>
+      {data && (
+        <section className="portal-panel">
+          <h2>{zh ? `${data.month} 點數月報` : `Credits report, ${data.month}`}</h2>
+          <p className="portal-hint">
+            {zh
+              ? "1 點 = NT$1 牌價。方案：Creator 1,000 點 NT$990、Merchant 4,000 點 NT$2,990、Agency 15,000 點 NT$9,900。可依方案或依本月消耗開立發票。"
+              : "1 credit = NT$1 list value. Plans: Creator 1,000 credits for NT$990, Merchant 4,000 for NT$2,990, Agency 15,000 for NT$9,900. Invoice by plan or by consumption."}
+          </p>
+          <p className="portal-muted">
+            {zh
+              ? "月份以台北時間計。消耗＝已結算扣點減退點，算在結算當月（月底送出、次月完成的步驟算次月）。餘額含保留中的點數。期初 + 發放 − 消耗 − 到期扣除 = 期末。方案為目前方案。"
+              : "Months are Asia/Taipei. Consumed = settled charges net of refunds, counted in the month a step settled (a step reserved on the 31st and settled on the 1st counts in the new month). Balances include reserved credits. Opening + granted − consumed − expired = closing. Plan is the current plan."}
+          </p>
+          <div className="portal-actions">
+            <button
+              className="portal-button"
+              type="button"
+              disabled={data.users.length === 0}
+              onClick={() => downloadText(`studio-credits-${data.month}.csv`, reportCsv(data), "text/csv;charset=utf-8")}
+            >
+              {zh ? "下載 CSV" : "Download CSV"}
+            </button>
+          </div>
+          {data.users.length === 0 ? (
+            <p className="portal-empty">{zh ? "這個月份沒有點數紀錄。" : "No credit activity or balances this month."}</p>
+          ) : (
+            <div className="portal-table-wrap">
+              <table className="portal-table">
+                <caption className="sr-only">{zh ? "各帳號點數月報" : "Monthly credits per account"}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{zh ? "帳號" : "Account"}</th>
+                    <th scope="col">{zh ? "方案" : "Plan"}</th>
+                    <th scope="col">{zh ? "期初餘額" : "Opening"}</th>
+                    <th scope="col">{zh ? "本月發放" : "Granted"}</th>
+                    <th scope="col">{zh ? "本月消耗" : "Consumed"}</th>
+                    <th scope="col">{zh ? "到期扣除" : "Expired"}</th>
+                    <th scope="col">{zh ? "期末餘額" : "Closing"}</th>
+                    <th scope="col">{zh ? "匯出影片" : "Videos exported"}</th>
+                    <th scope="col">{zh ? "步驟數" : "Steps"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.users.map((row) => (
+                    <tr key={row.user_id}>
+                      <td>
+                        {row.email ?? row.user_id}
+                        {row.name && (
+                          <>
+                            <br />
+                            <small className="portal-muted">{row.name}</small>
+                          </>
+                        )}
+                      </td>
+                      <td>{planLabel(row.plan, zh ? "zh" : "en")}</td>
+                      <td>{number(row.opening_balance)}</td>
+                      <td>
+                        {number(row.credits_granted)}
+                        {row.grants.map((grant, index) => (
+                          <small className="portal-muted studio-report-grant" key={index}>
+                            <br />
+                            {taipeiDate(grant.created_at)} +{number(grant.credits)}
+                            {grant.note ? ` ${grant.note}` : ""}
+                          </small>
+                        ))}
+                      </td>
+                      <td>{number(row.credits_consumed)}</td>
+                      <td>{number(row.credits_expired)}</td>
+                      <td>
+                        {number(row.closing_balance)}
+                        {row.reserved_at_close > 0 && (
+                          <small className="portal-muted">{zh ? `（其中 ${number(row.reserved_at_close)} 保留中）` : ` (${number(row.reserved_at_close)} reserved)`}</small>
+                        )}
+                      </td>
+                      <td>{number(row.videos_exported)}</td>
+                      <td>{number(row.ops)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row">{zh ? "合計" : "Total"}</th>
+                    <td />
+                    <td>{number(data.totals.opening_balance)}</td>
+                    <td>{number(data.totals.credits_granted)}</td>
+                    <td>{number(data.totals.credits_consumed)}</td>
+                    <td>{number(data.totals.credits_expired)}</td>
+                    <td>{number(data.totals.closing_balance)}</td>
+                    <td>{number(data.totals.videos_exported)}</td>
+                    <td>{number(data.totals.ops)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+    </ResourceState>
+  );
+}
+
+const TABS = ["usage", "report"] as const;
+
+/** Admin: the video studio's credit grants, per-account usage (credits vs list cost vs estimated GPU cost) and the monthly invoicing report. */
 export function AdminStudioSection() {
   const zh = useLocale().locale === "zh";
+  const [tab, setTab] = useState<(typeof TABS)[number]>("usage");
   const [month, setMonth] = useState(currentMonth);
+  const [reportMonth, setReportMonth] = useState(() => taipeiMonth());
+  const label = (item: (typeof TABS)[number]) => (item === "usage" ? (zh ? "使用量" : "Usage") : zh ? "月報（開發票用）" : "Monthly report (for invoices)");
   return (
     <>
       <GrantPanel />
-      <section className="portal-panel">
-        <label className="portal-field portal-month-field">
-          {zh ? "月份" : "Month"}
-          <input
-            type="month"
-            value={month}
-            onChange={(event) => {
-              if (/^\d{4}-\d{2}$/.test(event.target.value)) setMonth(event.target.value);
+      <div className="portal-tabs" role="tablist" aria-label={zh ? "影片工作室報表" : "Studio reports"}>
+        {TABS.map((item, index) => (
+          <button
+            key={item}
+            type="button"
+            role="tab"
+            id={`studio-admin-tab-${item}`}
+            aria-controls={`studio-admin-panel-${item}`}
+            aria-selected={tab === item}
+            tabIndex={tab === item ? 0 : -1}
+            className={tab === item ? "portal-button" : "portal-button-secondary"}
+            onClick={() => setTab(item)}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+              const next = TABS[(index + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+              setTab(next);
+              document.getElementById(`studio-admin-tab-${next}`)?.focus();
             }}
-          />
-        </label>
-      </section>
-      <UsagePanel key={month} month={month} />
+          >
+            {label(item)}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`studio-admin-panel-${tab}`} aria-labelledby={`studio-admin-tab-${tab}`}>
+        {tab === "usage" ? (
+          <>
+            <section className="portal-panel">
+              <MonthField month={month} onChange={setMonth} />
+            </section>
+            <UsagePanel key={month} month={month} />
+          </>
+        ) : (
+          <>
+            <section className="portal-panel">
+              <MonthField month={reportMonth} onChange={setReportMonth} />
+            </section>
+            <ReportPanel key={reportMonth} month={reportMonth} />
+          </>
+        )}
+      </div>
     </>
   );
 }

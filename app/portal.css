@@ -244,6 +244,12 @@
   background: #262527;
   color: var(--ink, #eeebe5);
 }
+.portal-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px;
+}
 .portal-text-button {
   background: none;
   border: 0;

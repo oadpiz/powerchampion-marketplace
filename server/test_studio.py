@@ -1371,5 +1371,140 @@ class StudioAgentClientTests(unittest.TestCase):
         self.assertEqual(caught.exception.kind, "unconfigured")
 
 
+# Asia/Taipei month starts (UTC epoch seconds): 2027-02-01 00:00 +08:00 is 2027-01-31 16:00 UTC.
+TPE_FEB = 1_801_411_200
+TPE_MAR = TPE_FEB + 28 * 86400
+TPE_APR = TPE_MAR + 31 * 86400
+
+
+class StudioMonthlyReportTests(StudioCase):
+    """GET /admin/studio/report: the invoicing report, computed from the ledger only.
+
+    Rule: an op's consumption (reserved credits minus refunded credits) belongs to the Asia/Taipei
+    month of its settle/refund ledger row, not the month it was reserved in."""
+
+    def op(self, user_id, pid, credits, op_type="render"):
+        self.add_project(user_id, pid)
+        op, created = self.studio.reserve(user_id, pid, self.raw_quote(user_id, pid, credits, op_type), "k-" + pid)
+        self.assertTrue(created)
+        return op["op_id"]
+
+    def seed(self):
+        _, a = self.customer("maker@example.test")
+        _, b = self.customer("shop@example.test")
+        self.customer("idle@example.test")  # never touches the studio: not in any report
+        self.now = T0  # 2027-01-15 16:00 Taipei
+        self.grant(a, 100, note="匯款 0412", plan="creator")
+        draft = self.op(a, "p-jan-draft", 2, "draft")
+        self.now += 60
+        self.studio.finish(draft, 2, succeeded=True)
+        self.now = TPE_FEB - 600  # 2027-01-31 23:50 Taipei: reserved in January ...
+        late = self.op(a, "p-jan-late", 10)
+        self.now = TPE_FEB + 600  # ... settled in February (still January in UTC)
+        self.studio.finish(late, 10, succeeded=True)
+        self.now = TPE_FEB + 86400
+        self.grant(a, 50, note="二月加值")
+        self.grant(b, 1000, note="商家方案", plan="merchant")
+        partial = self.op(a, "p-feb-partial", 10)
+        self.studio.finish(partial, 4, error="studio_failed")
+        export = self.op(a, "p-feb-export", 0, "export")
+        self.studio.finish(export, 0, succeeded=True)
+        failed_export = self.op(a, "p-feb-export-2", 0, "export")
+        self.studio.finish(failed_export, 0, error="studio_failed")
+        self.now += 3600
+        self.grant(a, -20, note="到期")
+        self.now = TPE_MAR - 60  # reserved in February, still running at month end ...
+        pending = self.op(a, "p-feb-pending", 10)
+        self.now = TPE_MAR + 3600  # ... refunded in March
+        self.studio.finish(pending, 0, error="studio_failed")
+        self.now = TPE_MAR + 7200
+        b_op = self.op(b, "p-mar-b", 30)
+        self.studio.finish(b_op, 30, succeeded=True)
+        return a, b
+
+    def report(self, month):
+        response = self.admin_client().get(BASE + "/admin/studio/report?month=" + month)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def row(self, report, user_id):
+        return next((u for u in report["users"] if u["user_id"] == user_id), None)
+
+    def assert_balanced(self, report):
+        keys = ("opening_balance", "credits_granted", "credits_consumed", "credits_expired", "closing_balance", "reserved_at_close", "videos_exported", "ops")
+        for u in report["users"]:
+            self.assertEqual(u["opening_balance"] + u["credits_granted"] - u["credits_consumed"] - u["credits_expired"], u["closing_balance"], u)
+            self.assertEqual(sum(g["credits"] for g in u["grants"]), u["credits_granted"], u)
+        for key in keys:
+            self.assertEqual(report["totals"][key], sum(u[key] for u in report["users"]), key)
+        t = report["totals"]
+        self.assertEqual(t["opening_balance"] + t["credits_granted"] - t["credits_consumed"] - t["credits_expired"], t["closing_balance"])
+
+    def test_report_attributes_consumption_to_the_taipei_settle_month(self):
+        a, b = self.seed()
+        jan, feb, mar = self.report("2027-01"), self.report("2027-02"), self.report("2027-03")
+        for report in (jan, feb, mar):
+            self.assert_balanced(report)
+            self.assertEqual(report["timezone"], "Asia/Taipei")
+        self.assertEqual((jan["month"], jan["period"]), ("2027-01", {"start": TPE_FEB - 31 * 86400, "end": TPE_FEB}))
+        self.assertEqual([u["user_id"] for u in jan["users"]], [a])  # shop and idle had nothing in January
+        ja = self.row(jan, a)
+        self.assertEqual((ja["email"], ja["name"], ja["plan"]), ("maker@example.test", "Test", "creator"))
+        self.assertEqual([(g["credits"], g["note"], g["created_at"]) for g in ja["grants"]], [(100, "匯款 0412", T0)])
+        # The 10-credit op reserved on 31 January (Taipei) is not consumed in January: it is held, in reserve.
+        self.assertEqual((ja["opening_balance"], ja["credits_granted"], ja["credits_consumed"], ja["credits_expired"], ja["closing_balance"],
+                          ja["reserved_at_close"], ja["ops"], ja["videos_exported"]), (0, 100, 2, 0, 98, 10, 1, 0))
+        fa = self.row(feb, a)
+        self.assertEqual([(g["credits"], g["note"]) for g in fa["grants"]], [(50, "二月加值")])
+        # 10 (settled 1 Feb Taipei) + 4 (partial) + 0 (export); the failed export is refunded; the pending op is reserved.
+        self.assertEqual((fa["opening_balance"], fa["credits_granted"], fa["credits_consumed"], fa["credits_expired"], fa["closing_balance"],
+                          fa["reserved_at_close"], fa["ops"], fa["videos_exported"]), (98, 50, 14, 20, 114, 10, 4, 1))
+        fb = self.row(feb, b)
+        self.assertEqual((fb["plan"], fb["opening_balance"], fb["credits_granted"], fb["closing_balance"], fb["ops"]), ("merchant", 0, 1000, 1000, 0))
+        self.assertEqual((feb["totals"]["credits_granted"], feb["totals"]["credits_consumed"], feb["totals"]["closing_balance"]), (1050, 14, 1114))
+        ma, mb = self.row(mar, a), self.row(mar, b)
+        self.assertEqual((ma["opening_balance"], ma["credits_consumed"], ma["closing_balance"], ma["reserved_at_close"], ma["ops"]), (114, 0, 114, 0, 1))
+        self.assertEqual((mb["opening_balance"], mb["credits_consumed"], mb["closing_balance"], mb["ops"]), (1000, 30, 970, 1))
+        # Each month opens where the previous one closed, and the latest month closes at the live account balance.
+        for before, after in ((jan, feb), (feb, mar)):
+            for u in before["users"]:
+                self.assertEqual(self.row(after, u["user_id"])["opening_balance"], u["closing_balance"])
+        for user_id in (a, b):
+            account = self.account(user_id)
+            self.assertEqual(self.row(mar, user_id)["closing_balance"], account["balance"] + account["reserved"])
+        # A month with no movement still lists the accounts that hold credits.
+        apr = self.report("2027-04")
+        self.assert_balanced(apr)
+        self.assertEqual({(u["user_id"], u["opening_balance"], u["closing_balance"], u["ops"]) for u in apr["users"]}, {(a, 114, 114, 0), (b, 970, 970, 0)})
+        self.assertEqual(self.report("2026-12")["users"], [])
+
+    def test_report_uses_the_ledger_not_op_estimates(self):
+        _, a = self.customer()
+        self.grant(a, 50)
+        op_id = self.op(a, "p-est", 20)
+        self.studio.finish(op_id, 5, error="studio_failed")
+        # A stale estimate on the op row must not leak into the report.
+        with self.store.connect() as con:
+            con.execute("UPDATE studio_ops SET credits=999 WHERE op_id=?", (op_id,))
+        try:
+            row = self.row(self.report("2027-01"), a)
+            self.assertEqual((row["credits_consumed"], row["closing_balance"]), (5, 45))
+        finally:
+            with self.store.connect() as con:
+                con.execute("UPDATE studio_ops SET credits=20 WHERE op_id=?", (op_id,))
+
+    def test_report_is_admin_only_and_validates_the_month(self):
+        customer, _ = self.customer()
+        self.assertEqual(customer.get(BASE + "/admin/studio/report?month=2027-01").status_code, 403)
+        self.assertEqual(self.client().get(BASE + "/admin/studio/report?month=2027-01").status_code, 401)
+        for bad in ("2027-13", "2027-1", "27-01", "2027-01-01", "x"):
+            self.assertEqual(self.admin_client().get(BASE + "/admin/studio/report?month=" + bad).status_code, 400, bad)
+        # The default month is the current Asia/Taipei month: 31 Jan 16:30 UTC is already February in Taipei.
+        self.now = TPE_FEB + 1800
+        self.assertEqual(self.admin_client().get(BASE + "/admin/studio/report").json()["month"], "2027-02")
+        self.now = TPE_FEB - 1800
+        self.assertEqual(self.admin_client().get(BASE + "/admin/studio/report").json()["month"], "2027-01")
+
+
 if __name__ == "__main__":
     unittest.main()
