@@ -194,11 +194,57 @@ describe("account phone agent shell", () => {
     wrap(<AccountPortal section="voice" voiceSub="setup" />);
     expect(await screen.findByText("No version applied yet")).toBeVisible();
     expect(screen.getByRole("heading", { level: 2, name: /晴光牙醫診所/ })).toHaveTextContent("Suspended");
-    expect(screen.getByText(/You have changes that are not applied yet/)).toBeVisible();
     expect(screen.getByText(/settings are read-only/)).toBeVisible();
     expect(screen.getByText(/Your current password was issued by us/)).toBeVisible();
     const security = screen.getAllByRole("link", { name: "Security" }).find((link) => link.closest("p"));
     expect(security).toHaveAttribute("href", "/account/security");
+  });
+
+  // Verifier finding 2026-10-22: with no version, M1 always says hasUnpublishedChanges (contract §3.1), so a new
+  // store was told it had unapplied changes it never made.
+  it("says unapplied changes only once a version exists", async () => {
+    stubPortal({
+      "GET /session": () => ({ user: customer }),
+      "GET /me/voice": () => summary({ currentVersion: null, publishedAt: null, hasUnpublishedChanges: true }),
+    });
+    const { unmount } = wrap(<AccountPortal section="voice" voiceSub="try" />);
+    expect(await screen.findByText("No version applied yet")).toBeVisible();
+    expect(screen.queryByText(/You have changes that are not applied yet/)).not.toBeInTheDocument();
+    unmount();
+    stubPortal({
+      "GET /session": () => ({ user: customer }),
+      "GET /me/voice": () => summary({ currentVersion: 2, hasUnpublishedChanges: true }),
+    });
+    wrap(<AccountPortal section="voice" voiceSub="try" />);
+    expect(await screen.findByText(/You have changes that are not applied yet/)).toBeVisible();
+  });
+
+  it("re-reads the phone agent summary after the temporary password is changed", async () => {
+    // The setup and FAQ pages lock while M1 says passwordChangeRequired; changing it must unlock them.
+    const user = userEvent.setup();
+    let required = true;
+    const calls = stubPortal({
+      "GET /session": () => ({ user: customer }),
+      "GET /me/voice": () => summary({}, { passwordChangeRequired: required }),
+      "POST /password": () => {
+        required = false;
+        return { ok: true };
+      },
+    });
+    const { rerender } = wrap(<AccountPortal section="security" />);
+    await user.type(await screen.findByLabelText(/current password/i), "temporary-password-123!");
+    await user.type(screen.getByLabelText(/^new password/i), "brand-new-password-987!");
+    await user.type(screen.getByLabelText(/confirm/i), "brand-new-password-987!");
+    await user.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/password updated/i)).toBeVisible();
+    await waitFor(() => expect(calls.filter((call) => call.path === "/me/voice")).toHaveLength(2));
+    rerender(
+      <LocaleProvider>
+        <AccountPortal section="voice" voiceSub="try" />
+      </LocaleProvider>,
+    );
+    expect(await screen.findByRole("heading", { level: 2, name: /晴光牙醫診所/ })).toBeVisible();
+    expect(screen.queryByText(/Your current password was issued by us/)).not.toBeInTheDocument();
   });
 
   it("hides the reminders that do not apply", async () => {

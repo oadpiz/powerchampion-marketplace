@@ -365,6 +365,13 @@ describe("try a call: limits and errors", () => {
     expect(button()).toBeDisabled();
   });
 
+  it("does not tell a suspended store to apply changes it cannot apply", () => {
+    // Verifier finding 2026-10-22: the page still said to use "Save and apply" while Setup was read-only.
+    renderTry(backend({ status: "suspended", hasUnpublishedChanges: true }));
+    expect(screen.getByText(/^Phone agent is suspended for this store: test calls and applying changes are paused\./)).toBeVisible();
+    expect(screen.queryByText(/Save and apply/)).not.toBeInTheDocument();
+  });
+
   it("sends the try even with a temporary password, and links Security on 403", async () => {
     const user = userEvent.setup();
     // The shell already warns; the page lets the backend decide, so a password changed in another tab is not blocked.

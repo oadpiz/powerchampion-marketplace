@@ -247,7 +247,9 @@ export function AccountVoice({
               ? `目前套用：第 ${store.currentVersion} 版（${dateTime(store.publishedAt, zh)}）`
               : `Applied: version ${store.currentVersion} (${dateTime(store.publishedAt, zh)})`}
         </p>
-        {store.hasUnpublishedChanges && (
+        {/* With no version yet, M1 always says there are unpublished changes (contract §3.1); the line above
+            already says nothing is applied, so this one would only suggest edits the store never made. */}
+        {store.hasUnpublishedChanges && store.currentVersion !== null && (
           <p className="portal-note" role="status">
             {zh
               ? "有尚未套用的變更。到「設定」按「儲存並套用」後，試打才會用到新內容。"

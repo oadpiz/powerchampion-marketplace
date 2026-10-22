@@ -381,6 +381,8 @@ export function AccountPortal({
       setNewPassword("");
       setConfirmPassword("");
       setPasswordChanged(true);
+      // A phone agent store's pages lock while the temporary password is unchanged; re-read M1 so they unlock.
+      voice.reload();
     }
   }
 

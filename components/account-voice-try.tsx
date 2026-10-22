@@ -126,7 +126,8 @@ export function AccountVoiceTry({ summary, onChanged }: VoiceSubProps): ReactEle
   const published = store.currentVersion !== null;
   // A 429 sets `seen` to 0, so the button stays off until a refreshed M1 says otherwise.
   const limitReached = remaining <= 0;
-  const blocked = !published || store.status === "suspended" || !summary.try.available || limitReached;
+  const suspended = store.status === "suspended";
+  const blocked = !published || suspended || !summary.try.available || limitReached;
 
   useEffect(() => {
     mounted.current = true;
@@ -196,20 +197,28 @@ export function AccountVoiceTry({ summary, onChanged }: VoiceSubProps): ReactEle
           ? "按下按鈕會開一個新分頁。請允許使用麥克風，直接對著電腦說話；聽到的是電話音質。"
           : "The button opens a new tab. Allow the microphone and speak to your computer; you will hear phone-quality audio."}
       </p>
-      {published ? (
+      {published && (
         <p>
           {zh
             ? `試打會用：第 ${store.currentVersion} 版（${dateTime(store.publishedAt, zh)}）`
             : `Test calls use version ${store.currentVersion} (${dateTime(store.publishedAt, zh)})`}
         </p>
-      ) : (
+      )}
+      {/* A suspended store cannot apply anything, so it is not told to (verifier finding 2026-10-22). */}
+      {suspended ? (
+        <p className="portal-note" role="status">
+          {zh
+            ? "這家店的電話客服已暫停，暫時不能試打，也不能套用新內容。有問題請聯絡我們。"
+            : "Phone agent is suspended for this store: test calls and applying changes are paused. Contact us if you have questions."}
+        </p>
+      ) : !published ? (
         <p className="portal-note" role="status">
           {zh ? "還沒有套用任何版本。請先到「" : "Nothing is applied yet. Use \"Save and apply\" on "}
           {setupLink(zh)}
           {zh ? "」按「儲存並套用」，再回來試打。" : ", then come back."}
         </p>
-      )}
-      {published && store.hasUnpublishedChanges && (
+      ) : null}
+      {published && !suspended && store.hasUnpublishedChanges && (
         <p className="portal-note" role="status">
           {zh
             ? `有尚未套用的變更，試打會用第 ${store.currentVersion} 版。要試新內容，請先到「`
