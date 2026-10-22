@@ -52,6 +52,8 @@ const QUALITY_CALL_FILTERS = [
   ["flag", /^(any|store|auto|none|all)$/],
   ["reviewed", /^(0|1|all)$/],
   ["entry", /^(pstn|webrtc|softphone|try)$/],
+  // The call ID a store quotes (CallItem.ref); amended phase2-contract §7.1, §10.1.
+  ["ref", /^[a-f0-9]{8}$/],
 ] as const;
 const routes: Record<string, readonly RegExp[]> = {
   GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`), /^\/admin\/(keys|usage|gateway)$/, new RegExp(`^/admin/gateway/nodes/${NODE}/jobs/${JOB}$`), /^\/admin\/allocation(\/export)?$/, /^\/me\/engineer$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}$`), /^\/admin\/gateway\/fleet\/events$/, new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/(status|timeline)$`), new RegExp(`^/admin/gateway/control/jobs/${JOB}$`), /^\/admin\/redeem\/codes(\/export)?$/, /^\/admin\/engineers$/, /^\/studio\/(templates|projects|credits)$/, new RegExp(`^${STUDIO_PROJECT}$`), new RegExp(`^${STUDIO_PROJECT}/ops/${STUDIO_ID}$`), /^\/admin\/studio\/usage$/, ...VOICE_GET],

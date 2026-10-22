@@ -109,6 +109,11 @@ class VoiceCallEnumSyncTests(unittest.TestCase):
         self.assertEqual(bff_filter("flag"), list(vcr.QUALITY_FLAG_FILTERS))
         self.assertEqual(bff_filter("reviewed"), list(vcr.QUALITY_REVIEWED_FILTERS))
 
+    def test_bff_ref_filter_is_the_backend_pattern(self):
+        # A9 `ref` (amended §7.1): the BFF forwards exactly what the backend accepts.
+        self.assertEqual(vcr.CALL_REF.pattern, "[a-f0-9]{8}")
+        self.assertIn('["ref", /^[a-f0-9]{8}$/]', BFF.read_text(encoding="utf-8"))
+
 
 
 class VoiceCallErrorCodeSyncTests(unittest.TestCase):

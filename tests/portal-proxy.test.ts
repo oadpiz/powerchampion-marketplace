@@ -412,6 +412,9 @@ describe("portal service boundary", () => {
       [`/admin/voice/quality/calls?store=${id}&flag=none&reviewed=all&month=2026-01&outcome=unknown&entry=try&before=${before}&flagged=1&foo=1`,
         `/admin/voice/quality/calls?month=2026-01&outcome=unknown&before=${before}&store=${id}&flag=none&reviewed=all&entry=try`],
       ["/admin/voice/quality/calls?flag=any&reviewed=0", "/admin/voice/quality/calls?flag=any&reviewed=0"],
+      // A9 `ref`: the call ID a store quotes (fix round); M13 does not take it.
+      ["/admin/voice/quality/calls?ref=77a7b240&flag=all", "/admin/voice/quality/calls?flag=all&ref=77a7b240"],
+      ["/me/voice/calls?ref=77a7b240", "/me/voice/calls"],
       // M14, A10 and A13 take no query at all.
       [`/me/voice/calls/${id}?month=2026-12`, `/me/voice/calls/${id}`],
       [`/admin/voice/quality/calls/${id}?store=${id}`, `/admin/voice/quality/calls/${id}`],
@@ -424,7 +427,8 @@ describe("portal service boundary", () => {
       `/me/voice/calls?before=1797815702-${id.toUpperCase()}`, "/me/voice/calls?before=1797815702", "/admin/voice/quality/calls?store=ABC",
       `/admin/voice/quality/calls?store=${id}x`, "/admin/voice/quality/calls?flag=flagged", "/admin/voice/quality/calls?reviewed=2",
       "/admin/voice/quality/calls?entry=sip", "/admin/voice/quality/calls?month=2026-00", "/admin/voice/quality/calls?outcome=",
-      `/admin/voice/quality/calls?before=${before}x`];
+      `/admin/voice/quality/calls?before=${before}x`, "/admin/voice/quality/calls?ref=77A7B240", "/admin/voice/quality/calls?ref=77a7b24",
+      "/admin/voice/quality/calls?ref=77a7b2400", "/admin/voice/quality/calls?ref=77a7b24%25"];
     for (const path of refused) {
       const response = await GET(request(path));
       expect(response.status, path).toBe(400);

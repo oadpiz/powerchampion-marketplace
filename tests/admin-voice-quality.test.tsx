@@ -64,6 +64,7 @@ const A9_FILTERS: [string, RegExp][] = [
   ["flag", /^(any|store|auto|none|all)$/],
   ["reviewed", /^(0|1|all)$/],
   ["entry", /^(pstn|webrtc|softphone|try)$/],
+  ["ref", /^[a-f0-9]{8}$/],
 ];
 // eslint-disable-next-line no-control-regex
 const UNSAFE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
@@ -333,11 +334,13 @@ class QualityBackend {
       if (!pattern.test(value)) return fail(400, "invalid_input", `Choose a valid ${name} filter.`);
       params[name] = value;
     }
-    const flag = params.flag ?? "any";
-    const reviewed = params.reviewed ?? "0";
+    // Like A9: a `ref` lookup does not hide calls behind the default "flagged, to review" filters.
+    const flag = params.flag ?? (params.ref ? "all" : "any");
+    const reviewed = params.reviewed ?? (params.ref ? "all" : "0");
     let rows = this.calls.filter((call) => {
       const store = call.storeFlag !== null;
       const auto = call.autoFlags.length > 0;
+      if (params.ref && !call.id.startsWith(params.ref)) return false;
       if (params.store && call.store?.id !== params.store) return false;
       if (flag === "any" && !(store || auto)) return false;
       if (flag === "store" && !store) return false;
@@ -455,22 +458,24 @@ describe("admin phone agent: quality list (A9)", () => {
     const table = await callsTable();
     expect(a9(backend)).toEqual(["/admin/voice/quality/calls?flag=any&reviewed=0"]);
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "Time", "Store", "Entry", "Result", "Flags", "Score", "Status", "Actions",
+      "Time", "Call ID", "Store", "Entry", "Result", "Flags", "Score", "Status", "Actions",
     ]);
     const rows = bodyRows(table);
     // Newest first; c4 (reviewed, unflagged) is not in the default view.
     expect(rows).toHaveLength(4);
     expect(T1).toMatch(/^Oct 21, 2026, 9:15\sAM$/); // 01:15 UTC is 9:15 in Taipei
     expect(within(rows[1]).getByRole("rowheader").textContent).toBe(T1);
-    expect(cellTexts(rows[1])).toEqual(["晴光牙醫診所", "Phone line", "Answered", "Store: wrong answer", "—", "To review", "Open"]);
-    expect(cellTexts(rows[2])).toEqual(['=HYPERLINK("http://x")', "Phone line", "Message", "Low confidence, Talked over", "2", "To review", "Open"]);
-    expect(cellTexts(rows[3]).slice(0, 4)).toEqual(["(number not in table)", "Phone line", "Answered", "Unknown number"]);
-    expect(cellTexts(rows[0]).slice(1, 4)).toEqual(["Test call", "Fallback", "Fallback"]);
+    // The call ID a store quotes (the id's first 8) is its own column (fix round).
+    expect(cellTexts(rows[1])[0]).toBe(hex(1001).slice(0, 8));
+    expect(cellTexts(rows[1]).slice(1)).toEqual(["晴光牙醫診所", "Phone line", "Answered", "Store: wrong answer", "—", "To review", "Open"]);
+    expect(cellTexts(rows[2]).slice(1)).toEqual(['=HYPERLINK("http://x")', "Phone line", "Message", "Low confidence, Talked over", "2", "To review", "Open"]);
+    expect(cellTexts(rows[3]).slice(1, 5)).toEqual(["(number not in table)", "Phone line", "Answered", "Unknown number"]);
+    expect(cellTexts(rows[0]).slice(2, 5)).toEqual(["Test call", "Fallback", "Fallback"]);
     expect(countsText()).toBe("Store flags to review: 1 · Auto flags to review: 3");
     // 375 px: the card layout labels every cell but the button.
     expect(table).toHaveClass("voice-stack");
     expect(within(rows[1]).getAllByRole("cell").map((cell) => cell.getAttribute("data-label"))).toEqual([
-      "Store", "Entry", "Result", "Flags", "Score", "Status", null,
+      "Call ID", "Store", "Entry", "Result", "Flags", "Score", "Status", null,
     ]);
     // Each row button names its call, so a screen reader's list of buttons tells them apart.
     const names = rows.map((row) => within(row).getByRole("button").getAttribute("aria-label"));
@@ -484,7 +489,7 @@ describe("admin phone agent: quality list (A9)", () => {
     await callsTable();
     await user.selectOptions(screen.getByLabelText("Flags"), "all");
     await user.selectOptions(screen.getByLabelText("Review"), "1");
-    await waitFor(() => expect(bodyRows(screen.getByRole("table", { name: "Quality" })).map((row) => cellTexts(row)[4])).toEqual(["5"]));
+    await waitFor(() => expect(bodyRows(screen.getByRole("table", { name: "Quality" })).map((row) => cellTexts(row)[5])).toEqual(["5"]));
     await user.selectOptions(screen.getByLabelText("Review"), "all");
     await user.selectOptions(screen.getByLabelText("Store"), ID.formula);
     await waitFor(() => expect(bodyRows(screen.getByRole("table", { name: "Quality" }))).toHaveLength(1));
@@ -500,7 +505,7 @@ describe("admin phone agent: quality list (A9)", () => {
     await user.selectOptions(month, current);
     await waitFor(() => expect(a9(backend).at(-1)).toBe(`/admin/voice/quality/calls?flag=all&reviewed=all&month=${current}&outcome=degraded&entry=try`));
     // The test call c5 started a minute ago, so it is in this month whatever the date.
-    await waitFor(() => expect(bodyRows(screen.getByRole("table", { name: "Quality" })).map((row) => cellTexts(row)[1])).toEqual(["Test call"]));
+    await waitFor(() => expect(bodyRows(screen.getByRole("table", { name: "Quality" })).map((row) => cellTexts(row)[2])).toEqual(["Test call"]));
     await user.selectOptions(screen.getByLabelText("Result"), "no_speech");
     expect(await screen.findByText("No calls match these filters. Calls flagged by stores or by the system appear here.")).toBeVisible();
     const sent = a9(backend);
@@ -510,6 +515,29 @@ describe("admin phone agent: quality list (A9)", () => {
     expect(sent.at(-1)).toBe(`/admin/voice/quality/calls?flag=all&reviewed=all&month=${current}&outcome=no_speech&entry=try`);
     // Every request passed the BFF's checks (a value it refuses would have been a 400 on screen).
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("finds the call a store quotes by its call ID, whatever its flags and review (A9 ref)", async () => {
+    const backend = new QualityBackend();
+    const user = await openQuality(backend);
+    const table = await callsTable();
+    // c4 (reviewed, not flagged) is hidden by the default filters; the store gives its call ID.
+    const hidden = backend.calls[3];
+    expect(bodyRows(table).map((row) => row.querySelector("button")?.id)).not.toContain(`voice-quality-open-${hidden.id}`);
+    const box = screen.getByLabelText("Call ID");
+    await user.type(box, "77A7");
+    expect(screen.getByText("A call ID is 8 characters (0–9, a–f).")).toBeVisible();
+    expect(a9(backend)).toHaveLength(1); // nothing sent for a partial ID
+    await user.clear(box);
+    await user.type(box, ` ${hidden.id.slice(0, 8).toUpperCase()} `);
+    await waitFor(() => expect(a9(backend).at(-1)).toBe(`/admin/voice/quality/calls?ref=${hidden.id.slice(0, 8)}&flag=all&reviewed=all`));
+    await waitFor(() => expect(bodyRows(screen.getByRole("table", { name: "Quality" })).map((row) => row.querySelector("button")?.id)).toContain(`voice-quality-open-${hidden.id}`));
+    expect((screen.getByLabelText("Flags") as HTMLSelectElement).value).toBe("all");
+    expect((screen.getByLabelText("Review") as HTMLSelectElement).value).toBe("all");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // Clearing it goes back to the default queue.
+    await user.clear(box);
+    await waitFor(() => expect(a9(backend).at(-1)).toBe("/admin/voice/quality/calls?flag=any&reviewed=0"));
   });
 
   it("loads the next page with the cursor and moves focus to the first new row", async () => {
@@ -568,7 +596,8 @@ describe("admin phone agent: quality export", () => {
     const text = await blobs[0].text();
     const lines = text.trimEnd().split("\r\n");
     expect(lines).toHaveLength(5); // header + the 4 loaded rows, nothing that was not loaded
-    expect(lines[0].split(",").slice(0, 4)).toEqual(["Time (Taipei)", "Record id", "Call ID", "Store"]);
+    expect(lines[0].split(",").slice(0, 5)).toEqual(["Time (Taipei)", "Record id", "Call ID", "Line call ID", "Store"]);
+    expect(lines[2].split(",").slice(1, 4)).toEqual([hex(1001), hex(1001).slice(0, 8), "1797815702.101"]);
     expect(lines[2]).toContain("2026-10-21 09:15:02");
     expect(lines[2]).toContain(",'+886227001001,customer,pstn,159,answered,");
     // A store name and a raw dialed number that a spreadsheet would run as formulas are shown as text.
@@ -599,8 +628,9 @@ describe("admin phone agent: call drawer and review (A10, A11)", () => {
     const heading = await screen.findByRole("heading", { level: 2, name: `晴光牙醫診所 · ${T1}` });
     expect(document.activeElement).toBe(heading);
     expect(opener).toHaveAttribute("aria-expanded", "true");
-    const facts = await within(drawer()).findByText(/^Call 1797815702\.101/);
-    expect(facts.textContent).toBe("Call 1797815702.101 · Number +886227001001 (Customer line) · Entry Phone line");
+    // The store reads out "Call ID {ref}"; the drawer leads with the same label, then the line's own id (fix round).
+    const facts = await within(drawer()).findByText(/^Call ID /);
+    expect(facts.textContent).toBe(`Call ID ${hex(1001).slice(0, 8)} · Line call ID 1797815702.101 · Number +886227001001 (Customer line) · Entry Phone line`);
     const text = drawer().textContent ?? "";
     expect(text).toContain("Settings v3 (sha 0123abcd) · Notice d1");
     expect(text).toContain("Caller spoke: 12.3 s with the AI, 12.3 s in total · 6 turns · reply p50 820 ms / p95 1430 ms · barge-ins 1 · fillers 2 · talk-overs 0 · no responses —");
@@ -678,7 +708,7 @@ describe("admin phone agent: call drawer and review (A10, A11)", () => {
     expect(posts.map((request) => request.body)).toEqual([{ score: 2, labels: ["wrong_answer", "slow"], note: "價格題答錯", status: "done" }]);
     expect(backend.calls[0].review?.status).toBe("done");
     const row = document.getElementById(`voice-quality-open-${hex(1001)}`)!.closest("tr")!;
-    expect(cellTexts(row).slice(4, 6)).toEqual(["2", "Reviewed"]);
+    expect(cellTexts(row).slice(5, 7)).toEqual(["2", "Reviewed"]);
     expect(countsText()).toBe("Store flags to review: 0 · Auto flags to review: 3");
     expect(within(form).getByText(/^Saved \(ops@powerchampion\.example, /)).toBeVisible();
     await user.click(within(form).getByRole("button", { name: "Save review" }));
@@ -988,8 +1018,8 @@ describe("admin phone agent: quality tab in Chinese", () => {
     const user = await openQuality(backend);
     const table = await callsTable();
     expect(countsText()).toBe("店家標記待審 1・自動標記待審 3");
-    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["時間", "店家", "入口", "結果", "標記", "分數", "狀態", "動作"]);
-    expect(cellTexts(bodyRows(table)[3]).slice(0, 4)).toEqual(["（號碼不在表上）", "市話", "已回答", "號碼不在表上"]);
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["時間", "通話編號", "店家", "入口", "結果", "標記", "分數", "狀態", "動作"]);
+    expect(cellTexts(bodyRows(table)[3]).slice(1, 5)).toEqual(["（號碼不在表上）", "市話", "已回答", "號碼不在表上"]);
     expect([...(screen.getByLabelText("標記") as HTMLSelectElement).options].map((option) => option.text)).toEqual([
       "有標記（店家或自動）", "店家標記", "自動標記", "沒有標記", "全部",
     ]);
@@ -998,7 +1028,7 @@ describe("admin phone agent: quality tab in Chinese", () => {
     const form = await within(drawer()).findByRole("form", { name: "審查" });
     expect(within(form).getByRole("group", { name: "分數（1 很差～5 很好）" })).toBeVisible();
     expect(within(form).getByText("只寫判斷與處理，不要貼逐字稿、客人電話或姓名。")).toBeVisible();
-    expect(drawer().textContent).toContain("通話編號 1797815702.101・號碼 +886227001001（客戶線）・入口 市話");
+    expect(drawer().textContent).toContain(`通話編號 ${hex(1001).slice(0, 8)}・線路通話 ID 1797815702.101・號碼 +886227001001（客戶線）・入口 市話`);
     expect(drawer().textContent).toContain("店家在");
     expect(screen.getByRole("heading", { level: 2, name: "盲聽紀錄" })).toBeVisible();
   });
