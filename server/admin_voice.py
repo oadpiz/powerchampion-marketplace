@@ -220,9 +220,20 @@ def _day(body, key, *, nullable):
     return value, start
 
 
-def _number_fields(con, body):
-    """A6/A7 body in contract §4.6 order. Every field must be sent (A7 replaces the whole row); storeId and
-    activeUntil may be null. Returns voice_store.add_number's keyword arguments."""
+# A6 may leave these out (contract §4.6: storeId and activeUntil may be null, note may be empty); A7 replaces the
+# whole row, so it must send them (§4.7). Verifier finding 2026-10-22: A6 refused a body without them.
+NUMBER_OPTIONAL = {"storeId": None, "activeUntil": None, "note": ""}
+
+
+def _number_fields(con, body, *, replace):
+    """A6/A7 body in contract §4.6 order; `replace` is A7. storeId and activeUntil may be null. Returns
+    voice_store.add_number's keyword arguments."""
+    if replace:
+        for key, empty in NUMBER_OPTIONAL.items():
+            if key not in body:
+                fail("invalid_input", "Send %s as well (%s for none): a change replaces the whole number." % (key, json.dumps(empty)))
+    else:
+        body = {**NUMBER_OPTIONAL, **body}
     number = body.get("number", MISSING)
     if not isinstance(number, str) or not vs.NUMBER.fullmatch(number):
         fail("invalid_number", "Use international format (e.g. +886227356688) or an extension such as ext-0001.")
@@ -361,7 +372,7 @@ def attach_admin_voice(application, ctx):
         body = await body_json(request, BODY_BYTES)
         with store.connect() as con:
             admin_lock(con, admin)
-            fields = _number_fields(con, body)
+            fields = _number_fields(con, body, replace=False)
             row = vs.add_number(con, **fields)  # 409 number_overlap, checked under this lock
             store.audit(con, "admin.voice_number_created", admin["id"], row["id"], _number_audit(row))
             return JSONResponse({"number": _one_number(con, row["id"])}, status_code=201)
@@ -374,7 +385,7 @@ def attach_admin_voice(application, ctx):
         with store.connect() as con:
             admin_lock(con, admin)
             current = number_or_404(con, number_id)
-            fields = _number_fields(con, body)
+            fields = _number_fields(con, body, replace=True)
             if all(current[column] == value for column, value in fields.items()):
                 return {"number": _one_number(con, number_id)}
             row = vs.update_number(con, number_id, **fields)  # the overlap check ignores this row itself
