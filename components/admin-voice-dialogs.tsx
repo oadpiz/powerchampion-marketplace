@@ -153,6 +153,11 @@ export function voiceAdminErrorText(error: unknown, locale: "en" | "zh"): string
     }
     case "number_not_found":
       return zh ? "這筆號碼已經不存在，請重新整理。" : "This number no longer exists. Reload the page.";
+    case "number_in_use":
+      // phase2-contract §4.4/§12.1: calls already refer to this entry, so only the end date and note can change.
+      return zh
+        ? "這個號碼已經有通話紀錄，只能改迄日和備註；要換店請設迄日後另建一筆。"
+        : "This number already has calls; only the end date and note can change. To move it to another store, set an end date and add a new entry.";
     case "voice_store_not_found":
       // The §9 wording is written for the store owner; an operator is looking at someone else's store.
       return zh ? "找不到這家店，可能已經不存在，請重新整理。" : "This store was not found; it may no longer exist. Reload the page.";
