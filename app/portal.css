@@ -613,6 +613,12 @@
   line-height: 1.8;
   overflow-wrap: anywhere;
 }
+/* Phone agent lists (FAQ, operator stores): the order column needs no 130 px. On narrow screens each row becomes a
+   card, so the buttons are not hidden behind a sideways scroll (verifier finding 2026-10-22, 375 px). */
+.voice-faq-table td:first-child:not([colspan]) {
+  width: 3em;
+  min-width: 0;
+}
 @media (max-width: 1000px) {
   .portal-grid {
     gap: 14px;
@@ -711,5 +717,50 @@
   }
   .portal-nav {
     gap: 20px;
+  }
+}
+
+@media (max-width: 760px) {
+  .portal-table.voice-stack,
+  .voice-stack tbody,
+  .voice-stack tr,
+  .voice-stack th,
+  .voice-stack td {
+    display: block;
+    width: auto;
+    min-width: 0;
+  }
+  .voice-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .voice-stack tbody tr {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line, #343336);
+  }
+  .voice-stack tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .portal-table.voice-stack th,
+  .portal-table.voice-stack td,
+  .portal-table.voice-stack td:first-child {
+    min-width: 0;
+    padding: 3px 0;
+    border-bottom: 0;
+    white-space: normal;
+  }
+  .portal-table.voice-stack tbody th {
+    color: var(--ink, #eeebe5);
+    font-size: 13px;
+  }
+  .voice-stack [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted, #aaa69e);
+    font-size: 10px;
   }
 }

@@ -517,6 +517,43 @@ describe("phone agent FAQ page", () => {
     check(2);
   });
 
+  // Verifier finding 2026-10-22: 37 rows of identical "Edit / Move up / Move down / Delete" buttons, and at 375 px the
+  // button column was hidden behind a sideways scroll inside the table.
+  it("names each row button after its question and turns rows into cards on narrow screens", async () => {
+    const fake = new FakeVoice();
+    fake.add("甲？", "一。");
+    fake.add("乙？", "二。");
+    fake.install();
+    renderFaq(fake);
+    const row = await waitFor(() => rowOf("乙？")!);
+    expect(within(row).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "Edit: 乙？", "Move up: 乙？", "Move down: 乙？", "Delete: 乙？",
+    ]);
+    expect(within(rowOf("甲？")!).getByRole("button", { name: "Delete: 甲？" })).toBeVisible();
+    const table = screen.getByRole("table");
+    expect(table).toHaveClass("voice-stack");
+    expect(within(row).getAllByRole("cell")[2]).toHaveAttribute("data-label", "Answer");
+    // The narrow layout: one block per row, the header hidden, the order column without its 130 px.
+    const css = readFileSync(join(process.cwd(), "app/portal.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const narrow = css.slice(css.lastIndexOf("@media (max-width: 760px)"));
+    expect(narrow).toMatch(/\.voice-stack tr,[^{]*\{[^}]*display: block;/);
+    expect(narrow).toMatch(/\.voice-stack thead \{[^}]*position: absolute;/);
+    expect(css).toMatch(/\.voice-faq-table td:first-child:not\(\[colspan\]\) \{[^}]*min-width: 0;/);
+  });
+
+  it("names the row buttons in Chinese", async () => {
+    localStorage.setItem("pc-locale", "zh");
+    window.history.replaceState({}, "", "/account/voice/faq");
+    const fake = new FakeVoice();
+    fake.add("可以刷卡嗎？", "可以。");
+    fake.install();
+    renderFaq(fake);
+    const row = await waitFor(() => rowOf("可以刷卡嗎？")!);
+    expect(within(row).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "編輯：可以刷卡嗎？", "上移：可以刷卡嗎？", "下移：可以刷卡嗎？", "刪除：可以刷卡嗎？",
+    ]);
+  });
+
   it("hides the template button for an industry without one", async () => {
     const fake = new FakeVoice();
     fake.template = null;
@@ -573,7 +610,7 @@ describe("phone agent FAQ page", () => {
     renderFaq(fake);
     const row = await waitFor(() => rowOf("可以刷卡嗎？")!);
     expect(within(row).getByText("No AI answer")).toBeVisible();
-    await user.click(within(row).getByRole("button", { name: "Edit" }));
+    await user.click(within(row).getByRole("button", { name: /^Edit: / }));
     const form = screen.getByRole("form", { name: "Edit question" });
     expect(within(form).getByLabelText(/Do not let the AI answer this/)).toBeChecked();
     await user.clear(within(form).getByLabelText("Answer"));
@@ -595,14 +632,14 @@ describe("phone agent FAQ page", () => {
     fake.install();
     renderFaq(fake);
     await waitFor(() => expect(questionCells()).toEqual(["甲？", "乙？", "丙？"]));
-    expect(within(rowOf("甲？")!).getByRole("button", { name: "Move up" })).toBeDisabled();
-    expect(within(rowOf("丙？")!).getByRole("button", { name: "Move down" })).toBeDisabled();
+    expect(within(rowOf("甲？")!).getByRole("button", { name: /^Move up: / })).toBeDisabled();
+    expect(within(rowOf("丙？")!).getByRole("button", { name: /^Move down: / })).toBeDisabled();
 
-    await user.click(within(rowOf("甲？")!).getByRole("button", { name: "Move down" }));
+    await user.click(within(rowOf("甲？")!).getByRole("button", { name: /^Move down: / }));
     await waitFor(() => expect(questionCells()).toEqual(["乙？", "甲？", "丙？"]));
     expect(fake.faqs.map((faq) => faq.id)).toEqual([b.id, a.id, c.id]);
 
-    await user.click(within(rowOf("丙？")!).getByRole("button", { name: "Move up" }));
+    await user.click(within(rowOf("丙？")!).getByRole("button", { name: /^Move up: / }));
     await waitFor(() => expect(questionCells()).toEqual(["乙？", "丙？", "甲？"]));
     expect(fake.faqs.map((faq) => faq.id)).toEqual([b.id, c.id, a.id]);
     expect(fake.writes().map((call) => [call.path, call.body])).toEqual([
@@ -618,7 +655,7 @@ describe("phone agent FAQ page", () => {
     const doomed = fake.add("可以刷卡嗎？", "可以。");
     fake.install();
     renderFaq(fake);
-    await user.click(within(await waitFor(() => rowOf("可以刷卡嗎？")!)).getByRole("button", { name: "Delete" }));
+    await user.click(within(await waitFor(() => rowOf("可以刷卡嗎？")!)).getByRole("button", { name: /^Delete: / }));
     let dialog = screen.getByRole("dialog", { name: "Delete this question?" });
     expect(dialog).toHaveTextContent('"可以刷卡嗎？" cannot be restored. The applied version is unaffected until you apply again.');
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -626,7 +663,7 @@ describe("phone agent FAQ page", () => {
     expect(fake.faqs).toHaveLength(2);
     expect(fake.writes()).toEqual([]);
 
-    await user.click(within(rowOf("可以刷卡嗎？")!).getByRole("button", { name: "Delete" }));
+    await user.click(within(rowOf("可以刷卡嗎？")!).getByRole("button", { name: /^Delete: / }));
     dialog = screen.getByRole("dialog", { name: "Delete this question?" });
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -724,7 +761,7 @@ describe("phone agent FAQ page", () => {
     renderFaq(fake);
     await waitFor(() => expect(questionCells()).toEqual(["甲？", "乙？"]));
     fake.faqs = fake.faqs.slice(1); // deleted in another tab
-    await user.click(within(rowOf("甲？")!).getByRole("button", { name: "Move down" }));
+    await user.click(within(rowOf("甲？")!).getByRole("button", { name: /^Move down: / }));
     expect(await screen.findByRole("alert")).toHaveTextContent("This question no longer exists. Reload the page.");
     await waitFor(() => expect(questionCells()).toEqual(["乙？"]));
   });
@@ -770,7 +807,7 @@ describe("phone agent FAQ page", () => {
     await waitFor(() => expect(screen.getByLabelText("About the store", { selector: "textarea" })).toHaveValue(CLINIC.intro_text));
     expect(screen.getByText('This still says "（請填入：地址）"; replace it with your store\'s details.')).toBeVisible();
 
-    await user.click(within(rowOf("洗牙多少錢？")!).getByRole("button", { name: "Edit" }));
+    await user.click(within(rowOf("洗牙多少錢？")!).getByRole("button", { name: /^Edit: / }));
     const form = screen.getByRole("form", { name: "Edit question" });
     expect(within(form).getByText('This still says "（請填入：價格）"; replace it with your store\'s details.')).toBeVisible();
     await user.clear(within(form).getByLabelText("Answer"));
@@ -1024,7 +1061,7 @@ describe("phone agent FAQ page", () => {
     renderFaq(fake);
     const row = await waitFor(() => rowOf("甲？")!);
     for (const name of ["Add a question", "Use the template", "Import CSV", "Apply"]) expect(screen.getByRole("button", { name })).toBeDisabled();
-    for (const name of ["Edit", "Move up", "Move down", "Delete"]) expect(within(row).getByRole("button", { name })).toBeDisabled();
+    for (const name of ["Edit", "Move up", "Move down", "Delete"]) expect(within(row).getByRole("button", { name: new RegExp(`^${name}: `) })).toBeDisabled();
     expect(screen.getByLabelText("About the store", { selector: "textarea" })).toHaveAttribute("readonly");
     expect(screen.getByRole("button", { name: "Show everything the AI receives" })).toBeEnabled();
   });
@@ -1081,7 +1118,7 @@ describe("phone agent FAQ page", () => {
     expect(screen.getByText("寫地址、交通、服務項目、價格這些客人常問的事實。營業時間請在「設定」填，不用寫在這裡。")).toBeVisible();
     expect(within(rowOf("可以刷卡嗎？")!).getByText("不讓 AI 回答")).toBeVisible();
 
-    await user.click(within(rowOf("可以刷卡嗎？")!).getByRole("button", { name: "刪除" }));
+    await user.click(within(rowOf("可以刷卡嗎？")!).getByRole("button", { name: /^刪除：/ }));
     const dialog = screen.getByRole("dialog", { name: "要刪除這題嗎？" });
     expect(dialog).toHaveTextContent("「可以刷卡嗎？」刪除後無法復原。已套用的版本不受影響，直到你下次套用。");
     await user.click(within(dialog).getByRole("button", { name: "取消" }));

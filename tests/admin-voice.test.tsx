@@ -364,6 +364,11 @@ describe("admin phone agent: stores", () => {
     ]);
     let rows = bodyRows(table);
     expect(rows.map((row) => within(row).getByRole("rowheader").textContent)).toEqual(["明日補習班", "晴光牙醫診所", "舊店"]);
+    // Narrow screens (verifier finding 2026-10-22, 375 px): every cell but the buttons is labelled for the card layout.
+    expect(table).toHaveClass("voice-stack");
+    expect(within(rows[0]).getAllByRole("cell").map((cell) => cell.getAttribute("data-label"))).toEqual([
+      "Account email", "Industry", "Status", "Version", "FAQs", "Last test call", "AI answers", null,
+    ]);
     expect(cellTexts(rows[0]).slice(0, 7)).toEqual(["hello@cram.example", "Cram school", "Draft", "Not applied", "0", "Never", "On"]);
     const clinic = cellTexts(rows[1]);
     expect(clinic.slice(0, 5)).toEqual(["owner@clinic.example", "Clinic", "Testing", "v3", "12"]);
@@ -666,6 +671,10 @@ describe("admin phone agent: numbers", () => {
       "Number", "Store", "Purpose", "Channel", "From", "Until", "Note", "Actions",
     ]);
     const rows = bodyRows(table);
+    expect(table).toHaveClass("voice-stack");
+    expect(within(rows[0]).getAllByRole("cell").map((cell) => cell.getAttribute("data-label"))).toEqual([
+      "Store", "Purpose", "Channel", "From", "Until", "Note", null,
+    ]);
     expect(numberOf(rows[0])).toBe("+886227356688");
     expect(cellTexts(rows[0]).slice(0, 6)).toEqual(["晴光牙醫診所", "Customer line", "PSTN", "2026-11-01", "Ongoing", "主線"]);
     expect(numberOf(rows[1])).toBe("ext-0001");

@@ -355,6 +355,8 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
   }
 
   const label = (key: string, copy: Copy) => (busy === key ? t(T.working) : t(copy));
+  /** Row buttons carry their question, so a screen reader's button list tells the 37 "Edit"s apart. */
+  const rowLabel = (text: string, faq: VoiceFaq) => (zh ? `${text}：${faq.question}` : `${text}: ${faq.question}`);
 
   // ---------- store description ----------
   async function saveIntro(event: FormEvent) {
@@ -833,7 +835,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
           <p className="portal-empty">{t(T.empty)}</p>
         ) : (
           <div className="portal-table-wrap">
-            <table className="portal-table">
+            <table className="portal-table voice-stack voice-faq-table">
               <thead>
                 <tr>
                   <th scope="col">{t(T.colOrder)}</th>
@@ -872,17 +874,23 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
                           </p>
                         )}
                       </td>
-                      <td style={{ whiteSpace: "pre-wrap" }}>
+                      <td style={{ whiteSpace: "pre-wrap" }} data-label={t(T.colAnswer)}>
                         <Marked text={faq.answer} />
                       </td>
                       <td>
                         <div className="portal-actions">
-                          <button className="portal-text-button" disabled={disabled} onClick={() => startEdit(faq)}>
+                          <button
+                            className="portal-text-button"
+                            disabled={disabled}
+                            aria-label={rowLabel(t(T.edit), faq)}
+                            onClick={() => startEdit(faq)}
+                          >
                             {t(T.edit)}
                           </button>
                           <button
                             className="portal-text-button"
                             disabled={disabled || index === 0}
+                            aria-label={rowLabel(label(`up-${faq.id}`, T.moveUp), faq)}
                             onClick={() => void move(faq, `up-${faq.id}`, index - 1)}
                           >
                             {label(`up-${faq.id}`, T.moveUp)}
@@ -890,6 +898,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
                           <button
                             className="portal-text-button"
                             disabled={disabled || index === faqs.length - 1}
+                            aria-label={rowLabel(label(`down-${faq.id}`, T.moveDown), faq)}
                             onClick={() => void move(faq, `down-${faq.id}`, index + 1)}
                           >
                             {label(`down-${faq.id}`, T.moveDown)}
@@ -897,6 +906,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
                           <button
                             className="portal-text-button portal-danger"
                             disabled={disabled}
+                            aria-label={rowLabel(t(T.delete), faq)}
                             onClick={() => {
                               setDeleting(faq);
                               setDeleteError(null);
