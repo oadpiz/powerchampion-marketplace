@@ -444,13 +444,19 @@ def outcome_of(facts):
     return {"notice_hangup": "hangup_early", "no_speech": "no_speech", "error": "error"}.get(message, "unknown")
 
 
+def unattributed_line(number_id, purpose, store_id):
+    """§3.5 row 2 (amended): the number is not in the table, or it is a customer number with no store. A6 refuses a
+    customer line without a store (billing/config.py), so P2-7 cannot export it and A6 sees an unknown line too."""
+    return number_id is None or (purpose == "customer" and store_id is None)
+
+
 def meter_of(facts):
-    """§3.5 meter table (rule q5-draft-1): (units, reason). Extra `facts` keys: entry, number_id, purpose, ai_ms,
-    message_ms."""
+    """§3.5 meter table (rule q5-draft-1): (units, reason). Extra `facts` keys: entry, number_id, purpose, store_id,
+    ai_ms, message_ms."""
     message, on = facts["message_outcome"], facts["ai_on"]
     if facts["entry"] == "try":
         return 0, "try"
-    if facts["number_id"] is None:
+    if unattributed_line(facts["number_id"], facts["purpose"], facts["store_id"]):
         return 0, "unknown_line"
     if facts["purpose"] != "customer":
         return 0, "non_customer_line"
@@ -536,7 +542,7 @@ def merged_columns(con, orch, rec, existing):
     flags = set(ai["auto_flags"]) if ai is not None else set()
     if degraded:
         flags.add("degraded")
-    if first["entry"] != "try" and owner["number_id"] is None:
+    if first["entry"] != "try" and unattributed_line(owner["number_id"], owner["number_purpose"], owner["store_id"]):
         flags.add("unknown_number")
     store = vs.get_store(con, owner["store_id"]) if owner["store_id"] else None
     if config is not None:
@@ -549,7 +555,7 @@ def merged_columns(con, orch, rec, existing):
         flags.add("retention_mismatch")
 
     facts = {"entry": first["entry"], "number_id": owner["number_id"], "purpose": owner["number_purpose"],
-             "disposition": disposition, "ai_on": ai_on, "ai_ms": ai_ms, "message_ms": message["speech_ms"],
+             "store_id": owner["store_id"], "disposition": disposition, "ai_on": ai_on, "ai_ms": ai_ms, "message_ms": message["speech_ms"],
              "handoff": handoff is not None, "message_outcome": message["outcome"],
              "callback_confirmed": message["callback_confirmed"], "degraded": degraded}
     units, reason = meter_of(facts)
