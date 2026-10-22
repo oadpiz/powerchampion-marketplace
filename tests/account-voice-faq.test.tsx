@@ -782,6 +782,44 @@ describe("phone agent FAQ page", () => {
     expect(onChanged).toHaveBeenCalledTimes(2);
   });
 
+  // Verifier finding 2026-10-22: 27 of 37 template questions need input, and nothing said a call can be tried first.
+  it("says a call can be tried before everything is filled in, and can show only the questions that need input", async () => {
+    const user = userEvent.setup();
+    const fake = new FakeVoice().install();
+    renderFaq(fake);
+    await user.click(await screen.findByRole("button", { name: "Use the template" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Use template" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      'Added 3 questions; 2 need your input. You do not have to fill them all in now: use "Apply" below and try a call first, then fill in the rest.',
+    );
+    const filter = screen.getByRole("button", { name: "Show only questions that need input (2)" });
+    expect(filter).toHaveAttribute("aria-pressed", "false");
+    await user.click(filter);
+    expect(screen.getByRole("button", { name: "Show all questions" })).toHaveAttribute("aria-pressed", "true");
+    expect(questionCells()).toEqual(["洗牙多少錢？", "附近有停車場嗎？"]);
+    // The order numbers stay those of the whole list.
+    expect(within(rowOf("附近有停車場嗎？")!).getAllByRole("cell")[0]).toHaveTextContent("3");
+
+    // Filling one in takes it off the filtered list; the next one is right there.
+    await user.click(within(rowOf("洗牙多少錢？")!).getByRole("button", { name: /^Edit/ }));
+    const form = screen.getByRole("form", { name: "Edit question" });
+    await user.clear(within(form).getByLabelText("Answer"));
+    await user.type(within(form).getByLabelText("Answer"), "健保洗牙每半年一次免費；自費 800 元。");
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(questionCells()).toEqual(["附近有停車場嗎？"]));
+
+    await user.click(within(rowOf("附近有停車場嗎？")!).getByRole("button", { name: /^Edit/ }));
+    const last = screen.getByRole("form", { name: "Edit question" });
+    await user.clear(within(last).getByLabelText("Answer"));
+    await user.type(within(last).getByLabelText("Answer"), "有，在對面。");
+    await user.click(within(last).getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Every question is filled in.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Show all questions" }));
+    expect(questionCells()).toEqual(["洗牙多少錢？", "可以刷卡嗎？", "附近有停車場嗎？"]);
+    // With nothing left to fill in, the filter goes away.
+    expect(screen.queryByRole("button", { name: /Show only questions/ })).not.toBeInTheDocument();
+  });
+
   it("shows template_not_found from the server", async () => {
     const user = userEvent.setup();
     const fake = new FakeVoice().install();
@@ -951,7 +989,7 @@ describe("phone agent FAQ page", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
     const applied = await screen.findByText(/Version 1 is applied/);
     expect(applied).toHaveTextContent(
-      'Version 1 is applied. Go to "Try a call" to hear it. 1 places still say "（請填入）" (to be filled in); the AI may read them aloud. Fill in the ones marked "Needs input". No business hours yet; the AI will treat every call as after hours.',
+      'Version 1 is applied. Go to "Try a call" to hear it. 1 places still say "（請填入）" (to be filled in); the AI may read them aloud. You can try a call first and fill in the ones marked "Needs input" later. No business hours yet; the AI will treat every call as after hours.',
     );
     expect(within(applied).getByRole("link", { name: "Try a call" })).toHaveAttribute("href", "/account/voice/try");
     expect(fake.version).toBe(1);

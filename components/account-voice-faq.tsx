@@ -57,6 +57,13 @@ const T = {
   importCsv: { en: "Import CSV", zh: "匯入 CSV" },
   empty: { en: "No questions yet. Start from the template or add them one by one.", zh: "還沒有常見問答。可以從範本帶入，或一題一題新增。" },
   needsInput: { en: "Needs input", zh: "需要填寫" },
+  onlyNeedsInput: { en: "Show only questions that need input", zh: "只顯示需要填寫的題目" },
+  showAll: { en: "Show all questions", zh: "顯示全部題目" },
+  allFilled: { en: "Every question is filled in.", zh: "需要填寫的題目都填好了。" },
+  tryFirst: {
+    en: 'You do not have to fill them all in now: use "Apply" below and try a call first, then fill in the rest.',
+    zh: "不用一次填完：可以先按下方「套用」，試打一通聽聽看，之後再慢慢補。",
+  },
   noAi: { en: "No AI answer", zh: "不讓 AI 回答" },
   edit: { en: "Edit", zh: "編輯" },
   moveUp: { en: "Move up", zh: "上移" },
@@ -251,6 +258,9 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
   const [draft, setDraft] = useState<FaqDraft>(BLANK);
   const [attempted, setAttempted] = useState(false);
   const [formError, setFormError] = useState<unknown>(null);
+
+  // Verifier finding 2026-10-22: a template brings 27 questions to fill among 37; this shows just those.
+  const [onlyNeedsInput, setOnlyNeedsInput] = useState(false);
 
   const [deleting, setDeleting] = useState<VoiceFaq | null>(null);
   const [deleteError, setDeleteError] = useState<unknown>(null);
@@ -458,7 +468,9 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
     setEditing(null);
     setNotice({
       kind: "ok",
-      content: zh ? `已帶入 ${added} 題，其中 ${needsInput} 題需要填寫。` : `Added ${added} questions; ${needsInput} need your input.`,
+      content: `${zh ? `已帶入 ${added} 題，其中 ${needsInput} 題需要填寫。` : `Added ${added} questions; ${needsInput} need your input.`}${
+        needsInput > 0 ? ` ${t(T.tryFirst)}` : ""
+      }`,
     });
     // M9 does not return the description; the template's one replaces whatever is in the editor.
     if (introReplaced) await loadList({ forceIntro: true });
@@ -573,8 +585,8 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
           )}
           {unfilled > 0 &&
             (zh
-              ? ` 還有 ${unfilled} 個地方寫著「（請填入）」，AI 可能會照著念。請把標著「需要填寫」的地方補上。`
-              : ` ${unfilled} places still say "（請填入）" (to be filled in); the AI may read them aloud. Fill in the ones marked "Needs input".`)}
+              ? ` 還有 ${unfilled} 個地方寫著「（請填入）」，AI 可能會照著念。可以先試打聽聽看，之後再把標著「需要填寫」的地方補上。`
+              : ` ${unfilled} places still say "（請填入）" (to be filled in); the AI may read them aloud. You can try a call first and fill in the ones marked "Needs input" later.`)}
           {hoursEmpty && ` ${t(T.hoursEmpty)}`}
         </>
       ),
@@ -625,6 +637,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
   if (load.status !== "ready" || !list) return <>{title}</>;
 
   const { capacity, faqs, template } = list;
+  const needsInputCount = faqs.filter((faq) => faq.needsInput).length;
   const introChars = codePoints(intro.draft.trim());
   const introPlaceholder = firstPlaceholder(intro.draft);
   const disabled = readOnly || busy !== null;
@@ -803,6 +816,19 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
           </button>
         </div>
         {editing?.id === null && faqForm(null)}
+        {(needsInputCount > 0 || onlyNeedsInput) && (
+          <div className="portal-actions">
+            <button
+              type="button"
+              className="portal-button-secondary"
+              aria-pressed={onlyNeedsInput}
+              onClick={() => setOnlyNeedsInput((value) => !value)}
+            >
+              {onlyNeedsInput ? t(T.showAll) : `${t(T.onlyNeedsInput)}${zh ? `（${needsInputCount} 題）` : ` (${needsInputCount})`}`}
+            </button>
+          </div>
+        )}
+        {onlyNeedsInput && needsInputCount === 0 && <p className="portal-note">{t(T.allFilled)}</p>}
         {faqs.length === 0 ? (
           <p className="portal-empty">{t(T.empty)}</p>
         ) : (
@@ -818,7 +844,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
               </thead>
               <tbody>
                 {faqs.map((faq, index) =>
-                  editing?.id === faq.id ? (
+                  onlyNeedsInput && !faq.needsInput && editing?.id !== faq.id ? null : editing?.id === faq.id ? (
                     <tr key={faq.id}>
                       <td colSpan={4}>{faqForm(faq)}</td>
                     </tr>

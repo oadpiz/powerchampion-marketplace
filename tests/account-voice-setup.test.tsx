@@ -706,7 +706,7 @@ describe("setup page: save and apply", () => {
       { method: "POST", path: "/me/voice/setup", contentType: "application/json", body: { greeting: "請問要掛號嗎？" } },
       { method: "POST", path: "/me/voice/publish", contentType: "application/json", body: {} },
     ]);
-    expect(screen.getByText(/^3 places still say "（請填入）"/)).toBeVisible();
+    expect(screen.getByText(/^3 places still say "（請填入）"/)).toHaveTextContent(/You can try a call first and fill them in later on FAQ\.$/);
     expect(screen.getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "/account/voice/faq");
     expect(screen.getByText("No business hours yet; the AI will treat every call as after hours.")).toBeVisible();
     expect(onChanged).toHaveBeenCalledTimes(1);
