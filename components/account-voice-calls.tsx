@@ -45,6 +45,36 @@ function isCallList(value: unknown): value is CallList {
 }
 
 type Filters = { month: string; outcome: CallOutcome | ""; flagged: boolean };
+
+/**
+ * The list's month and filters for this browser tab, so "← Calls" or the browser's Back from a call returns to the
+ * same month and filters instead of this month's full list. Kept in sessionStorage (not the URL): the list is drawn
+ * as soon as the route changes, before a client-side navigation has necessarily updated window.location.
+ */
+const FILTERS_KEY = "pc-voice-calls-filters";
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function savedFilters(current: string, oldest: string): Filters {
+  const fallback: Filters = { month: current, outcome: "", flagged: false };
+  try {
+    const value: unknown = JSON.parse(window.sessionStorage.getItem(FILTERS_KEY) ?? "null");
+    if (!record(value)) return fallback;
+    const month = typeof value.month === "string" && MONTH.test(value.month) && value.month >= oldest && value.month <= current ? value.month : current;
+    const outcome = (OUTCOMES as readonly unknown[]).includes(value.outcome) ? (value.outcome as CallOutcome) : "";
+    return { month, outcome, flagged: value.flagged === true };
+  } catch {
+    // Storage blocked or a bad value: start from this month.
+    return fallback;
+  }
+}
+
+function saveFilters(filters: Filters) {
+  try {
+    window.sessionStorage.setItem(FILTERS_KEY, JSON.stringify(filters));
+  } catch {
+    // Not kept: the list still works, it just starts from this month next time.
+  }
+}
 type Load =
   | { status: "loading" }
   | { status: "error"; error: unknown }
@@ -94,7 +124,8 @@ function CallsList(): ReactElement {
   const [now] = useState(() => Date.now());
   const current = taipeiMonth(now);
   const oldest = taipeiMonth(now - CALL_DETAIL_DAYS * DAY_MS);
-  const [filters, setFilters] = useState<Filters>({ month: current, outcome: "", flagged: false });
+  const [filters, setFilters] = useState<Filters>(() => savedFilters(current, oldest));
+  useEffect(() => saveFilters(filters), [filters]);
   const [reload, setReload] = useState(0);
   const [load, setLoad] = useState<Load>({ status: "loading" });
   // Each first-page read gets a number; a "Load more" answer for an older read is dropped.
