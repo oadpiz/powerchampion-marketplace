@@ -1,5 +1,7 @@
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from server.settings import Settings
@@ -57,6 +59,74 @@ class GrafanaUrlSettingTests(unittest.TestCase):
             with self.subTest(url=url):
                 with self.assertRaises(ValueError):
                     Settings(grafana_url=url)
+
+
+TEST_SECRET = "test-only-not-a-secret-0000000000"
+VOICE_ENV = ("PC_VOICE_ENABLED", "PC_VOICE_TRY_SECRET", "PC_VOICE_TRY_URL")
+
+
+class VoiceSettingTests(unittest.TestCase):
+    def from_env(self, **values):
+        env = {"PC_PORTAL_ENV": "production", "PC_PORTAL_SECURE_COOKIES": "1"}
+        env.update(values)
+        with patch.dict(os.environ, env, clear=False):
+            for name in VOICE_ENV:
+                if name not in values:
+                    os.environ.pop(name, None)
+            return Settings.from_env()
+
+    def test_defaults_off_and_unavailable(self):
+        for s in (Settings(), self.from_env()):
+            self.assertFalse(s.voice_enabled)
+            self.assertEqual((s.voice_try_secret, s.voice_try_url, s.voice_try_origin), ("", "", ""))
+            self.assertFalse(s.voice_try_available)
+
+    def test_reads_env(self):
+        s = self.from_env(PC_VOICE_ENABLED="1", PC_VOICE_TRY_SECRET=TEST_SECRET, PC_VOICE_TRY_URL=" https://try.example.test/ ")
+        self.assertTrue(s.voice_enabled)
+        self.assertEqual(s.voice_try_secret, TEST_SECRET)
+        self.assertEqual(s.voice_try_origin, "https://try.example.test")
+        self.assertTrue(s.voice_try_available)
+        self.assertFalse(self.from_env(PC_VOICE_ENABLED="true").voice_enabled)  # only "1" turns it on
+
+    def test_missing_or_bad_values_never_stop_startup(self):
+        # Enabled without a secret or URL, or with malformed ones: the service still starts; trying a call is just unavailable.
+        for values in ({"PC_VOICE_ENABLED": "1"},
+                       {"PC_VOICE_ENABLED": "1", "PC_VOICE_TRY_SECRET": TEST_SECRET},
+                       {"PC_VOICE_ENABLED": "1", "PC_VOICE_TRY_URL": "https://try.example.test"},
+                       {"PC_VOICE_ENABLED": "1", "PC_VOICE_TRY_SECRET": TEST_SECRET[:31], "PC_VOICE_TRY_URL": "https://try.example.test"},
+                       {"PC_VOICE_ENABLED": "1", "PC_VOICE_TRY_SECRET": TEST_SECRET, "PC_VOICE_TRY_URL": "http://try.example.test"},
+                       {"PC_VOICE_ENABLED": "1", "PC_VOICE_TRY_SECRET": TEST_SECRET, "PC_VOICE_TRY_URL": "https://try.example.test:99999"}):
+            with self.subTest(values=sorted(values)):
+                s = self.from_env(**values)
+                self.assertTrue(s.voice_enabled)
+                self.assertFalse(s.voice_try_available)
+        from server.app import create_app
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app(Settings(db_path=str(Path(directory) / "p.sqlite"), voice_enabled=True))
+            self.assertTrue(app.state.store)
+
+    def test_secret_needs_32_characters(self):
+        url = "https://try.example.test"
+        self.assertFalse(Settings(voice_try_secret="x" * 31, voice_try_url=url).voice_try_available)
+        self.assertTrue(Settings(voice_try_secret="x" * 32, voice_try_url=url).voice_try_available)
+
+    def test_secret_is_not_in_repr(self):
+        self.assertNotIn(TEST_SECRET, repr(Settings(voice_try_secret=TEST_SECRET)))
+
+    def test_try_url_must_be_an_https_origin_or_local_http(self):
+        accepted = {"https://try.example.test": "https://try.example.test", "https://Try.Example.test:8443/": "https://try.example.test:8443",
+                    "http://localhost:8097/": "http://localhost:8097", "http://127.0.0.1:8097": "http://127.0.0.1:8097",
+                    "http://[::1]:8097": "http://[::1]:8097"}
+        for url, origin in accepted.items():
+            with self.subTest(url=url):
+                self.assertEqual(Settings(voice_try_url=url).voice_try_origin, origin)
+        for url in ("http://try.example.test", "http://localhost.example.test", "https://u:p@try.example.test", "https://@try.example.test",
+                    "https://try.example.test/demo", "https://try.example.test/?t=1", "https://try.example.test/#t=1",
+                    "https://try.example.test:abc", "https://", "ftp://try.example.test", "javascript:alert(1)", "try.example.test",
+                    "https://try example.test", ""):
+            with self.subTest(url=url):
+                self.assertEqual(Settings(voice_try_url=url).voice_try_origin, "")
 
 
 if __name__ == "__main__":

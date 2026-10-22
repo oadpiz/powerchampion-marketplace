@@ -7,6 +7,26 @@ from typing import Tuple
 from urllib.parse import urlsplit
 from cryptography.fernet import Fernet
 
+VOICE_TRY_SECRET_MIN = 32
+VOICE_TRY_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def voice_try_origin(url):
+    """The origin of a valid try URL, or "" (never raises: a bad value must not stop the service)."""
+    try:
+        parsed = urlsplit(url)
+        parsed.port  # ValueError for a malformed or out-of-range port
+    except ValueError:
+        return ""
+    host = parsed.hostname or ""
+    if "@" in parsed.netloc or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
+        return ""
+    if not (re.fullmatch(r"[a-z0-9.-]+", host) or host == "::1"):
+        return ""
+    if parsed.scheme == "https" or (parsed.scheme == "http" and host in VOICE_TRY_LOCAL_HOSTS):
+        return parsed.scheme + "://" + parsed.netloc.lower()
+    return ""
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -29,6 +49,11 @@ class Settings:
     runtime_encryption_key: str = field(default="", repr=False)
     # Base of the cluster Grafana for the admin Engineers page links; "" hides the links.
     grafana_url: str = "https://grafana.powerchampion.ai"
+    # AI phone agent (語音電話客服): off by default. A missing or malformed try secret/URL never stops
+    # the service from starting; it only makes "try a call" answer 503 (see voice_try_available).
+    voice_enabled: bool = False
+    voice_try_secret: str = field(default="", repr=False)
+    voice_try_url: str = ""
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -71,6 +96,16 @@ class Settings:
         except (ValueError, UnicodeError):
             return False
 
+    @property
+    def voice_try_origin(self):
+        """PC_VOICE_TRY_URL as scheme://host[:port]; "" unless it is an HTTPS origin (plain HTTP only for localhost)."""
+        return voice_try_origin(self.voice_try_url)
+
+    @property
+    def voice_try_available(self):
+        """Tickets can be issued: the shared secret has at least 32 characters and the try URL is valid."""
+        return len(self.voice_try_secret) >= VOICE_TRY_SECRET_MIN and bool(self.voice_try_origin)
+
     @classmethod
     def from_env(cls):
         origins = tuple(origin.strip().rstrip("/") for origin in os.environ.get("PC_PORTAL_ALLOWED_ORIGINS", "http://localhost:3010,https://powerchampion.ai").split(",") if origin.strip())
@@ -96,4 +131,7 @@ class Settings:
             runtime_enabled=os.environ.get("PC_RUNTIME_ENABLED", "0") == "1",
             runtime_encryption_key=os.environ.get("PC_RUNTIME_ENCRYPTION_KEY", ""),
             grafana_url=os.environ.get("PC_GRAFANA_URL", "https://grafana.powerchampion.ai").strip().rstrip("/"),
+            voice_enabled=os.environ.get("PC_VOICE_ENABLED", "0") == "1",
+            voice_try_secret=os.environ.get("PC_VOICE_TRY_SECRET", ""),
+            voice_try_url=os.environ.get("PC_VOICE_TRY_URL", "").strip(),
         )
