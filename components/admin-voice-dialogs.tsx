@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { codePoints, lineProblem, unsafeMessage } from "../lib/admin-text";
+import { LANGUAGE_NAMES } from "../lib/languages";
 import { PortalError, portalErrorText, portalRequest } from "../lib/portal-client";
 import { AdminDialog } from "./admin-dialog";
 import { useLocale } from "./locale-provider";
@@ -342,8 +343,8 @@ export function StoreOpenedDialog({ opened, onClose }: { opened: OpenedStore; on
       )}
       <p className="portal-hint">
         {zh
-          ? "請對方：1) 打開這個網址，用這組 email 與臨時密碼登入；2) 依畫面提示到「安全性」變更密碼；3) 回到「電話客服」完成設定並試打一通。網站第一次打開是英文，右上角可以切換成「繁中」。"
-          : "Ask them to: 1) open this address and sign in with this email and the temporary password; 2) change the password under Security when asked; 3) go back to Phone agent, finish the setup and try a call. The site opens in English the first time; the language switch at the top right changes it to 繁中."}
+          ? `請對方：1) 打開這個網址，用這組 email 與臨時密碼登入；2) 依畫面提示到「安全性」變更密碼；3) 回到「電話客服」完成設定並試打一通。網站第一次打開是英文：按右上角寫著「${LANGUAGE_NAMES.en}」的語言按鈕，再選「${LANGUAGE_NAMES["zh-Hant"]}」。`
+          : `Ask them to: 1) open this address and sign in with this email and the temporary password; 2) change the password under Security when asked; 3) go back to Phone agent, finish the setup and try a call. The site opens in English the first time: at the top right, open the language button that says "${LANGUAGE_NAMES.en}" and choose "${LANGUAGE_NAMES["zh-Hant"]}".`}
       </p>
     </AdminDialog>
   );

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { existsSync, readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,6 +13,8 @@ import {
   VOICE_STATUSES,
   voiceAdminErrorText,
 } from "../components/admin-voice-dialogs";
+import { LanguagePicker } from "../components/language-picker";
+import { LocaleProvider } from "../components/locale-provider";
 import { PortalError, safeAccountReturn } from "../lib/portal-client";
 import { adminFetch, customer, wrap, type Call } from "./support/admin-fetch";
 
@@ -482,7 +484,11 @@ describe("admin phone agent: opening a store", () => {
     const signIn = `${window.location.origin}/login?next=/account/voice`;
     expect(within(opened).getByText(signIn)).toBeVisible();
     expect(safeAccountReturn(new URL(VOICE_SIGN_IN_PATH, "https://portal.example").searchParams.get("next"))).toBe("/account/voice");
-    expect(within(opened).getByText(/language switch at the top right changes it to 繁中/)).toBeVisible();
+    // Verifier finding 2026-10-22: the hint said "switch to 繁中", but the top-right control is a language button that
+    // says "English" and offers "繁體中文". The words of the hint must be the ones the picker shows on /login.
+    expect(
+      within(opened).getByText(/at the top right, open the language button that says "English" and choose "繁體中文"\.$/),
+    ).toBeVisible();
 
     await user.keyboard("{Escape}");
     expect(screen.getByRole("dialog", { name: `"${longName}" is open` })).toBeVisible();
@@ -866,5 +872,24 @@ describe("admin phone agent: values shared with the backend", () => {
     expect(match, "NUMBER pattern").not.toBeNull();
     const backend = new RegExp(`^(?:${match![1]})$`);
     for (const sample of samples) expect(VOICE_NUMBER_PATTERN.test(sample), sample).toBe(backend.test(sample));
+  });
+});
+
+describe("temporary password hint and the language picker", () => {
+  it("names the button and the choice the picker really shows where the store signs in", async () => {
+    window.history.replaceState({}, "", "/login?next=/account/voice");
+    const user = userEvent.setup();
+    render(
+      <LocaleProvider>
+        <LanguagePicker />
+      </LocaleProvider>,
+    );
+    const trigger = screen.getByRole("button", { name: "Language: English" });
+    expect(trigger).toHaveTextContent(/^English$/);
+    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: "繁體中文" }));
+    // Choosing it really switches the site: the button now names the new language.
+    expect(screen.getByRole("button", { name: "語言：繁體中文" })).toHaveTextContent(/^繁體中文$/);
+    window.history.replaceState({}, "", "/");
   });
 });
