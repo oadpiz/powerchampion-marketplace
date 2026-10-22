@@ -102,4 +102,13 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(website).not.toMatch(/PC_VOICE_RUNTIME_TOKEN/);
     expect(portal).toMatch(/^\s+PC_VOICE_ENABLED:\s*\$\{PC_VOICE_ENABLED:-0\}\s*$/m);
   });
+
+  it("wires the content-link URL and secret into the portal only, empty by default (phase2-contract §1.7: 3 lines)", () => {
+    // Without them in the compose file, setting them in Dokploy at step ⑨ would not reach the container: M17/A12 stay 503.
+    for (const name of ["PC_VOICE_RUNTIME_TOKEN", "PC_VOICE_MEDIA_URL", "PC_VOICE_MEDIA_SECRET"]) {
+      expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-\\}\\s*$`, "m"));
+      expect(compose).not.toMatch(new RegExp(`^\\s+${name}\\s*:\\s*(?!\\$\\{${name}:-\\}\\s*$)\\S`, "m"));
+      expect(website).not.toMatch(new RegExp(name));
+    }
+  });
 });

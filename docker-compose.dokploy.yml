@@ -94,6 +94,9 @@ services:
       PC_VOICE_TRY_SECRET: ${PC_VOICE_TRY_SECRET:-}
       PC_VOICE_TRY_URL: ${PC_VOICE_TRY_URL:-}
       PC_VOICE_RUNTIME_TOKEN: ${PC_VOICE_RUNTIME_TOKEN:-}
+      # 查看通話內容（M17、A12）：P2-3 台灣主機端點好了才在 Dokploy 設；沒設時回 503、明細頁「查看內容」停用
+      PC_VOICE_MEDIA_URL: ${PC_VOICE_MEDIA_URL:-}
+      PC_VOICE_MEDIA_SECRET: ${PC_VOICE_MEDIA_SECRET:-}
     volumes:
       - portal-data:/data
     # No ports, no Traefik labels and not on dokploy-network: only the website
