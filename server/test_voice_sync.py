@@ -78,6 +78,14 @@ class VoiceEnumSyncTests(unittest.TestCase):
         self.assertEqual(ts_const(FAQ, "IMPORT_MODES"), list(vm.IMPORT_MODES))
         self.assertEqual(ts_const(FAQ, "CSV_PROBLEMS"), list(vm.CSV_PROBLEMS))
 
+    def test_the_example_csv_imports_cleanly(self):
+        # The import dialog's "Download an example CSV" (lib/voice-faq.ts CSV_EXAMPLE_ROWS); BOM and CRLF as sent.
+        rows = ts_const(FAQ, "CSV_EXAMPLE_ROWS")
+        count, faqs, errors = vm.parse_faq_csv("\ufeff" + "\r\n".join(rows) + "\r\n")
+        self.assertEqual((count, errors), (len(rows) - 1, []))
+        self.assertEqual(faqs[0]["variants"], ["洗牙費用", "洗牙要錢嗎"])
+        self.assertEqual(faqs[1]["variants"], [])
+
     def test_csv_parser_reports_exactly_the_listed_problems(self):
         # Ties CSV_PROBLEMS to the parser: every listed code is one the parser really reports, and these samples
         # report nothing else. Same samples as test_voice_merchant.test_each_row_problem and the header tests.
