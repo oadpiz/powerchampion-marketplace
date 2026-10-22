@@ -54,6 +54,10 @@ PLANS = ("creator", "merchant", "agency")
 DEFAULT_PLAN = "creator"
 GRANT_TTL_S = 60          # grant exp = op created_at + 60 (section 12.3), never re-issued
 ORPHAN_S = 120            # >= grant TTL + 30 s slack (section 4)
+# A submitted op the agent no longer knows (its data was lost or restored): refunded after this long,
+# so it does not hold the user's credits, the project and an active-op slot forever.
+LOST_S = 6 * 3600
+INT4_MAX = 2 ** 31 - 1    # the Postgres INTEGER columns
 MAX_ACTIVE_PER_USER = 2
 # bucket -> (limit, window seconds); section 8. Per user only, never per client IP.
 LIMITS = {"project": (20, 3600), "upload": (60, 3600), "quote": (120, 60)}
@@ -292,8 +296,8 @@ class Studio:
             if not isinstance(op_type, str) or not OP_TYPE.fullmatch(op_type):
                 raise ValueError
             credits = _int(body.get("credits"), 0, GRANT_MAX)
-            storyboard_rev = _int(body.get("storyboard_rev"), 0, 2 ** 31)
-            exp = _int(body.get("exp"), 0, 2 ** 40)
+            storyboard_rev = _int(body.get("storyboard_rev"), 0, INT4_MAX)
+            exp = _int(body.get("exp"), 0, INT4_MAX)
             sig = body.get("sig")
             if not isinstance(sig, str) or not SIG.fullmatch(sig):
                 raise ValueError
@@ -423,15 +427,22 @@ class Studio:
 
     def reconcile(self, op):
         """Resolve one active op through the agent's GET op. Never raises; returns the agent doc or None."""
+        age = self.now() - (op["created_at"] or 0)  # measured before the call, so a slow GET cannot age it
         try:
             doc = self.agent.get_op(op["user_id"], op["project_id"], op["op_id"])
         except AgentError as error:
-            if error.kind == "rejected" and error.status == 404:
-                if op["state"] in ("reserved", "unknown") and self.now() - (op["created_at"] or 0) >= self.orphan_s:
+            # Only the agent's own "not found" counts; a bare 404 (a misrouted URL, a moved route) proves nothing.
+            if error.kind == "rejected" and error.status == 404 and error.code == "studio_not_found":
+                if op["state"] in ("reserved", "unknown") and age >= self.orphan_s:
                     # The grant expired 60 s after creation, so the agent can no longer accept this op.
                     self.finish(op["op_id"], 0, error="not_submitted", from_states=("reserved", "unknown"))
+                elif op["state"] == "submitted" and age >= LOST_S:
+                    log.error("studio op %s: submitted but unknown to the agent for %s s; refunded", op["op_id"], age)
+                    self.finish(op["op_id"], 0, error="lost_by_agent", from_states=("submitted",))
                 elif op["state"] == "submitted":
-                    log.warning("studio op %s is submitted but unknown to the agent; left for an operator", op["op_id"])
+                    log.warning("studio op %s is submitted but unknown to the agent", op["op_id"])
+            elif error.kind == "rejected":
+                log.warning("studio op %s: unexpected agent answer %s %s", op["op_id"], error.status, error.code)
             return None
         except Exception:  # noqa: BLE001 - the sweeper and lazy reconcile must keep going
             log.exception("studio op %s: reconcile failed", op["op_id"])
@@ -469,13 +480,16 @@ class Studio:
 
     # -- sweeper -----------------------------------------------------------------------------------
 
-    def sweep(self, limit=200):
+    def sweep(self, limit=200, stop=None):
         """Resolve every active op through the agent (reserved too: the portal may have crashed
-        after the agent accepted). Returns the number of ops looked at."""
+        after the agent accepted). Returns the number of ops looked at. `stop` (an asyncio.Event,
+        only read here) ends the pass early so shutdown does not wait for every agent call."""
         with self.store.connect() as con:
             ops = [dict(r) for r in con.execute("SELECT * FROM studio_ops WHERE state IN (?,?,?) ORDER BY updated_at LIMIT ?", (*ACTIVE, limit)).fetchall()]
             con.execute("DELETE FROM studio_rate WHERE window_start<?", (self.now() - 86400,))
         for op in ops:
+            if stop is not None and stop.is_set():
+                break
             self.reconcile(op)
         return len(ops)
 
@@ -483,7 +497,7 @@ class Studio:
         interval = self.settings.studio_sweep_interval
         while not stop.is_set():
             try:
-                await run_in_threadpool(self.sweep)
+                await run_in_threadpool(self.sweep, 200, stop)
             except Exception:  # noqa: BLE001 - a database hiccup must not end the loop
                 log.exception("studio sweep failed")
             try:
@@ -760,7 +774,7 @@ def attach_studio(application, ctx, agent=None):
             if credits == 0 or (plan is not None and plan not in PLANS):
                 raise ValueError
             if period_end is not None:
-                _int(period_end, 0, 2 ** 40)
+                _int(period_end, 0, INT4_MAX)
         except ValueError:
             fail("invalid_input", "Enter an account, a non-zero whole number of credits up to 1,000,000 and a valid plan.")
         note = text_value(body.get("note") or "", "note", 200, required=False) or None

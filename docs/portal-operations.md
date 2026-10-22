@@ -386,7 +386,7 @@ b300-grafana-tunnel → Grafana（b300-31）→ Prometheus、annotations（b300-
          a.reserved, (SELECT COALESCE(SUM(credits),0) FROM studio_ops o WHERE o.user_id=a.user_id AND o.state IN ('reserved','submitted','unknown')) AS held
   FROM studio_accounts a;
   ```
-- **卡住的工作**：`submitted` 但 agent 查不到（agent 資料被清掉）不會自動退點，log 會有 `studio op … is submitted but unknown to the agent`；確認後由管理員用 grant 補回點數。
+- **卡住的工作**：`submitted` 但 agent 回 `studio_not_found`（agent 資料被清掉或還原）時，log 每 10 秒一行 `studio op … is submitted but unknown to the agent`；滿 6 小時自動退點（`error = lost_by_agent`，log 等級 ERROR）。agent 回沒有代碼的 404（路由錯了）一律不退點。
 - **秘密外洩**：輪換 `SHORTVIDEO_SERVICE_TOKEN` 與 `SHORTVIDEO_GRANT_SECRET`（兩邊同時改、同時重啟）；外洩期間只有 agent 的全域每日上限擋得住（規格 §2.2）。
 - **回滾（schema）**：migration `0005_studio` 只新增 5 張 `studio_*` 表，其他功能不受影響。**舊映像不認得 revision `0005_studio`**，退回前先用新映像在 `powerchampion-portal` 容器的 Terminal（Bash）降級（會刪掉 studio 的表與帳本，先 dump）：
 

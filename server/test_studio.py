@@ -376,6 +376,39 @@ class StudioFlowTests(StudioCase):
         self.studio.sweep()
         self.assertEqual((self.ops()[op_id]["state"], self.ops()[op_id]["error"]), ("refunded", "not_submitted"))
 
+    def test_only_the_agents_own_not_found_refunds(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        self.agent.submit_error, self.agent.submit_accepts = AgentError("timeout"), True
+        op_id = self.submit(client, pid, self.quote(client, pid)).json()["op_id"]
+        self.now += 500
+        self.agent.fail = AgentError("rejected", 404, None)  # e.g. a misrouted URL while the agent runs the op
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op_id]["state"], "unknown")
+        self.agent.fail = None
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op_id]["state"], "submitted")
+        # The agent later loses the op (its data restored): refunded only after LOST_S, never before.
+        del self.agent.ops[op_id]
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op_id]["state"], "submitted")
+        self.now += 6 * 3600
+        self.studio.sweep()
+        self.assertEqual((self.ops()[op_id]["state"], self.ops()[op_id]["error"]), ("refunded", "lost_by_agent"))
+
+    def test_sweep_stops_between_ops_when_asked(self):
+        _, user_id = self.customer()
+        self.grant(user_id, 10)
+        self.add_project(user_id, "p-stop")
+        self.studio.reserve(user_id, "p-stop", self.raw_quote(user_id, "p-stop", 1), "stop-key-1")
+        stop = threading.Event()
+        stop.set()
+        calls = len(self.agent.calls)
+        self.assertEqual(self.studio.sweep(stop=stop), 1)
+        self.assertEqual(len(self.agent.calls), calls)
+        self.now += 121
+        self.studio.sweep()
+
     def test_crash_after_reserve_is_refunded_after_120_s(self):
         _, user_id = self.customer()
         self.grant(user_id, 10)
@@ -662,6 +695,7 @@ class StudioAdminTests(StudioCase):
         self.assertEqual((too_much.status_code, too_much.json()["error"]), (409, "studio_insufficient_credits"))
         for bad in ({"user_id": user_id, "credits": 0}, {"user_id": user_id, "credits": 1.5}, {"user_id": user_id, "credits": True},
                     {"user_id": user_id, "credits": 2_000_000}, {"user_id": user_id, "credits": 5, "plan": "gold"},
+                    {"user_id": user_id, "credits": 5, "period_end": 2 ** 31},
                     {"user_id": "a|b", "credits": 5}, {"user_id": user_id, "credits": 5, "note": "x" * 201}):
             self.assertEqual(self.post(self.admin_client(), "/admin/studio/credits/grant", bad).status_code, 400, bad)
         missing = self.post(self.admin_client(), "/admin/studio/credits/grant", {"user_id": "f" * 32, "credits": 5})
@@ -715,6 +749,16 @@ class StudioSweeperLifespanTests(StudioCase):
 
 
 class StudioSigningTests(unittest.TestCase):
+    def test_frozen_vectors_from_the_agent_signing_module(self):
+        # Computed on 2026-10-22 with shortvideo-agent shortvideo/studio/signing.py, so CI checks agent
+        # compatibility without the agent checkout.
+        self.assertEqual(sign_grant("grant-secret", "o1", "u1", "p1", "regenerate", "3", "q_1", 10, 4, "merchant", 1800000060),
+                         "4584d6dc2cca18a41c1bcacd143af9bf128b7fce4c3ec2f26c8e8f11de5da6ad")
+        self.assertEqual(sign_quote("quote-secret", "q_1", "u1", "p1", "draft", None, 2, 0, 1800000600),
+                         "4fde3bde5f85f5c04b3d11e9d6372a5be916812cc37d677418f6deeb8c770a08")
+        self.assertEqual(sign_quote("quote-secret", "q_2", "u1", "p1", "export", "9:16", 0, 7, 1800000600),
+                         "5ed42485cb9f59a7eeb79fa6d2f8c84c45fce0e996e757f88a185b9127b2d2db")
+
     def test_messages_match_the_documented_format(self):
         grant = sign_grant("s", "o1", "u1", "p1", "regenerate", "3", "q1", 10, 4, "creator", 99)
         self.assertEqual(grant, __import__("hmac").new(b"s", b"grant.v1|o1|u1|p1|regenerate|3|q1|10|4|creator|99", "sha256").hexdigest())
