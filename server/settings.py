@@ -138,8 +138,9 @@ class Settings:
 
     @property
     def voice_try_available(self):
-        """Tickets can be issued: the shared secret has at least 32 characters and the try URL is valid."""
-        return len(self.voice_try_secret) >= VOICE_TRY_SECRET_MIN and bool(self.voice_try_origin)
+        """Tickets can be issued: the shared secret has at least 32 characters besides surrounding spaces (it is still
+        used exactly as written, like the demo reads it) and the try URL is valid."""
+        return len(self.voice_try_secret.strip()) >= VOICE_TRY_SECRET_MIN and bool(self.voice_try_origin)
 
     @classmethod
     def from_env(cls):

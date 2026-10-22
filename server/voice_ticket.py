@@ -58,7 +58,8 @@ def unb64u(text):
 
 
 def _check_secret(secret):
-    if not isinstance(secret, str) or len(secret) < SECRET_MIN_CHARS:
+    """The key is the secret as written; spaces around it do not count towards the minimum (settings.py)."""
+    if not isinstance(secret, str) or len(secret.strip()) < SECRET_MIN_CHARS:
         raise ValueError("The try secret must have at least %d characters." % SECRET_MIN_CHARS)
     return secret.encode("utf-8")
 
@@ -118,12 +119,15 @@ class NonceLedger:
             return True
 
 
-def verify(ticket, secret, *, now=None, ledger=None):
+def verify(ticket, secret, *, ledger, now=None):
     """Check a ticket in the order of phase1-contract §6.4 steps 2-6 and return its payload.
 
     Step 1 (only the connection's first config message may carry a ticket) belongs to the WebSocket handler.
-    `ledger` (a NonceLedger) enables the replay check; without one the nonce is not recorded.
+    `ledger` (a NonceLedger, one per process) is required: step 6, one use per nonce, cannot be left out by
+    forgetting an argument (security review 2026-10-22). TypeError when it is missing or None.
     Raises TicketError(ticket_invalid | ticket_expired | ticket_replayed), close code 4401."""
+    if not callable(getattr(ledger, "use", None)):
+        raise TypeError("verify() needs a NonceLedger: the replay check (contract §6.4 step 6) cannot be skipped.")
     key = _check_secret(secret)
     now = int(time.time()) if now is None else int(now)
     # Step 2: size and shape, before any decoding.
@@ -156,6 +160,6 @@ def verify(ticket, secret, *, now=None, ledger=None):
     if now >= exp:
         raise TicketError("ticket_expired")
     # Step 6: one use per nonce.
-    if ledger is not None and not ledger.use(nonce, exp, now):
+    if not ledger.use(nonce, exp, now):
         raise TicketError("ticket_replayed")
     return payload

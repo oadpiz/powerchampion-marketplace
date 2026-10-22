@@ -111,6 +111,19 @@ class VoiceSettingTests(unittest.TestCase):
         self.assertFalse(Settings(voice_try_secret="x" * 31, voice_try_url=url).voice_try_available)
         self.assertTrue(Settings(voice_try_secret="x" * 32, voice_try_url=url).voice_try_available)
 
+    def test_spaces_do_not_count_as_a_secret(self):
+        # Security review 2026-10-22: PC_VOICE_TRY_SECRET set to 32 spaces made M1 say available and M12 sign.
+        url = "https://try.example.test"
+        for secret in (" " * 32, " " * 64, "\t \n" * 20, " " + "x" * 31 + " "):
+            with self.subTest(secret=repr(secret)):
+                self.assertFalse(Settings(voice_try_secret=secret, voice_try_url=url).voice_try_available)
+        s = self.from_env(PC_VOICE_ENABLED="1", PC_VOICE_TRY_SECRET=" " * 40, PC_VOICE_TRY_URL=url)
+        self.assertFalse(s.voice_try_available)
+        # A real secret keeps its surrounding spaces: tickets are signed with the value as written.
+        padded = " " + TEST_SECRET + " "
+        s = self.from_env(PC_VOICE_ENABLED="1", PC_VOICE_TRY_SECRET=padded, PC_VOICE_TRY_URL=url)
+        self.assertEqual((s.voice_try_secret, s.voice_try_available), (padded, True))
+
     def test_secret_is_not_in_repr(self):
         self.assertNotIn(TEST_SECRET, repr(Settings(voice_try_secret=TEST_SECRET)))
 
