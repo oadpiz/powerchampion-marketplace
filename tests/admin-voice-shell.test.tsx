@@ -53,8 +53,10 @@ describe("admin phone agent section", () => {
     const panel = screen.getByRole("tabpanel", { name: quality });
     expect(within(panel).getByRole("heading", { level: 2, name: quality })).toBeVisible();
     expect(within(panel).getByRole("heading", { level: 2, name: listening })).toBeVisible();
-    // The placeholders read nothing; the stores list is the section's own read.
-    expect(calls.map((call) => call.path)).toEqual(["/session", "/admin/voice/stores"]);
+    // P2-6 filled the tab in: besides the section's own stores list it reads A9 (default filters) and A13, once each.
+    expect(calls.map((call) => call.path).sort()).toEqual([
+      "/admin/voice/quality/calls?flag=any&reviewed=0", "/admin/voice/quality/listening", "/admin/voice/stores", "/session",
+    ]);
   });
 
   it("does not show the section to a customer", async () => {
