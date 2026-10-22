@@ -109,14 +109,43 @@ TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0
 # Years 2000-2037: epoch columns are 32-bit INTEGER on Postgres (the end of 2037-12 is still below 2**31).
 MONTH = re.compile(r"(20[0-2][0-9]|203[0-7])-(0[1-9]|1[0-2])")
 CURSOR = re.compile(r"([0-9]{10})-([a-f0-9]{32})")
-# §6.3 (as amended by the phase 2 fix round): a note is first put in a comparable form (phone_text: NFKC, so full-width
-# digits and brackets become ASCII; invisible characters dropped; Chinese numerals read as digits), then eight or more
-# digits that only separators split (whitespace, - . / ( ) and the dots and dashes below) are a phone number. Digits are
-# counted, not characters, so "10/22 14:30" (6 digits) is not one. lib/voice-calls.ts phoneText/PHONE_LIKE is the same
-# rule; tests/support/phone-like-vectors.json holds the shared vectors and the numeral table
-# (server/test_voice_calls_note_sync.py, tests/voice-p2-sync.test.ts). Digits and separators never overlap, so the
-# pattern cannot backtrack badly.
-PHONE_LIKE = re.compile(r"[0-9](?:[\s\-./()\u30fb\u2027\u00b7\u2010\u2011\u2013\u2014]*[0-9]){7,}")
+# §6.3 (as amended by the phase 2 fix rounds): a note is first put in a comparable form (phone_text: NFKC, so full-width
+# digits, brackets and commas become ASCII; invisible characters dropped; Chinese numerals read as digits). Then the
+# things that are numbers but not phone numbers are set aside (phone_mask: a date written 2026/10/22, 2026.10.22 or
+# 2026-10-22, an IPv4 address, a version number after v/ver/version/build/版本, an amount grouped 10,000,000). Then
+# eight or more digits that only separators split are a phone number: whitespace and - . / ( ) and the dots and
+# dashes below split digits one by one (PHONE_LIKE); a comma (or the ideographic comma) also splits groups of two or
+# more digits, but only when it touches digits on both sides, so "0912,345,678" is a number while "1,2,3,4,5,6,7,8"
+# and "35,000, 42,000" are not (PHONE_GROUPED).
+# Digits are counted, not characters, so "10/22 14:30" (6 digits) is not one. lib/voice-calls.ts is the same rule;
+# tests/support/phone-like-vectors.json holds the shared vectors and the numeral table (server/test_voice_calls_note_sync.py,
+# tests/voice-p2-sync.test.ts). Digits and separators never overlap, so the patterns cannot backtrack badly. Eight
+# digits with no separator at all ("20261022") stay a number: a Taiwan landline without its area code looks the same.
+PHONE_SEPARATORS = r"\s\-./()\u30fb\u2027\u00b7\u2010\u2011\u2013\u2014"
+PHONE_LIKE = re.compile(r"[0-9](?:[%s]*[0-9]){7,}" % PHONE_SEPARATORS)
+PHONE_GROUPED = re.compile(r"[0-9]{2,}(?:(?:[%s]+|[,\u3001])[0-9]{2,})+" % PHONE_SEPARATORS)
+PHONE_DIGITS = 8
+# What phone_mask sets aside; each pattern starts with a group (the character before, kept) so no lookbehind is needed
+# in JavaScript. A masked span becomes "|", which is neither a digit nor a separator, so it cannot join two numbers.
+_DAY = r"(?:0?[1-9]|[12][0-9]|3[01])"
+_MONTH = r"(?:0?[1-9]|1[0-2])"
+_OCTET = r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])"
+PHONE_MASKS = (
+    # 10,000,000 / 1,234,567,890: a comma-grouped amount (a first group of 1-3 digits without a leading zero, then
+    # groups of exactly 3); 9xxxxxxxx grouped as 912,345,678 reads as a mobile number and is not set aside (phone_mask).
+    re.compile(r"(^|[^0-9,.])([1-9][0-9]{0,2}(?:,[0-9]{3}){2,})(?![0-9]|,[0-9])"),
+    # 2026/10/22, 2026.10.22, 2026-10-22 (years 1900-2099), then 22/10/2026 and 10-22-2026
+    re.compile(r"(^|[^0-9])((?:19|20)[0-9]{2}[-./]%s[-./]%s)(?![0-9])" % (_MONTH, _DAY)),
+    re.compile(r"(^|[^0-9])(%s[-./]%s[-./](?:19|20)[0-9]{2})(?![0-9])" % (_DAY, _DAY)),
+    # an IPv4 address (no leading zeros, first octet not 0) that is not part of a longer dotted number
+    re.compile(r"(^|[^0-9.])(%s(?:\.%s){3})(?![0-9]|\.[0-9])" % (r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)", _OCTET)),
+    # v1.2.3.4, ver. 20.11.0.123456, version 2026.10.22.1, build 7.8.9, 版本 3.2.1.4 (three or more groups, none with a
+    # leading zero, so "v0912.345.678" is still a number); ASCII case folding only, as in JavaScript (Python would also
+    # read a dotless i as an i)
+    re.compile(r"(^|[^0-9A-Za-z])((?:v|ver\.?|version|build|版本|版)[ ]?(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2,})(?![0-9])",
+               re.IGNORECASE | re.ASCII),
+)
+PHONE_MASK_FILLER = "|"
 PHONE_INVISIBLE = re.compile("[\u200b-\u200f\u2060\u061c\ufeff\u00ad]")
 # Written grouped by digit (LESSONS 2026-10-22: never two zipped strings).
 PHONE_NUMERALS = {"0": "零〇○洞", "1": "一壹么幺", "2": "二貳兩", "3": "三參叁", "4": "四肆", "5": "五伍", "6": "六陸", "7": "七柒",
@@ -386,7 +415,18 @@ def stored_report(body):
 
 
 def part_sha256(body):
+    """sha256 of the report as it is stored (canonical JSON without sent_at). Hash the report that is KEPT (after
+    private_dialed), never the one that was sent: a hash of the sent body, with a masked dialed number inside it, lets
+    anyone holding the database find the hidden digits by trying every number that ends in the visible four (fix round:
+    2,469 hashes, 0.03 s). Hashing what is stored adds nothing the stored text does not already say."""
     return sha256_hex(stored_report(body))
+
+
+def sent_digests(body):
+    """Every digest a stored report of this body can carry: its own, and the one of the masked form (a resend that
+    arrives after the number table changed is kept in the other form than the first copy, and is still a duplicate)."""
+    masked = masked_dialed(body["dialed"]) if body["entry"] != "try" else None
+    return {part_sha256(body)} | ({part_sha256(dict(body, dialed=masked))} if masked else set())
 
 
 def facts_sha256(body):
@@ -406,8 +446,21 @@ def _ai_view(orch, rec):
     return on, (message["ai_speech_ms"] or 0) if on else 0
 
 
-def mismatch_fields(orch, rec):
-    """§3.5: fields where the two sources disagree (MISMATCH_FIELDS order); [] unless both are present."""
+def same_store_lines(con, orch, rec):
+    """True when both reports dialed numbers of the same store (each looked up at its own start time). Two lines of one
+    store are not a disagreement about where the call went (fix round: a store with two numbers, each source reporting
+    one). A number that is not in the table, or that has no store, is never "the same"."""
+    stores = []
+    for report in (orch, rec):
+        number = normalize_number(report["dialed"]) if report["entry"] != "try" else None
+        line = vs.find_active_number(con, number, epoch(report["started_at"])) if number else None
+        stores.append(line["store_id"] if line else None)
+    return stores[0] is not None and stores[0] == stores[1]
+
+
+def mismatch_fields(orch, rec, same_store=False):
+    """§3.5: fields where the two sources disagree (MISMATCH_FIELDS order); [] unless both are present. `same_store`
+    (same_store_lines): the two dialed numbers differ but are lines of one store, which is not a disagreement."""
     if orch is None or rec is None:
         return []
     out = []
@@ -415,7 +468,7 @@ def mismatch_fields(orch, rec):
         out.append("started_at")
     if orch["entry"] != rec["entry"]:
         out.append("entry")
-    if (normalize_number(orch["dialed"]) or orch["dialed"]) != (normalize_number(rec["dialed"]) or rec["dialed"]):
+    if (normalize_number(orch["dialed"]) or orch["dialed"]) != (normalize_number(rec["dialed"]) or rec["dialed"]) and not same_store:
         out.append("dialed")
     if orch["caller_tail"] is not None and rec["caller_tail"] is not None and orch["caller_tail"] != rec["caller_tail"]:
         out.append("caller_tail")
@@ -541,7 +594,7 @@ def merged_columns(con, orch, rec, existing):
     disclosure = orch["disclosure_version"] if orch is not None and orch["disclosure_version"] is not None else (
         rec["disclosure_version"] if rec is not None else None)
     reported_retention = prefer_records("retention_days")
-    mismatch = mismatch_fields(orch, rec)
+    mismatch = mismatch_fields(orch, rec, same_store_lines(con, orch, rec) if orch is not None and rec is not None else False)
 
     flags = set(ai["auto_flags"]) if ai is not None else set()
     if degraded:
@@ -600,11 +653,12 @@ def _write(con, row_id, columns, *, insert):
                     tuple(columns[name] for name in names) + (row_id,))
 
 
-def _source_columns(source, kept, body, now):
-    """The source's stored report (`kept`: the body after private_dialed) and the sha256 of what was sent (`body`),
-    so a resend of the same report is still a duplicate."""
+def _source_columns(source, kept, now):
+    """The source's stored report (`kept`: the body after private_dialed) and the sha256 of that stored report
+    (part_sha256): a resend of the same report is still a duplicate (sent_digests), and the hash holds no digit the
+    stored text does not."""
     text = canonical(stored_report(kept)).decode("utf-8")
-    return {"report_" + source: text, "report_%s_sha256" % source: part_sha256(body), "report_%s_at" % source: now}
+    return {"report_" + source: text, "report_%s_sha256" % source: part_sha256(kept), "report_%s_at" % source: now}
 
 
 def private_dialed(con, body):
@@ -640,6 +694,14 @@ def _answer(result, row):
             "flags": json.loads(row["auto_flags"])}
 
 
+def confirmed(row):
+    """A store may see a call once the Taiwan host's records sender has reported it (or it is the store's own test
+    call, which only the orchestrator reports, with the store's id). Until then the store is only the one the
+    orchestrator's number points at, and a wrong number would show another store's caller (last 3 digits, time,
+    result, hand-off reason, urgency) to this one. Operators see every call (A9, A10)."""
+    return row["entry"] == "try" or row["report_records_sha256"] is not None
+
+
 def get_call(con, row_id):
     if not isinstance(row_id, str) or not HEX32.fullmatch(row_id):
         return None
@@ -659,18 +721,18 @@ def ingest(con, parsed, now, audit=None):
         reports = {name: None for name in SOURCES}
         reports[source] = stored_report(kept)
         columns = merged_columns(con, reports["orchestrator"], reports["records"], None)
-        columns.update(_source_columns(source, kept, body, now), call_id=body["call_id"], received_at=now, updated_at=now)
+        columns.update(_source_columns(source, kept, now), call_id=body["call_id"], received_at=now, updated_at=now)
         row_id = uuid.uuid4().hex
         _write(con, row_id, columns, insert=True)
         return 201, _answer("created", get_call(con, row_id))
     if (row["entry"] == "try") != (body["entry"] == "try"):
         _invalid("invalid field: entry (a try call and an edge call cannot share a call_id)")
     stored_sha = row["report_%s_sha256" % source]
-    received_sha = part_sha256(body)
+    received_sha = part_sha256(kept)
     result = None
     if stored_sha is None:
         result = "merged"
-    elif stored_sha == received_sha:
+    elif stored_sha in sent_digests(body):
         return 200, _answer("duplicate", row)
     elif source == "records":
         stored = json.loads(row["report_records"])
@@ -684,12 +746,13 @@ def ingest(con, parsed, now, audit=None):
              % (stored_sha[:8], received_sha[:8]), 409)
     reports = _reports(row, source, kept)
     columns = merged_columns(con, reports["orchestrator"], reports["records"], row)
-    columns.update(_source_columns(source, kept, body, now), updated_at=now)
+    columns.update(_source_columns(source, kept, now), updated_at=now)
     moved = row["store_id"] is not None and columns["store_id"] != row["store_id"]
     if moved:
         # The first report's number pointed at another store (the two sources disagree on dialed; the records
-        # sender's wins, §3.5). What that store wrote is not shown to the new one: its flag and note go, and an
-        # operator's finished review is opened again (the call is back in "to review" with source_mismatch).
+        # sender's wins, §3.5). That store never saw the call (a store finds a call only after the records sender has
+        # reported it: confirmed), so there is normally no flag to clear; a flag written by an earlier build still goes,
+        # and an operator's finished review is opened again (the call is back in "to review" with source_mismatch).
         columns.update(store_flag_kind=None, store_flag_note=None, store_flagged_at=None, store_flagged_by=None)
     _write(con, row["id"], columns, insert=False)
     if moved:
@@ -717,8 +780,11 @@ def remerge(con, row_id, now):
 # ---------------------------------------------------------------- R1 (§3.3)
 
 
-def runtime_config(con, number, now, *, have=None):
-    """(state_sha256, response body) for a normalized number. Raises 404 number_not_found / number_unassigned."""
+def runtime_config(con, number, now, *, have=None, a6_ready=False):
+    """(state_sha256, response body) for a normalized number. Raises 404 number_not_found / number_unassigned.
+
+    `a6_ready` (Settings.voice_a6_ready, PC_VOICE_A6_RC_VERSION >= 4): until A6 meters AI-answered calls, answer_mode is
+    never "ai", whatever the store's own switch says (phase2-contract §15). Fail closed: the default is False."""
     row = vs.find_active_number(con, number, now)
     if row is None:
         fail("number_not_found", "This number has no active entry in the number table.", 404)
@@ -726,7 +792,8 @@ def runtime_config(con, number, now, *, have=None):
         fail("number_unassigned", "This number is active but has no store.", 404)
     store = vs.get_store(con, row["store_id"])
     version = vs.get_config_version(con, store["id"], store["current_version"]) if store["current_version"] else None
-    answer_mode = "ai" if store["ai_answer_enabled"] and store["status"] in ("testing", "live") and version else "message_only"
+    wants_ai = store["ai_answer_enabled"] and store["status"] in ("testing", "live") and version
+    answer_mode = "ai" if wants_ai and a6_ready else "message_only"
     state = {"answer_mode": answer_mode,
              "config_sha256": version["config_sha256"] if version else None,
              "config_version": version["version"] if version else None,
@@ -849,8 +916,32 @@ def phone_text(text):
     return PHONE_INVISIBLE.sub("", unicodedata.normalize("NFKC", text)).translate(PHONE_NUMERAL_TABLE)
 
 
+def _mask_span(match):
+    return match.group(1) + PHONE_MASK_FILLER
+
+
+def _mask_amount(match):
+    # 912,345,678 is nine digits starting with 9: a Taiwan mobile number without its 0, written with commas.
+    if re.fullmatch(r"9[0-9]{8}", match.group(2).replace(",", "")):
+        return match.group(0)
+    return match.group(1) + PHONE_MASK_FILLER
+
+
+def phone_mask(text):
+    """`text` (already through phone_text) with dates, IPv4 addresses, version numbers and comma-grouped amounts
+    replaced by "|", so that their digits are not counted as a phone number."""
+    text = PHONE_MASKS[0].sub(_mask_amount, text)
+    for pattern in PHONE_MASKS[1:]:
+        text = pattern.sub(_mask_span, text)
+    return text
+
+
 def has_phone_number(text):
-    return bool(PHONE_LIKE.search(phone_text(text)))
+    """§6.3: eight or more digits that only separators split (see PHONE_LIKE), after phone_text and phone_mask."""
+    compared = phone_mask(phone_text(text))
+    if PHONE_LIKE.search(compared):
+        return True
+    return any(len(re.findall("[0-9]", run.group(0))) >= PHONE_DIGITS for run in PHONE_GROUPED.finditer(compared))
 
 
 def masked_dialed(value):

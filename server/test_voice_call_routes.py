@@ -13,6 +13,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
+from server import voice_call_routes as vcr
 from server import voice_calls as vc
 from server import voice_store as vs
 from server.test_voice_runtime import (AI, CUSTOMER_NUMBER, MEDIA_SECRET, MEDIA_URL, NOT_FOUND, VoiceCallsCase, at, orchestrator,
@@ -52,10 +53,12 @@ class CallRoutesCase(VoiceCallsCase):
         self.serial = 0
 
     def new_call(self, *bodies, **changes):
-        """Report one call (default: the vector's orchestrator report) and return its voice_calls id."""
+        """Report one call and return its voice_calls id. By default both sources report it (the vector's orchestrator
+        report, then the Taiwan host's records report) with `changes` in both, so it is the store's to see; pass bodies to
+        report exactly those (an orchestrator report alone is a call no store may see yet)."""
         self.serial += 1
         call_id = "1797816000.%d" % self.serial
-        for body in bodies or (orchestrator(**changes),):
+        for body in bodies or (orchestrator(**changes), records(**changes)):
             self.assertIn(self.report(dict(body, call_id=call_id)).status_code, (200, 201))
         return self.call(call_id)["id"]
 
@@ -152,7 +155,7 @@ class StoreListTests(CallRoutesCase):
         missed = self.new_call(records(now, disposition="NO ANSWER", answered_at=None))
         try_id = "try-" + uuid.uuid4().hex
         self.ok(self.report(orchestrator(now, call_id=try_id, entry="try", dialed=None, store_id=self.store_id)), 201)
-        self.new_call(orchestrator(now, dialed="0227001009"))  # store B
+        self.new_call(dialed="0227001009")  # store B
         self.ok(self.post(self.owner, "/me/voice/calls/%s/flag" % answered, {"kind": "wrong_answer"}))
         body = self.ok(self.get(self.owner, "/me/voice/calls"))
         self.assertEqual(set(body), {"calls", "next", "summary", "limits"})
@@ -206,8 +209,8 @@ class StoreListTests(CallRoutesCase):
         self.assertEqual(earlier["summary"]["month"], vc.taipei_month(row["started_at"]))
 
     def test_detail_is_only_for_the_own_store(self):
-        mine = self.new_call(orchestrator(content_expected=True))
-        theirs = self.new_call(orchestrator(dialed="0227001009"))
+        mine = self.new_call(content_expected=True)
+        theirs = self.new_call(dialed="0227001009")
         body = self.ok(self.get(self.owner, "/me/voice/calls/" + mine))
         self.assertEqual(set(body), {"call", "content", "flag"})
         self.assertEqual(set(body["call"]), CALL_ITEM_KEYS | DETAIL_EXTRA_KEYS)
@@ -223,7 +226,7 @@ class StoreListTests(CallRoutesCase):
         self.ok(self.get(self.other, "/me/voice/calls/" + theirs))
 
     def test_content_state_and_recording_dates(self):
-        none = self.new_call(orchestrator(content_expected=False))
+        none = self.new_call(content_expected=False)
         self.assertEqual(self.ok(self.get(self.owner, "/me/voice/calls/" + none))["content"]["state"], "none")
         now = int(time.time())
         saved = self.new_call(records(now, message={"outcome": "message", "speech_ms": 5000, "recording_ms": 6000, "recording_saved": True}))
@@ -280,7 +283,7 @@ class StoreFlagTests(CallRoutesCase):
                 self.error(self.post(self.owner, path, body), 400, code)
         self.assertIsNone(self.row(row_id)["store_flag_kind"])
         self.assertEqual(self.audit("voice.call_flagged"), [])
-        theirs = self.new_call(orchestrator(dialed="0227001009"))
+        theirs = self.new_call(dialed="0227001009")
         self.error(self.post(self.owner, "/me/voice/calls/%s/flag" % theirs, {"kind": "wrong_answer"}), 404, "call_not_found")
         self.error(self.delete(self.owner, "/me/voice/calls/%s/flag" % theirs), 404, "call_not_found")
         self.ok(self.post(self.owner, path, {"kind": "wrong_answer", "note": "x" * 100}))
@@ -330,7 +333,7 @@ class ContentLinkTests(CallRoutesCase):
         self.assertNotIn(payload["nonce"], database_text(self.store))
 
     def test_errors_in_contract_order(self):
-        none = self.new_call(orchestrator(content_expected=False))
+        none = self.new_call(content_expected=False)
         old = self.new_call()
         self.move(old, -91 * 86400)
         path = "/me/voice/calls/%s/content-link"
@@ -370,31 +373,115 @@ class ContentLinkTests(CallRoutesCase):
                   and e["action"] in vc.CONTENT_LINK_ACTIONS]
         self.assertEqual(len(recent), 60)
 
-    def test_store_link_waits_for_the_records_sender_and_refuses_a_disputed_number(self):
-        # Fix round: until the records sender reports, the store comes from the orchestrator's number only; when the
-        # two sources name different numbers, the content kept under the call_id may be another store's caller.
+    def test_store_link_is_for_the_store_the_records_sender_names(self):
+        # Fix round: a call is the store's once the records sender has reported it (§3.5: its number wins), and the content
+        # link follows that store whatever the orchestrator said. The Taiwan host compares the token's store_id (§8.3).
         now = int(time.time())
         path = "/me/voice/calls/%s/content-link"
         operator = self.admin()
         orch_only = self.new_call(orchestrator(now))
-        self.error(self.post(self.owner, path % orch_only, {}), 409, "call_content_pending")
+        self.error(self.post(self.owner, path % orch_only, {}), 404, "call_not_found")  # not 409: the call is not there yet
+        self.error(self.post(self.other, path % orch_only, {}), 404, "call_not_found")
         self.assertEqual(self.audit("voice.call_content_link"), [])
-        self.ok(self.post(operator, "/admin/voice/quality/calls/%s/content-link" % orch_only, {}))  # an operator is not held
+        self.ok(self.post(operator, "/admin/voice/quality/calls/%s/content-link" % orch_only, {}))  # an operator sees every call
         self.ok(self.report(records(now, call_id=self.row(orch_only)["call_id"])))
         self.assertEqual(self.ok(self.post(self.owner, path % orch_only, {}))["media"]["kinds"], ["summary", "transcript"])
-        # A test call is only ever reported by the orchestrator, with the store's id: not held.
+        # A test call is only ever reported by the orchestrator, with the store's id: the store's at once.
         try_id = "try-%032x" % 7
         self.ok(self.report(orchestrator(now, call_id=try_id, entry="try", dialed=None, store_id=self.store_id)), 201)
         self.ok(self.post(self.owner, path % self.call(try_id)["id"], {}))
-        # The orchestrator says store B's number, the records sender store A's: the row is A's, the content is not shown.
+        # The orchestrator says store B's number, the records sender store A's: the row is A's (its number wins) and A gets
+        # the link; B never had the call. The two sources still disagree, which only the operators' pages say.
         disputed = "1797816100.9"
         self.ok(self.report(orchestrator(now, call_id=disputed, dialed="0227001009")), 201)
+        self.error(self.get(self.other, "/me/voice/calls/" + self.call(disputed)["id"]), 404, "call_not_found")  # B: not yet
         self.ok(self.report(records(now, call_id=disputed)))
         row = self.call(disputed)
         self.assertEqual((row["store_id"], json.loads(row["mismatch"])), (self.store_id, ["dialed"]))
-        self.error(self.post(self.owner, path % row["id"], {}), 404, "call_content_unavailable")
+        self.assertIn("source_mismatch", json.loads(row["auto_flags"]))
+        self.ok(self.post(self.owner, path % row["id"], {}))
+        self.error(self.post(self.other, path % row["id"], {}), 404, "call_not_found")
+        self.error(self.get(self.other, "/me/voice/calls/" + row["id"]), 404, "call_not_found")
         self.ok(self.post(operator, "/admin/voice/quality/calls/%s/content-link" % row["id"], {}))
-        self.assertEqual(len(self.audit("voice.call_content_link")), 2)
+        # The records sender first (store A), the orchestrator later with B's number: still A's, still A's link.
+        reversed_id = "1797816100.10"
+        self.ok(self.report(records(now, call_id=reversed_id)), 201)
+        self.ok(self.report(orchestrator(now, call_id=reversed_id, dialed="0227001009")))
+        row = self.call(reversed_id)
+        self.assertEqual((row["store_id"], json.loads(row["mismatch"])), (self.store_id, ["dialed"]))
+        self.ok(self.post(self.owner, path % row["id"], {}))
+        self.error(self.post(self.other, path % row["id"], {}), 404, "call_not_found")
+        self.assertEqual(len(self.audit("voice.call_content_link")), 4)
+
+    def test_two_lines_of_one_store_are_not_a_disagreement(self):
+        # Fix round: the orchestrator reported one of the store's numbers and the records sender the other. The row is the
+        # store's, nothing is flagged, and the store gets its content link (was 404 call_content_unavailable).
+        second = "+886227001005"
+        self.seed_number(second, store_id=self.store_id)
+        self.seed_number("+886227001006", store_id=self.other_store)
+        now = int(time.time())
+        for call_id, first, later in (("1797816300.1", orchestrator(now, call_id="1797816300.1", dialed="0227001001"),
+                                       records(now, call_id="1797816300.1", dialed="0227001005")),
+                                      ("1797816300.2", records(now, call_id="1797816300.2", dialed="0227001005"),
+                                       orchestrator(now, call_id="1797816300.2", dialed="0227001001"))):
+            with self.subTest(call_id=call_id):
+                self.ok(self.report(first), 201)
+                self.ok(self.report(later))
+                row = self.call(call_id)
+                self.assertEqual((row["store_id"], row["mismatch"], json.loads(row["auto_flags"])), (self.store_id, "[]", []))
+                self.assertEqual(row["dialed"], "+886227001005")
+                detail = self.ok(self.get(self.owner, "/me/voice/calls/" + row["id"]))
+                self.assertEqual((detail["content"]["state"], detail["content"]["linkAvailable"]), ("available", True))
+                self.ok(self.post(self.owner, "/me/voice/calls/%s/content-link" % row["id"], {}))
+        # A line of another store is still a disagreement.
+        self.ok(self.report(orchestrator(now, call_id="1797816300.3", dialed="0227001006")), 201)
+        self.ok(self.report(records(now, call_id="1797816300.3", dialed="0227001001")))
+        self.assertEqual(json.loads(self.call("1797816300.3")["mismatch"]), ["dialed"])
+        # So is a number that is in no store, or a number the table does not know.
+        for call_id, other in (("1797816300.4", "0227009999"), ("1797816300.5", "0987654321")):
+            self.ok(self.report(orchestrator(now, call_id=call_id, dialed=other)), 201)
+            self.ok(self.report(records(now, call_id=call_id, dialed="0227001001")))
+            self.assertEqual(json.loads(self.call(call_id)["mismatch"]), ["dialed"], call_id)
+
+    def test_the_call_page_says_what_the_content_link_does(self):
+        # Fix round: M14's content.state and linkAvailable must agree with M17 (a page showing "Show content" for a link
+        # that is refused sent the store to "No content was kept for this call.").
+        now = int(time.time())
+        operator = self.admin()
+        with_content = self.new_call()
+        no_content = self.new_call(content_expected=False)
+        expired = self.new_call()
+        self.move(expired, -91 * 86400)
+        disputed = "1797816400.1"
+        self.ok(self.report(orchestrator(now, call_id=disputed, dialed="0227001009")), 201)
+        self.ok(self.report(records(now, call_id=disputed)))
+        second = "+886227001005"
+        self.seed_number(second, store_id=self.store_id)
+        two_lines = "1797816400.2"
+        self.ok(self.report(orchestrator(now, call_id=two_lines)), 201)
+        self.ok(self.report(records(now, call_id=two_lines, dialed="0227001005")))
+        calls = {"content": with_content, "none": no_content, "expired": expired, "disputed": self.call(disputed)["id"],
+                 "two lines": self.call(two_lines)["id"]}
+        for media in (True, False):
+            if not media:
+                self.use_settings(voice_media_secret="")
+                self.owner = self.client()
+                self.post(self.owner, "/auth/login", {"email": "owner@clinic.example", "password": PASSWORD})
+            for name, row_id in calls.items():
+                with self.subTest(call=name, media=media):
+                    content = self.ok(self.get(self.owner, "/me/voice/calls/" + row_id))["content"]
+                    answer = self.post(self.owner, "/me/voice/calls/%s/content-link" % row_id, {})
+                    if not media:
+                        self.assertEqual((content["linkAvailable"], answer.status_code), (False, 503))
+                    elif content["state"] == "available":
+                        self.assertEqual((content["linkAvailable"], answer.status_code), (True, 200))
+                    else:
+                        self.assertEqual((content["state"], content["linkAvailable"], answer.status_code),
+                                         (name, True, {"none": 404, "expired": 410}[name]))
+                    # What the operators' page says is what A12 does.
+                    detail = self.ok(self.get(operator, "/admin/voice/quality/calls/" + row_id))["content"]
+                    self.assertEqual(detail["state"], content["state"])
+        self.assertEqual(len(self.audit("voice.call_content_link")), 3)
 
     def test_admin_link_for_a_call_without_a_store(self):
         row_id = self.new_call(orchestrator(dialed="0227009999"))
@@ -414,13 +501,18 @@ class ContentLinkTests(CallRoutesCase):
 
 class ReattributionTests(CallRoutesCase):
     def test_a_call_that_moves_to_another_store_leaves_the_first_stores_flag_behind(self):
-        # Fix round: the orchestrator reports first with store A's number, A flags it with a note and an operator
+        # Fix round: a store cannot see (or flag) a call before the records sender reports it, so a flag on a call that
+        # then moves can only be one written by an earlier build. The cleanup stays as the defence for such rows: the
+        # orchestrator reports first with store A's number, A's flag is written straight to the row, an operator
         # finishes a review; then the records sender reports the call on store B's number (its number wins, §3.5).
         now = int(time.time())
         call_id = "1797816200.1"
         self.ok(self.report(orchestrator(now, call_id=call_id)), 201)
         row_id = self.call(call_id)["id"]
-        self.ok(self.post(self.owner, "/me/voice/calls/%s/flag" % row_id, {"kind": "wrong_answer", "note": "A店的內部備註：價格說錯"}))
+        self.error(self.post(self.owner, "/me/voice/calls/%s/flag" % row_id, {"kind": "wrong_answer", "note": "x"}), 404, "call_not_found")
+        with self.store.connect() as con:
+            con.execute("UPDATE voice_calls SET store_flag_kind='wrong_answer', store_flag_note=?, store_flagged_at=?, store_flagged_by=? "
+                        "WHERE id=?", ("A店的內部備註：價格說錯", now, self.owner_id, row_id))
         operator = self.admin()
         self.ok(self.post(operator, "/admin/voice/quality/calls/%s/review" % row_id, {"score": 2, "status": "done"}))
         merged = self.ok(self.report(records(now, call_id=call_id, dialed="0227001009")))
@@ -440,14 +532,112 @@ class ReattributionTests(CallRoutesCase):
         self.assertIsNone(self.audit("voice.call_reattributed")[0]["actor_id"])
         listed = self.ok(self.get(operator, "/admin/voice/quality/calls"))["calls"]
         self.assertIn(row_id, [item["id"] for item in listed])
-        # Control: a records report that agrees with the orchestrator keeps the store's flag and the review.
+        # Control: a records report that agrees with the orchestrator keeps the flag and the review.
         kept = "1797816200.2"
         self.ok(self.report(orchestrator(now, call_id=kept)), 201)
         kept_id = self.call(kept)["id"]
-        self.ok(self.post(self.owner, "/me/voice/calls/%s/flag" % kept_id, {"kind": "wrong_answer", "note": "價格說錯"}))
+        with self.store.connect() as con:
+            con.execute("UPDATE voice_calls SET store_flag_kind='wrong_answer', store_flag_note=?, store_flagged_at=?, store_flagged_by=? "
+                        "WHERE id=?", ("價格說錯", now, self.owner_id, kept_id))
         self.ok(self.report(records(now, call_id=kept)))
         self.assertEqual((self.row(kept_id)["store_id"], self.row(kept_id)["store_flag_note"]), (self.store_id, "價格說錯"))
+        self.assertEqual(self.ok(self.get(self.owner, "/me/voice/calls/" + kept_id))["flag"]["note"], "價格說錯")
         self.assertEqual(len(self.audit("voice.call_reattributed")), 1)
+
+
+class UnconfirmedCallTests(CallRoutesCase):
+    """Fix round: the orchestrator's number alone may be another store's. A store gets a call once the Taiwan host's
+    records sender has reported it (voice_calls.confirmed); until then its caller's last 3 digits, time, result,
+    hand-off reason and urgency are not on any store's page, and a call moved by the records report was never on the
+    wrong one."""
+
+    def store_view(self, client, row_id):
+        """Everything M13-M17 answer for one call, as (status, body) pairs."""
+        base = "/me/voice/calls"
+        return {"list": self.get(client, base), "detail": self.get(client, "%s/%s" % (base, row_id)),
+                "flag": self.post(client, "%s/%s/flag" % (base, row_id), {"kind": "wrong_answer"}),
+                "unflag": self.delete(client, "%s/%s/flag" % (base, row_id)),
+                "link": self.post(client, "%s/%s/content-link" % (base, row_id), {})}
+
+    def test_a_call_only_the_orchestrator_reported_is_on_no_stores_page(self):
+        now = int(time.time())
+        mine = self.new_call(orchestrator(now))  # the number is store A's
+        others = self.new_call(orchestrator(now, dialed="0227001009"))  # store B's
+        unknown = self.new_call(orchestrator(now, dialed="0227009999"))  # in no store
+        for owner in (self.owner, self.other):
+            body = self.ok(self.get(owner, "/me/voice/calls"))
+            self.assertEqual((body["calls"], body["summary"]["total"], body["summary"]["meterUnits"], body["summary"]["flagged"]),
+                             ([], 0, 0, 0))
+            for row_id in (mine, others, unknown):
+                for name, response in self.store_view(owner, row_id).items():
+                    if name != "list":
+                        with self.subTest(call=row_id[:4], step=name):
+                            self.assertEqual((response.status_code, response.json()["error"]), (404, "call_not_found"))
+        self.assertEqual(self.audit("voice.call_flagged"), [])
+        self.assertEqual(self.audit("voice.call_content_link"), [])
+        # The operators see all three, and see that no records report has come.
+        operator = self.admin()
+        listed = self.ok(self.get(operator, "/admin/voice/quality/calls", flag="all", reviewed="all"))["calls"]
+        self.assertEqual({item["id"] for item in listed}, {mine, others, unknown})
+        for row_id in (mine, others, unknown):
+            sources = self.ok(self.get(operator, "/admin/voice/quality/calls/" + row_id))["call"]
+            self.assertEqual(sources["store"] is None, row_id == unknown)
+        detail = self.ok(self.get(operator, "/admin/voice/quality/calls/" + mine))
+        self.assertIsNone(detail["sources"]["records"])
+        self.assertIsNotNone(detail["sources"]["orchestrator"])
+
+    def test_the_records_report_gives_the_call_to_the_store_it_names_and_the_other_never_saw_it(self):
+        now = int(time.time())
+        call_id = "1797816500.1"
+        # The orchestrator named store B's number; the records sender names store A's.
+        self.ok(self.report(orchestrator(now, call_id=call_id, dialed="0227001009", caller_tail="321")), 201)
+        row_id = self.call(call_id)["id"]
+        b_saw = []  # every answer store B got about this call, before and after the records report
+        for client in (self.other, self.owner):
+            self.assertEqual(self.ok(self.get(client, "/me/voice/calls"))["calls"], [])
+        b_saw.append(self.get(self.other, "/me/voice/calls/" + row_id).text)
+        self.ok(self.report(records(now, call_id=call_id, caller_tail="321")))
+        a_list = self.ok(self.get(self.owner, "/me/voice/calls"))
+        self.assertEqual(([c["id"] for c in a_list["calls"]], a_list["summary"]["total"]), ([row_id], 1))
+        self.assertEqual(self.get(self.owner, "/me/voice/calls/" + row_id).status_code, 200)
+        b_list = self.get(self.other, "/me/voice/calls")
+        self.assertEqual((b_list.json()["calls"], b_list.json()["summary"]["total"]), ([], 0))
+        b_saw += [b_list.text, self.get(self.other, "/me/voice/calls/" + row_id).text]
+        # Nothing of the call (its id, its caller's tail) ever reached store B.
+        for text in b_saw:
+            self.assertNotIn(row_id, text)
+            self.assertNotIn("321", text)
+        self.assertEqual(self.audit_details("voice.call_reattributed"),
+                         [{"fromStoreId": self.other_store, "toStoreId": self.store_id, "flagCleared": False, "reviewReopened": False}])
+
+    def test_the_other_orders_and_the_same_store_keep_the_call_with_the_store(self):
+        now = int(time.time())
+        # The records sender first: the store has it at once, and a later orchestrator report changes nothing about who.
+        self.ok(self.report(records(now, call_id="1797816500.2")), 201)
+        row_id = self.call("1797816500.2")["id"]
+        self.assertEqual([c["id"] for c in self.ok(self.get(self.owner, "/me/voice/calls"))["calls"]], [row_id])
+        self.ok(self.report(orchestrator(now, call_id="1797816500.2")))
+        self.assertEqual([c["id"] for c in self.ok(self.get(self.owner, "/me/voice/calls"))["calls"]], [row_id])
+        self.assertEqual(self.ok(self.get(self.other, "/me/voice/calls"))["calls"], [])
+        # A test call is the store's own and is only reported by the orchestrator.
+        try_id = "try-%032x" % 9
+        self.ok(self.report(orchestrator(now, call_id=try_id, entry="try", dialed=None, store_id=self.store_id)), 201)
+        self.assertEqual(self.ok(self.get(self.owner, "/me/voice/calls"))["summary"]["total"], 2)
+        self.ok(self.get(self.owner, "/me/voice/calls/" + self.call(try_id)["id"]))
+        self.error(self.get(self.other, "/me/voice/calls/" + self.call(try_id)["id"]), 404, "call_not_found")
+
+    def test_the_confirmed_rule_is_the_same_in_python_and_sql(self):
+        now = int(time.time())
+        ids = {"orchestrator": self.new_call(orchestrator(now)), "records": self.new_call(records(now)),
+               "both": self.new_call(orchestrator(now), records(now))}
+        try_id = "try-%032x" % 11
+        self.ok(self.report(orchestrator(now, call_id=try_id, entry="try", dialed=None, store_id=self.store_id)), 201)
+        ids["try"] = self.call(try_id)["id"]
+        with self.store.connect() as con:
+            by_sql = {r["id"] for r in con.execute("SELECT id FROM voice_calls WHERE " + vcr.CONFIRMED).fetchall()}
+        by_python = {r["id"] for r in rows(self.store, "voice_calls") if vc.confirmed(r)}
+        self.assertEqual(by_sql, by_python)
+        self.assertEqual(by_sql, {ids["records"], ids["both"], ids["try"]})
 
 
 # ---------------------------------------------------------------- A9-A11

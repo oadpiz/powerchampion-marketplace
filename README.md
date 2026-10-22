@@ -47,7 +47,8 @@ deployment checkpoint after local verification.
 
 `scripts/voice/` starts the portal on loopback and runs an end-to-end smoke of the
 phone agent (voice phases 1 and 2) through the frontend BFF, with the feature switch
-on, then with the runtime token unset, then off, on the same database.
+on, then with the runtime token unset, then with `PC_VOICE_A6_RC_VERSION` unset (the
+runtime must never answer `ai`), then off, on the same database.
 
 ```bash
 export VOICE_PYTHON=/path/to/python
@@ -57,6 +58,9 @@ scripts/voice/run-local.sh on --fresh
 scripts/voice/stop-local.sh
 scripts/voice/run-local.sh on --no-runtime-token
 "$VOICE_PYTHON" scripts/voice/smoke.py notoken
+scripts/voice/stop-local.sh
+scripts/voice/run-local.sh on --no-a6-rc
+"$VOICE_PYTHON" scripts/voice/smoke.py noa6
 scripts/voice/stop-local.sh
 scripts/voice/run-local.sh off
 "$VOICE_PYTHON" scripts/voice/smoke.py off
@@ -74,7 +78,8 @@ scripts/voice/stop-local.sh
   removes it and stops only the PIDs `run-local.sh` recorded.
 - Phase 2 (`scripts/voice/smoke_p2.py`): a fake orchestrator pulls a store's
   settings by the dialed number and reports calls to `/api/voice-runtime/*` with
-  the test-only runtime token (one call also gets a fake records-sender report);
+  the test-only runtime token (four calls also get a fake records-sender report,
+  and a store sees a call only after it);
   the store reads its calls and the estimated counts, another store is refused, a
   wrong answer is flagged and reviewed on the Quality routes, and bad or missing
   tokens, an unset token and the switch off are refused. Turning AI answer on for

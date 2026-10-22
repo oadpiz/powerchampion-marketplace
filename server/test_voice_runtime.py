@@ -2,10 +2,12 @@
 
 Runs on SQLite, or on Postgres when PC_PORTAL_TEST_DATABASE_URL is set (scripts/test_backend_postgres.sh)."""
 import asyncio
+import hashlib
 import json
 import tempfile
 import threading
 import time
+import types
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -14,6 +16,7 @@ from unittest import mock
 import httpx
 
 from server import voice_calls as vc
+from server import voice_runtime as vr
 from server import voice_store as vs
 from server.settings import Settings
 from server.testsupport import BASE, ORIGIN, PASSWORD, FakeGateway, PortalCase, database_text, fresh_database, rows
@@ -62,7 +65,8 @@ def records(now=None, final=True, message=None, call_id="1797815702.118", starte
 
 class VoiceCallsCase(PortalCase):
     """PortalCase with the phone agent on, a runtime token and a media URL and secret; holds no tests."""
-    voice = {"voice_enabled": True, "voice_runtime_token": TOKEN, "voice_media_url": MEDIA_URL, "voice_media_secret": MEDIA_SECRET}
+    voice = {"voice_enabled": True, "voice_runtime_token": TOKEN, "voice_media_url": MEDIA_URL, "voice_media_secret": MEDIA_SECRET,
+             "voice_a6_rc_version": "4"}
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -295,6 +299,36 @@ class ConfigTests(VoiceCallsCase):
                          ("ai", "28fafb0e8bd6e5da2cdc999567efafc84d805b982f7825993b9a8927e19f4ada"))
         self.assertIn("config", self.ok(self.config(params={"have": state})))
 
+    def test_ai_answers_need_the_a6_rc_version(self):
+        # Fix round (phase2-contract §15): until A6 meters AI-answered calls (PC_VOICE_A6_RC_VERSION >= 4), R1 never
+        # says "ai", whatever the store's own switch is; the store's fields still tell the truth.
+        self.vector_store()
+        with self.store.connect() as con:
+            con.execute("UPDATE voice_stores SET ai_answer_enabled=1 WHERE id=?", (VECTOR_STORE,))
+        ai = self.ok(self.config())
+        self.assertEqual((ai["answer_mode"], ai["state_sha256"]), ("ai", "28fafb0e8bd6e5da2cdc999567efafc84d805b982f7825993b9a8927e19f4ada"))
+        for version in ("", "3", "0", "v4", "4.1", "four", "40000"):
+            with self.subTest(version=version):
+                self.use_settings(voice_a6_rc_version=version)
+                response = self.config(**{"If-None-Match": '"%s"' % ai["state_sha256"]})
+                body = self.ok(response)  # 200, not 304: the AI answer the orchestrator cached is no longer current
+                self.assertEqual((body["answer_mode"], body["store"]["ai_answer_enabled"], body["store"]["status"], body["config_version"]),
+                                 ("message_only", True, "testing", 1))
+                # V5's state with ai_answer_enabled true and answer_mode message_only: a third state, not the AI one.
+                self.assertEqual(body["state_sha256"], "f43dfa7059d2228e6c7bee65bed75776fba2a4cb4d68c6f99f57ba83338271dc")
+                self.assertNotEqual(body["state_sha256"], ai["state_sha256"])
+                self.assertIn("config", body)
+                self.assertEqual(self.ok(self.config(params={"have": body["state_sha256"]}))["unchanged"], True)
+        for version in ("4", "5", " 4 "):
+            with self.subTest(version=version):
+                self.use_settings(voice_a6_rc_version=version)
+                body = self.ok(self.config())
+                self.assertEqual((body["answer_mode"], body["state_sha256"]), (ai["answer_mode"], ai["state_sha256"]))
+        # A store that does not want AI stays message_only whatever the version.
+        with self.store.connect() as con:
+            con.execute("UPDATE voice_stores SET ai_answer_enabled=0 WHERE id=?", (VECTOR_STORE,))
+        self.assertEqual(self.ok(self.config())["answer_mode"], "message_only")
+
     def test_number_forms_v2(self):
         _, store_id = self.seed_store()
         self.seed_number(store_id=store_id)
@@ -351,7 +385,8 @@ class ReportTests(VoiceCallsCase):
         row = self.call()
         self.assertEqual(created, {"result": "created", "id": row["id"], "call_id": "1797815702.118", "outcome": "answered",
                                    "meter_units": 1, "meter_reason": "ai_speech", "store_id": self.store_id, "flags": []})
-        self.assertEqual((self.summary()["total"], self.summary()["meterUnits"]), (1, 1))
+        # The store's page holds the call once the records sender has reported it (fix round), not before.
+        self.assertEqual((self.summary()["total"], self.summary()["meterUnits"]), (0, 0))
         self.assertEqual((row["dialed"], row["number_id"], row["number_purpose"], row["duration_s"], row["caller_tail"]),
                          (CUSTOMER_NUMBER, self.number_id, "customer", 159, "678"))
         self.assertEqual(row["report_orchestrator_sha256"], vc.part_sha256(body))
@@ -359,8 +394,11 @@ class ReportTests(VoiceCallsCase):
         # A resend with a new sent_at is a duplicate: asserted first, so "still 1" is not what an ignored request shows.
         again = self.ok(self.report(dict(body, sent_at=at(int(time.time())))))
         self.assertEqual(again["result"], "duplicate")
-        self.assertEqual((self.summary()["total"], self.summary()["meterUnits"]), (1, 1))
         self.assertEqual(self.call(), row)
+        self.assertEqual(self.ok(self.report(records()))["result"], "merged")
+        self.assertEqual((self.summary()["total"], self.summary()["meterUnits"]), (1, 1))
+        self.assertEqual(self.ok(self.report(dict(body, sent_at=at(int(time.time())))))["result"], "duplicate")
+        self.assertEqual((self.summary()["total"], self.summary()["meterUnits"]), (1, 1))
 
     def test_other_content_with_the_same_call_id_is_409_and_changes_nothing(self):
         body = orchestrator()
@@ -462,7 +500,9 @@ class ReportTests(VoiceCallsCase):
         row = self.call("1797815702.140")
         self.assertEqual(row["dialed"], "******5678")
         self.assertEqual(json.loads(row["report_orchestrator"])["dialed"], "******5678")
-        self.assertEqual(row["report_orchestrator_sha256"], vc.part_sha256(orch))
+        # Fix round: the digest is the hash of the report as KEPT (masked), so it adds nothing to the stored text.
+        self.assertEqual(row["report_orchestrator_sha256"], hashlib.sha256(row["report_orchestrator"].encode("utf-8")).hexdigest())
+        self.assertNotEqual(row["report_orchestrator_sha256"], vc.part_sha256(orch))
         self.assertEqual(self.ok(self.report(dict(orch, sent_at=at(now + 1))))["result"], "duplicate")
         # The records sender's pending then final report of the same call: still an update, not a conflict.
         pending = records(now, final=False, call_id="1797815702.140", dialed="+886912345678")
@@ -481,6 +521,58 @@ class ReportTests(VoiceCallsCase):
         line = self.ok(self.report(orchestrator(now, call_id="1797815702.142", dialed="0987654321")), 201)
         self.assertEqual((line["store_id"], line["meter_reason"]), (self.store_id, "ai_speech"))
         self.assertEqual(self.call("1797815702.142")["dialed"], "+886987654321")
+
+    def test_the_stored_digest_of_a_masked_number_does_not_give_the_number_back(self):
+        # Fix round: report_*_sha256 used to be the hash of the body as SENT, so anyone with the database could try every
+        # number that ends in the visible 4 digits against the stored report: 2,469 hashes, 0.03 s, and 0912345678 was back.
+        now = int(time.time())
+        forms = ("09%04d5678", "8869%04d5678", "+8869%04d5678")  # every way a Taiwan mobile number ending in 5678 is written
+        for call_id, sent in (("1797815702.150", orchestrator(now, call_id="1797815702.150", dialed="0912345678")),
+                              ("1797815702.151", records(now, call_id="1797815702.151", dialed="+886912345678"))):
+            with self.subTest(source=sent["source"]):
+                self.ok(self.report(sent), 201)
+                row = self.call(call_id)
+                stored = json.loads(row["report_" + sent["source"]])
+                digest = row["report_%s_sha256" % sent["source"]]
+                self.assertEqual(stored["dialed"], "******5678")
+                # What a holder of the database does: put each candidate number into the stored report and hash it.
+                hashes = {form % n: vc.sha256_hex(dict(stored, dialed=form % n)) for form in forms for n in range(10000)}
+                self.assertEqual(len(hashes), 30000)
+                self.assertEqual([c for c, h in hashes.items() if h == digest], [], "the stored digest gave the number back")
+                self.assertEqual(digest, hashlib.sha256(row["report_" + sent["source"]].encode("utf-8")).hexdigest())
+                # The control: the digest 0009 stored (the hash of the sent body) is found by the same search.
+                self.assertEqual([c for c, h in hashes.items() if h == vc.part_sha256(sent)], [sent["dialed"]])
+        self.assertNotIn(vc.part_sha256(orchestrator(now, call_id="1797815702.150", dialed="0912345678")), database_text(self.store))
+
+    def test_a_resend_is_a_duplicate_whether_or_not_the_number_table_changed_in_between(self):
+        now = int(time.time())
+        mobile = "0912345678"
+        # Kept masked, then the number joins the table (a period that began before the call): the resend is kept whole.
+        first = orchestrator(now, call_id="1797815702.160", dialed=mobile)
+        self.ok(self.report(first), 201)
+        self.assertEqual(self.call("1797815702.160")["dialed"], "******5678")
+        self.seed_number("+886912345678", store_id=self.store_id)
+        self.assertEqual(self.ok(self.report(dict(first, sent_at=at(now + 1))))["result"], "duplicate")
+        self.assertEqual(self.call("1797815702.160")["dialed"], "******5678")
+        # Kept whole, then the period ends before the call: the resend is masked and is still the same report.
+        second = orchestrator(now, call_id="1797815702.161", dialed=mobile)
+        self.ok(self.report(second), 201)
+        self.assertEqual(self.call("1797815702.161")["dialed"], "+886912345678")
+        with self.store.connect() as con:
+            con.execute("UPDATE voice_numbers SET active_to=active_from+1 WHERE number=?", ("+886912345678",))
+        self.assertEqual(self.ok(self.report(dict(second, sent_at=at(now + 2))))["result"], "duplicate")
+        # Another fact is still a conflict, and the message names digests of kept reports only.
+        self.error(self.report(dict(second, caller_tail="679")), 409, "call_conflict")
+
+    def test_reports_that_differ_only_in_the_hidden_digits_are_the_same_stored_report(self):
+        # The hidden digits are not kept, so two reports that differ only there cannot be told apart afterwards.
+        now = int(time.time())
+        one = orchestrator(now, call_id="1797815702.170", dialed="0912345678")
+        self.ok(self.report(one), 201)
+        stored = self.call("1797815702.170")["report_orchestrator"]
+        self.assertEqual(self.ok(self.report(dict(one, dialed="0922225678")))["result"], "duplicate")
+        self.assertEqual(self.call("1797815702.170")["report_orchestrator"], stored)
+        self.error(self.report(dict(one, dialed="0912345679")), 409, "call_conflict")
 
     def test_ended_at_is_compared_one_way_with_10_seconds_of_tolerance(self):
         now = int(time.time())
@@ -515,6 +607,33 @@ class ReportTests(VoiceCallsCase):
             with self.subTest(detail=detail):
                 self.assertEqual(self.error(self.report(changed), 400, "call_invalid"), detail)
         self.assertEqual(self.calls(), [])
+
+    def frozen_clock(self, now):
+        """The runtime route reads the portal's clock as `now`: hold it still. With the real clock a test that builds its
+        times from a `now` read earlier is only right while the machine is quick (the +-301 s cases of
+        test_validation_codes needed the request inside the same second: 3 failures under load, fix round)."""
+        return mock.patch.object(vr, "time", types.SimpleNamespace(time=lambda: now, monotonic=time.monotonic))
+
+    def test_clock_skew_is_judged_at_the_portals_clock_to_the_second(self):
+        now = 1797815900
+        with self.frozen_clock(now):
+            for index, (changes, code) in enumerate((
+                    ({"sent_at": at(now - 300)}, None), ({"sent_at": at(now + 300)}, None), ({"sent_at": at(now - 301)}, "clock_skew"),
+                    ({"sent_at": at(now + 301)}, "clock_skew"),
+                    ({"started_at": at(now + 300), "answered_at": None, "ended_at": at(now + 500)}, None),
+                    ({"started_at": at(now + 301), "answered_at": None, "ended_at": at(now + 500)}, "clock_skew"),
+                    ({"started_at": at(now - 30 * 86400), "answered_at": None, "ended_at": at(now - 30 * 86400 + 200)}, None),
+                    ({"started_at": at(now - 30 * 86400 - 1), "answered_at": None, "ended_at": at(now - 30 * 86400 + 200)}, "call_too_old"))):
+                with self.subTest(changes=changes):
+                    response = self.report(orchestrator(now, call_id="1797815800.%d" % index, **changes))
+                    if code is None:
+                        self.ok(response, 201)
+                    else:
+                        self.error(response, 400, code)
+            # Real time passes between requests; the portal's clock (here frozen) is what counts.
+            time.sleep(1.1)
+            self.error(self.report(orchestrator(now, call_id="1797815800.9", sent_at=at(now + 301))), 400, "clock_skew")
+            self.ok(self.report(orchestrator(now, call_id="1797815800.10", sent_at=at(now + 300))), 201)
 
     def test_validation_codes(self):
         now = int(time.time())
@@ -556,14 +675,15 @@ class ReportTests(VoiceCallsCase):
             ({"content_expected": None}, "call_invalid"), ({"retention_days": 91}, "call_invalid"),
             ({"retention_days": 0}, "call_invalid"),
         ]
-        for changes, code in cases:
-            with self.subTest(changes=changes):
-                self.error(self.report(orchestrator(now, **changes)), 400, code)
-        for changes in ({"entry": "try", "call_id": "try-" + "a" * 32, "dialed": None}, {"ai": AI}, {"config": {"version": 1, "sha256": CFG_SHA}},
-                        {"message_final": None}, {"message_final": False, "message": dict(ZERO, speech_ms=1000)},
-                        {"message": dict(ZERO, ai_answered=False, ai_speech_ms=10)}):
-            with self.subTest(records=changes):
-                self.error(self.report(records(now, **changes)), 400, "call_invalid")
+        with self.frozen_clock(now):
+            for changes, code in cases:
+                with self.subTest(changes=changes):
+                    self.error(self.report(orchestrator(now, **changes)), 400, code)
+            for changes in ({"entry": "try", "call_id": "try-" + "a" * 32, "dialed": None}, {"ai": AI}, {"config": {"version": 1, "sha256": CFG_SHA}},
+                            {"message_final": None}, {"message_final": False, "message": dict(ZERO, speech_ms=1000)},
+                            {"message": dict(ZERO, ai_answered=False, ai_speech_ms=10)}):
+                with self.subTest(records=changes):
+                    self.error(self.report(records(now, **changes)), 400, "call_invalid")
         self.assertEqual(self.calls(), [])
 
     def test_try_call(self):
@@ -775,6 +895,18 @@ class PureRuleTests(unittest.TestCase):
         for orch_changes, rec_changes, expected in cases:
             with self.subTest(orch=orch_changes, rec=rec_changes):
                 self.assertEqual(vc.mismatch_fields(dict(report, **orch_changes), dict(final, **rec_changes)), expected)
+
+    def test_two_lines_of_one_store_are_not_a_dialed_mismatch(self):
+        report = orchestrator(call_id="1797815702.118")
+        report.update({"started_at": "2026-12-21T09:15:02+08:00", "answered_at": "2026-12-21T09:15:03+08:00",
+                       "ended_at": "2026-12-21T09:17:41+08:00"})
+        final = dict(report, source="records", answered_at="2026-12-21T09:15:02+08:00", config=None, ai=None,
+                     message=dict(ZERO, ai_answered=True, ai_speech_ms=41250), message_final=True, dialed="0227001005")
+        self.assertEqual(vc.mismatch_fields(report, final), ["dialed"])
+        self.assertEqual(vc.mismatch_fields(report, final, same_store=False), ["dialed"])
+        self.assertEqual(vc.mismatch_fields(report, final, same_store=True), [])
+        # Only the dialed number is excused; every other disagreement is still one.
+        self.assertEqual(vc.mismatch_fields(dict(report, entry="webrtc", caller_tail="999"), final, same_store=True), ["entry", "caller_tail"])
 
     def test_v6_media_token(self):
         token, payload = vc.sign_media_token(MEDIA_SECRET, call_id="1797815702.118", store_id=VECTOR_STORE,

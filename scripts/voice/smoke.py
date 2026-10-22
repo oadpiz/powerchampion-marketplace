@@ -14,6 +14,8 @@ documented bootstrap) and, in `off` mode, one direct call to the backend to comp
         records and Q5 counts, store B isolation, a wrong-answer flag, the operator's review, number_in_use, bad tokens
     scripts/voice/stop-local.sh && scripts/voice/run-local.sh on --no-runtime-token && python3 scripts/voice/smoke.py notoken
         same database, PC_VOICE_RUNTIME_TOKEN unset: the runtime answers 503, the store pages still work
+    scripts/voice/stop-local.sh && scripts/voice/run-local.sh on --no-a6-rc && python3 scripts/voice/smoke.py noa6
+        same database, PC_VOICE_A6_RC_VERSION unset: R1 says message_only for store A although its AI answer is on
     scripts/voice/stop-local.sh && scripts/voice/run-local.sh off && python3 scripts/voice/smoke.py off
         same database: every voice route (runtime and call records too) is 404 not_found and the tab signal is gone
 
@@ -589,6 +591,21 @@ def run_notoken():
     return not R.failed
 
 
+# ---------------------------------------------------------------- noa6
+
+
+def run_noa6():
+    global R
+    R = Report("Voice local smoke (PC_VOICE_ENABLED=1, PC_VOICE_A6_RC_VERSION unset, same database)")
+    with open(STATE, encoding="utf-8") as handle:
+        state = json.load(handle)
+    smoke_p2.run_noa6(sys.modules[__name__], state)
+    with open(REPORT, encoding="utf-8") as handle:
+        existing = handle.read()
+    R.write(REPORT, "a" if existing else "w")
+    return not R.failed
+
+
 # ---------------------------------------------------------------- off
 
 
@@ -658,9 +675,9 @@ if __name__ == "__main__":
     os.makedirs(S + "/smoke", exist_ok=True)
     os.makedirs(S + "/db", exist_ok=True)
     mode = sys.argv[1] if len(sys.argv) > 1 else "on"
-    if mode not in ("on", "notoken", "off"):
-        sys.exit("usage: smoke.py on|notoken|off")
-    ok = {"on": run_on, "notoken": run_notoken, "off": run_off}[mode]()
+    if mode not in ("on", "notoken", "noa6", "off"):
+        sys.exit("usage: smoke.py on|notoken|noa6|off")
+    ok = {"on": run_on, "notoken": run_notoken, "noa6": run_noa6, "off": run_off}[mode]()
     print("%s: %d passed, %d failed" % (mode, R.passed, len(R.failed)))
     for label in R.failed:
         print("FAIL:", R.redact(label))

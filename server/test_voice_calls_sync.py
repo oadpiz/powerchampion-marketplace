@@ -35,8 +35,9 @@ BFF_RENAMED = {"voice_media_unavailable"}
 # §12.1: the phase 2 codes a browser sees, and where each page words them.
 SHARED_CODES = ("call_not_found", "note_contains_number", "call_content_unavailable", "call_content_expired",
                 "voice_content_link_limit")
-# Only M17 answers call_content_pending (amended §6.5: the records sender has not reported the call yet).
-STORE_ONLY_CODES = ("call_content_pending",)
+# No code is answered by a store route alone. (The fix round dropped 409 call_content_pending: a store no longer finds a
+# call before the records sender has reported it, so M17 answers 404 call_not_found for it, like any call it may not see.)
+STORE_ONLY_CODES = ()
 STORE_CODES = SHARED_CODES + STORE_ONLY_CODES
 QUALITY_CODES = SHARED_CODES + ("listening_not_found", "listening_limit")
 NUMBER_CODES = ("number_in_use",)

@@ -79,6 +79,10 @@ const D = {
   sources: { zh: "來源", en: "Sources" },
   sourcesLine: { zh: "編排器 {orchestrator}・紀錄端 {records}", en: "Orchestrator {orchestrator} · Records {records}" },
   notReceived: { zh: "尚未收到", en: "not received" },
+  storeCannotSee: {
+    zh: "紀錄端還沒回報，店家的頁面還看不到這通。",
+    en: "The records sender has not reported this call, so the store cannot see it yet.",
+  },
   mismatch: { zh: "兩邊紀錄不一致的欄位：{fields}", en: "Fields that disagree: {fields}" },
   meter: { zh: "計量", en: "Metering" },
   meterLine: { zh: "預估 {units} 則（{reason}，規則 {rule}）", en: "Estimated {units} ({reason}, rule {rule})" },
@@ -284,6 +288,13 @@ function CallFacts({ detail, zh }: { detail: QualityDetail; zh: boolean }) {
       <dt>{say(D.sources, zh)}</dt>
       <dd>
         {t(D.sourcesLine, { orchestrator: received(sources.orchestrator), records: received(sources.records) })}
+        {/* Phase 2 §3.5: a store finds a call only once the records sender has reported it (a test call is the store's own). */}
+        {!sources.records && call.entry !== "try" && (
+          <>
+            <br />
+            {say(D.storeCannotSee, zh)}
+          </>
+        )}
         {call.mismatch.length > 0 && (
           <>
             <br />

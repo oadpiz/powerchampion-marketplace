@@ -8,6 +8,10 @@ from urllib.parse import urlsplit
 from cryptography.fernet import Fernet
 
 VOICE_TRY_SECRET_MIN = 32
+# The A6 records contract version (RC) the Taiwan host's billing runs; phone-agent AI answers need RC v4 (phase2-contract
+# §15). Only whole numbers count: anything else (a typo, "4.1", "v4") is "not there yet".
+VOICE_A6_RC_VERSION = re.compile(r"[0-9]{1,4}")
+VOICE_A6_RC_REQUIRED = 4
 VOICE_TRY_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 
@@ -77,6 +81,9 @@ class Settings:
     voice_runtime_token: str = field(default="", repr=False)
     voice_media_url: str = ""
     voice_media_secret: str = field(default="", repr=False)
+    # PC_VOICE_A6_RC_VERSION: the RC version A6 meters with. Until it is at least 4 (A6 counts AI-answered calls by Q5
+    # and does not bill a call whose only push is missing), R1 never answers answer_mode "ai" (phase2-contract §15).
+    voice_a6_rc_version: str = ""
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -155,6 +162,12 @@ class Settings:
         return len(self.voice_runtime_token.strip()) >= VOICE_TRY_SECRET_MIN
 
     @property
+    def voice_a6_ready(self):
+        """A6 meters AI-answered calls (RC v4 or later). Unset, empty or not a whole number is False (fail closed)."""
+        text = str(self.voice_a6_rc_version).strip()
+        return bool(VOICE_A6_RC_VERSION.fullmatch(text)) and int(text) >= VOICE_A6_RC_REQUIRED
+
+    @property
     def voice_media_origin(self):
         """PC_VOICE_MEDIA_URL as scheme://host[:port], checked like PC_VOICE_TRY_URL; "" when not valid."""
         return voice_try_origin(self.voice_media_url)
@@ -204,4 +217,5 @@ class Settings:
             voice_runtime_token=os.environ.get("PC_VOICE_RUNTIME_TOKEN", ""),
             voice_media_url=os.environ.get("PC_VOICE_MEDIA_URL", "").strip(),
             voice_media_secret=os.environ.get("PC_VOICE_MEDIA_SECRET", ""),
+            voice_a6_rc_version=os.environ.get("PC_VOICE_A6_RC_VERSION", "").strip(),
         )

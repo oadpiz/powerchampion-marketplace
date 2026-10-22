@@ -200,17 +200,44 @@ export const CALL_CURSOR = /^\d{10}-[a-f0-9]{32}$/;
 export const FLAG_NOTE_CHARS_DEFAULT = 100;
 
 /**
- * §6.3 phone-number check (amended in the phase 2 fix round), the backend's voice_calls.has_phone_number: the note is
- * first put in a comparable form (phoneText: NFKC, so full-width digits and brackets become ASCII; invisible
- * characters dropped; Chinese numerals read as digits), then 8 or more digits that only separators split (whitespace,
- * - . / ( ) and a few dots and dashes) are a phone number. Digits are counted, not characters, so "10/22 14:30" is not
- * one. The whitespace class is Python's str.isspace() set written out, because JavaScript's \s differs (it has U+FEFF,
- * Python has U+001C-U+001F and U+0085). tests/support/phone-like-vectors.json is run through both sides.
+ * §6.3 phone-number check (amended in the phase 2 fix rounds), the backend's voice_calls.has_phone_number: the note is
+ * first put in a comparable form (phoneText: NFKC, so full-width digits, brackets and commas become ASCII; invisible
+ * characters dropped; Chinese numerals read as digits). Then the numbers that are not phone numbers are set aside
+ * (phoneMask: a date written 2026/10/22, 2026.10.22 or 2026-10-22, an IPv4 address, a version number after
+ * v/ver/version/build/版本, an amount grouped 10,000,000). Then 8 or more digits that only separators split are a
+ * phone number: whitespace and - . / ( ) and a few dots and dashes split digits one by one (PHONE_LIKE); a comma (or
+ * the ideographic comma) also splits groups of two or more digits, but only when it touches digits on both sides, so
+ * "0912,345,678" is a number while "1,2,3,4,5,6,7,8" and "35,000, 42,000" are not (PHONE_GROUPED). Digits are counted,
+ * not characters, so "10/22 14:30" is not one. Eight digits with no separator ("20261022") stay a number: a Taiwan
+ * landline without its area code looks the same. The whitespace class is Python's str.isspace() set written out,
+ * because JavaScript's \s differs (it has U+FEFF, Python has U+001C-U+001F and U+0085). No lookbehind (older Safari
+ * rejects it): every mask pattern starts with a group for the character before, which is kept.
+ * tests/support/phone-like-vectors.json is run through both sides.
  */
 const PY_SPACE = "\\t\\n\\v\\f\\r\\u001c-\\u001f \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
 const PHONE_SEPARATORS = "\\-./()\\u30fb\\u2027\\u00b7\\u2010\\u2011\\u2013\\u2014";
 export const PHONE_LIKE = new RegExp(`[0-9](?:[${PY_SPACE}${PHONE_SEPARATORS}]*[0-9]){7,}`);
+const PHONE_GROUPED = new RegExp(`[0-9]{2,}(?:(?:[${PY_SPACE}${PHONE_SEPARATORS}]+|[,\\u3001])[0-9]{2,})+`, "g");
+const PHONE_DIGITS = 8;
 const PHONE_INVISIBLE = /[\u200b-\u200f\u2060\u061c\ufeff\u00ad]/g;
+const DAY = "(?:0?[1-9]|[12][0-9]|3[01])";
+const MONTH = "(?:0?[1-9]|1[0-2])";
+const OCTET = "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])";
+const FIRST_OCTET = "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)";
+/** A comma-grouped amount: a first group of 1-3 digits without a leading zero, then groups of exactly 3. */
+const PHONE_AMOUNT = /(^|[^0-9,.])([1-9][0-9]{0,2}(?:,[0-9]{3}){2,})(?![0-9]|,[0-9])/g;
+const PHONE_MASKS: RegExp[] = [
+  // 2026/10/22, 2026.10.22, 2026-10-22 (years 1900-2099), then 22/10/2026 and 10-22-2026
+  new RegExp(`(^|[^0-9])((?:19|20)[0-9]{2}[-./]${MONTH}[-./]${DAY})(?![0-9])`, "g"),
+  new RegExp(`(^|[^0-9])(${DAY}[-./]${DAY}[-./](?:19|20)[0-9]{2})(?![0-9])`, "g"),
+  // an IPv4 address (no leading zeros, first octet not 0) that is not part of a longer dotted number
+  new RegExp(`(^|[^0-9.])(${FIRST_OCTET}(?:\\.${OCTET}){3})(?![0-9]|\\.[0-9])`, "g"),
+  // v1.2.3.4, ver. 20.11.0.123456, version 2026.10.22.1, build 7.8.9, 版本 3.2.1.4 (three or more groups, none with a
+  // leading zero, so "v0912.345.678" is still a number)
+  /(^|[^0-9A-Za-z])((?:v|ver\.?|version|build|版本|版)[ ]?(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2,})(?![0-9])/gi,
+];
+/** A masked span becomes "|": neither a digit nor a separator, so it cannot join two numbers. */
+const PHONE_MASK_FILLER = "|";
 /** Chinese numerals read as digits, grouped by digit (the backend's PHONE_NUMERALS; never two zipped strings). */
 export const PHONE_NUMERALS: Record<string, string> = {
   "0": "零〇○洞",
@@ -228,7 +255,21 @@ const NUMERAL_DIGIT = new Map(Object.entries(PHONE_NUMERALS).flatMap(([digit, ch
 /** The comparable form of a note (only for matching; the note is sent as typed). */
 export const phoneText = (text: string) =>
   [...text.normalize("NFKC").replace(PHONE_INVISIBLE, "")].map((char) => NUMERAL_DIGIT.get(char) ?? char).join("");
-export const hasPhoneNumber = (text: string) => PHONE_LIKE.test(phoneText(text));
+/** `text` (already through phoneText) with dates, IPv4 addresses, version numbers and comma-grouped amounts set aside. */
+export const phoneMask = (text: string) => {
+  // 912,345,678 is nine digits starting with 9: a Taiwan mobile number without its 0, written with commas.
+  let masked = text.replace(PHONE_AMOUNT, (whole: string, before: string, amount: string) =>
+    /^9[0-9]{8}$/.test(amount.replace(/,/g, "")) ? whole : before + PHONE_MASK_FILLER,
+  );
+  for (const pattern of PHONE_MASKS) masked = masked.replace(pattern, (_whole: string, before: string) => before + PHONE_MASK_FILLER);
+  return masked;
+};
+export const hasPhoneNumber = (text: string) => {
+  const compared = phoneMask(phoneText(text));
+  if (PHONE_LIKE.test(compared)) return true;
+  for (const run of compared.matchAll(PHONE_GROUPED)) if ((run[0].match(/[0-9]/g) ?? []).length >= PHONE_DIGITS) return true;
+  return false;
+};
 
 /** The Taiwan host's error codes a page can get back (§8.3). */
 export const MEDIA_ERRORS = [

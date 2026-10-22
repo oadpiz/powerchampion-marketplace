@@ -645,6 +645,8 @@ describe("admin phone agent: call drawer and review (A10, A11)", () => {
     expect(text).toContain("Settings v3 (sha 0123abcd) · Notice d1");
     expect(text).toContain("Caller spoke: 12.3 s with the AI, 12.3 s in total · 6 turns · reply p50 820 ms / p95 1430 ms · barge-ins 1 · fillers 2 · talk-overs 0 · no responses —");
     expect(text).toContain(`Orchestrator ${taipei("2026-10-21T01:17:45Z")} · Records not received`);
+    // Fix round (phase2-contract §3.5): a store does not see a call before the records sender has reported it.
+    expect(text).toContain("The records sender has not reported this call, so the store cannot see it yet.");
     expect(text).toContain("Estimated 1 (AI answered and the caller spoke for 3 seconds or more, rule q5-draft-1)");
     expect(text).toContain("Recording days: store 30, reported —");
     expect(text).toContain(`The store flagged this as a wrong answer on ${taipei("2026-10-21T02:00:00Z")}: 價格答錯`);
@@ -652,6 +654,23 @@ describe("admin phone agent: call drawer and review (A10, A11)", () => {
     await user.click(within(drawer()).getByRole("button", { name: "Close" }));
     expect(document.getElementById("voice-quality-drawer")).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: `Open call: 晴光牙醫診所 · ${T1}` })));
+  });
+
+  it("says the store cannot see a call the records sender has not reported, and says nothing once it has or for a test call", async () => {
+    const backend = new QualityBackend();
+    const [edge, reported] = [backend.calls[0], backend.calls[1]];
+    reported.sources = { ...reported.sources, records: { receivedAt: "2026-10-21T01:18:00Z", sha256: "e".repeat(64) } };
+    const tryCall = backend.calls.find((call) => call.entry === "try")!;
+    expect([edge.sources.records, reported.sources.records === null, tryCall.sources.records]).toEqual([null, false, null]);
+    const user = await openQuality(backend);
+    await callsTable();
+    const note = "The records sender has not reported this call, so the store cannot see it yet.";
+    for (const [call, shown] of [[edge, true], [reported, false], [tryCall, false]] as const) {
+      await user.click(document.getElementById(`voice-quality-open-${call.id}`)!);
+      await within(drawer()).findByText(/^Call ID /);
+      expect((drawer().textContent ?? "").includes(note), `${call.id} ${call.entry}`).toBe(shown);
+      await user.click(within(drawer()).getByRole("button", { name: "Close" }));
+    }
   });
 
   it("shows a pending message result, a mismatch and the fallback reason", async () => {

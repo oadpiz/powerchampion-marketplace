@@ -298,6 +298,24 @@ def run_on(m, state, admin_jar, a_jar, b_jar):
             b_row.get("meter_reason")) == (b_id, "message", 1, "message"))
     state.update(month=month, a_rows=rows, b_row=b_row.get("id"), call_ids=cid)
 
+    R.section("14b. A call is the store's once the Taiwan host's records sender has reported it (phase2-contract §3.5)")
+    got, early = m.call("GET", "/me/voice/calls?month=" + month, a_jar)
+    early_ids = sorted(item["id"] for item in early.get("calls", [])) if isinstance(early, dict) else []
+    R.check("A's M13 holds only c2 (a test call) and c4 (the records sender reported it); c1, c3 and c5 are the orchestrator's alone",
+            got == 200 and early_ids == sorted([rows["c2"], rows["c4"]]) and early.get("summary", {}).get("total") == 2
+            and early["summary"].get("meterUnits") == 1, "got %d %d calls summary %s" % (got, len(early_ids), early.get("summary") if isinstance(early, dict) else None))
+    for step, method, path, body in (("M14", "GET", "/me/voice/calls/" + rows["c1"], None),
+                                     ("M15", "POST", "/me/voice/calls/%s/flag" % rows["c1"], {"kind": "wrong_answer"}),
+                                     ("M17", "POST", "/me/voice/calls/%s/content-link" % rows["c1"], {})):
+        m.expect("A, %s c1 while only the orchestrator has reported it" % step, method, path, a_jar, body, 404, "call_not_found")
+    got, early_a10 = m.call("GET", "/admin/voice/quality/calls/" + rows["c1"], admin_jar)
+    R.check("the operator sees c1 at once; sources.records is null (the store cannot see it yet)",
+            got == 200 and early_a10.get("sources", {}).get("orchestrator") and early_a10["sources"].get("records") is None, "got %d" % got)
+    for name, seconds in (("c1", 95), ("c3", 40), ("c5", 70)):
+        started = base + {"c1": 0, "c3": 120, "c5": 240}[name]
+        body = records_report(m, cid[name], A_DOMESTIC, started=started, seconds=seconds, final=True, message=dict(ZERO_MESSAGE))
+        report("%s records sender, final, no message part" % name, body, 200, "merged")
+
     R.section("15. Store A sees its own 5 calls and the Q5 counts (M13, M14, M17)")
     expected = {"c1": ("answered", 1, "ai_speech"), "c2": ("answered", 0, "try"), "c3": ("answered", 0, "short_speech"),
                 "c4": ("message", 1, "ai_speech"), "c5": ("handoff", 1, "ai_speech")}
@@ -324,9 +342,6 @@ def run_on(m, state, admin_jar, a_jar, b_jar):
     R.check("M14 c4: message, 1.5 s message, 1 billable, content kept", got == 200 and call4.get("outcome") == "message"
             and call4.get("messageSeconds") == 1.5 and call4.get("meterUnits") == 1 and m14.get("content", {}).get("state") == "available"
             and m14.get("flag") is None, "got %d %s" % (got, m.short({k: call4.get(k) for k in ("outcome", "messageSeconds", "meterUnits", "configVersion")}, 140)))
-    # Fix round (amended §6.5): until the records sender reports a call, its store comes from the orchestrator's number only.
-    m.expect("A, M17 c1 while only the orchestrator has reported it", "POST", "/me/voice/calls/%s/content-link" % rows["c1"], a_jar, {},
-             409, "call_content_pending")
     got, m17 = m.call("POST", "/me/voice/calls/%s/content-link" % rows["c4"], a_jar, {})
     media = m17.get("media", {}) if isinstance(m17, dict) else {}
     token = media.get("token", "")
@@ -380,10 +395,10 @@ def run_on(m, state, admin_jar, a_jar, b_jar):
             "got %d items %d counts %s" % (got, len(items), a9.get("counts") if isinstance(a9, dict) else None))
     got, a10 = m.call("GET", "/admin/voice/quality/calls/" + rows["c3"], admin_jar)
     detail = a10.get("call", {}) if isinstance(a10, dict) else {}
-    R.check("A10 c3: call_id, 2.4 s of speech, short_speech under rule q5-draft-1, only the orchestrator's report",
+    R.check("A10 c3: call_id, 2.4 s of speech, short_speech under rule q5-draft-1, both sources' reports",
             got == 200 and detail.get("callId") == cid["c3"] and detail.get("callSpeechSeconds") == 2.4
             and detail.get("meterReason") == "short_speech" and detail.get("meterRule") == "q5-draft-1"
-            and a10.get("sources", {}).get("orchestrator") and a10["sources"].get("records") is None,
+            and a10.get("sources", {}).get("orchestrator") and a10["sources"].get("records"),
             "got %d %s" % (got, m.short({k: detail.get(k) for k in ("callSpeechSeconds", "meterReason", "meterRule", "configVersion")}, 140)))
     got, a10 = m.call("GET", "/admin/voice/quality/calls/" + rows["c4"], admin_jar)
     detail = a10.get("call", {}) if isinstance(a10, dict) else {}
@@ -493,6 +508,25 @@ def run_notoken(m, state):
     got, m13 = m.call("GET", "/me/voice/calls?month=" + state["month"], state["a_jar"])
     R.check("A's M13 still lists its 5 calls (the store pages do not need the runtime token)",
             got == 200 and m13.get("summary", {}).get("total") == 5, "got %d" % got)
+
+
+# ---------------------------------------------------------------- noa6 (PC_VOICE_A6_RC_VERSION unset)
+
+
+def run_noa6(m, state):
+    R = m.R
+    R.section("21b. PC_VOICE_A6_RC_VERSION unset: R1 never answers ai, whatever the store's switch says (phase2-contract §15)")
+    orch = FakeOrchestrator(m)
+    got, r1, _ = orch.pull(A_DOMESTIC)
+    r1 = r1 if isinstance(r1, dict) else {}
+    store = r1.get("store", {})
+    R.check("store A still has AI answer on (the store's own fields tell the truth) -> ai_answer_enabled true, status testing or live",
+            got == 200 and store.get("ai_answer_enabled") is True and store.get("status") in ("testing", "live"),
+            "got %d store %s" % (got, {k: store.get(k) for k in ("status", "ai_answer_enabled")}))
+    R.check("R1 for store A -> answer_mode message_only, not ai", got == 200 and r1.get("answer_mode") == "message_only",
+            "got %d answer_mode %s" % (got, r1.get("answer_mode")))
+    R.check("the config is still served (only the mode is held back)", r1.get("config_version") == 1 and r1.get("config_sha256") == state["a_sha"],
+            "version %s" % r1.get("config_version"))
 
 
 # ---------------------------------------------------------------- off

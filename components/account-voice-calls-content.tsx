@@ -46,7 +46,7 @@ function clock(milliseconds: unknown): string {
 const SPEAKERS: Record<string, [string, string]> = { caller: ["Caller", "客人"], ai: ["AI", "AI"], system: ["System", "系統"] };
 
 /** What M17 can answer besides the link; the content section changes with it (§6.5, §12.1). */
-type LinkProblem = { kind: "unavailable" } | { kind: "none" } | { kind: "expired" } | { kind: "pending" } | { kind: "other"; error: unknown };
+type LinkProblem = { kind: "unavailable" } | { kind: "none" } | { kind: "expired" } | { kind: "other"; error: unknown };
 
 function linkProblem(error: unknown): LinkProblem {
   if (error instanceof PortalError) {
@@ -54,8 +54,6 @@ function linkProblem(error: unknown): LinkProblem {
     if (error.status === 503 || error.code === "voice_media_unavailable") return { kind: "unavailable" };
     if (error.code === "call_content_unavailable") return { kind: "none" };
     if (error.status === 410 || error.code === "call_content_expired") return { kind: "expired" };
-    // Amended §6.5: the records sender has not reported this call yet; it reads like the Taiwan host's media_not_ready.
-    if (error.code === "call_content_pending") return { kind: "pending" };
   }
   return { kind: "other", error };
 }
@@ -254,11 +252,6 @@ export function CallContentPanel({
         {problem?.kind === "other" && (
           <p className="portal-error" role="alert">
             {linkErrorText(problem.error, zh, locale)}
-          </p>
-        )}
-        {problem?.kind === "pending" && (
-          <p className="portal-note" role="status">
-            {mediaFailureText("not_ready", zh)}
           </p>
         )}
         {recording && "url" in recording && (

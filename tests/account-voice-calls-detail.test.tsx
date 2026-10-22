@@ -277,30 +277,6 @@ describe("call content", () => {
     expect(showContent()).toBeEnabled();
   });
 
-  it("says the content is still being processed while portal waits for the records sender (409 call_content_pending)", async () => {
-    const user = userEvent.setup();
-    const state = oneCall({ recordsReported: false });
-    const { requests } = renderCall(state);
-    await user.click(await screen.findByRole("button", { name: "Show content" }));
-    expect(
-      await screen.findByText("The content is still being processed, usually within a few minutes after the call. Try again later."),
-    ).toBeVisible();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(mediaReads(requests)).toHaveLength(0);
-    // Once the records sender has reported, the same button reads the content.
-    state.rows[0].recordsReported = true;
-    await user.click(showContent());
-    expect(await screen.findByRole("heading", { level: 4, name: "Transcript" })).toBeVisible();
-  });
-
-  it("says nothing was kept when the two reports name different numbers (404 call_content_unavailable)", async () => {
-    const user = userEvent.setup();
-    const { requests } = renderCall(oneCall({ dialedMismatch: true }));
-    await user.click(await screen.findByRole("button", { name: "Show content" }));
-    expect(await screen.findByText("No content was kept for this call.")).toBeVisible();
-    expect(mediaReads(requests)).toHaveLength(0);
-  });
-
   it("explains the content link limit", async () => {
     const user = userEvent.setup();
     const { requests } = renderCall(oneCall({}, { linksUsed: 60 }));

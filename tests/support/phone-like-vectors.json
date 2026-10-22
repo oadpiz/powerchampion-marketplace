@@ -1,5 +1,5 @@
 {
-  "_comment": "phase2-contract 6.3 note check (amended in the phase 2 fix round): the same strings go through lib/voice-calls.ts hasPhoneNumber (tests/account-voice-calls.test.tsx, tests/voice-p2-sync.test.ts) and server/voice_calls.has_phone_number (server/test_voice_calls_note_sync.py). A note is compared after NFKC, without invisible characters and with Chinese numerals read as digits (`numerals`, which both sides must hold exactly); 8 or more digits split only by separators are a number. Each whitespace-like separator is listed so that Python's \\s and JavaScript's \\s differences show.",
+  "_comment": "phase2-contract 6.3 note check (amended in the phase 2 fix rounds): the same strings go through lib/voice-calls.ts hasPhoneNumber (tests/account-voice-calls.test.tsx, tests/voice-p2-sync.test.ts) and server/voice_calls.has_phone_number (server/test_voice_calls_note_sync.py). A note is compared after NFKC, without invisible characters and with Chinese numerals read as digits (`numerals`, which both sides must hold exactly); dates (2026/10/22, 2026.10.22, 2026-10-22, 22/10/2026), IPv4 addresses, versions after v/ver/version/build/\u7248\u672c and comma-grouped amounts (10,000,000) are set aside; then 8 or more digits split only by separators are a number, a comma counting as a separator only between two groups of 2 or more digits. Each whitespace-like separator is listed so that Python's \\\\s and JavaScript's \\\\s differences show.",
   "numerals": {
     "0": "\u96f6\u3007\u25cb\u6d1e",
     "1": "\u4e00\u58f9\u4e48\u5e7a",
@@ -43,7 +43,23 @@
     "09\uff112 \u4e09\u56db\u4e94 678",
     "0912\u200d345\u2060678",
     "0912\u00ad345678",
-    "\u5ba2\u4eba\u96fb\u8a71 02-2700-1001 \u8acb\u56de\u96fb"
+    "\u5ba2\u4eba\u96fb\u8a71 02-2700-1001 \u8acb\u56de\u96fb",
+    "0912,345,678",
+    "0912\uff0c345\uff0c678",
+    "0912\u3001345\u3001678",
+    "\uff10\uff19\uff11\uff12\uff0c\uff13\uff14\uff15\uff0c\uff16\uff17\uff18",
+    "912,345,678",
+    "0912,345 678",
+    "0912-345,678",
+    "09,12,34,56,78",
+    "\u96fb\u8a71 0912,345,678 \u8acb\u56de\u96fb",
+    "20261022",
+    "1234 2026/10/22 5678 9012",
+    "2026/10/22 0912 345 678",
+    "172.016.010.023",
+    "1.2.3.4.5.6.7.8",
+    "v0912.345.678",
+    "version 0912.345.678"
   ],
   "not_number": [
     "1234567",
@@ -57,6 +73,29 @@
     "3.5 \u79d2",
     "\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03",
     "2026/10",
-    "p95 1910 ms"
+    "p95 1910 ms",
+    "2026/10/22",
+    "2026.10.22",
+    "2026-10-22",
+    "G0 \u76f2\u807d 2026/10/22",
+    "IP 172.16.10.23",
+    "2026/1/5",
+    "22/10/2026",
+    "10-22-2026",
+    "\uff12\uff10\uff12\uff16\uff0f\uff11\uff10\uff0f\uff12\uff12",
+    "2026/10/22 14:30",
+    "2026/10/22-2026/10/25",
+    "10.0.0.0/8",
+    "192.168.0.1:8080",
+    "\u7248\u672c 20.11.0.123456",
+    "ver. 2026.10.22.1",
+    "v1.2.3.4.5.6.7.8",
+    "2026.10.22.1",
+    "1,2,3,4,5,6,7,8",
+    "35,000, 42,000",
+    "10,000,000",
+    "\u5831\u50f9 1,234,567,890 \u5143",
+    "\u5171 20,000,000 \u8207 30,000,000",
+    "build 2026.10.22.1"
   ]
 }

@@ -90,7 +90,7 @@ def attach_voice_runtime(application, ctx):
             fail("invalid_input", "have must be a state_sha256 (64 lowercase hex).")
         now = int(time.time())
         with store.connect() as con:
-            state, payload = vc.runtime_config(con, number, now, have=have)
+            state, payload = vc.runtime_config(con, number, now, have=have, a6_ready=ctx.settings.voice_a6_ready)
         etag = '"%s"' % state
         if etag in [part.strip() for part in request.headers.get("if-none-match", "").split(",")]:
             return Response(status_code=304, headers={"ETag": etag})

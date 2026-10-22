@@ -63,7 +63,7 @@ class GrafanaUrlSettingTests(unittest.TestCase):
 
 TEST_SECRET = "test-only-not-a-secret-0000000000"
 VOICE_ENV = ("PC_VOICE_ENABLED", "PC_VOICE_TRY_SECRET", "PC_VOICE_TRY_URL", "PC_VOICE_RUNTIME_TOKEN", "PC_VOICE_MEDIA_URL",
-             "PC_VOICE_MEDIA_SECRET")
+             "PC_VOICE_MEDIA_SECRET", "PC_VOICE_A6_RC_VERSION")
 RUNTIME_TOKEN = "test-only-runtime-token-0000000000"
 
 
@@ -172,6 +172,20 @@ class VoiceRuntimeSettingTests(unittest.TestCase):
             with self.subTest(url=url, secret=repr(secret)):
                 self.assertFalse(Settings(voice_media_url=url, voice_media_secret=secret).voice_media_available)
         self.assertTrue(Settings(voice_media_url="http://localhost:8098", voice_media_secret=TEST_SECRET).voice_media_available)
+
+    def test_a6_rc_version_gate_fails_closed(self):
+        # Fix round: R1 may answer "ai" only once A6 meters AI-answered calls (RC v4, phase2-contract §15).
+        for s in (Settings(), self.from_env(), self.from_env(PC_VOICE_A6_RC_VERSION="")):
+            self.assertEqual(s.voice_a6_rc_version, "")
+            self.assertFalse(s.voice_a6_ready)
+        for value in ("3", "0", "03", "v4", "4.1", "four", "-4", "4 4", "40000", "٤"):
+            with self.subTest(value=value):
+                self.assertFalse(self.from_env(PC_VOICE_ENABLED="1", PC_VOICE_A6_RC_VERSION=value).voice_a6_ready)
+        for value in ("4", "5", " 4 ", "04", "12"):
+            with self.subTest(value=value):
+                self.assertTrue(self.from_env(PC_VOICE_A6_RC_VERSION=value).voice_a6_ready)
+        self.assertTrue(Settings(voice_a6_rc_version="4").voice_a6_ready)
+        self.assertFalse(Settings(voice_a6_rc_version="3").voice_a6_ready)
 
     def test_secrets_are_not_in_repr(self):
         text = repr(Settings(voice_runtime_token=RUNTIME_TOKEN, voice_media_secret=TEST_SECRET))

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { voiceAdminErrorText } from "../components/admin-voice-dialogs";
 import { PortalError } from "../lib/portal-client";
-import { PHONE_NUMERALS, hasPhoneNumber, phoneText } from "../lib/voice-calls";
+import { PHONE_NUMERALS, hasPhoneNumber, phoneMask, phoneText } from "../lib/voice-calls";
 import { noteHasPhoneNumber } from "../lib/voice-quality";
 import vectors from "./support/phone-like-vectors.json";
 
@@ -16,6 +16,30 @@ describe("phase 2 front-end and back-end sync", () => {
     for (const text of vectors.number) expect(noteHasPhoneNumber(text), JSON.stringify(text)).toBe(true);
     for (const text of vectors.not_number) expect(noteHasPhoneNumber(text), JSON.stringify(text)).toBe(false);
     expect(noteHasPhoneNumber).toBe(hasPhoneNumber);
+  });
+
+  // The same lists are server/test_voice_calls_note_sync.py's (voice_calls.has_phone_number, phone_mask).
+  it("does not take a date, an IP address, a version or an amount for a phone number, and still takes a comma-separated number", () => {
+    for (const text of [
+      "2026/10/22", "2026.10.22", "2026-10-22", "G0 盲聽 2026/10/22", "IP 172.16.10.23", "2026/1/5", "22/10/2026", "10-22-2026",
+      "２０２６／１０／２２", "2026/10/22 14:30", "2026/10/22-2026/10/25", "10.0.0.0/8", "192.168.0.1:8080", "版本 20.11.0.123456",
+      "ver. 2026.10.22.1", "build 2026.10.22.1", "v1.2.3.4.5.6.7.8", "2026.10.22.1", "10,000,000", "報價 1,234,567,890 元",
+      "共 20,000,000 與 30,000,000", "35,000, 42,000", "1,2,3,4,5,6,7,8",
+    ]) {
+      expect(hasPhoneNumber(text), text).toBe(false);
+    }
+    for (const text of [
+      "0912,345,678", "0912，345，678", "0912、345、678", "０９１２，３４５，６７８", "電話 0912,345,678 請回電", "0912,345 678",
+      "0912-345,678", "09,12,34,56,78", "912,345,678", "2026/10/22 0912 345 678", "1234 2026/10/22 5678 9012",
+      "IP 172.16.10.23 回電 0912345678", "10,000,000 0912345678", "20261022", "172.016.010.023", "1.2.3.4.5.6.7.8", "ver 3 0912345678",
+      "v0912.345.678", "version 0912.345.678",
+    ]) {
+      expect(hasPhoneNumber(text), text).toBe(true);
+    }
+    expect(phoneMask("IP 172.16.10.23 on 2026/10/22 v1.2.3 / 10,000,000")).toBe("IP | on | | / |");
+    // A masked span is neither a digit nor a separator, so it never joins the digits on its two sides.
+    expect(phoneMask("0912 2026/10/22 345 678")).toBe("0912 | 345 678");
+    expect(hasPhoneNumber("0912 2026/10/22 345")).toBe(false);
   });
 
   it("reads Chinese numerals with the backend's table (voice_calls.PHONE_NUMERALS)", () => {

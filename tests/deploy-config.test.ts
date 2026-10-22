@@ -111,4 +111,13 @@ describe("Dokploy deployment behind Traefik", () => {
       expect(website).not.toMatch(new RegExp(name));
     }
   });
+
+  it("wires PC_VOICE_A6_RC_VERSION into the portal only, empty by default, so AI answers stay off until A6 meters them (§15)", () => {
+    // Fix round: R1 answers answer_mode "ai" only when this is at least 4. An empty default is what keeps production
+    // on message_only; a `:-4` default, a `:?` or a literal value here would turn AI answers on without a decision.
+    const name = "PC_VOICE_A6_RC_VERSION";
+    expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-\\}\\s*$`, "m"));
+    expect(compose).not.toMatch(new RegExp(`^\\s+${name}\\s*:\\s*(?!\\$\\{${name}:-\\}\\s*$)\\S`, "m"));
+    expect(website).not.toMatch(new RegExp(name));
+  });
 });

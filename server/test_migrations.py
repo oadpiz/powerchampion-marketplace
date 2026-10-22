@@ -17,7 +17,7 @@ EXPECTED_TABLES = {
 VOICE_TABLES = {"voice_stores", "voice_store_hours", "voice_store_closures", "voice_faqs", "voice_config_versions", "voice_numbers"}
 CALL_TABLES = {"voice_calls", "voice_call_reviews", "voice_listening_logs"}
 EXPECTED_TABLES = EXPECTED_TABLES | VOICE_TABLES | CALL_TABLES
-HEAD = "0009_voice_calls"
+HEAD = "0010_voice_call_digests"
 AUDIT_INDEXES = ["audit_events_action_actor_time", "audit_events_action_target_time"]
 
 
@@ -364,6 +364,69 @@ class MigrationTests(unittest.TestCase):
                     ("voice.call_content_link", "admin.voice_call_content_link", "u1", 0)).fetchall())
                 self.assertIn("audit_events_action_actor_time", plan)
         self.assertEqual(self._snapshot(store, others), before)
+
+    def test_voice_call_digests_are_rewritten_from_the_stored_reports_and_downgrade_keeps_them(self):
+        # 0010 (fix round): report_*_sha256 was the hash of the sent body, which held the masked digits.
+        import hashlib
+
+        from server.store import Store
+        store = Store(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        downgrade_to(self.db.url, "0009_voice_calls")
+        self.assertEqual(self._versions(store), ["0009_voice_calls"])
+        base = {"entry": "pstn", "dialed": "******5678", "started_at": 100, "disposition": "ANSWERED", "caller_kind": "mobile",
+                "outcome": "unknown", "retention_days_snapshot": 90, "meter_units": 0, "meter_reason": "unknown_line",
+                "meter_rule": "q5-draft-1", "received_at": 300, "updated_at": 300}
+        old = "f" * 64  # what 0009 code stored: the hash of the body as sent
+        total = 1100  # more than two pages of the backfill
+        texts = {}
+        with store.connect() as con:
+            for index in range(total):
+                row_id = "%032x" % index
+                orchestrator = '{"call_id":"1.%d","dialed":"******5678","source":"orchestrator"}' % index
+                records = None if index % 3 else '{"call_id":"1.%d","dialed":"******5678","source":"records","message_final":false}' % index
+                texts[row_id] = (orchestrator, records)
+                values = dict(base, id=row_id, call_id="1.%d" % index, report_orchestrator=orchestrator,
+                              report_orchestrator_sha256=old, report_orchestrator_at=300)
+                if records:
+                    values.update(report_records=records, report_records_sha256=old, report_records_at=300)
+                names = sorted(values)
+                con.execute("INSERT INTO voice_calls (" + ",".join(names) + ") VALUES (" + ",".join("?" * len(names)) + ")",
+                            tuple(values[name] for name in names))
+            # A row with neither report (a hand-made row) has nothing to hash and stays as it is.
+            bare = dict(base, id="e" * 32, call_id="1.bare")
+            names = sorted(bare)
+            con.execute("INSERT INTO voice_calls (" + ",".join(names) + ") VALUES (" + ",".join("?" * len(names)) + ")",
+                        tuple(bare[name] for name in names))
+
+        def snapshot(skip=()):
+            with store.connect() as con:
+                return [{k: v for k, v in dict(r).items() if k not in skip}
+                        for r in con.execute("SELECT * FROM voice_calls ORDER BY id").fetchall()]
+
+        digests = ("report_orchestrator_sha256", "report_records_sha256")
+        others_before, tables_before = snapshot(digests), self._snapshot(store, set(self.db.table_names()) - {"alembic_version", "voice_calls"})
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        with store.connect() as con:
+            rows = {r["id"]: r for r in con.execute("SELECT * FROM voice_calls").fetchall()}
+        self.assertEqual(len(rows), total + 1)
+        for row_id, (orchestrator, records) in texts.items():
+            self.assertEqual(rows[row_id]["report_orchestrator_sha256"], hashlib.sha256(orchestrator.encode("utf-8")).hexdigest())
+            self.assertEqual(rows[row_id]["report_records_sha256"],
+                             None if records is None else hashlib.sha256(records.encode("utf-8")).hexdigest())
+        self.assertEqual((rows["e" * 32]["report_orchestrator_sha256"], rows["e" * 32]["report_records_sha256"]), (None, None))
+        self.assertNotIn(old, {r["report_orchestrator_sha256"] for r in rows.values()})
+        self.assertEqual(snapshot(digests), others_before)  # only the two digest columns changed
+        self.assertEqual(self._snapshot(store, set(self.db.table_names()) - {"alembic_version", "voice_calls"}), tables_before)
+        after = snapshot()
+        # Downgrade changes nothing (the old digests cannot be rebuilt); upgrading again rewrites the same values.
+        downgrade_to(self.db.url, "0009_voice_calls")
+        self.assertEqual(self._versions(store), ["0009_voice_calls"])
+        self.assertEqual(snapshot(), after)
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        self.assertEqual(snapshot(), after)
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":

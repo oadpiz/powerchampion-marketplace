@@ -10,6 +10,9 @@ Operator routes follow admin_voice.py's order: admin first (401/403 whatever the
 (404), then the body, then BEGIN IMMEDIATE with the admin re-checked before the path's resource (404), the fields
 (400) and the state (409).
 
+A call is the store's only once the records sender has reported it (voice_calls.confirmed): the orchestrator's number
+alone could be another store's, and M13-M17 would show that store's caller (§3.5, fix round). Operators see every call.
+
 Content links (M17, A12) are counted per account from audit_events and the audit row is written under the same
 lock, so the 60-per-hour limit cannot be passed by concurrent requests. Audit details hold counts, ids and enum
 values only: never a note, a summary, a number, a token or a nonce (§1.6). A write that changes nothing is not
@@ -50,6 +53,9 @@ QUALITY_SELECT = (
 OPEN_REVIEW = "(r.status IS NULL OR r.status='open')"
 HAS_STORE_FLAG = "c.store_flag_kind IS NOT NULL"
 HAS_AUTO_FLAG = "c.auto_flags <> '[]'"
+# voice_calls.confirmed as SQL: a store's list and totals only hold calls the records sender has reported (and its own
+# test calls). Unqualified column names: the store queries read voice_calls alone.
+CONFIRMED = "(entry='try' OR report_records_sha256 IS NOT NULL)"
 
 
 def _query(request, name, allowed=None):
@@ -170,21 +176,20 @@ def _sign_link(settings, row, *, user_id, role, store_retention_days, now):
             "urls": {kind: vc.media_url(origin, row["call_id"], kind) for kind in payload["kinds"]}}, payload["kinds"]
 
 
-def _check_content(settings, row, store_retention_days, con, user_id, now, *, store_view=False):
+def _check_content(settings, row, store_retention_days, con, user_id, now):
     """§6.5 order after call_not_found: 503 -> 404 unavailable -> 410 expired -> 429 limit.
 
-    For a store (M17, `store_view`) two more refusals keep another store's caller out of reach (amended §6.5): the
-    two sources disagree on the dialed number -> 404 call_content_unavailable (the content kept under this call_id
-    may be another call's), and an edge call the records sender has not reported yet -> 409 call_content_pending
-    (until then the store comes from the orchestrator's number only). An operator (A12) sees every store's calls."""
+    Nothing here depends on who asks, so M14/A10's `content` (state, linkAvailable) says what M17/A12 will do: 503 is
+    linkAvailable false, 404 is state none, 410 is state expired. Which store may ask is decided before, by the call
+    lookup: a store only finds a call the records sender has reported (voice_calls.confirmed), under the store that
+    sender's number points at (§3.5), so no other check is needed for the content to be that store's caller's. The
+    Taiwan host still compares the token's store_id with its own record of the call (§8.3)."""
     if not settings.voice_media_available:
         fail("voice_media_unavailable", MEDIA_UNAVAILABLE, 503)
-    if not row["content_expected"] or (store_view and "dialed" in json.loads(row["mismatch"])):
+    if not row["content_expected"]:
         fail("call_content_unavailable", "No content was kept for this call.", 404)
     if not vc.content_kinds(row, store_retention_days, now):
         fail("call_content_expired", "The content is past its retention period and can no longer be viewed.", 410)
-    if store_view and row["entry"] != "try" and row["report_records_sha256"] is None:
-        fail("call_content_pending", "The content is still being processed. Try again in a few minutes.", 409)
     if vc.content_links_used(con, user_id, now) >= vc.CONTENT_LINKS_PER_HOUR:
         fail("voice_content_link_limit", "Too many views. Try again in an hour.", 429)
 
@@ -208,8 +213,10 @@ def attach_voice_calls(application, ctx):
         return row
 
     def own_call(con, store_row, row_id):
+        """The store's call, or 404 call_not_found: another store's, an unknown id and a call the records sender has not
+        reported yet (not `confirmed`) all look the same."""
         row = vc.get_call(con, row_id)
-        if row is None or row["store_id"] != store_row["id"]:
+        if row is None or row["store_id"] != store_row["id"] or not vc.confirmed(row):
             fail("call_not_found", vc.CALL_NOT_FOUND, 404)
         return row
 
@@ -240,7 +247,7 @@ def attach_voice_calls(application, ctx):
             outcome = _query(request, "outcome", vc.OUTCOMES)
             flagged = _query(request, "flagged", ("1",))
             cursor = _cursor(request)
-            where, args = ["store_id=?", "started_at>=?", "started_at<?"], [store_row["id"], start, end]
+            where, args = ["store_id=?", CONFIRMED, "started_at>=?", "started_at<?"], [store_row["id"], start, end]
             if outcome:
                 where.append("outcome=?")
                 args.append(outcome)
@@ -253,7 +260,7 @@ def attach_voice_calls(application, ctx):
                                "LIMIT %d" % (vc.STORE_PAGE_SIZE + 1), tuple(args)).fetchall()
             totals = con.execute("SELECT outcome, COUNT(*) AS calls, SUM(meter_units) AS units, "
                                  "SUM(CASE WHEN store_flag_kind IS NOT NULL THEN 1 ELSE 0 END) AS flagged FROM voice_calls "
-                                 "WHERE store_id=? AND started_at>=? AND started_at<? GROUP BY outcome",
+                                 "WHERE store_id=? AND " + CONFIRMED + " AND started_at>=? AND started_at<? GROUP BY outcome",
                                  (store_row["id"], start, end)).fetchall()
         page, next_cursor = _page(rows, vc.STORE_PAGE_SIZE)
         by_outcome = {key: 0 for key in STORE_OUTCOME_KEYS}
@@ -322,7 +329,7 @@ def attach_voice_calls(application, ctx):
             store_row = owner_lock(con, user, refuse_suspended=False)
             row = own_call(con, store_row, row_id)
             now = int(time.time())
-            _check_content(settings, row, store_row["retention_days"], con, user["id"], now, store_view=True)
+            _check_content(settings, row, store_row["retention_days"], con, user["id"], now)
             media, kinds = _sign_link(settings, row, user_id=user["id"], role="store",
                                       store_retention_days=store_row["retention_days"], now=now)
             store.audit(con, "voice.call_content_link", user["id"], row["id"], {"kinds": kinds, "storeId": row["store_id"]})

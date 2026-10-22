@@ -97,6 +97,9 @@ services:
       # 查看通話內容（M17、A12）：P2-3 台灣主機端點好了才在 Dokploy 設；沒設時回 503、明細頁「查看內容」停用
       PC_VOICE_MEDIA_URL: ${PC_VOICE_MEDIA_URL:-}
       PC_VOICE_MEDIA_SECRET: ${PC_VOICE_MEDIA_SECRET:-}
+      # A6 的紀錄約定版本（RC）。A6 做完 RC v4（AI 接聽的則數、AI 只回答免推播）、上線並核對則數之後才設成 4；
+      # 沒設或小於 4 時 runtime 一律回 answer_mode message_only，不會有任何一家店的 AI 回答
+      PC_VOICE_A6_RC_VERSION: ${PC_VOICE_A6_RC_VERSION:-}
     volumes:
       - portal-data:/data
     # No ports, no Traefik labels and not on dokploy-network: only the website
