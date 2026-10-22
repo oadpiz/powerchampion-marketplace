@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountVoiceCalls } from "../components/account-voice-calls";
@@ -461,6 +461,45 @@ describe("flag as wrong answer", () => {
     );
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(state.rows[0].flag).toBeNull();
+  });
+
+  it("says a flag that did not go through was not sent, not that the calls did not load", async () => {
+    const user = userEvent.setup();
+    const state = oneCall();
+    renderCall(state);
+    await user.click(await screen.findByRole("button", { name: "Flag as wrong answer" }));
+    const inner = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) =>
+      String(input).endsWith("/flag") ? Response.json({ error: "service_unavailable", detail: "down" }, { status: 502 }) : inner(input, init),
+    );
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Flag" }));
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent("The flag was not sent. Try again later.");
+    expect(screen.queryByText("Calls could not be loaded. Reload the page.")).not.toBeInTheDocument();
+    expect(state.rows[0].flag).toBeNull();
+  });
+
+  it("says a removal that did not go through in Chinese", async () => {
+    chinese();
+    const user = userEvent.setup();
+    renderCall(oneCall({ flag: { kind: "wrong_answer", note: "", flaggedAt: NOW_S - 60 } }));
+    const remove = await screen.findByRole("button", { name: "取消標記" });
+    const inner = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) =>
+      String(input).endsWith("/flag") ? Promise.reject(new TypeError("Failed to fetch")) : inner(input, init),
+    );
+    await user.click(remove);
+    expect(await screen.findByRole("alert")).toHaveTextContent("標記沒有取消，請稍後再試。");
+  });
+
+  it("asks about a wrong answer only where the AI took part, and keeps an earlier flag removable", async () => {
+    // configVersion null: no AI settings were used (hung up during the notice, not answered, a message only).
+    renderCall(oneCall({ configVersion: null, outcome: "hangup_early", meterUnits: 0, meterReason: "notice_hangup" }));
+    expect(await screen.findByText("No AI settings used")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Flag as wrong answer" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Did the AI get something wrong/)).not.toBeInTheDocument();
+    cleanup();
+    renderCall(oneCall({ configVersion: null, flag: { kind: "wrong_answer", note: "", flaggedAt: NOW_S - 60 } }));
+    expect(await screen.findByRole("button", { name: "Remove flag" })).toBeEnabled();
   });
 
   it("closes the dialog with Escape or Cancel and gives focus back", async () => {

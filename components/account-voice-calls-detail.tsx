@@ -90,8 +90,11 @@ function Modal({ labelledBy, busy, onClose, children }: { labelledBy: string; bu
   );
 }
 
-/** §12.1 and phase 1 §9 copy for the errors this page can get; the temporary-password one links to Security. */
-function callErrorText(error: unknown, locale: "en" | "zh"): ReactNode {
+/**
+ * §12.1 and phase 1 §9 copy for the errors this page can get; the temporary-password one links to Security. `action`
+ * names a write that failed with a network error or 5xx, so it does not read like the list's load failure.
+ */
+function callErrorText(error: unknown, locale: "en" | "zh", action?: "flag" | "unflag"): ReactNode {
   const zh = locale === "zh";
   const code = error instanceof PortalError ? error.code : "";
   if (code === "call_not_found")
@@ -106,6 +109,15 @@ function callErrorText(error: unknown, locale: "en" | "zh"): ReactNode {
       </>
     );
   if (code === "voice_store_not_found" || code === "store_suspended") return voiceErrorText(error, locale);
+  // Not in the contract's §11.2 (fix round): a flag that did not go through is not a page that did not load.
+  if (action && (!(error instanceof PortalError) || error.status >= 500))
+    return action === "flag"
+      ? zh
+        ? "標記沒有送出，請稍後再試。"
+        : "The flag was not sent. Try again later."
+      : zh
+        ? "標記沒有取消，請稍後再試。"
+        : "The flag was not removed. Try again later.";
   if (!(error instanceof PortalError) || error.status >= 500 || error.status === 404)
     return zh ? "通話紀錄載入失敗，請重新整理。" : "Calls could not be loaded. Reload the page.";
   return voiceErrorText(error, locale);
@@ -289,7 +301,10 @@ function CallView({
         )}
       </section>
       <CallContentPanel callRowId={call.id} content={content} locked={locked} onChanged={onChanged} />
-      <FlagPanel callRowId={call.id} flag={flag} suspended={suspended} locked={locked} onFlag={onFlag} onChanged={onChanged} />
+      {/* "Did the AI get it wrong?" only where the AI took part (a settings version was used); a flag set before stays removable. */}
+      {(call.configVersion !== null || flag !== null) && (
+        <FlagPanel callRowId={call.id} flag={flag} suspended={suspended} locked={locked} onFlag={onFlag} onChanged={onChanged} />
+      )}
     </>
   );
 }
@@ -323,7 +338,7 @@ function FlagPanel({
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<"flag" | "unflag" | null>(null);
-  const [error, setError] = useState<unknown>(null);
+  const [error, setError] = useState<{ cause: unknown; action: "flag" | "unflag" } | null>(null);
   const inFlight = useRef(false);
   const mounted = useRef(true);
   /** Element id to focus after the re-render a write causes (its button is replaced; phase 1 focus fix). */
@@ -358,8 +373,8 @@ function FlagPanel({
             : "Do not put phone numbers in the note."
           : null;
 
-  function afterError(cause: unknown) {
-    setError(cause);
+  function afterError(cause: unknown, action: "flag" | "unflag") {
+    setError({ cause, action });
     // The store or the account changed under us: re-read M1 so the shell says so.
     if (cause instanceof PortalError && ["store_suspended", "password_change_required", "voice_store_not_found"].includes(cause.code)) onChanged();
   }
@@ -380,7 +395,7 @@ function FlagPanel({
       setOpen(false);
       onFlag(result.flag);
     } catch (cause) {
-      if (mounted.current) afterError(cause);
+      if (mounted.current) afterError(cause, "flag");
     } finally {
       inFlight.current = false;
       if (mounted.current) setBusy(null);
@@ -399,7 +414,7 @@ function FlagPanel({
       focusId.current = "voice-call-flag-open";
       onFlag(null);
     } catch (cause) {
-      if (mounted.current) afterError(cause);
+      if (mounted.current) afterError(cause, "unflag");
     } finally {
       inFlight.current = false;
       if (mounted.current) setBusy(null);
@@ -474,7 +489,7 @@ function FlagPanel({
       )}
       {!open && error !== null && (
         <p className="portal-error" role="alert">
-          {callErrorText(error, locale)}
+          {callErrorText(error.cause, locale, error.action)}
         </p>
       )}
       {open && (
@@ -502,7 +517,7 @@ function FlagPanel({
             )}
             {error !== null && (
               <p className="portal-error" role="alert">
-                {callErrorText(error, locale)}
+                {callErrorText(error.cause, locale, error.action)}
               </p>
             )}
             <div className="portal-actions">
