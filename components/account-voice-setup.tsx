@@ -759,8 +759,8 @@ export const AccountVoiceSetup: (props: VoiceSubProps) => ReactElement = ({ summ
             {/* Amendment A2: store text in the prompt has its brackets replaced, so the preview can differ. */}
             <p className="portal-hint">
               {zh
-                ? "這裡是已儲存的草稿編譯後的樣子，還沒儲存的修改不會出現。為了避免店家文字被當成規則，【】和〖〗會換成「」；店名和不讓 AI 回答的問題會放在引號裡，裡面的【】〖〗「」會換成『』。"
-                : "This is the saved draft as the AI gets it; unsaved edits are not included. So that store text cannot pass for rules, 【】 and 〖〗 are replaced with 「」; the store name and the questions the AI must not answer are quoted, and any 【】〖〗「」 in them become 『』."}
+                ? "這裡是已儲存的草稿編譯後的樣子，還沒儲存的修改不會出現。為了避免店家文字被當成規則，【】和〖〗（包括直書、半形的同類括號如︻︼、｢｣）會換成「」；店名和不讓 AI 回答的問題會放在引號裡，裡面的【】〖〗「」會換成『』。"
+                : "This is the saved draft as the AI gets it; unsaved edits are not included. So that store text cannot pass for rules, 【】 and 〖〗 are replaced with 「」 (so are their vertical and half-width forms, such as ︻︼ and ｢｣); the store name and the questions the AI must not answer are quoted, and any 【】〖〗「」 in them become 『』."}
             </p>
             {preview.status === "loading" && (
               <p className="portal-empty" role="status">
