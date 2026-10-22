@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""End-to-end smoke for the phone agent (voice phase 1), run against scripts/voice/run-local.sh.
+"""End-to-end smoke for the phone agent (voice phases 1 and 2), run against scripts/voice/run-local.sh.
 
 Every portal call goes through the frontend BFF (http://127.0.0.1:3911/api/portal/...) with curl and a cookie jar
 per actor. Only two things bypass the BFF and are labelled as such: `python -m server.manage create-admin` (the
-documented bootstrap) and, in `off` mode, one direct call to the backend to compare its plain 404 with the voice 404.
+documented bootstrap) and, in `off` mode, one direct call to the backend to compare its plain 404 with the voice 404. Phase 2 adds one more labelled bypass
+(turning AI answer on for store A in SQLite, which has no route yet); the fake orchestrator calls Next's
+/api/voice-runtime/* route, which is a server route, not the browser BFF.
 
     scripts/voice/run-local.sh on --fresh && python3 scripts/voice/smoke.py on
         admin, store A, setup, template, CSV, preview, publish, ticket, store B isolation, 20/day try quota
-        (sequential on A, 25 concurrent on B), number table, brackets, 60/day publish cap
+        (sequential on A, 25 concurrent on B), number table, brackets, 60/day publish cap; then phase 2
+        (smoke_p2.py): a fake orchestrator pulls settings and reports calls with the runtime token, store A's call
+        records and Q5 counts, store B isolation, a wrong-answer flag, the operator's review, number_in_use, bad tokens
+    scripts/voice/stop-local.sh && scripts/voice/run-local.sh on --no-runtime-token && python3 scripts/voice/smoke.py notoken
+        same database, PC_VOICE_RUNTIME_TOKEN unset: the runtime answers 503, the store pages still work
     scripts/voice/stop-local.sh && scripts/voice/run-local.sh off && python3 scripts/voice/smoke.py off
-        same database: every voice route is 404 not_found and the tab signal is gone
+        same database: every voice route (runtime and call records too) is 404 not_found and the tab signal is gone
 
 Everything it writes (cookie jars, state, the report, db/smoke-secrets.json) goes to the run directory, $VOICE_SMOKE_DIR
 or $TMPDIR/pc-voice-smoke, outside the repository; run-local.sh must use the same one. Passwords are generated per
@@ -30,6 +36,8 @@ import tempfile
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
+
+import smoke_p2  # scripts/voice/smoke_p2.py (the script's own directory is on sys.path)
 
 W = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 S = os.path.realpath(os.environ.get("VOICE_SMOKE_DIR")
@@ -262,7 +270,7 @@ def first_login(label, jar, email, temp, new_password):
 
 def run_on():
     global R
-    R = Report("Voice phase 1 local smoke (PC_VOICE_ENABLED=1)")
+    R = Report("Voice local smoke, phases 1 and 2 (PC_VOICE_ENABLED=1)")
     os.makedirs(JARS, exist_ok=True)
     values = secret_store()
     for key in ("admin", "a", "b"):
@@ -559,8 +567,25 @@ def run_on():
     R.check("an apply that changes nothing is still answered (changed false)",
             got == 200 and got2 == 200 and payload2.get("changed") is False, "setup %d, publish %d %s" % (got, got2, short(payload2, 80)))
 
+    smoke_p2.run_on(sys.modules[__name__], state, admin_jar, a_jar, b_jar)
+
     save_state(state)
     R.write(REPORT, "w")
+    return not R.failed
+
+
+# ---------------------------------------------------------------- notoken
+
+
+def run_notoken():
+    global R
+    R = Report("Voice local smoke (PC_VOICE_ENABLED=1, PC_VOICE_RUNTIME_TOKEN unset, same database)")
+    with open(STATE, encoding="utf-8") as handle:
+        state = json.load(handle)
+    smoke_p2.run_notoken(sys.modules[__name__], state)
+    with open(REPORT, encoding="utf-8") as handle:
+        existing = handle.read()
+    R.write(REPORT, "a" if existing else "w")
     return not R.failed
 
 
@@ -569,7 +594,7 @@ def run_on():
 
 def run_off():
     global R
-    R = Report("Voice phase 1 local smoke (PC_VOICE_ENABLED=0, same database)")
+    R = Report("Voice local smoke (PC_VOICE_ENABLED=0, same database)")
     with open(STATE, encoding="utf-8") as handle:
         state = json.load(handle)
     a_jar, admin_jar = state["a_jar"], state["admin_jar"]
@@ -620,6 +645,7 @@ def run_off():
     R.note("- The account page shows the 電話客服 tab only when GET /me/voice is 200 (components/account-portal.tsx NAV filter, "
            "`voice.status === \"ready\"`); it is 404 not_found above, so the tab is not shown "
            "(tests/account-voice-shell.test.tsx checks the DOM for that case).")
+    smoke_p2.run_off(sys.modules[__name__], state)
     with open(REPORT, encoding="utf-8") as handle:
         existing = handle.read()
     R.write(REPORT, "a" if existing else "w")
@@ -632,7 +658,9 @@ if __name__ == "__main__":
     os.makedirs(S + "/smoke", exist_ok=True)
     os.makedirs(S + "/db", exist_ok=True)
     mode = sys.argv[1] if len(sys.argv) > 1 else "on"
-    ok = run_on() if mode == "on" else run_off()
+    if mode not in ("on", "notoken", "off"):
+        sys.exit("usage: smoke.py on|notoken|off")
+    ok = {"on": run_on, "notoken": run_notoken, "off": run_off}[mode]()
     print("%s: %d passed, %d failed" % (mode, R.passed, len(R.failed)))
     for label in R.failed:
         print("FAIL:", R.redact(label))

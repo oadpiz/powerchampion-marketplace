@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Start the portal locally for the phone agent smoke: FastAPI backend + Vinext frontend (BFF), loopback only.
 #
-#   scripts/voice/run-local.sh [on|off] [--fresh]
-#     on       PC_VOICE_ENABLED=1 (default)
-#     off      PC_VOICE_ENABLED=0
-#     --fresh  delete the smoke database first
+#   scripts/voice/run-local.sh [on|off] [--fresh] [--no-runtime-token]
+#     on                  PC_VOICE_ENABLED=1 (default)
+#     off                 PC_VOICE_ENABLED=0
+#     --fresh             delete the smoke database first
+#     --no-runtime-token  leave PC_VOICE_RUNTIME_TOKEN empty (the runtime must answer 503; smoke.py notoken)
 #
 # Backend  http://127.0.0.1:3910  (uvicorn; PC_PORTAL_DB=$S/db/portal.sqlite3)
 # Frontend http://127.0.0.1:3911  (vinext dev; the BFF reaches the backend through .dev.vars PC_PORTAL_ORIGIN)
@@ -19,12 +20,14 @@ PY="${VOICE_PYTHON:-python3}"
 
 MODE=on
 FRESH=0
+RUNTIME_TOKEN=test-only-runtime-token-0000000000
 for arg in "$@"; do
   case "$arg" in
     on) MODE=on ;;
     off) MODE=off ;;
     --fresh) FRESH=1 ;;
-    *) echo "usage: scripts/voice/run-local.sh [on|off] [--fresh]" >&2; exit 2 ;;
+    --no-runtime-token) RUNTIME_TOKEN= ;;
+    *) echo "usage: scripts/voice/run-local.sh [on|off] [--fresh] [--no-runtime-token]" >&2; exit 2 ;;
   esac
 done
 
@@ -77,7 +80,7 @@ export PC_VOICE_TRY_SECRET=test-only-not-a-secret-0000000000
 export PC_VOICE_TRY_URL=http://127.0.0.1:8097/
 # Phase 2: the runtime routes (/api/voice-runtime/*) and content links, with test-only values. Nothing listens on
 # 8098; a content link is only signed, never fetched, by the smoke.
-export PC_VOICE_RUNTIME_TOKEN=test-only-runtime-token-0000000000
+export PC_VOICE_RUNTIME_TOKEN="$RUNTIME_TOKEN"
 export PC_VOICE_MEDIA_URL=http://127.0.0.1:8098
 export PC_VOICE_MEDIA_SECRET=test-only-not-a-secret-0000000000
 if [ "$MODE" = on ]; then export PC_VOICE_ENABLED=1; else export PC_VOICE_ENABLED=0; fi
@@ -108,7 +111,8 @@ wait_for() {  # wait_for <name> <url> <seconds>
 wait_for backend "http://127.0.0.1:$BACKEND_PORT/api/portal/health" 60
 wait_for frontend "http://127.0.0.1:$FRONTEND_PORT/api/portal/session" 180
 
-echo "voice: PC_VOICE_ENABLED=$PC_VOICE_ENABLED; run directory $S"
+if [ -n "$RUNTIME_TOKEN" ]; then token_state="set (test-only)"; else token_state=unset; fi
+echo "voice: PC_VOICE_ENABLED=$PC_VOICE_ENABLED; runtime token $token_state; run directory $S"
 echo "pids: backend $(cat "$S/pids/local-backend.pid"), frontend $(cat "$S/pids/local-frontend.pid")"
 lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN
 lsof -nP -iTCP:"$FRONTEND_PORT" -sTCP:LISTEN
