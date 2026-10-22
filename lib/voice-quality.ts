@@ -119,6 +119,8 @@ export type QualityList = {
 
 /** A9 filters as the BFF forwards them (app/api/portal/[...path]/route.ts checks each one). */
 export type QualityListQuery = {
+  /** The 8 hex characters a store reads out as its call ID (CallItem.ref); with it, `flag` and `reviewed` default to all. */
+  ref?: string;
   store?: string;
   flag?: QualityFlagFilter;
   reviewed?: QualityReviewedFilter;

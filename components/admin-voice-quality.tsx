@@ -45,6 +45,8 @@ import { useLocale } from "./locale-provider";
  */
 
 type Filters = {
+  /** A9 `ref`: the call ID a store quotes (CallItem.ref, the first 8 hex of the id); "" for none. */
+  ref: string;
   store: string;
   flag: QualityFlagFilter;
   reviewed: QualityReviewedFilter;
@@ -52,7 +54,9 @@ type Filters = {
   outcome: CallOutcome | "";
   entry: CallEntry | "";
 };
-const DEFAULT_FILTERS: Filters = { store: "", flag: "any", reviewed: "0", month: "", outcome: "", entry: "" };
+const DEFAULT_FILTERS: Filters = { ref: "", store: "", flag: "any", reviewed: "0", month: "", outcome: "", entry: "" };
+/** A9 `ref` (the BFF forwards only this shape). */
+const CALL_REF = /^[a-f0-9]{8}$/;
 
 const FLAG_FILTER_LABEL: Record<QualityFlagFilter, Copy> = {
   any: { zh: "有標記（店家或自動）", en: "Flagged (store or auto)" },
@@ -69,6 +73,10 @@ const REVIEWED_FILTER_LABEL: Record<QualityReviewedFilter, Copy> = {
 
 const T = {
   title: { zh: "品質", en: "Quality" },
+  // Not in the contract's §11.3 (added with the A9 `ref` filter): the store's page says "通話編號 {ref}" (§11.2).
+  ref: { zh: "通話編號", en: "Call ID" },
+  refHint: { zh: "店家提供的 8 碼，例如 77a7b240。查詢時會看全部標記與審查狀態。", en: "The 8 characters a store gives, e.g. 77a7b240. Searches every flag and review state." },
+  refInvalid: { zh: "通話編號是 8 個字元（0–9、a–f）。", en: "A call ID is 8 characters (0–9, a–f)." },
   counts: { zh: "店家標記待審 {n}・自動標記待審 {m}", en: "Store flags to review: {n} · Auto flags to review: {m}" },
   store: { zh: "店家", en: "Store" },
   allStores: { zh: "全部店家", en: "All stores" },
@@ -118,6 +126,7 @@ function recentMonths(today = taipeiToday()): string[] {
 /** A9 query string; only the filters the BFF forwards (app/api/portal/[...path]/route.ts QUALITY_CALL_FILTERS). */
 function queryOf(filters: Filters, before?: string): string {
   const params = new URLSearchParams();
+  if (filters.ref) params.set("ref", filters.ref);
   if (filters.store) params.set("store", filters.store);
   params.set("flag", filters.flag);
   params.set("reviewed", filters.reviewed);
@@ -142,14 +151,15 @@ const storeName = (item: { store: QualityItem["store"] }, zh: boolean) => item.s
 /** The export: codes rather than labels (stable for counting in a spreadsheet), no free-text notes (§9 purges them). */
 function exportCsv(calls: QualityItem[], zh: boolean): string {
   const header = zh
-    ? ["時間（台北）", "紀錄 id", "通話編號", "店家", "店家 id", "號碼", "用途", "入口", "長度（秒）", "結果", "降級原因", "轉真人原因", "緊急",
+    ? ["時間（台北）", "紀錄 id", "通話編號", "線路通話 ID", "店家", "店家 id", "號碼", "用途", "入口", "長度（秒）", "結果", "降級原因", "轉真人原因", "緊急",
        "自動標記", "店家標記", "店家標記時間（台北）", "分數", "審查標籤", "審查狀態", "審查人", "審查時間（台北）", "預估計費則數", "計量理由"]
-    : ["Time (Taipei)", "Record id", "Call ID", "Store", "Store id", "Number", "Purpose", "Entry", "Length (s)", "Result", "Fallback reason",
+    : ["Time (Taipei)", "Record id", "Call ID", "Line call ID", "Store", "Store id", "Number", "Purpose", "Entry", "Length (s)", "Result", "Fallback reason",
        "Handoff reason", "Urgent", "Auto flags", "Store flag", "Store flagged at (Taipei)", "Score", "Review labels", "Review status",
        "Reviewer", "Reviewed at (Taipei)", "Estimated billable", "Meter reason"];
   const rows = calls.map((item) => [
     taipeiStamp(item.startedAt),
     item.id,
+    item.id.slice(0, 8),
     item.callId,
     item.store?.name ?? "",
     item.store?.id ?? "",
@@ -186,6 +196,8 @@ export function AdminVoiceQuality({ stores }: { stores: StoreItem[] }) {
   const locale = useLocale().locale;
   const zh = locale === "zh";
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  /** What is typed in the call ID box; it becomes the `ref` filter once it is 8 hex characters (or empty). */
+  const [refDraft, setRefDraft] = useState("");
   const [revision, setRevision] = useState(0);
   const query = queryOf(filters);
   const key = `${query}#${revision}`;
@@ -224,6 +236,14 @@ export function AdminVoiceQuality({ stores }: { stores: StoreItem[] }) {
     setMore({ busy: false, error: null });
     setFilters((current) => ({ ...current, ...change }));
   };
+  /** A store's call ID: looked up whatever its flags and review (A9 does the same when they are left out). */
+  function typeRef(value: string) {
+    setRefDraft(value);
+    const ref = value.trim().toLowerCase();
+    if (ref === filters.ref || (ref !== "" && !CALL_REF.test(ref))) return;
+    update(ref ? { ref, flag: "all", reviewed: "all" } : { ref: "", flag: DEFAULT_FILTERS.flag, reviewed: DEFAULT_FILTERS.reviewed });
+  }
+  const refProblem = refDraft.trim() !== "" && !CALL_REF.test(refDraft.trim().toLowerCase());
 
   async function loadMore() {
     if (moreBusy.current || !list.next) return;
@@ -288,6 +308,19 @@ export function AdminVoiceQuality({ stores }: { stores: StoreItem[] }) {
           </p>
         )}
         <div className="portal-actions">
+          <label className="portal-field">
+            {say(T.ref, zh)}
+            <input
+              type="search"
+              value={refDraft}
+              maxLength={16}
+              autoComplete="off"
+              spellCheck={false}
+              aria-invalid={refProblem}
+              aria-describedby="voice-quality-ref-hint"
+              onChange={(event) => typeRef(event.target.value)}
+            />
+          </label>
           <label className="portal-field">
             {say(T.store, zh)}
             <select value={filters.store} onChange={(event) => update({ store: event.target.value })}>
@@ -365,6 +398,9 @@ export function AdminVoiceQuality({ stores }: { stores: StoreItem[] }) {
             {say(T.export, zh)}
           </button>
         </div>
+        <p id="voice-quality-ref-hint" className={refProblem ? "portal-error" : "portal-hint"} role={refProblem ? "alert" : undefined}>
+          {say(refProblem ? T.refInvalid : T.refHint, zh)}
+        </p>
         <p id="voice-quality-export-hint" className="portal-hint">
           {fill(say(T.exportHint, zh), { n: count(loading ? 0 : list.calls.length) })}
         </p>
@@ -394,6 +430,7 @@ export function AdminVoiceQuality({ stores }: { stores: StoreItem[] }) {
                 <thead>
                   <tr>
                     <th scope="col">{say(T.time, zh)}</th>
+                    <th scope="col">{say(T.ref, zh)}</th>
                     <th scope="col">{say(T.store, zh)}</th>
                     <th scope="col">{say(T.entry, zh)}</th>
                     <th scope="col">{say(T.result, zh)}</th>
@@ -410,6 +447,9 @@ export function AdminVoiceQuality({ stores }: { stores: StoreItem[] }) {
                     return (
                       <tr key={item.id} aria-current={selected?.id === item.id ? "true" : undefined}>
                         <th scope="row">{time}</th>
+                        <td data-label={say(T.ref, zh)}>
+                          <code>{item.id.slice(0, 8)}</code>
+                        </td>
                         <td data-label={say(T.store, zh)}>{storeName(item, zh)}</td>
                         <td data-label={say(T.entry, zh)}>{ENTRY_LABEL[item.entry] ? say(ENTRY_LABEL[item.entry], zh) : item.entry}</td>
                         <td data-label={say(T.result, zh)}>

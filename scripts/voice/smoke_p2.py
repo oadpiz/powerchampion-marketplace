@@ -412,6 +412,12 @@ def run_on(m, state, admin_jar, a_jar, b_jar):
     got, payload = m.call("GET", "/me/voice/calls/" + rows["c3"], a_jar)
     R.check("store A now sees its flag as reviewed (not the score or note)", got == 200 and (payload.get("flag") or {}).get("reviewed") is True
             and "價格題答錯" not in json.dumps(payload, ensure_ascii=False), "flag %s" % (payload.get("flag") if isinstance(payload, dict) else None))
+    got, a9 = m.call("GET", "/admin/voice/quality/calls?ref=" + rows["c1"][:8], admin_jar)
+    found = [item["id"] for item in a9.get("calls", [])] if isinstance(a9, dict) else []
+    R.check("A9 ref=<the call ID store A reads out for c1> finds c1 although it has no flag and no review",
+            got == 200 and found == [rows["c1"]], "got %d %s" % (got, found))
+    m.expect("A9 ref that is not 8 hex characters", "GET", "/admin/voice/quality/calls?ref=" + rows["c1"][:7], admin_jar, None, 400,
+             "invalid_input")
     got, a12 = m.call("POST", "/admin/voice/quality/calls/%s/content-link" % rows["c4"], admin_jar, {})
     media = a12.get("media", {}) if isinstance(a12, dict) else {}
     R.redactions.append(media.get("token", ""))

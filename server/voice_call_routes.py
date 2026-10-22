@@ -16,6 +16,7 @@ values only: never a note, a summary, a number, a token or a nonce (§1.6). A wr
 audited.
 """
 import json
+import re
 import time
 import uuid
 
@@ -34,6 +35,8 @@ MISSING = object()
 STORE_OUTCOME_KEYS = vc.OUTCOMES
 QUALITY_FLAG_FILTERS = ("any", "store", "auto", "none", "all")
 QUALITY_REVIEWED_FILTERS = ("0", "1", "all")
+# A9 `ref` (amended §7.1): the 8 hex characters a store reads out as its call ID (CallItem.ref, the id's first 8).
+CALL_REF = re.compile(r"[a-f0-9]{8}")
 LISTENING_NOT_FOUND = "This entry no longer exists. Reload the page."
 MEDIA_UNAVAILABLE = "Viewing call content is not available yet."
 NUMBER_IN_NOTE = "Do not put phone numbers in the note."
@@ -360,13 +363,20 @@ def attach_voice_calls(application, ctx):
         store_id = _query(request, "store")
         if store_id is not None and not vc.HEX32.fullmatch(store_id):
             fail("invalid_input", "Enter a valid store.")
-        flag = _query(request, "flag", QUALITY_FLAG_FILTERS) or "any"
-        reviewed = _query(request, "reviewed", QUALITY_REVIEWED_FILTERS) or "0"
+        ref = _query(request, "ref")
+        if ref is not None and not CALL_REF.fullmatch(ref):
+            fail("invalid_input", "Enter a call ID: 8 characters, 0-9 and a-f.")
+        # Looking up the call a store quotes: the default "flagged, to review" would hide most calls.
+        flag = _query(request, "flag", QUALITY_FLAG_FILTERS) or ("all" if ref else "any")
+        reviewed = _query(request, "reviewed", QUALITY_REVIEWED_FILTERS) or ("all" if ref else "0")
         bounds, _ = _month(request, default=None)
         outcome = _query(request, "outcome", vc.OUTCOMES)
         entry = _query(request, "entry", vc.ENTRIES)
         cursor = _cursor(request)
         where, args = [], []
+        if ref:
+            where.append("c.id LIKE ?")
+            args.append(ref + "%")
         if store_id:
             where.append("c.store_id=?")
             args.append(store_id)

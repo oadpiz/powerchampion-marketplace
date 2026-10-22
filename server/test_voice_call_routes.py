@@ -492,6 +492,19 @@ class QualityTests(CallRoutesCase):
             with self.subTest(params=params):
                 self.error(self.get(self.operator, "/admin/voice/quality/calls", **params), 400, "invalid_input")
 
+    def test_ref_finds_the_call_a_store_quotes_whatever_the_flags(self):
+        # Fix round: the store reads out "Call ID {ref}" (M14); the default "flagged, to review" list hides most calls.
+        ref = self.ok(self.get(self.owner, "/me/voice/calls/" + self.clean))["call"]["ref"]
+        self.assertEqual(ref, self.clean[:8])
+        self.assertNotIn(self.clean, self.ids())
+        self.assertEqual(self.ids(ref=ref), [self.clean])
+        self.assertEqual(self.ids(ref=ref, flag="store"), [])  # filters that are sent still apply
+        self.ok(self.post(self.operator, "/admin/voice/quality/calls/%s/review" % self.clean, {"score": 4, "status": "done"}))
+        self.assertEqual(self.ids(ref=ref), [self.clean])
+        for bad in ("ABCDEF12", "abc", "abcdef123", "zzzzzzzz", "abcd%25ef", ""):
+            with self.subTest(ref=bad):
+                self.error(self.get(self.operator, "/admin/voice/quality/calls", ref=bad), 400, "invalid_input")
+
     def test_seconds_are_rounded_down_on_both_pages(self):
         row_id = self.new_call(records(message={"outcome": "message", "speech_ms": 2999, "recording_ms": 3000, "recording_saved": True}))
         call = self.ok(self.get(self.owner, "/me/voice/calls/" + row_id))["call"]

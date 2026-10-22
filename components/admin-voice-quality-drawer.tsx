@@ -49,7 +49,11 @@ const D = {
   close: { zh: "關閉", en: "Close" },
   loading: { zh: "正在載入通話…", en: "Loading the call…" },
   identity: { zh: "識別", en: "Identity" },
-  identityLine: { zh: "通話編號 {callId}・號碼 {dialed}{purpose}・入口 {entry}", en: "Call {callId} · Number {dialed}{purpose} · Entry {entry}" },
+  // The store reads out "通話編號 {ref}" (§11.2), so the drawer leads with the same label; the line's own id comes second.
+  identityLine: {
+    zh: "通話編號 {ref}・線路通話 ID {callId}・號碼 {dialed}{purpose}・入口 {entry}",
+    en: "Call ID {ref} · Line call ID {callId} · Number {dialed}{purpose} · Entry {entry}",
+  },
   times: { zh: "時間", en: "Time" },
   timesLine: { zh: "開始 {start}・接起 {answered}・結束 {ended}・長度 {length}", en: "Started {start} · Answered {answered} · Ended {ended} · Length {length}" },
   length: { zh: "{m} 分 {s} 秒", en: "{m}m {s}s" },
@@ -206,6 +210,7 @@ function CallFacts({ detail, zh }: { detail: QualityDetail; zh: boolean }) {
       <dt>{say(D.identity, zh)}</dt>
       <dd>
         {t(D.identityLine, {
+          ref: call.id.slice(0, 8),
           callId: call.callId,
           dialed: dash(call.dialed),
           purpose: call.numberPurpose ? (zh ? `（${purposeLabel(call.numberPurpose, zh)}）` : ` (${purposeLabel(call.numberPurpose, zh)})`) : "",
