@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { codePoints, textProblem, unsafeMessage } from "../lib/admin-text";
 import { portalRequest } from "../lib/portal-client";
 import {
-  NOTE_PHONE_PATTERN,
+  noteHasPhoneNumber,
   REVIEW_LABELS,
   REVIEW_STATUSES,
   type CallReview,
@@ -342,7 +342,7 @@ function ReviewForm({
     if (labels.length > maxLabels) return t(D.tooManyLabels, { n: maxLabels });
     if (textProblem(note, Number.MAX_SAFE_INTEGER) === "unsafe") return unsafeMessage({ en: "note", zh: "備註" }, zh);
     if (codePoints(note.trim()) > maxNote) return t(D.noteTooLong, { n: maxNote });
-    if (NOTE_PHONE_PATTERN.test(note)) return say(D.noteNumber, zh);
+    if (noteHasPhoneNumber(note)) return say(D.noteNumber, zh);
     return null;
   }
 

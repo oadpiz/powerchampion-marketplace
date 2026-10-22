@@ -6,7 +6,7 @@ import { PortalError, portalRequest } from "../lib/portal-client";
 import {
   LISTENING_FIELD_LIMITS as L,
   LISTENING_KINDS,
-  NOTE_PHONE_PATTERN,
+  noteHasPhoneNumber,
   toCsv,
   type ListeningInput,
   type ListeningKind,
@@ -369,7 +369,7 @@ function ListeningDialog({
     if (!wholeIn(draft.raterCount, L.ratersMax)) return t(T.needRaters, { n: L.ratersMax });
     if (textProblem(draft.summary, Number.MAX_SAFE_INTEGER) === "unsafe") return unsafeMessage({ en: "summary", zh: "摘要" }, zh);
     if (codePoints(draft.summary.trim()) > L.summaryChars) return t(T.summaryLong, { n: L.summaryChars });
-    if (NOTE_PHONE_PATTERN.test(draft.summary)) return say(T.summaryNumber, zh);
+    if (noteHasPhoneNumber(draft.summary)) return say(T.summaryNumber, zh);
     const report = lineProblem(draft.reportRef, L.reportRefChars, false);
     if (report === "unsafe") return unsafeMessage({ en: "report location", zh: "報告位置" }, zh);
     if (report) return t(T.reportLong, { n: L.reportRefChars });

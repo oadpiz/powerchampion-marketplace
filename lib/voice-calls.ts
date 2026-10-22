@@ -200,13 +200,35 @@ export const CALL_CURSOR = /^\d{10}-[a-f0-9]{32}$/;
 export const FLAG_NOTE_CHARS_DEFAULT = 100;
 
 /**
- * §6.3 phone-number check, the same pattern as the backend's voice_calls.PHONE_LIKE: 8 or more digits (ASCII or
- * full-width) that may be split by spaces or "-". The whitespace class is Python's str.isspace() set written out,
- * because JavaScript's \s differs (it has U+FEFF, Python has U+001C-U+001F and U+0085).
+ * §6.3 phone-number check (amended in the phase 2 fix round), the backend's voice_calls.has_phone_number: the note is
+ * first put in a comparable form (phoneText: NFKC, so full-width digits and brackets become ASCII; invisible
+ * characters dropped; Chinese numerals read as digits), then 8 or more digits that only separators split (whitespace,
+ * - . / ( ) and a few dots and dashes) are a phone number. Digits are counted, not characters, so "10/22 14:30" is not
+ * one. The whitespace class is Python's str.isspace() set written out, because JavaScript's \s differs (it has U+FEFF,
+ * Python has U+001C-U+001F and U+0085). tests/support/phone-like-vectors.json is run through both sides.
  */
 const PY_SPACE = "\\t\\n\\v\\f\\r\\u001c-\\u001f \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
-export const PHONE_LIKE = new RegExp(`[0-9０-９][0-9０-９${PY_SPACE}-]{6,}[0-9０-９]`);
-export const hasPhoneNumber = (text: string) => PHONE_LIKE.test(text);
+const PHONE_SEPARATORS = "\\-./()\\u30fb\\u2027\\u00b7\\u2010\\u2011\\u2013\\u2014";
+export const PHONE_LIKE = new RegExp(`[0-9](?:[${PY_SPACE}${PHONE_SEPARATORS}]*[0-9]){7,}`);
+const PHONE_INVISIBLE = /[\u200b-\u200f\u2060\u061c\ufeff\u00ad]/g;
+/** Chinese numerals read as digits, grouped by digit (the backend's PHONE_NUMERALS; never two zipped strings). */
+export const PHONE_NUMERALS: Record<string, string> = {
+  "0": "零〇○洞",
+  "1": "一壹么幺",
+  "2": "二貳兩",
+  "3": "三參叁",
+  "4": "四肆",
+  "5": "五伍",
+  "6": "六陸",
+  "7": "七柒",
+  "8": "八捌",
+  "9": "九玖",
+};
+const NUMERAL_DIGIT = new Map(Object.entries(PHONE_NUMERALS).flatMap(([digit, chars]) => [...chars].map((char) => [char, digit] as const)));
+/** The comparable form of a note (only for matching; the note is sent as typed). */
+export const phoneText = (text: string) =>
+  [...text.normalize("NFKC").replace(PHONE_INVISIBLE, "")].map((char) => NUMERAL_DIGIT.get(char) ?? char).join("");
+export const hasPhoneNumber = (text: string) => PHONE_LIKE.test(phoneText(text));
 
 /** The Taiwan host's error codes a page can get back (§8.3). */
 export const MEDIA_ERRORS = [

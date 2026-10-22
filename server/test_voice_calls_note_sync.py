@@ -31,6 +31,16 @@ class FlagNoteNumberSyncTests(unittest.TestCase):
             with self.subTest(not_number=text):
                 self.assertFalse(vc.has_phone_number(text))
 
+    def test_numerals_are_the_shared_table(self):
+        # lib/voice-calls.ts PHONE_NUMERALS is compared with the same table by tests/voice-p2-sync.test.ts.
+        vectors = json.loads(VECTORS.read_text(encoding="utf-8"))
+        self.assertEqual(vectors["numerals"], vc.PHONE_NUMERALS)
+        for digit, chars in vectors["numerals"].items():
+            for char in chars:
+                with self.subTest(char=char):
+                    self.assertEqual(vc.phone_text(char * 8), digit * 8)
+                    self.assertTrue(vc.has_phone_number(char * 8))
+
 
 if __name__ == "__main__":
     unittest.main()
