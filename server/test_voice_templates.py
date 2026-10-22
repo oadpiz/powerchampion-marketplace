@@ -6,8 +6,8 @@ Two layers:
 - TemplateFileTests always run. They check the JSON, the contract's keys and types, and the limits in
   both states the template can be in: as shipped (store-specific facts are "（請填入…）" markers) and
   with example_values applied (the fictional P1 demo shop, for internal try calls only).
-- CompileTests need T2's compiler (server/voice_compile.py) and skip until it is merged; they are the
-  T2 + T3 joint acceptance from phase1-tasks.md T3.
+- CompileTests need T2's compiler (server/voice_compile.py) and skip only while that file is missing; they
+  are the T2 + T3 joint acceptance from phase1-tasks.md T3. After T2 is merged they must run with 0 skips.
 
 Run: python3 -m unittest server.test_voice_templates -v
 """
@@ -261,6 +261,20 @@ class TemplateFileTests(unittest.TestCase):
             with self.subTest(template=template_id):
                 self.assertIn(False, [faq["ai_allowed"] for faq in template["faqs"]])
 
+    def test_answers_follow_the_behavior_rules(self):
+        # T2 behavior_v1.md rule 6 (no "好的" style opener) and rule 9 (one thing at a time when booking,
+        # rescheduling, cancelling or taking leave): the AI copies FAQ answers, so they must not contradict them.
+        for name, template in self.states():
+            for i, faq in enumerate(template["faqs"]):
+                answer = faq["answer"]
+                asked = re.findall(r"[^。？?]*[？?]", answer)
+                with self.subTest(state=name, faq=i):
+                    self.assertFalse(answer.startswith(("好的", "了解", "沒問題")))
+                    self.assertLessEqual(len(asked), 1)
+                    for sentence in asked:  # one short question, not a list such as "哪一天、哪個時段、幾位"
+                        self.assertNotIn("、", sentence)
+                        self.assertLessEqual(len(sentence.split("，")[-1]), 20)
+
     def test_emergency_question_points_to_119(self):
         for template_id, template in self.templates.items():
             emergency = [faq for faq in template["faqs"] if "呼吸困難" in faq["variants"]]
@@ -284,24 +298,24 @@ class TemplateFileTests(unittest.TestCase):
 
 
 class CompileTests(unittest.TestCase):
-    """T2 + T3 joint acceptance. Skips until server/voice_compile.py exists."""
+    """T2 + T3 joint acceptance. Skips only while server/voice_compile.py does not exist; once it exists, any
+    import error or signature mismatch fails instead of skipping."""
 
     def compile(self, template_id, filled):
-        try:
-            from server import voice_compile
-        except ImportError:
+        if not (Path(__file__).resolve().parent / "voice_compile.py").exists():
             self.skipTest("T2 server/voice_compile.py is not merged yet")
+        from server import voice_compile
+
         template = load(template_id)
         if filled:
             template = apply_example_values(template)
+        # T2's input shape (voice_compile.py docstring): the store row as T1 stores it, then faqs, hours and
+        # closures as separate arguments, and the version as a keyword.
         store = {
-            "store_id": "0123456789abcdef0123456789abcdef",
-            "version": 1,
-            "shop_name": EXAMPLE_SHOP_NAMES[template_id],
+            "id": "0123456789abcdef0123456789abcdef",
+            "name": EXAMPLE_SHOP_NAMES[template_id],
             "greeting": template["greeting_example"],
             "intro_text": template["intro_text"],
-            "hours": template["hours_example"],
-            "closures": [],
             "after_hours_mode": "answer_and_message",
             "ask_callback": "auto",
             "max_message_seconds": 120,
@@ -315,11 +329,8 @@ class CompileTests(unittest.TestCase):
              "variants": faq["variants"], "ai_allowed": faq["ai_allowed"]}
             for i, faq in enumerate(template["faqs"])
         ]
-        try:
-            return voice_compile.compile_store(store, faqs), faqs
-        except TypeError as exc:
-            # Written before T2 existed (phase1-contract 5.1 field names); align this adapter with T2's signature.
-            self.fail("compile_store() signature differs from this test's adapter: %s" % exc)
+        config = voice_compile.compile_store(store, faqs, template["hours_example"], [], version=1)
+        return config, faqs
 
     def test_filled_templates_compile_without_warnings(self):
         for template_id in TEMPLATE_IDS:
@@ -327,6 +338,10 @@ class CompileTests(unittest.TestCase):
             with self.subTest(template=template_id):
                 self.assertEqual(config["warnings"], [])
                 self.assertLessEqual(config["kb_chars"], KB_CHARS_MAX)
+                self.assertEqual(config["shop_name"], EXAMPLE_SHOP_NAMES[template_id])
+                self.assertEqual(config["hours"], load(template_id)["hours_example"])
+                # Hours come from hours_example (contract 5.4), so the compiled store data has them.
+                self.assertIn("## 每週營業時間", config["prompt"]["prefix"])
 
     def test_unfilled_templates_list_every_marker(self):
         for template_id in TEMPLATE_IDS:
