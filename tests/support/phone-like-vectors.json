@@ -1,0 +1,31 @@
+{
+  "_comment": "phase2-contract 6.3 note check: the same strings go through lib/voice-calls.ts hasPhoneNumber (tests/account-voice-calls.test.tsx) and server/voice_calls.has_phone_number (server/test_voice_calls_note_sync.py). Each whitespace-like separator is listed so that Python's \\s and JavaScript's \\s differences show.",
+  "number": [
+    "0912 345 678",
+    "0912-345-678",
+    "\uff10\uff19\uff11\uff12\uff13\uff14\uff15\uff16\uff17\uff18",
+    "12345678",
+    "\u554f\u6d17\u7259 02\u30002700\u30001001",
+    "0912\u00a0345678",
+    "0912\u2007345678",
+    "0912\u202f345678",
+    "0912\u205f345678",
+    "0912\u1680345678",
+    "0912\u2028345678",
+    "0912\u2029345678",
+    "0912\t345678",
+    "0912\u0085345678",
+    "0912\u001c345678"
+  ],
+  "not_number": [
+    "1234567",
+    "\u50f9\u683c 1,200 \u5143",
+    "0912\ufeff345678",
+    "0912\u200b345678",
+    "\u7b2c 3 \u7248 4 \u6708",
+    "0912_345678",
+    "0912.345.678",
+    "",
+    "AI \u8aaa\u7684\u662f\u53bb\u5e74\u7684\u50f9\u9322"
+  ]
+}
