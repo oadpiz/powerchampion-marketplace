@@ -81,6 +81,10 @@ SETUP_COLUMNS = {"name": "name", "greeting": "greeting", "introText": "intro_tex
 SETUP_ORDER = ("name", "greeting", "introText", "hours", "closures", "afterHoursMode", "askCallback",
                "maxMessageSeconds", "recordingMode", "retentionDays")
 IMPORT_MODES = ("append", "replace")
+# Every `problem` an M8 CSV check can report, in contract §5.5 order. lib/voice-faq.ts CSV_PROBLEMS must be the same
+# list (server/test_voice_sync.py, tests/account-voice-faq.test.tsx).
+CSV_PROBLEMS = ("header_invalid", "question_required", "answer_required", "question_too_long", "variant_too_long",
+                "too_many_variants", "faq_too_long", "unsafe_text", "csv_unparseable")
 
 TEMPLATE_ID = re.compile(r"[a-z][a-z0-9_-]{0,31}")
 TEMPLATE_SCHEMA = "voice.template/v1"
