@@ -167,6 +167,7 @@ describe("account phone agent shell", () => {
       ["Setup", "/account/voice/setup"],
       ["FAQ", "/account/voice/faq"],
       ["Try a call", "/account/voice/try"],
+      ["Calls", "/account/voice/calls"],
     ]);
     expect(within(pages).getByRole("link", { name: title })).toHaveAttribute("aria-current", "page");
     expect(within(screen.getByRole("navigation", { name: "Account navigation" })).getByRole("link", { name: "Phone agent" }))
@@ -281,7 +282,43 @@ describe("account phone agent shell", () => {
     expect(screen.queryByText("建置中")).not.toBeInTheDocument();
     expect(screen.getByText("24 小時內還可以試打 17 次（上限 20 次）")).toBeVisible();
     const pages = screen.getByRole("navigation", { name: "電話客服頁面" });
-    expect(within(pages).getAllByRole("link").map((link) => link.textContent)).toEqual(["設定", "常見問答", "試打一通"]);
+    expect(within(pages).getAllByRole("link").map((link) => link.textContent)).toEqual(["設定", "常見問答", "試打一通", "通話紀錄"]);
+  });
+
+  // Phase 2 wiring (phase2-contract §10.2-§10.3): P2-2 replaces these placeholders; the shell and routing stay.
+  it.each([
+    [undefined, "Calls"],
+    ["a1b2c3d4e5f60718293a4b5c6d7e8f90", "Call details"],
+  ] as const)("mounts the call records page inside the shell (call %s)", async (callId, title) => {
+    const calls = stubPortal({ "GET /session": () => ({ user: customer }), "GET /me/voice": () => summary() });
+    wrap(<AccountPortal section="voice" voiceSub="calls" voiceCallId={callId} />);
+    expect(await screen.findByRole("heading", { level: 2, name: title })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 2, name: /晴光牙醫診所/ })).toHaveTextContent("Draft");
+    const pages = screen.getByRole("navigation", { name: "Phone agent pages" });
+    // One call's page still marks "Calls" as the current sub-page; no other sub-page is mounted.
+    expect(within(pages).getByRole("link", { name: "Calls" })).toHaveAttribute("aria-current", "page");
+    expect(within(pages).getAllByRole("link").filter((link) => link.hasAttribute("aria-current"))).toHaveLength(1);
+    expect(screen.queryByRole("heading", { level: 2, name: "Setup" })).not.toBeInTheDocument();
+    if (callId) expect(screen.getByRole("link", { name: "← Calls" })).toHaveAttribute("href", "/account/voice/calls");
+    expect(calls.map((call) => call.path).filter((read) => read !== "/me/engineer")).toEqual(["/session", "/me/voice"]);
+  });
+
+  it("names the call records sub-page in Chinese", async () => {
+    localStorage.setItem("pc-locale", "zh");
+    window.history.replaceState({}, "", "/account/voice/calls");
+    stubPortal({ "GET /session": () => ({ user: customer }), "GET /me/voice": () => summary() });
+    wrap(<AccountPortal section="voice" voiceSub="calls" />);
+    expect(await screen.findByRole("heading", { level: 2, name: "通話紀錄" })).toBeVisible();
+    const pages = screen.getByRole("navigation", { name: "電話客服頁面" });
+    expect(within(pages).getByRole("link", { name: "通話紀錄" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("sends a signed-out visit to one call back to that call after signing in", async () => {
+    stubPortal({ "GET /session": () => Response.json({ error: "auth_required", detail: "Sign in." }, { status: 401 }) });
+    const id = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    wrap(<AccountPortal section="voice" voiceSub="calls" voiceCallId={id} />);
+    const signIn = await screen.findByRole("link", { name: /sign in/i });
+    expect(signIn.getAttribute("href")).toBe(`/login?next=${encodeURIComponent(`/account/voice/calls/${id}`)}`);
   });
 });
 
@@ -335,13 +372,26 @@ describe("phone agent summary refresh", () => {
 });
 
 describe("account voice routes", () => {
-  it.each([[["voice"]], [["voice", "setup"]], [["voice", "faq"]], [["voice", "try"]]])("accepts /account/%s", async (section) => {
+  it.each([[["voice"]], [["voice", "setup"]], [["voice", "faq"]], [["voice", "try"]], [["voice", "calls"]]])("accepts /account/%s", async (section) => {
     const page = await AccountPage({ params: Promise.resolve({ section }) });
     expect(page.props.section).toBe("voice");
     expect(page.props.voiceSub).toBe(section[1]);
+    expect(page.props.voiceCallId).toBeUndefined();
   });
 
-  it.each([[["voice", "x"]], [["voice", "faqs"]], [["voice", "setup", "x"]], [["security", "setup"]], [["ssh-key", "faq"]], [["voices"]]])(
+  it("accepts /account/voice/calls/<32 lowercase hex> and passes the id on", async () => {
+    const id = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+    const page = await AccountPage({ params: Promise.resolve({ section: ["voice", "calls", id] }) });
+    expect(page.props.section).toBe("voice");
+    expect(page.props.voiceSub).toBe("calls");
+    expect(page.props.voiceCallId).toBe(id);
+  });
+
+  const id = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+  it.each([[["voice", "x"]], [["voice", "faqs"]], [["voice", "setup", "x"]], [["security", "setup"]], [["ssh-key", "faq"]], [["voices"]],
+    [["voice", "calls", "ABC"]], [["voice", "calls", id.toUpperCase()]], [["voice", "calls", id.slice(1)]], [["voice", "calls", `${id}0`]],
+    [["voice", "calls", id, "x"]], [["voice", "setup", id]], [["voice", "faq", id]], [["voice", "try", id]], [["voice", "call", id]],
+    [["voice", "calls", ""]]])(
     "rejects /account/%s",
     async (section) => {
       await expect(AccountPage({ params: Promise.resolve({ section }) })).rejects.toThrow();

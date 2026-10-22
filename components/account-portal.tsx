@@ -141,9 +141,12 @@ function statusText(value: string, zh: boolean) {
 export function AccountPortal({
   section = "overview",
   voiceSub,
+  voiceCallId,
 }: {
   section?: Section;
   voiceSub?: VoiceSub;
+  /** /account/voice/calls/<id> (phase2-contract §10.2); the page has already checked it is 32 lowercase hex. */
+  voiceCallId?: string;
 }) {
   const { locale } = useLocale();
   const zh = locale === "zh";
@@ -187,7 +190,7 @@ export function AccountPortal({
   const mutationBusy = useRef(false);
   const currentPath =
     section === "voice" && voiceSub
-      ? `/account/voice/${voiceSub}`
+      ? `/account/voice/${voiceSub}${voiceSub === "calls" && voiceCallId ? `/${voiceCallId}` : ""}`
       : NAV.find((item) => item.section === section)?.href ?? "/account";
   const heading =
     NAV.find((item) => item.section === section)?.[locale] ?? "Overview";
@@ -1220,7 +1223,7 @@ export function AccountPortal({
       )}
 
       {!loading && !error && user && section === "voice" && (
-        <AccountVoice sub={voiceSub} state={voice} onReload={voice.reload} />
+        <AccountVoice sub={voiceSub} callId={voiceCallId} state={voice} onReload={voice.reload} />
       )}
 
       {revokeKey && (

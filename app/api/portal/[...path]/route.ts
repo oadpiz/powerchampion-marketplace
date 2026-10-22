@@ -26,9 +26,29 @@ const FLEET_MODEL_PATH = "(?:[A-Za-z0-9._:-]|%3[Aa]){1,128}";
 const FLEET_ACTION = "(freeze|resume|candidate|drain|approve|rollback)";
 const CODE = "[A-Za-z0-9_-]{1,64}";
 // Phone agent (voice) merchant and operator routes; ids are uuid4 hex like AGENT. /voice-runtime is deliberately absent.
-const VOICE_GET = [/^\/me\/voice(\/(setup|faqs|preview))?$/, /^\/admin\/voice\/(stores|numbers)$/, new RegExp(`^/admin/voice/stores/${AGENT}$`)];
-const VOICE_POST = [/^\/me\/voice\/(setup|faqs|faqs\/import|faqs\/from-template|publish|try)$/, new RegExp(`^/me/voice/faqs/${AGENT}$`), /^\/admin\/voice\/(stores|numbers)$/, new RegExp(`^/admin/voice/stores/${AGENT}/status$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`)];
-const VOICE_DELETE = [new RegExp(`^/me/voice/faqs/${AGENT}$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`)];
+const VOICE_GET = [/^\/me\/voice(\/(setup|faqs|preview))?$/, /^\/admin\/voice\/(stores|numbers)$/, new RegExp(`^/admin/voice/stores/${AGENT}$`),
+  // Phase 2 call records (M13, M14) and quality (A9, A10, A13); phase2-contract §10.1.
+  /^\/me\/voice\/calls$/, new RegExp(`^/me/voice/calls/${AGENT}$`), /^\/admin\/voice\/quality\/(calls|listening)$/, new RegExp(`^/admin/voice/quality/calls/${AGENT}$`)];
+const VOICE_POST = [/^\/me\/voice\/(setup|faqs|faqs\/import|faqs\/from-template|publish|try)$/, new RegExp(`^/me/voice/faqs/${AGENT}$`), /^\/admin\/voice\/(stores|numbers)$/, new RegExp(`^/admin/voice/stores/${AGENT}/status$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`),
+  // M15, M17, A11, A12, A14, A15.
+  new RegExp(`^/me/voice/calls/${AGENT}/(flag|content-link)$`), new RegExp(`^/admin/voice/quality/calls/${AGENT}/(review|content-link)$`), /^\/admin\/voice\/quality\/listening$/, new RegExp(`^/admin/voice/quality/listening/${AGENT}$`)];
+const VOICE_DELETE = [new RegExp(`^/me/voice/faqs/${AGENT}$`), new RegExp(`^/admin/voice/numbers/${AGENT}$`), new RegExp(`^/me/voice/calls/${AGENT}/flag$`), new RegExp(`^/admin/voice/quality/listening/${AGENT}$`)];
+// M13 and A9 filters (phase2-contract §10.1, §2): only these are forwarded, each checked; anything else is dropped.
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const CALL_FILTERS: readonly (readonly [string, RegExp])[] = [
+  ["month", MONTH],
+  ["outcome", /^(answered|message|handoff|degraded|not_answered|hangup_early|no_speech|error|unknown)$/],
+  ["before", /^\d{10}-[a-f0-9]{32}$/],
+];
+const STORE_CALL_FILTERS = [...CALL_FILTERS, ["flagged", /^1$/]] as const;
+// A9 has no `flagged` (the backend reads `flag` instead), so it is dropped like any unlisted parameter.
+const QUALITY_CALL_FILTERS = [
+  ...CALL_FILTERS,
+  ["store", new RegExp(`^${AGENT}$`)],
+  ["flag", /^(any|store|auto|none|all)$/],
+  ["reviewed", /^(0|1|all)$/],
+  ["entry", /^(pstn|webrtc|softphone|try)$/],
+] as const;
 const routes: Record<string, readonly RegExp[]> = {
   GET: [/^\/(session|overview|keys|usage|credits|agents)$/, new RegExp(`^/agents/${AGENT}$`), /^\/admin\/(overview|customers|credits|audit)$/, /^\/runtime\/(config|tasks)$/, new RegExp(`^/runtime/tasks/${AGENT}$`), new RegExp(`^/runtime/tasks/${AGENT}/artifacts/${AGENT}$`), /^\/admin\/(keys|usage|gateway)$/, new RegExp(`^/admin/gateway/nodes/${NODE}/jobs/${JOB}$`), /^\/admin\/allocation(\/export)?$/, /^\/me\/engineer$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}$`), /^\/admin\/gateway\/fleet\/events$/, new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/(status|timeline)$`), new RegExp(`^/admin/gateway/control/jobs/${JOB}$`), /^\/admin\/redeem\/codes(\/export)?$/, /^\/admin\/engineers$/, ...VOICE_GET],
   POST: [/^\/auth\/(register|login|logout)$/, /^\/(keys|credits|agents)$/, new RegExp(`^/agents/${AGENT}/(versions|token)$`), /^\/admin\/credits\/[a-zA-Z0-9_-]{1,80}\/review$/, /^\/password$/, new RegExp(`^/admin/customers/${AGENT}/(status|role|reset-password)$`), /^\/runtime\/tasks$/, new RegExp(`^/runtime/tasks/${AGENT}/(control|instructions|approval)$`), new RegExp(`^/admin/customers/${AGENT}/keys$`), new RegExp(`^/admin/keys/${KEY}/(disable|limits|balance)$`), new RegExp(`^/admin/gateway/models/${MODEL}/(toggle|maintenance)$`), new RegExp(`^/admin/gateway/nodes/${NODE}/ops/${NODE_ACTION}$`), /^\/admin\/allocation\/(engineers|owner|export\/mark)$/, new RegExp(`^/admin/allocation/engineers/${AGENT}(/status|/account|/account/unlink)?$`), new RegExp(`^/admin/allocation/nodes/${ALLOC_NODE}$`), /^\/me\/engineer\/ssh-key$/, /^\/admin\/personas$/, new RegExp(`^/admin/personas/${PERSONA}/(revisions|activate|try)$`), new RegExp(`^/admin/gateway/fleet/${FLEET_MODEL_PATH}/${FLEET_ACTION}$`), /^\/admin\/redeem\/codes$/, new RegExp(`^/admin/redeem/codes/${CODE}/disable$`), ...VOICE_POST],
@@ -118,6 +138,13 @@ async function proxy(request: Request) {
     if (limit !== null && !/^[1-9][0-9]{0,2}$/.test(limit)) return failure("invalid_input", "Choose a limit from 1 to 500.", 400);
     if (modelId !== null) target.searchParams.set("modelId", modelId);
     if (limit !== null) target.searchParams.set("limit", limit);
+  }
+  const callFilters = request.method !== "GET" ? null : path === "/me/voice/calls" ? STORE_CALL_FILTERS : path === "/admin/voice/quality/calls" ? QUALITY_CALL_FILTERS : null;
+  for (const [name, pattern] of callFilters ?? []) {
+    const value = url.searchParams.get(name);
+    if (value === null) continue;
+    if (!pattern.test(value)) return failure("invalid_input", `Choose a valid ${name} filter.`, 400);
+    target.searchParams.set(name, value);
   }
 
   let body: string | undefined;

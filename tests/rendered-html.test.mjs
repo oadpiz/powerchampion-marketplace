@@ -619,18 +619,56 @@ test("server-renders each administration section and rejects unknown ones", asyn
   assert.equal((await render("/admin/engineers/justin")).status, 404);
   assert.equal((await render("/admin/voice/x")).status, 404);
   assert.equal((await render("/admin/voice/stores")).status, 404);
+  // Phase 2's Quality is an in-page tab of /admin/voice, not a route (phase2-contract §10.2).
+  assert.equal((await render("/admin/voice/quality")).status, 404);
 });
 
 test("server-renders the phone agent account pages and rejects unknown sub-pages", async () => {
-  for (const path of ["/account/voice", "/account/voice/setup", "/account/voice/faq", "/account/voice/try"]) {
+  const call = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
+  for (const path of ["/account/voice", "/account/voice/setup", "/account/voice/faq", "/account/voice/try", "/account/voice/calls", `/account/voice/calls/${call}`]) {
     const response = await render(path);
     assert.equal(response.status, 200, path);
     const html = await response.text();
     assert.match(html, /<h1>Phone agent<\/h1>/, path);
     assert.match(html, /name="robots" content="noindex, nofollow"/, path);
   }
-  for (const path of ["/account/voice/x", "/account/voice/faqs", "/account/voice/setup/x", "/account/voice/try/x", "/account/security/setup", "/account/voices"]) {
+  for (const path of ["/account/voice/x", "/account/voice/faqs", "/account/voice/setup/x", "/account/voice/try/x", "/account/security/setup", "/account/voices",
+    "/account/voice/calls/ABC", `/account/voice/calls/${call}/x`, `/account/voice/calls/${call.toUpperCase()}`, `/account/voice/calls/${call.slice(1)}`,
+    `/account/voice/try/${call}`, `/account/voice/call/${call}`]) {
     assert.equal((await render(path)).status, 404, path);
+  }
+});
+
+async function api(pathname, init = {}) {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  return worker.fetch(
+    new Request(new URL(pathname, "http://localhost"), { ...init, headers: { host: "localhost", ...(init.headers ?? {}) } }),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+}
+
+test("the built server answers the phone agent runtime route itself, and the browser boundary does not list it", async () => {
+  // /api/voice-runtime/* (phase2-contract §3.1) is in the build: it refuses a call without a runtime token with its own
+  // JSON (no portal is called), and paths or methods it does not know are its JSON 404, not the site's HTML 404 page.
+  for (const [path, method] of [["/api/voice-runtime/config?number=0227001001", "GET"], ["/api/voice-runtime/calls", "POST"]]) {
+    const response = await api(path, { method, ...(method === "POST" ? { body: "{}", headers: { "content-type": "application/json" } } : {}) });
+    assert.equal(response.status, 401, path);
+    assert.equal(response.headers.get("cache-control"), "no-store", path);
+    assert.equal((await response.json()).error, "runtime_auth", path);
+  }
+  for (const [path, method] of [["/api/voice-runtime/usage", "GET"], ["/api/voice-runtime/calls", "GET"], ["/api/voice-runtime/config", "DELETE"]]) {
+    const response = await api(path, { method });
+    assert.equal(response.status, 404, `${method} ${path}`);
+    assert.deepEqual(await response.json(), { error: "not_found", detail: "This runtime endpoint does not exist." }, `${method} ${path}`);
+  }
+  // The browser BFF never forwards to the portal's internal runtime routes.
+  for (const path of ["/api/portal/voice/runtime/config?number=0227001001", "/api/portal/voice/runtime/calls"]) {
+    const response = await api(path, { headers: { authorization: "Bearer test-only-runtime-token-0000000000" } });
+    assert.equal(response.status, 404, path);
+    assert.equal((await response.json()).error, "not_found", path);
   }
 });
 
