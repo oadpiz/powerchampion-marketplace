@@ -101,7 +101,7 @@ class SwitchTests(CallRoutesCase):
         return self.post(client, path, body)
 
     def test_switch_off_is_a_plain_404_and_on_it_is_not(self):
-        row_id = self.new_call()
+        row_id = self.new_call(orchestrator(), records())
         operator = self.admin()
         log_id = self.ok(self.post(operator, "/admin/voice/quality/listening", LISTENING_BODY), 201)["log"]["id"]
         self.use_settings(voice_enabled=False)
@@ -286,7 +286,7 @@ class StoreFlagTests(CallRoutesCase):
         self.ok(self.post(self.owner, path, {"kind": "wrong_answer", "note": "x" * 100}))
 
     def test_temporary_password_and_suspended_store(self):
-        row_id = self.new_call()
+        row_id = self.new_call(orchestrator(), records())
         flag = "/me/voice/calls/%s/flag" % row_id
         link = "/me/voice/calls/%s/content-link" % row_id
         self.ok(self.post(self.owner, flag, {"kind": "wrong_answer"}))
@@ -344,7 +344,7 @@ class ContentLinkTests(CallRoutesCase):
         self.error(self.post(owner, path % none, {}), 503, "voice_media_unavailable")
 
     def test_60_links_an_hour_per_account_even_when_concurrent(self):
-        row_id = self.new_call()
+        row_id = self.new_call(orchestrator(), records())
         now = int(time.time())
         with self.store.connect() as con:
             for index in range(55):
@@ -370,6 +370,32 @@ class ContentLinkTests(CallRoutesCase):
                   and e["action"] in vc.CONTENT_LINK_ACTIONS]
         self.assertEqual(len(recent), 60)
 
+    def test_store_link_waits_for_the_records_sender_and_refuses_a_disputed_number(self):
+        # Fix round: until the records sender reports, the store comes from the orchestrator's number only; when the
+        # two sources name different numbers, the content kept under the call_id may be another store's caller.
+        now = int(time.time())
+        path = "/me/voice/calls/%s/content-link"
+        operator = self.admin()
+        orch_only = self.new_call(orchestrator(now))
+        self.error(self.post(self.owner, path % orch_only, {}), 409, "call_content_pending")
+        self.assertEqual(self.audit("voice.call_content_link"), [])
+        self.ok(self.post(operator, "/admin/voice/quality/calls/%s/content-link" % orch_only, {}))  # an operator is not held
+        self.ok(self.report(records(now, call_id=self.row(orch_only)["call_id"])))
+        self.assertEqual(self.ok(self.post(self.owner, path % orch_only, {}))["media"]["kinds"], ["summary", "transcript"])
+        # A test call is only ever reported by the orchestrator, with the store's id: not held.
+        try_id = "try-%032x" % 7
+        self.ok(self.report(orchestrator(now, call_id=try_id, entry="try", dialed=None, store_id=self.store_id)), 201)
+        self.ok(self.post(self.owner, path % self.call(try_id)["id"], {}))
+        # The orchestrator says store B's number, the records sender store A's: the row is A's, the content is not shown.
+        disputed = "1797816100.9"
+        self.ok(self.report(orchestrator(now, call_id=disputed, dialed="0227001009")), 201)
+        self.ok(self.report(records(now, call_id=disputed)))
+        row = self.call(disputed)
+        self.assertEqual((row["store_id"], json.loads(row["mismatch"])), (self.store_id, ["dialed"]))
+        self.error(self.post(self.owner, path % row["id"], {}), 404, "call_content_unavailable")
+        self.ok(self.post(operator, "/admin/voice/quality/calls/%s/content-link" % row["id"], {}))
+        self.assertEqual(len(self.audit("voice.call_content_link")), 2)
+
     def test_admin_link_for_a_call_without_a_store(self):
         row_id = self.new_call(orchestrator(dialed="0227009999"))
         operator = self.admin()
@@ -384,6 +410,44 @@ class ContentLinkTests(CallRoutesCase):
                             (uuid.uuid4().hex, admin_id, "voice.call_content_link", row_id, int(time.time())))
         self.error(self.post(operator, "/admin/voice/quality/calls/%s/content-link" % row_id, {}), 429, "voice_content_link_limit")
         self.error(self.post(operator, "/admin/voice/quality/calls/%s/content-link" % OTHER_ID, {}), 404, "call_not_found")
+
+
+class ReattributionTests(CallRoutesCase):
+    def test_a_call_that_moves_to_another_store_leaves_the_first_stores_flag_behind(self):
+        # Fix round: the orchestrator reports first with store A's number, A flags it with a note and an operator
+        # finishes a review; then the records sender reports the call on store B's number (its number wins, §3.5).
+        now = int(time.time())
+        call_id = "1797816200.1"
+        self.ok(self.report(orchestrator(now, call_id=call_id)), 201)
+        row_id = self.call(call_id)["id"]
+        self.ok(self.post(self.owner, "/me/voice/calls/%s/flag" % row_id, {"kind": "wrong_answer", "note": "A店的內部備註：價格說錯"}))
+        operator = self.admin()
+        self.ok(self.post(operator, "/admin/voice/quality/calls/%s/review" % row_id, {"score": 2, "status": "done"}))
+        merged = self.ok(self.report(records(now, call_id=call_id, dialed="0227001009")))
+        self.assertEqual((merged["result"], merged["store_id"]), ("merged", self.other_store))
+        row = self.row(row_id)
+        self.assertEqual((row["store_flag_kind"], row["store_flag_note"], row["store_flagged_at"], row["store_flagged_by"]),
+                         (None, None, None, None))
+        self.assertIn("source_mismatch", json.loads(row["auto_flags"]))
+        self.assertNotIn("A店的內部備註", database_text(self.store))
+        detail = self.ok(self.get(self.other, "/me/voice/calls/" + row_id))
+        self.assertEqual((detail["flag"], detail["call"]["flagged"]), (None, False))
+        self.assertEqual(self.ok(self.delete(self.other, "/me/voice/calls/%s/flag" % row_id)), {"changed": False})
+        self.error(self.get(self.owner, "/me/voice/calls/" + row_id), 404, "call_not_found")
+        self.assertEqual([r["status"] for r in rows(self.store, "voice_call_reviews")], ["open"])
+        self.assertEqual(self.audit_details("voice.call_reattributed"),
+                         [{"fromStoreId": self.store_id, "toStoreId": self.other_store, "flagCleared": True, "reviewReopened": True}])
+        self.assertIsNone(self.audit("voice.call_reattributed")[0]["actor_id"])
+        listed = self.ok(self.get(operator, "/admin/voice/quality/calls"))["calls"]
+        self.assertIn(row_id, [item["id"] for item in listed])
+        # Control: a records report that agrees with the orchestrator keeps the store's flag and the review.
+        kept = "1797816200.2"
+        self.ok(self.report(orchestrator(now, call_id=kept)), 201)
+        kept_id = self.call(kept)["id"]
+        self.ok(self.post(self.owner, "/me/voice/calls/%s/flag" % kept_id, {"kind": "wrong_answer", "note": "價格說錯"}))
+        self.ok(self.report(records(now, call_id=kept)))
+        self.assertEqual((self.row(kept_id)["store_id"], self.row(kept_id)["store_flag_note"]), (self.store_id, "價格說錯"))
+        self.assertEqual(len(self.audit("voice.call_reattributed")), 1)
 
 
 # ---------------------------------------------------------------- A9-A11

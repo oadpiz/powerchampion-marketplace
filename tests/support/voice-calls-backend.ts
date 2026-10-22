@@ -42,6 +42,10 @@ export type Row = {
   retentionSnapshot: number;
   flag: { kind: "wrong_answer"; note: string; flaggedAt: number } | null;
   reviewStatus: "open" | "done" | null;
+  /** The records sender has reported the call (an edge call without it gets 409 call_content_pending from M17). */
+  recordsReported: boolean;
+  /** The two sources name different dialed numbers (M17 answers 404 call_content_unavailable). */
+  dialedMismatch: boolean;
 };
 
 /** What the Taiwan host answers for one read: the normal content, or one of its §8.3 errors. */
@@ -100,6 +104,8 @@ export function row(n: number, values: Partial<Row> = {}): Row {
     retentionSnapshot: 30,
     flag: null,
     reviewStatus: null,
+    recordsReported: true,
+    dialedMismatch: false,
     ...values,
   };
 }
@@ -301,9 +307,10 @@ function contentLink(state: Backend, id: string, init: RequestInit | undefined):
   if (!r) return failure(404, "call_not_found");
   // The backend says voice_media_unavailable; the BFF rewrites every other 5xx (route.ts).
   if (!state.mediaAvailable) return failure(503, "service_unavailable", "This service is unavailable or has not been configured yet.");
-  if (!r.contentExpected) return failure(404, "call_content_unavailable");
+  if (!r.contentExpected || r.dialedMismatch) return failure(404, "call_content_unavailable");
   const kinds = contentKinds(state, r);
   if (!kinds.length) return failure(410, "call_content_expired");
+  if (r.entry !== "try" && !r.recordsReported) return failure(409, "call_content_pending");
   if (state.linksUsed >= 60) return failure(429, "voice_content_link_limit");
   state.linksUsed += 1;
   const iat = now();

@@ -324,18 +324,22 @@ def run_on(m, state, admin_jar, a_jar, b_jar):
     R.check("M14 c4: message, 1.5 s message, 1 billable, content kept", got == 200 and call4.get("outcome") == "message"
             and call4.get("messageSeconds") == 1.5 and call4.get("meterUnits") == 1 and m14.get("content", {}).get("state") == "available"
             and m14.get("flag") is None, "got %d %s" % (got, m.short({k: call4.get(k) for k in ("outcome", "messageSeconds", "meterUnits", "configVersion")}, 140)))
-    got, m17 = m.call("POST", "/me/voice/calls/%s/content-link" % rows["c1"], a_jar, {})
+    # Fix round (amended §6.5): until the records sender reports a call, its store comes from the orchestrator's number only.
+    m.expect("A, M17 c1 while only the orchestrator has reported it", "POST", "/me/voice/calls/%s/content-link" % rows["c1"], a_jar, {},
+             409, "call_content_pending")
+    got, m17 = m.call("POST", "/me/voice/calls/%s/content-link" % rows["c4"], a_jar, {})
     media = m17.get("media", {}) if isinstance(m17, dict) else {}
     token = media.get("token", "")
     R.redactions.append(token)
     ok, payload = verify_media_token(token, int(time.time()))
-    quoted = urllib.parse.quote(cid["c1"], safe="")
-    R.check("M17 c1 -> 200, a media link for the summary and transcript (no recording was saved)",
-            got == 200 and media.get("kinds") == ["summary", "transcript"] and sorted(media.get("urls", {})) == ["summary", "transcript"]
+    quoted = urllib.parse.quote(cid["c4"], safe="")
+    R.check("M17 c4 (both sources) -> 200, a media link for the recording, summary and transcript",
+            got == 200 and media.get("kinds") == ["recording", "summary", "transcript"]
+            and sorted(media.get("urls", {})) == ["recording", "summary", "transcript"]
             and all(url == "%s/v1/calls/%s/%s" % (MEDIA_ORIGIN, quoted, kind) for kind, url in media.get("urls", {}).items()),
             "got %d kinds %s; token %d chars (redacted)" % (got, media.get("kinds"), len(token)))
-    R.check("the media token verifies with the media secret: call c1, store A, role store, 300 s, no token in the URLs",
-            ok and payload.get("call_id") == cid["c1"] and payload.get("store_id") == a_id and payload.get("role") == "store"
+    R.check("the media token verifies with the media secret: call c4, store A, role store, 300 s, no token in the URLs",
+            ok and payload.get("call_id") == cid["c4"] and payload.get("store_id") == a_id and payload.get("role") == "store"
             and payload.get("exp", 0) - payload.get("iat", 0) == 300 and token not in json.dumps(media.get("urls")),
             "purpose %s aud %s kinds %s" % (payload.get("purpose"), payload.get("aud"), payload.get("kinds")))
 

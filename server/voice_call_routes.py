@@ -167,14 +167,21 @@ def _sign_link(settings, row, *, user_id, role, store_retention_days, now):
             "urls": {kind: vc.media_url(origin, row["call_id"], kind) for kind in payload["kinds"]}}, payload["kinds"]
 
 
-def _check_content(settings, row, store_retention_days, con, user_id, now):
-    """§6.5 order after call_not_found: 503 -> 404 unavailable -> 410 expired -> 429 limit."""
+def _check_content(settings, row, store_retention_days, con, user_id, now, *, store_view=False):
+    """§6.5 order after call_not_found: 503 -> 404 unavailable -> 410 expired -> 429 limit.
+
+    For a store (M17, `store_view`) two more refusals keep another store's caller out of reach (amended §6.5): the
+    two sources disagree on the dialed number -> 404 call_content_unavailable (the content kept under this call_id
+    may be another call's), and an edge call the records sender has not reported yet -> 409 call_content_pending
+    (until then the store comes from the orchestrator's number only). An operator (A12) sees every store's calls."""
     if not settings.voice_media_available:
         fail("voice_media_unavailable", MEDIA_UNAVAILABLE, 503)
-    if not row["content_expected"]:
+    if not row["content_expected"] or (store_view and "dialed" in json.loads(row["mismatch"])):
         fail("call_content_unavailable", "No content was kept for this call.", 404)
     if not vc.content_kinds(row, store_retention_days, now):
         fail("call_content_expired", "The content is past its retention period and can no longer be viewed.", 410)
+    if store_view and row["entry"] != "try" and row["report_records_sha256"] is None:
+        fail("call_content_pending", "The content is still being processed. Try again in a few minutes.", 409)
     if vc.content_links_used(con, user_id, now) >= vc.CONTENT_LINKS_PER_HOUR:
         fail("voice_content_link_limit", "Too many views. Try again in an hour.", 429)
 
@@ -312,7 +319,7 @@ def attach_voice_calls(application, ctx):
             store_row = owner_lock(con, user, refuse_suspended=False)
             row = own_call(con, store_row, row_id)
             now = int(time.time())
-            _check_content(settings, row, store_row["retention_days"], con, user["id"], now)
+            _check_content(settings, row, store_row["retention_days"], con, user["id"], now, store_view=True)
             media, kinds = _sign_link(settings, row, user_id=user["id"], role="store",
                                       store_retention_days=store_row["retention_days"], now=now)
             store.audit(con, "voice.call_content_link", user["id"], row["id"], {"kinds": kinds, "storeId": row["store_id"]})
