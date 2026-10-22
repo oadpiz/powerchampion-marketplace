@@ -670,6 +670,12 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
 
   const { capacity, faqs, template } = list;
   const needsInputCount = faqs.filter((faq) => faq.needsInput).length;
+  /** The rows on screen. While filtering, Move up/down swap with the neighbour the store can see, never a hidden one. */
+  const visible = faqs.filter((faq) => !onlyNeedsInput || faq.needsInput || editing?.id === faq.id);
+  const neighbour = (faq: VoiceFaq, step: -1 | 1) => {
+    const other = visible[visible.indexOf(faq) + step];
+    return other ? faqs.indexOf(other) : -1;
+  };
   const introChars = codePoints(intro.draft.trim());
   const introPlaceholder = firstPlaceholder(intro.draft);
   const disabled = readOnly || busy !== null;
@@ -880,7 +886,7 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
               </thead>
               <tbody>
                 {faqs.map((faq, index) =>
-                  onlyNeedsInput && !faq.needsInput && editing?.id !== faq.id ? null : editing?.id === faq.id ? (
+                  !visible.includes(faq) ? null : editing?.id === faq.id ? (
                     <tr key={faq.id}>
                       <td colSpan={4}>{faqForm(faq)}</td>
                     </tr>
@@ -925,18 +931,18 @@ export function AccountVoiceFaq({ summary, onChanged }: VoiceSubProps): ReactEle
                           <button
                             id={`voice-faq-up-${faq.id}`}
                             className="portal-text-button"
-                            disabled={disabled || index === 0}
+                            disabled={disabled || neighbour(faq, -1) < 0}
                             aria-label={rowLabel(label(`up-${faq.id}`, T.moveUp), faq)}
-                            onClick={() => void move(faq, `up-${faq.id}`, index - 1)}
+                            onClick={() => void move(faq, `up-${faq.id}`, neighbour(faq, -1))}
                           >
                             {label(`up-${faq.id}`, T.moveUp)}
                           </button>
                           <button
                             id={`voice-faq-down-${faq.id}`}
                             className="portal-text-button"
-                            disabled={disabled || index === faqs.length - 1}
+                            disabled={disabled || neighbour(faq, 1) < 0}
                             aria-label={rowLabel(label(`down-${faq.id}`, T.moveDown), faq)}
-                            onClick={() => void move(faq, `down-${faq.id}`, index + 1)}
+                            onClick={() => void move(faq, `down-${faq.id}`, neighbour(faq, 1))}
                           >
                             {label(`down-${faq.id}`, T.moveDown)}
                           </button>
