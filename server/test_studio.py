@@ -1,0 +1,803 @@
+"""Video studio portal backend (docs/studio-spec.md section 9, "Portal backend").
+
+Runs on SQLite, and on Postgres when PC_PORTAL_TEST_DATABASE_URL is set. Every test ends with
+the ledger invariants (section 6) checked in tearDown."""
+import importlib.util
+import json
+import threading
+import time
+import unittest
+from pathlib import Path
+
+import httpx
+from fastapi.testclient import TestClient
+
+from server.settings import Settings
+from server.studio import ACTIVE, LIMITS, sign_grant, sign_quote
+from server.studio_agent import AgentError, StudioAgent
+from server.testsupport import (BASE, ORIGIN, STUDIO_GRANT_SECRET, STUDIO_QUOTE_SECRET, STUDIO_TOKEN, FakeGateway, FakeStudioAgent,
+                                PortalCase, fresh_database, rows, studio_settings)
+
+T0 = 1_800_000_000  # 2027-01-15 08:00 UTC
+_SIGNING = Path("shortvideo-agent", "shortvideo", "studio", "signing.py")
+# The S1 agent checkout, when it sits next to this repository (or a parent of its worktree); CI skips.
+AGENT_SIGNING = next((p / _SIGNING for p in Path(__file__).resolve().parents if (p / _SIGNING).exists()), Path("/nonexistent"))
+
+
+class StudioCase(PortalCase):
+    sweeper = False
+
+    def setUp(self):
+        import tempfile
+        from server.app import create_app
+
+        self.directory = tempfile.TemporaryDirectory()
+        self.now = T0
+        self.settings = Settings(db_path=fresh_database(self.directory.name), allowed_origins=(ORIGIN,),
+                                 studio_sweeper=self.sweeper, studio_sweep_interval=0.05, **studio_settings())
+        self.agent = FakeStudioAgent(clock=lambda: self.now)
+        self.app = create_app(self.settings, gateway=FakeGateway(), studio_agent=self.agent)
+        self.store = self.app.state.store
+        self.studio = self.app.state.studio
+        self.studio.clock = lambda: self.now
+        self.clients = []
+        self._admin = None
+        self._keys = 0
+
+    def tearDown(self):
+        try:
+            self.check_invariants()
+            self.assertEqual(self.agent.in_loop, [], "agent calls must run in the threadpool, never on the event loop")
+        finally:
+            super().tearDown()
+
+    # -- helpers ---------------------------------------------------------------------------------
+
+    def check_invariants(self):
+        accounts, ops, ledger = rows(self.store, "studio_accounts"), rows(self.store, "studio_ops"), rows(self.store, "studio_ledger")
+        for a in accounts:
+            self.assertGreaterEqual(a["balance"], 0)
+            self.assertGreaterEqual(a["reserved"], 0)
+            self.assertEqual(a["reserved"], sum(o["credits"] for o in ops if o["user_id"] == a["user_id"] and o["state"] in ACTIVE), a)
+            self.assertEqual(a["balance"], sum(r["delta"] for r in ledger if r["user_id"] == a["user_id"]), a)
+        for o in ops:
+            mine = [r for r in ledger if r["op_id"] == o["op_id"]]
+            reserves = [r for r in mine if r["kind"] == "reserve"]
+            settles = [r for r in mine if r["kind"] == "settle"]
+            refunded = sum(r["delta"] for r in mine if r["kind"] == "refund")
+            self.assertEqual([r["delta"] for r in reserves], [-o["credits"]], o)
+            if o["state"] in ACTIVE:
+                self.assertIsNone(o["credits_charged"], o)
+                self.assertEqual((settles, refunded), ([], 0), o)
+            else:
+                self.assertEqual(o["credits_charged"] + refunded, o["credits"], o)
+                self.assertEqual(len(settles), 0 if o["state"] == "refunded" else 1, o)
+                self.assertTrue(all(r["delta"] == 0 for r in settles))
+                if o["state"] == "refunded":
+                    self.assertEqual(o["credits_charged"], 0)
+                elif o["state"] == "settled":
+                    self.assertEqual(o["credits_charged"], o["credits"])
+                else:
+                    self.assertTrue(0 < o["credits_charged"] < o["credits"], o)
+        for r in ledger:
+            if r["kind"] in ("grant", "expire"):
+                self.assertIsNone(r["op_id"])
+        active = [o["project_id"] for o in ops if o["state"] in ACTIVE]
+        self.assertEqual(len(active), len(set(active)))
+
+    def admin_client(self):
+        if self._admin is None:
+            self._admin = self.admin()
+        return self._admin
+
+    def customer(self, email="maker@example.test"):
+        client = self.client()
+        user = self.register(client, email)
+        return client, user["id"]
+
+    def grant(self, user_id, credits, **extra):
+        response = self.post(self.admin_client(), "/admin/studio/credits/grant", {"user_id": user_id, "credits": credits, **extra})
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["account"]
+
+    def key(self):
+        self._keys += 1
+        return "key-%08d" % self._keys
+
+    def create(self, client, key=None, topic="tea"):
+        return self.post(client, "/studio/projects", {"template_id": "ecommerce", "aspect": "9:16", "inputs": {"topic": topic},
+                                                      "idempotency_key": key or self.key()})
+
+    def drafted(self, client, credits=100):
+        """A project whose draft op has settled. Returns its id."""
+        user_id = self.user_of(client)
+        if credits:
+            self.grant(user_id, credits)
+        response = self.create(client)
+        self.assertEqual(response.status_code, 201, response.text)
+        self.agent.finish(response.json()["op_id"])
+        project = client.get(BASE + "/studio/projects/" + response.json()["id"])
+        self.assertEqual(project.status_code, 200, project.text)
+        return response.json()["id"]
+
+    def user_of(self, client):
+        return client.get(BASE + "/session").json()["user"]["id"]
+
+    def quote(self, client, pid, op_type="render", target=None):
+        body = {"type": op_type}
+        if target is not None:
+            body["target"] = target
+        response = self.post(client, "/studio/projects/" + pid + "/quote", body)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def submit(self, client, pid, quote, key=None, **changes):
+        body = {k: quote[k] for k in ("quote_id", "credits", "storyboard_rev", "exp", "sig", "type", "target")}
+        body.update(changes, idempotency_key=key or self.key())
+        return self.post(client, "/studio/projects/" + pid + "/ops", body)
+
+    def account(self, user_id):
+        return next((a for a in rows(self.store, "studio_accounts") if a["user_id"] == user_id), None)
+
+    def ops(self):
+        return {o["op_id"]: o for o in rows(self.store, "studio_ops")}
+
+    def add_project(self, user_id, pid):
+        self.studio.claim_project(user_id, pid, "ecommerce")
+
+    def raw_quote(self, user_id, pid, credits, op_type="render", quote_id=None):
+        quote_id = quote_id or "q_" + pid
+        exp = self.now + 600
+        return {"quote_id": quote_id, "type": op_type, "target": None, "credits": credits, "storyboard_rev": 0, "exp": exp,
+                "sig": sign_quote(STUDIO_QUOTE_SECRET, quote_id, user_id, pid, op_type, None, credits, 0, exp)}
+
+
+class StudioConfigTests(PortalCase):
+    def test_unconfigured_studio_answers_503_after_auth(self):
+        customer = self.client()
+        self.register(customer, "c@example.test")
+        anonymous = self.client()
+        gets = ["/studio/templates", "/studio/projects", "/studio/credits", "/studio/projects/p1", "/studio/projects/p1/ops/o1"]
+        posts = ["/studio/projects", "/studio/uploads", "/studio/projects/p1/settings", "/studio/projects/p1/shots/1/edit",
+                 "/studio/projects/p1/quote", "/studio/projects/p1/ops"]
+        for path in gets:
+            self.assertEqual(anonymous.get(BASE + path).status_code, 401, path)
+            response = customer.get(BASE + path)
+            self.assertEqual((response.status_code, response.json()["error"]), (503, "studio_unconfigured"), path)
+        for path in posts:
+            self.assertEqual(self.post(anonymous, path, {}).status_code, 401, path)
+            response = self.post(customer, path, {})
+            self.assertEqual((response.status_code, response.json()["error"]), (503, "studio_unconfigured"), path)
+        self.assertFalse(self.app.state.studio.sweeper_enabled)
+
+    def test_settings_need_all_four_values_and_distinct_secrets(self):
+        self.assertTrue(Settings(**studio_settings()).studio_configured)
+        for field in studio_settings():
+            self.assertFalse(Settings(**dict(studio_settings(), **{field: ""})).studio_configured, field)
+        self.assertFalse(Settings(**dict(studio_settings(), studio_service_token=STUDIO_GRANT_SECRET)).studio_configured)
+        for bad in ("ftp://agent", "http://user:pw@agent:8081", "http://agent:8081/internal", "http://agent?x=1"):
+            with self.assertRaises(ValueError, msg=bad):
+                Settings(**dict(studio_settings(), studio_agent_url=bad))
+
+    def test_from_env_reads_studio_values_and_sweeper_flag(self):
+        import os
+        from unittest import mock
+        env = {"PC_STUDIO_AGENT_URL": "http://shortvideo-api:8081/", "SHORTVIDEO_SERVICE_TOKEN": "t" * 20,
+               "SHORTVIDEO_GRANT_SECRET": "g" * 20, "SHORTVIDEO_QUOTE_SECRET": "q" * 20}
+        with mock.patch.dict(os.environ, env, clear=False):
+            os.environ.pop("PC_STUDIO_SWEEPER", None)
+            settings = Settings.from_env()
+            self.assertEqual(settings.studio_agent_url, "http://shortvideo-api:8081")
+            self.assertTrue(settings.studio_configured and settings.studio_sweeper)
+            self.assertNotIn("g" * 20, repr(settings))
+            os.environ["PC_STUDIO_SWEEPER"] = "0"
+            self.assertFalse(Settings.from_env().studio_sweeper)
+
+
+class StudioFlowTests(StudioCase):
+    def test_templates_and_credits(self):
+        client, user_id = self.customer()
+        templates = client.get(BASE + "/studio/templates").json()["items"]
+        self.assertEqual(templates[0]["id"], "ecommerce")
+        self.assertNotIn("rules", templates[0])
+        self.assertEqual(templates[0]["prices"]["draft"], 2)
+        self.assertEqual(client.get(BASE + "/studio/credits").json(), {"balance": 0, "reserved": 0, "plan": None, "period_end": None, "recent": []})
+        self.grant(user_id, 50, note="welcome", plan="merchant")
+        credits = client.get(BASE + "/studio/credits").json()
+        self.assertEqual((credits["balance"], credits["reserved"], credits["plan"]), (50, 0, "merchant"))
+        self.assertEqual([(r["kind"], r["delta"], r["note"]) for r in credits["recent"]], [("grant", 50, "welcome")])
+
+    def test_create_project_reserves_the_draft_and_settles_it(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 10)
+        response = self.create(client)
+        self.assertEqual(response.status_code, 201, response.text)
+        body = response.json()
+        self.assertEqual((body["status"], body["state"]), ("drafting", "submitted"))
+        self.assertEqual((self.account(user_id)["balance"], self.account(user_id)["reserved"]), (8, 2))
+        op = self.agent.ops[body["op_id"]]
+        self.assertEqual((op["owner"], op["type"], op["credits"], op["plan"]), (user_id, "draft", 2, "creator"))
+        project = client.get(BASE + "/studio/projects/" + body["id"]).json()
+        self.assertEqual(project["active_op"]["op_id"], body["op_id"])
+        self.agent.finish(body["op_id"])
+        project = client.get(BASE + "/studio/projects/" + body["id"]).json()  # lazy reconcile
+        self.assertIsNone(project["active_op"])
+        self.assertEqual(self.ops()[body["op_id"]]["state"], "settled")
+        self.assertEqual((self.account(user_id)["balance"], self.account(user_id)["reserved"]), (8, 0))
+        op = client.get(BASE + "/studio/projects/" + body["id"] + "/ops/" + body["op_id"]).json()
+        self.assertEqual((op["state"], op["credits_charged"], op["credits_refunded"], op["error"]), ("settled", 2, 0, None))
+
+    def test_create_project_is_idempotent_and_a_402_retry_reuses_the_project(self):
+        client, user_id = self.customer()
+        first = self.create(client, key="create-once")
+        self.assertEqual((first.status_code, first.json()["error"]), (402, "studio_insufficient_credits"))
+        projects = rows(self.store, "studio_projects")
+        self.assertEqual(len(projects), 1)  # the empty project stays; no op, no ledger row
+        self.assertEqual((rows(self.store, "studio_ops"), rows(self.store, "studio_ledger")), ([], []))
+        self.grant(user_id, 5)
+        second = self.create(client, key="create-once")
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json()["id"], projects[0]["id"])
+        replay = self.create(client, key="create-once")
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual((replay.json()["id"], replay.json()["op_id"]), (second.json()["id"], second.json()["op_id"]))
+        self.assertEqual(len(self.agent.projects), 1)
+        self.assertEqual(len(self.agent.ops), 1)
+        self.assertEqual([c[0] for c in self.agent.calls].count("submit_op"), 1)
+        self.assertEqual(self.account(user_id)["balance"], 3)
+
+    def test_agent_rejecting_the_inputs_leaves_no_project(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 10)
+        response = self.create(client, topic="BLOCKED")
+        self.assertEqual((response.status_code, response.json()["error"]), (400, "studio_invalid_input"))
+        self.assertEqual(rows(self.store, "studio_projects"), [])
+        self.assertEqual(self.account(user_id)["balance"], 10)
+
+    def test_render_partial_failure_charges_only_produced_credits(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client, credits=20)
+        quote = self.quote(client, pid)
+        self.assertEqual(quote["credits"], 10)
+        response = self.submit(client, pid, quote)
+        self.assertEqual(response.status_code, 202, response.text)
+        op_id = response.json()["op_id"]
+        self.assertEqual(response.json()["state"], "submitted")
+        self.assertEqual((self.account(user_id)["balance"], self.account(user_id)["reserved"]), (8, 10))
+        self.agent.finish(op_id, "failed", produced_credits=6, error={"code": "gateway_error", "message": "upstream said: secret detail"})
+        op = client.get(BASE + "/studio/projects/" + pid + "/ops/" + op_id).json()
+        self.assertEqual((op["state"], op["credits_charged"], op["credits_refunded"], op["error"]), ("settled_partial", 6, 4, {"code": "gateway_error"}))
+        self.assertEqual((self.account(user_id)["balance"], self.account(user_id)["reserved"]), (12, 0))
+        self.assertNotIn("secret detail", json.dumps(rows(self.store, "studio_ops")))
+
+    def test_failed_op_that_produced_nothing_is_refunded(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client, credits=20)
+        op_id = self.submit(client, pid, self.quote(client, pid)).json()["op_id"]
+        self.agent.finish(op_id, "failed", error={"code": "interrupted", "message": "x"})
+        self.assertEqual(client.get(BASE + "/studio/projects/" + pid + "/ops/" + op_id).json()["state"], "refunded")
+        self.assertEqual(self.account(user_id)["balance"], 18)
+
+    def test_quote_tampering_is_400_and_reserves_nothing(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client, credits=20)
+        other, _ = self.customer("other@example.test")
+        other_pid = self.drafted(other, credits=20)
+        quote = self.quote(client, pid)
+        before = (self.account(user_id), len(rows(self.store, "studio_ops")))
+        submits = [c[0] for c in self.agent.calls].count("submit_op")
+        tampered = [{"credits": 1}, {"credits": 0}, {"storyboard_rev": quote["storyboard_rev"] + 1}, {"exp": quote["exp"] + 3600},
+                    {"type": "export"}, {"target": "16:9"}, {"sig": "0" * 64}, {"sig": "not-hex"}, {"quote_id": "q_other"},
+                    {"credits": "10"}, {"credits": True}, {"target": "a|b"}]
+        for change in tampered:
+            response = self.submit(client, pid, quote, **change)
+            self.assertEqual((response.status_code, response.json()["error"]), (400, "studio_invalid_input"), change)
+        # A genuine quote for another project, or another user's quote, does not transfer either.
+        stolen = self.quote(other, other_pid)
+        response = self.submit(client, pid, stolen)
+        self.assertEqual(response.status_code, 400)
+        response = self.submit(client, other_pid, quote)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual((self.account(user_id), len(rows(self.store, "studio_ops"))), before)
+        self.assertEqual([c[0] for c in self.agent.calls].count("submit_op"), submits)
+
+    def test_expired_quote_is_409(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        quote = self.quote(client, pid)
+        self.now += 601
+        response = self.submit(client, pid, quote)
+        self.assertEqual((response.status_code, response.json()["error"]), (409, "studio_stale_quote"))
+
+    def test_op_submission_is_idempotent(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        quote = self.quote(client, pid)
+        first = self.submit(client, pid, quote, key="render-key-1")
+        again = self.submit(client, pid, quote, key="render-key-1")
+        self.assertEqual((first.status_code, again.status_code), (202, 200))
+        self.assertEqual(first.json()["op_id"], again.json()["op_id"])
+        # The same quote under a new key is refused locally: no second reservation, no agent call.
+        calls = len(self.agent.calls)
+        third = self.submit(client, pid, quote, key="render-key-2")
+        self.assertEqual((third.status_code, third.json()["error"]), (409, "studio_stale_quote"))
+        self.assertEqual(len(self.agent.calls), calls)
+        self.assertEqual([c[0] for c in self.agent.calls].count("submit_op"), 2)  # draft + render
+        self.assertEqual(self.account(user_id)["reserved"], 10)
+
+    def test_stale_quote_from_the_agent_refunds_immediately(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        quote = self.quote(client, pid)
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/settings", {"voice": "v2"}).status_code, 200)
+        response = self.submit(client, pid, quote)
+        self.assertEqual((response.status_code, response.json()["error"]), (409, "studio_stale_quote"))
+        op = [o for o in rows(self.store, "studio_ops") if o["type"] == "render"][0]
+        self.assertEqual((op["state"], op["error"]), ("refunded", "studio_stale_quote"))
+        self.assertEqual(self.account(user_id)["balance"], 98)
+
+    def test_any_4xx_from_submit_refunds(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        for error, status, code in ((AgentError("rejected", 429, "studio_daily_cap"), 429, "studio_daily_cap"),
+                                    (AgentError("rejected", 409, "studio_storage_full"), 409, "studio_storage_full"),
+                                    (AgentError("rejected", 403, "studio_forbidden"), 503, "studio_unavailable")):
+            self.agent.submit_error, self.agent.submit_accepts = error, False
+            response = self.submit(client, pid, self.quote(client, pid))
+            self.assertEqual((response.status_code, response.json()["error"]), (status, code))
+        self.assertEqual({o["state"] for o in rows(self.store, "studio_ops") if o["type"] == "render"}, {"refunded"})
+        self.assertEqual(self.account(user_id)["balance"], 98)
+
+    def test_timeout_goes_unknown_and_the_sweeper_settles_it(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        self.agent.submit_error, self.agent.submit_accepts = AgentError("timeout"), True
+        response = self.submit(client, pid, self.quote(client, pid))
+        self.assertEqual((response.status_code, response.json()["state"]), (202, "unknown"))
+        op_id = response.json()["op_id"]
+        self.assertEqual(self.account(user_id)["reserved"], 10)  # never refunded on a timeout
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op_id]["state"], "submitted")
+        self.agent.finish(op_id)
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op_id]["state"], "settled")
+        self.assertEqual((self.account(user_id)["balance"], self.account(user_id)["reserved"]), (88, 0))
+
+    def test_5xx_the_agent_never_saw_is_refunded_after_120_s(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        self.agent.submit_error, self.agent.submit_accepts = AgentError("unavailable", 502), False
+        op_id = self.submit(client, pid, self.quote(client, pid)).json()["op_id"]
+        self.assertEqual(self.ops()[op_id]["state"], "unknown")
+        self.now += 119
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op_id]["state"], "unknown")
+        self.now += 1
+        self.studio.sweep()
+        self.assertEqual((self.ops()[op_id]["state"], self.ops()[op_id]["error"]), ("refunded", "not_submitted"))
+
+    def test_crash_after_reserve_is_refunded_after_120_s(self):
+        _, user_id = self.customer()
+        self.grant(user_id, 10)
+        self.add_project(user_id, "p-crash")
+        op, created = self.studio.reserve(user_id, "p-crash", self.raw_quote(user_id, "p-crash", 10), "crash-key-1")
+        self.assertTrue(created)
+        self.now += 119
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op["op_id"]]["state"], "reserved")
+        self.now += 1
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op["op_id"]]["state"], "refunded")
+        self.assertEqual(self.account(user_id)["balance"], 10)
+
+    def test_crash_after_the_agent_accepted_is_settled(self):
+        _, user_id = self.customer()
+        self.grant(user_id, 10)
+        self.add_project(user_id, "p-acc")
+        self.agent.create_project(user_id, {"project_id": "p-acc", "template_id": "ecommerce", "aspect": "9:16", "inputs": {}})
+        quote = self.agent.quote(user_id, "p-acc", {"type": "render"})
+        op, _ = self.studio.reserve(user_id, "p-acc", self.studio.verify_quote(user_id, "p-acc", quote), "acc-key-1")
+        # The portal died after the agent accepted: the agent knows the op, the portal still has it reserved.
+        self.agent.submit_op(user_id, "p-acc", {"op_id": op["op_id"], "type": "render", "target": None,
+                                                "quote": {k: quote[k] for k in ("quote_id", "credits", "storyboard_rev", "exp", "sig")},
+                                                "grant": self.studio.grant(op)})
+        self.now += 500  # older than 120 s, but found: never refunded
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op["op_id"]]["state"], "submitted")
+        self.agent.finish(op["op_id"])
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op["op_id"]]["state"], "settled")
+
+    def test_settle_and_refund_race_has_exactly_one_winner(self):
+        _, user_id = self.customer()
+        self.grant(user_id, 100)
+        for round_ in range(6):
+            pid = "p-race-%d" % round_
+            self.add_project(user_id, pid)
+            op, _ = self.studio.reserve(user_id, pid, self.raw_quote(user_id, pid, 10), "race-key-%d" % round_)
+            self.studio.move(op["op_id"], "submitted", ("reserved",))
+            barrier, results = threading.Barrier(3), []
+
+            def settle():
+                barrier.wait()
+                results.append(("settle", self.studio.finish(op["op_id"], 10, succeeded=True)))
+
+            def refund():
+                barrier.wait()
+                results.append(("refund", self.studio.finish(op["op_id"], 0, error="x")))
+
+            def partial():
+                barrier.wait()
+                results.append(("partial", self.studio.finish(op["op_id"], 4)))
+            threads = [threading.Thread(target=f) for f in (settle, refund, partial)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(sorted(won for _, won in results), [False, False, True], results)
+            self.check_invariants()
+
+    def test_reserve_under_30_threads_with_credits_for_3(self):
+        _, user_id = self.customer()
+        self.grant(user_id, 30)
+        self.studio.max_active_per_user = None  # busy caps off: only the balance decides
+        self.studio.limits["project"] = (1000, 3600)
+        pids = ["p-thread-%02d" % i for i in range(30)]
+        for pid in pids:
+            self.add_project(user_id, pid)
+        barrier, results, lock = threading.Barrier(30), [], threading.Lock()
+
+        def worker(pid):
+            barrier.wait()
+            try:
+                _, created = self.studio.reserve(user_id, pid, self.raw_quote(user_id, pid, 10), "k-" + pid)
+                outcome = "created" if created else "replay"
+            except Exception as error:  # noqa: BLE001
+                outcome = getattr(error, "code", repr(error))
+            with lock:
+                results.append(outcome)
+        threads = [threading.Thread(target=worker, args=(pid,)) for pid in pids]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(sorted(results), sorted(["created"] * 3 + ["studio_insufficient_credits"] * 27), results)
+        self.assertEqual((self.account(user_id)["balance"], self.account(user_id)["reserved"]), (0, 30))
+
+    def test_one_active_op_per_project_and_two_per_user(self):
+        _, user_id = self.customer()
+        self.grant(user_id, 100)
+        for pid in ("p-a", "p-b", "p-c"):
+            self.add_project(user_id, pid)
+        self.studio.reserve(user_id, "p-a", self.raw_quote(user_id, "p-a", 10), "busy-key-1")
+        with self.assertRaises(Exception) as caught:
+            self.studio.reserve(user_id, "p-a", self.raw_quote(user_id, "p-a", 10, quote_id="q_a2"), "busy-key-2")
+        self.assertEqual(caught.exception.code, "studio_busy")
+        self.studio.reserve(user_id, "p-b", self.raw_quote(user_id, "p-b", 10), "busy-key-3")
+        with self.assertRaises(Exception) as caught:
+            self.studio.reserve(user_id, "p-c", self.raw_quote(user_id, "p-c", 10), "busy-key-4")
+        self.assertEqual((caught.exception.code, caught.exception.status), ("studio_busy", 409))
+        # The partial unique index itself, without the application check.
+        with self.assertRaises(self.store.IntegrityError):
+            with self.store.connect() as con:
+                con.execute("INSERT INTO studio_ops (op_id,user_id,project_id,type,credits,state,idempotency_key,created_at,updated_at) "
+                            "VALUES ('o-dup',?,'p-a','render',0,'unknown','dup-key-1',0,0)", (user_id,))
+        with self.store.connect() as con:  # a terminal op on the same project is fine
+            con.execute("INSERT INTO studio_ops (op_id,user_id,project_id,type,credits,state,credits_charged,idempotency_key,created_at,updated_at) "
+                        "VALUES ('o-old',?,'p-a','render',0,'refunded',0,'dup-key-2',0,0)", (user_id,))
+            con.execute("INSERT INTO studio_ledger (user_id,op_id,kind,delta,created_at) VALUES (?,'o-old','reserve',0,0)", (user_id,))
+
+    def test_edits_are_409_while_an_op_is_active(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        self.agent.submit_error, self.agent.submit_accepts = AgentError("timeout"), False
+        self.submit(client, pid, self.quote(client, pid))
+        calls = len(self.agent.calls)
+        for path, body in (("/settings", {"voice": "v2"}), ("/shots/1/edit", {"narration": "x"})):
+            response = self.post(client, "/studio/projects/" + pid + path, body)
+            self.assertEqual((response.status_code, response.json()["error"]), (409, "studio_busy"), path)
+        self.assertEqual(len(self.agent.calls), calls)
+        project = client.get(BASE + "/studio/projects/" + pid).json()
+        self.assertEqual(project["active_op"]["state"], "unknown")  # the UI keeps polling
+        self.now += 121
+        self.studio.sweep()
+
+    def test_disabled_accounts_start_nothing_but_in_flight_ops_settle(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        op_id = self.submit(client, pid, self.quote(client, pid)).json()["op_id"]
+        self.add_project(user_id, "p-later")
+        with self.store.connect() as con:
+            con.execute("UPDATE users SET disabled_at=? WHERE id=?", (int(time.time()), user_id))
+        self.assertEqual(client.get(BASE + "/studio/credits").status_code, 401)
+        with self.assertRaises(Exception) as caught:
+            self.studio.reserve(user_id, "p-later", self.raw_quote(user_id, "p-later", 0), "late-key-1")
+        self.assertEqual((caught.exception.code, caught.exception.status), ("account_disabled", 403))
+        self.agent.finish(op_id)
+        self.studio.sweep()
+        self.assertEqual(self.ops()[op_id]["state"], "settled")
+
+    def test_owner_isolation(self):
+        client, _ = self.customer()
+        pid = self.drafted(client)
+        op_id = self.submit(client, pid, self.quote(client, pid)).json()["op_id"]
+        other, _ = self.customer("intruder@example.test")
+        self.grant(self.user_of(other), 100)
+        for response in (other.get(BASE + "/studio/projects/" + pid), other.get(BASE + "/studio/projects/" + pid + "/ops/" + op_id),
+                         self.post(other, "/studio/projects/" + pid + "/quote", {"type": "render"}),
+                         self.post(other, "/studio/projects/" + pid + "/settings", {"voice": "v2"}),
+                         self.post(other, "/studio/uploads", {"purpose": "shot_image", "content_type": "image/png", "bytes": 10, "project_id": pid})):
+            self.assertEqual((response.status_code, response.json()["error"]), (404, "studio_not_found"))
+        self.assertEqual(other.get(BASE + "/studio/projects").json()["items"], [])
+
+    def test_uploads(self):
+        client, user_id = self.customer()
+        response = self.post(client, "/studio/uploads", {"purpose": "input_image", "content_type": "image/png", "bytes": 1000})
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(set(response.json()), {"upload_id", "put_url", "expires_at"})
+        for body in ({"purpose": "input_image", "content_type": "image/png", "bytes": 1000, "project_id": "p1"},
+                     {"purpose": "music", "content_type": "audio/mpeg", "bytes": 1000},
+                     {"purpose": "other", "content_type": "image/png", "bytes": 1000},
+                     {"purpose": "input_image", "content_type": "text/html; x", "bytes": 1000},
+                     {"purpose": "input_image", "content_type": "image/png", "bytes": 0}):
+            self.assertEqual(self.post(client, "/studio/uploads", body).status_code, 400, body)
+        response = self.post(client, "/studio/uploads", {"purpose": "input_image", "content_type": "image/png", "bytes": 21 * 1024 * 1024})
+        self.assertEqual((response.status_code, response.json()["error"]), (413, "studio_too_large"))
+
+    def test_rate_limits_are_per_user_and_reserved_before_the_agent_call(self):
+        self.assertEqual(LIMITS, {"project": (20, 3600), "upload": (60, 3600), "quote": (120, 60)})
+        client, user_id = self.customer()
+        pid = self.drafted(client)
+        self.studio.limits["quote"] = (3, 60)
+        for _ in range(3):
+            self.quote(client, pid)
+        response = self.post(client, "/studio/projects/" + pid + "/quote", {"type": "render"})
+        self.assertEqual((response.status_code, response.json()["error"]), (429, "studio_rate_limited"))
+        other, _ = self.customer("second@example.test")  # another user is not affected
+        self.assertEqual(self.post(other, "/studio/projects/" + self.drafted(other) + "/quote", {"type": "render"}).status_code, 200)
+        self.now += 60
+        self.quote(client, pid)
+        self.studio.limits["upload"] = (1, 3600)
+        upload = {"purpose": "input_image", "content_type": "image/png", "bytes": 10}
+        self.assertEqual(self.post(client, "/studio/uploads", upload).status_code, 201)
+        self.assertEqual(self.post(client, "/studio/uploads", upload).status_code, 429)
+        self.studio.limits["project"] = (2, 3600)  # one already used by drafted()
+        self.assertEqual(self.create(client, key="limit-key-1").status_code, 201)
+        self.assertEqual(self.create(client, key="limit-key-1").status_code, 200)  # a replay is not counted
+        self.assertEqual(self.create(client, key="limit-key-2").status_code, 429)
+        self.assertTrue(rows(self.store, "studio_rate"))
+        self.now += 2 * 86400
+        self.studio.sweep()  # old windows are dropped
+        self.assertEqual(rows(self.store, "studio_rate"), [])
+
+    def test_body_size_is_checked_before_parsing(self):
+        client, _ = self.customer()
+        calls = len(self.agent.calls)
+        big = b'{"idempotency_key":"abcdefgh","inputs":{"topic":"' + b"x" * 70000 + b'"}}'
+        response = client.post(BASE + "/studio/projects", content=big, headers={"Origin": ORIGIN, "Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(len(self.agent.calls), calls)
+
+    def test_agent_errors_map_to_portal_errors(self):
+        client, _ = self.customer()
+        pid = self.drafted(client)
+        for error, status, code in ((AgentError("unavailable", 502), 503, "studio_unavailable"), (AgentError("timeout"), 503, "studio_unavailable"),
+                                    (AgentError("invalid_response"), 503, "studio_unavailable"),
+                                    (AgentError("rejected", 401, "studio_unauthorized"), 503, "studio_unavailable"),
+                                    (AgentError("rejected", 404, None), 404, "studio_not_found"),
+                                    (AgentError("rejected", 409, "studio_needs_render"), 409, "studio_needs_render")):
+            self.agent.fail = error
+            response = client.get(BASE + "/studio/projects/" + pid)
+            self.assertEqual((response.status_code, response.json()["error"]), (status, code), error)
+            self.assertNotIn("studio_", response.json()["detail"])
+        self.agent.fail = None
+
+    def test_project_list_pages_and_caches(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 100)
+        ids = []
+        for i in range(3):
+            self.now += 1
+            response = self.create(client)
+            ids.append(response.json()["id"])
+            self.agent.finish(response.json()["op_id"])
+            self.studio.sweep()
+        first = client.get(BASE + "/studio/projects?limit=2").json()
+        self.assertEqual([p["id"] for p in first["items"]], ids[::-1][:2])
+        self.assertEqual(first["items"][0]["status"], "draft_ready")
+        self.assertTrue(first["items"][0]["thumb_url"].startswith("https://media.test/"))
+        second = client.get(BASE + "/studio/projects?limit=2&cursor=" + first["next"]).json()
+        self.assertEqual(([p["id"] for p in second["items"]], second["next"]), ([ids[0]], None))
+        fetches = [c[0] for c in self.agent.calls].count("get_project")
+        client.get(BASE + "/studio/projects")
+        self.assertEqual([c[0] for c in self.agent.calls].count("get_project"), fetches)  # cached, still fresh
+        self.now += 7200  # the cached signed thumbnails are about to expire: refetched
+        client.get(BASE + "/studio/projects")
+        self.assertEqual([c[0] for c in self.agent.calls].count("get_project"), fetches + 3)
+        for query in ("limit=0", "limit=51", "limit=x", "cursor=bad", "cursor=1_a%7Cb"):
+            self.assertEqual(client.get(BASE + "/studio/projects?" + query).status_code, 400, query)
+
+    def test_export_costs_nothing_and_still_goes_through_an_op(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client, credits=2)
+        self.assertEqual(self.account(user_id)["balance"], 0)
+        quote = self.quote(client, pid, "export")
+        self.assertEqual((quote["credits"], quote["target"]), (0, "9:16"))
+        response = self.submit(client, pid, quote)
+        self.assertEqual(response.status_code, 202, response.text)
+        self.agent.finish(response.json()["op_id"])
+        self.studio.sweep()
+        self.assertEqual(self.ops()[response.json()["op_id"]]["state"], "settled")
+
+    def test_shot_index_and_ids_are_validated(self):
+        client, _ = self.customer()
+        pid = self.drafted(client)
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/shots/1x/edit", {}).status_code, 404)
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/shots/9/edit", {"narration": "x"}).status_code, 404)
+        self.assertEqual(self.post(client, "/studio/projects/" + pid + "/shots/1/edit", {"narration": "x"}).status_code, 200)
+        self.assertEqual(client.get(BASE + "/studio/projects/" + pid + "/ops/nope.x").status_code, 404)
+        for body in ({"type": "Render"}, {"type": "render", "target": "a|b"}, {"type": "render", "target": True}):
+            self.assertEqual(self.post(client, "/studio/projects/" + pid + "/quote", body).status_code, 400, body)
+
+
+class StudioAdminTests(StudioCase):
+    def test_grant_is_admin_only_and_audited(self):
+        customer, user_id = self.customer()
+        anonymous = self.client()
+        body = {"user_id": user_id, "credits": 100}
+        self.assertEqual((self.post(customer, "/admin/studio/credits/grant", body).status_code), 403)
+        self.assertEqual((self.post(anonymous, "/admin/studio/credits/grant", body).status_code), 401)
+        self.assertEqual(customer.get(BASE + "/admin/studio/usage").status_code, 403)
+        self.assertEqual(anonymous.get(BASE + "/admin/studio/usage").status_code, 401)
+        account = self.grant(user_id, 100, note="top-up", plan="agency", period_end=T0 + 86400)
+        self.assertEqual((account["balance"], account["plan"], account["period_end"]), (100, "agency", T0 + 86400))
+        audit = self.audit("admin.studio_credits_grant")
+        self.assertEqual(len(audit), 1)
+        self.assertEqual(json.loads(audit[0]["details"])["balance"], [0, 100])
+        self.assertEqual(audit[0]["target_id"], user_id)
+        account = self.grant(user_id, -40, note="month end")
+        self.assertEqual((account["balance"], account["plan"]), (60, "agency"))
+        self.assertEqual(len(self.audit("admin.studio_credits_expire")), 1)
+        too_much = self.post(self.admin_client(), "/admin/studio/credits/grant", {"user_id": user_id, "credits": -61})
+        self.assertEqual((too_much.status_code, too_much.json()["error"]), (409, "studio_insufficient_credits"))
+        for bad in ({"user_id": user_id, "credits": 0}, {"user_id": user_id, "credits": 1.5}, {"user_id": user_id, "credits": True},
+                    {"user_id": user_id, "credits": 2_000_000}, {"user_id": user_id, "credits": 5, "plan": "gold"},
+                    {"user_id": "a|b", "credits": 5}, {"user_id": user_id, "credits": 5, "note": "x" * 201}):
+            self.assertEqual(self.post(self.admin_client(), "/admin/studio/credits/grant", bad).status_code, 400, bad)
+        missing = self.post(self.admin_client(), "/admin/studio/credits/grant", {"user_id": "f" * 32, "credits": 5})
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(len(self.audit("admin.studio_credits_grant")), 1)
+        self.assertEqual(sum(r["delta"] for r in rows(self.store, "studio_ledger")), 60)
+
+    def test_grant_works_before_the_agent_is_connected(self):
+        self.agent.configured = False
+        _, user_id = self.customer()
+        self.assertEqual(self.grant(user_id, 10)["balance"], 10)
+
+    def test_usage_joins_portal_ledger_and_agent_costs(self):
+        client, user_id = self.customer()
+        pid = self.drafted(client, credits=30)
+        op_id = self.submit(client, pid, self.quote(client, pid)).json()["op_id"]
+        self.agent.finish(op_id, "failed", produced_credits=4)
+        self.studio.sweep()
+        admin = self.admin_client()
+        usage = admin.get(BASE + "/admin/studio/usage?month=2027-01").json()
+        self.assertEqual((usage["month"], usage["agent_status"], usage["gpu_usd_per_hour"]), ("2027-01", "ok", 2.08))
+        row = next(u for u in usage["users"] if u["user_id"] == user_id)
+        self.assertEqual((row["email"], row["ops"], row["credits_granted"], row["credits_charged"], row["credits_refunded"]),
+                         ("maker@example.test", 2, 30, 6, 6))
+        self.assertEqual((row["agent_ops"], row["credits_quoted"], row["credits_produced"]), (2, 12, 6))
+        self.assertEqual(admin.get(BASE + "/admin/studio/usage?month=2027-02").json()["users"][0]["ops"], 0)
+        self.assertEqual(admin.get(BASE + "/admin/studio/usage?month=2027-13").status_code, 400)
+        self.agent.fail = AgentError("unavailable")
+        degraded = admin.get(BASE + "/admin/studio/usage?month=2027-01").json()
+        self.assertEqual(degraded["agent_status"], "unavailable")
+        self.assertEqual(next(u for u in degraded["users"] if u["user_id"] == user_id)["credits_charged"], 6)
+        self.agent.fail = None
+
+
+class StudioSweeperLifespanTests(StudioCase):
+    sweeper = True
+
+    def test_lifespan_sweeper_settles_ops(self):
+        self.studio.clock = time.time
+        self.agent.clock = time.time
+        with TestClient(self.app, base_url=ORIGIN) as client:
+            self.register(client, "sweep@example.test")
+            user_id = self.user_of(client)
+            self.grant(user_id, 10)
+            op_id = self.create(client).json()["op_id"]
+            self.agent.finish(op_id)
+            deadline = time.time() + 5
+            while time.time() < deadline and self.ops()[op_id]["state"] != "settled":
+                time.sleep(0.05)
+            self.assertEqual(self.ops()[op_id]["state"], "settled")
+
+
+class StudioSigningTests(unittest.TestCase):
+    def test_messages_match_the_documented_format(self):
+        grant = sign_grant("s", "o1", "u1", "p1", "regenerate", "3", "q1", 10, 4, "creator", 99)
+        self.assertEqual(grant, __import__("hmac").new(b"s", b"grant.v1|o1|u1|p1|regenerate|3|q1|10|4|creator|99", "sha256").hexdigest())
+        quote = sign_quote("s", "q1", "u1", "p1", "draft", None, 2, 0, 99)
+        self.assertEqual(quote, __import__("hmac").new(b"s", b"quote.v1|q1|u1|p1|draft||2|0|99", "sha256").hexdigest())
+        with self.assertRaises(ValueError):
+            sign_quote("s", "q|1", "u1", "p1", "draft", None, 2, 0, 99)
+
+    @unittest.skipUnless(AGENT_SIGNING.exists(), "shortvideo-agent checkout not next to the marketplace repo")
+    def test_signatures_match_the_agent_implementation(self):
+        spec = importlib.util.spec_from_file_location("agent_signing", AGENT_SIGNING)
+        agent = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(agent)
+        values = dict(op_id="o1", owner="u1", project_id="p1", type="add_aspect", target="16:9", quote_id="q_1", credits=7,
+                      storyboard_rev=3, plan="merchant", exp=1800000060)
+        self.assertEqual(sign_grant("g", *values.values()), agent.sign_grant("g", **values))
+        quote = {k: values[k] for k in ("quote_id", "owner", "project_id", "type", "target", "credits", "storyboard_rev", "exp")}
+        self.assertEqual(sign_quote("q", *quote.values()), agent.sign_quote("q", **quote))
+        self.assertEqual(sign_quote("q", "q_1", "u1", "p1", "draft", None, 2, 0, 5), agent.sign_quote("q", quote_id="q_1", owner="u1", project_id="p1",
+                                                                                                      type="draft", target=None, credits=2, storyboard_rev=0, exp=5))
+
+
+class StudioAgentClientTests(unittest.TestCase):
+    def agent(self, handler, **overrides):
+        return StudioAgent(Settings(**dict(studio_settings(), **overrides)), transport=httpx.MockTransport(handler))
+
+    def test_headers_paths_and_bodies(self):
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(202, json={"op_id": "o1", "state": "queued"})
+        result = self.agent(handler).submit_op("user1", "p1", {"op_id": "o1"})
+        self.assertEqual(result["state"], "queued")
+        request = seen[0]
+        self.assertEqual(str(request.url), "http://shortvideo-api:8081/internal/v1/projects/p1/ops")
+        self.assertEqual(request.headers["authorization"], "Bearer " + STUDIO_TOKEN)
+        self.assertEqual(request.headers["x-studio-owner"], "user1")
+        self.assertEqual(json.loads(request.content), {"op_id": "o1"})
+        self.agent(handler).usage("2027-01")
+        self.assertNotIn("x-studio-owner", seen[1].headers)
+        self.assertEqual(str(seen[1].url), "http://shortvideo-api:8081/internal/v1/usage?month=2027-01")
+
+    def test_error_mapping(self):
+        cases = ((lambda r: httpx.Response(409, json={"error": {"code": "studio_stale_quote", "message": "m"}}), ("rejected", 409, "studio_stale_quote")),
+                 (lambda r: httpx.Response(404, text="nope"), ("rejected", 404, None)),
+                 (lambda r: httpx.Response(400, json={"error": {"code": "Bad Code!", "message": "m"}}), ("rejected", 400, None)),
+                 (lambda r: httpx.Response(500, json={"error": {"code": "x"}}), ("unavailable", 500, None)),
+                 (lambda r: httpx.Response(302, headers={"Location": "http://elsewhere"}), ("unavailable", 302, None)),
+                 (lambda r: httpx.Response(200, text="<html>"), ("invalid_response", 200, None)),
+                 (lambda r: httpx.Response(200, json=[1, 2]), ("invalid_response", 200, None)),
+                 (lambda r: httpx.Response(200, content=b"{" + b" " * (4 * 1024 * 1024 + 1) + b"}"), ("invalid_response", 200, None)))
+        for handler, expected in cases:
+            with self.assertRaises(AgentError) as caught:
+                self.agent(handler).get_project("user1", "p1")
+            self.assertEqual((caught.exception.kind, caught.exception.status, caught.exception.code), expected)
+
+        def timeout(request):
+            raise httpx.ReadTimeout("slow", request=request)
+
+        def refused(request):
+            raise httpx.ConnectError("refused", request=request)
+        for handler, kind in ((timeout, "timeout"), (refused, "unavailable")):
+            with self.assertRaises(AgentError) as caught:
+                self.agent(handler).get_op("user1", "p1", "o1")
+            self.assertEqual(caught.exception.kind, kind)
+
+    def test_ids_are_checked_before_any_request(self):
+        seen = []
+        agent = self.agent(lambda r: seen.append(r) or httpx.Response(200, json={}))
+        for call in (lambda: agent.get_project("user1", "../x"), lambda: agent.get_op("user1", "p1", "a/b"),
+                     lambda: agent.edit_shot("user1", "p1", -1, {}), lambda: agent.get_project("bad owner", "p1")):
+            with self.assertRaises(AgentError):
+                call()
+        self.assertEqual(seen, [])
+
+    def test_unconfigured(self):
+        agent = self.agent(lambda r: httpx.Response(200, json={}), studio_quote_secret="")
+        self.assertFalse(agent.configured)
+        with self.assertRaises(AgentError) as caught:
+            agent.templates("user1")
+        self.assertEqual(caught.exception.kind, "unconfigured")
+
+
+if __name__ == "__main__":
+    unittest.main()

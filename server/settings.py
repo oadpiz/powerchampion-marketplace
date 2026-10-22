@@ -29,6 +29,16 @@ class Settings:
     runtime_encryption_key: str = field(default="", repr=False)
     # Base of the cluster Grafana for the admin Engineers page links; "" hides the links.
     grafana_url: str = "https://grafana.powerchampion.ai"
+    # Video studio (server/studio.py): the shortvideo-agent internal API on the Compose network and
+    # the three secrets shared with it. Any of the four missing = studio routes answer 503 studio_unconfigured.
+    studio_agent_url: str = ""
+    studio_service_token: str = field(default="", repr=False)
+    studio_grant_secret: str = field(default="", repr=False)
+    studio_quote_secret: str = field(default="", repr=False)
+    # The settlement sweeper (a lifespan task). Off by default here so tests and ad-hoc apps never
+    # start it; from_env turns it on unless PC_STUDIO_SWEEPER=0.
+    studio_sweeper: bool = False
+    studio_sweep_interval: float = 10.0
 
     def __post_init__(self):
         parsed = urlsplit(self.gateway_origin)
@@ -48,6 +58,12 @@ class Settings:
             grafana = urlsplit(self.grafana_url)
             if grafana.scheme != "https" or not grafana.hostname or grafana.username or grafana.password or grafana.query or grafana.fragment or grafana.path not in ("", "/"):
                 raise ValueError("PC_GRAFANA_URL must be empty or an HTTPS origin without credentials, path or query")
+        if self.studio_agent_url:
+            agent = urlsplit(self.studio_agent_url)
+            if agent.scheme not in ("http", "https") or not agent.hostname or agent.username or agent.password or agent.query or agent.fragment or agent.path not in ("", "/"):
+                raise ValueError("PC_STUDIO_AGENT_URL must be empty or an http(s) origin without credentials, path or query")
+        if self.studio_sweep_interval <= 0:
+            raise ValueError("The studio sweep interval must be positive")
 
     @property
     def resolved_database_url(self):
@@ -56,6 +72,13 @@ class Settings:
         if self.db_path.startswith(("sqlite:///", "postgres://", "postgresql://", "postgresql+psycopg://")):
             return self.db_path
         return "sqlite:///" + self.db_path
+
+    @property
+    def studio_configured(self):
+        """All four studio values are set and the service token is not one of the signing secrets
+        (the agent refuses that combination too)."""
+        values = (self.studio_agent_url, self.studio_service_token, self.studio_grant_secret, self.studio_quote_secret)
+        return all(values) and self.studio_service_token not in (self.studio_grant_secret, self.studio_quote_secret)
 
     @property
     def trial_available(self):
@@ -96,4 +119,9 @@ class Settings:
             runtime_enabled=os.environ.get("PC_RUNTIME_ENABLED", "0") == "1",
             runtime_encryption_key=os.environ.get("PC_RUNTIME_ENCRYPTION_KEY", ""),
             grafana_url=os.environ.get("PC_GRAFANA_URL", "https://grafana.powerchampion.ai").strip().rstrip("/"),
+            studio_agent_url=os.environ.get("PC_STUDIO_AGENT_URL", "").strip().rstrip("/"),
+            studio_service_token=os.environ.get("SHORTVIDEO_SERVICE_TOKEN", ""),
+            studio_grant_secret=os.environ.get("SHORTVIDEO_GRANT_SECRET", ""),
+            studio_quote_secret=os.environ.get("SHORTVIDEO_QUOTE_SECRET", ""),
+            studio_sweeper=os.environ.get("PC_STUDIO_SWEEPER", "1") != "0",
         )

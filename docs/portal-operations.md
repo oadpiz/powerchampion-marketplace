@@ -372,6 +372,28 @@ b300-grafana-tunnel → Grafana（b300-31）→ Prometheus、annotations（b300-
 - 停用的工程師也列出，以灰色顯示。對不到名冊的資料（tku、root、`uid_N`、未分配節點的告警、對不到 owner 的部署）放在「未對應的資料」。
 - Grafana 連結的網址由 `PC_GRAFANA_URL` 決定（預設 `https://grafana.powerchampion.ai`，設為空字串則不顯示連結）。
 
+## 影片工作室（studio，S2 後端）
+
+規格在 shortvideo-agent 的 `docs/studio-spec.md`（v3、§12、§13.2）。S2 只有後端與 BFF 白名單，畫面是 S3、Compose 服務是 S4；**在 S4 之前生產環境沒有 shortvideo-api，所以 `/studio/*` 一律回 503 `studio_unconfigured`**。
+
+- **設定**：portal 需要 `PC_STUDIO_AGENT_URL`、`SHORTVIDEO_SERVICE_TOKEN`、`SHORTVIDEO_GRANT_SECRET`、`SHORTVIDEO_QUOTE_SECRET`（後三者與 shortvideo-api 相同；token 不可等於任一個 secret）。少一個就整個 studio 503。四個值只放 Dokploy 的 Environment，不寫進 compose。
+- **點數**：1 點＝NT$1 牌價。`POST /api/portal/admin/studio/credits/grant` `{user_id, credits, note?, plan?, period_end?}`（管理員限定，寫稽核 `admin.studio_credits_grant`；負數＝扣回，稽核 `admin.studio_credits_expire`，不能扣到可用餘額以下）。`plan` 是 `creator|merchant|agency`，決定 agent 端每日花費上限；第一次發點數沒給就用 `creator`。月初重置目前手動。
+- **用量**：`GET /api/portal/admin/studio/usage?month=YYYY-MM`：每位使用者的扣點／退點（portal 帳本）對照 agent 的牌價成本與 GPU 秒數。`est_gpu_usd` 是估算（D-V8 之前閘道仍以牌價計費）。agent 連不到時仍回 portal 的部分，`agent_status` 不是 `ok`。
+- **扣點流程**：報價（agent 簽章）→ portal 本地驗章 → 一個資料庫交易裡預扣（同時檢查冪等鍵、每個專案 1 個、每人 2 個進行中的工作、餘額）→ 送 agent。agent 回 4xx 立即退點；逾時或 5xx 進 `unknown`，由每 10 秒的 sweeper 向 agent 查詢後結算。portal 在預扣後當掉：120 秒後 agent 仍查無此工作就退點。失敗的工作只收已產出的部分（`produced_credits`）。
+- **對帳**：每位使用者 `studio_accounts.balance` 等於 `studio_ledger.delta` 的總和，`reserved` 等於進行中工作的點數總和。
+  ```sql
+  SELECT a.user_id, a.balance, (SELECT COALESCE(SUM(delta),0) FROM studio_ledger l WHERE l.user_id=a.user_id) AS ledger,
+         a.reserved, (SELECT COALESCE(SUM(credits),0) FROM studio_ops o WHERE o.user_id=a.user_id AND o.state IN ('reserved','submitted','unknown')) AS held
+  FROM studio_accounts a;
+  ```
+- **卡住的工作**：`submitted` 但 agent 查不到（agent 資料被清掉）不會自動退點，log 會有 `studio op … is submitted but unknown to the agent`；確認後由管理員用 grant 補回點數。
+- **秘密外洩**：輪換 `SHORTVIDEO_SERVICE_TOKEN` 與 `SHORTVIDEO_GRANT_SECRET`（兩邊同時改、同時重啟）；外洩期間只有 agent 的全域每日上限擋得住（規格 §2.2）。
+- **回滾（schema）**：migration `0005_studio` 只新增 5 張 `studio_*` 表，其他功能不受影響。**舊映像不認得 revision `0005_studio`**，退回前先用新映像在 `powerchampion-portal` 容器的 Terminal（Bash）降級（會刪掉 studio 的表與帳本，先 dump）：
+
+  ```sh
+  python -c "from alembic import command; from server.migrate import _config; from server.db import Database; from server.settings import Settings; command.downgrade(_config(Database(Settings.from_env().resolved_database_url).url), '0004_engineer_accounts')"
+  ```
+
 ## 串接正式服務前
 
 1. 為帳號服務配置獨立的 HTTPS 入口、持久資料庫和備份。前端設定 `PC_PORTAL_ORIGIN` 為該服務的 HTTPS origin，不包含路徑；開發時未設定此值會使用本機 `127.0.0.1:3020`。Cloudflare 部署請使用伺服器環境變數；本機的 `.dev.vars` 檔已排除版本控制。

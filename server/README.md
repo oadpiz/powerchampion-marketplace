@@ -245,6 +245,11 @@ this service. Registration establishes a portal account, not verified identity.
 | `PC_GRAFANA_URL` | `https://grafana.powerchampion.ai`; HTTPS origin of the cluster Grafana for the Engineers page links (`/d/b300-engineers?var-engineer=<username>`). Empty hides the links |
 | `PC_RUNTIME_ENABLED` | `0`; opt-in background Agent tasks when set to `1` |
 | `PC_RUNTIME_ENCRYPTION_KEY` | Separate Fernet key for per-task model credentials; missing/invalid key leaves tasks unavailable |
+| `PC_STUDIO_AGENT_URL` | Empty. Video studio: origin of the shortvideo-agent internal API on the Compose network (S4: `http://shortvideo-api:8081`), http(s) without path or credentials. Empty, or any of the three secrets below missing, makes every `/studio/*` route answer 503 `studio_unconfigured` (the admin credit grant still works) |
+| `SHORTVIDEO_SERVICE_TOKEN` | Video studio: bearer token for the agent's `/internal/v1/*` (same value in the agent). Must differ from both secrets below, otherwise the studio stays unconfigured |
+| `SHORTVIDEO_GRANT_SECRET` | Video studio: HMAC key the portal signs op grants with (same value in the agent) |
+| `SHORTVIDEO_QUOTE_SECRET` | Video studio: HMAC key the agent signs quotes with; the portal verifies quotes locally before reserving credits |
+| `PC_STUDIO_SWEEPER` | `1`; the lifespan task that settles studio ops left `reserved`/`submitted`/`unknown` every 10 s (only runs when the studio is configured). `0` turns it off; ops then settle only when a customer opens the project or op |
 
 There is no direct CORS access. Mutations require a matching Origin. The BFF must
 forward only the validated request origin and the `pc_portal_session` cookie;
