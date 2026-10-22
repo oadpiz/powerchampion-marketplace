@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountVoiceCalls } from "../components/account-voice-calls";
@@ -189,6 +189,30 @@ describe("store call records list", () => {
     await user.click(next);
     expect(listReads(requests).at(-1)).toBe("/me/voice/calls?month=2025-12");
     expect(listReads(requests).filter((path) => path.endsWith("month=2025-11"))).toHaveLength(1);
+  });
+
+  it("keeps the month and filters when the store comes back from a call", async () => {
+    // Fix round: "← Calls" or the browser's Back used to reset to this month's full list.
+    const user = userEvent.setup();
+    const state = month();
+    const requests = renderCalls(state);
+    await screen.findByText(/^This month: 6 calls\./);
+    await user.click(screen.getByRole("button", { name: "Previous month" }));
+    await screen.findByText(/^November 2026: 1 calls\./);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Result" }), "answered");
+    await user.click(screen.getByRole("checkbox", { name: "Only calls I flagged" }));
+    await waitFor(() => expect(listReads(requests).at(-1)).toBe("/me/voice/calls?month=2026-11&outcome=answered&flagged=1"));
+    cleanup(); // opening a call replaces the list
+    const again = renderCalls(state);
+    await waitFor(() => expect(listReads(again)).toEqual(["/me/voice/calls?month=2026-11&outcome=answered&flagged=1"]));
+    expect(screen.getByText("November 2026")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Result" })).toHaveValue("answered");
+    expect(screen.getByRole("checkbox", { name: "Only calls I flagged" })).toBeChecked();
+    // A kept value that no longer fits (older than 400 days, an unknown result) starts from this month instead.
+    cleanup();
+    sessionStorage.setItem("pc-voice-calls-filters", JSON.stringify({ month: "2024-01", outcome: "bogus", flagged: "yes" }));
+    const fresh = renderCalls(state);
+    await waitFor(() => expect(listReads(fresh)).toEqual(["/me/voice/calls?month=2026-12"]));
   });
 
   it("loads the next 50 with the cursor and moves focus to the first added call", async () => {
