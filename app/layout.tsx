@@ -30,6 +30,7 @@ import "./promo-hero.css";
 import "./agent-showcase.css";
 import "./agent-platform.css";
 import "./admin.css";
+import "./studio.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

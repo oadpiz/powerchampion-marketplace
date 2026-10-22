@@ -1169,6 +1169,6 @@ describe("admin navigation for gateway sections", () => {
     const labels = within(screen.getByRole("navigation", { name: /administration/i }))
       .getAllByRole("link")
       .map((link) => link.textContent);
-    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Credit requests", "Audit log"]);
+    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Credit requests", "Video studio", "Audit log"]);
   });
 });

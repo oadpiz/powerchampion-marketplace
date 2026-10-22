@@ -5,6 +5,7 @@ import { useLocale } from "./locale-provider";
 
 const destinations = [
   { href: "/tasks", icon: "↗", en: "Agent tasks", zh: "智能體任務", group: "build" },
+  { href: "/studio", icon: "▶", en: "Video studio", zh: "影片工作室", group: "build" },
   { href: "/chat", icon: "✳", en: "Model chat", zh: "AI 對話", group: "build" },
   { href: "/agents", icon: "◈", en: "Agents & services", zh: "智能體與建置", group: "build" },
   {

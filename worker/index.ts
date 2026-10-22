@@ -1,7 +1,7 @@
 /** Cloudflare Worker entry point for the Power Champion website and model platform. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
-import { isIndexableRequest, languageForPath } from "../lib/seo";
+import { isIndexableRequest, languageForPath, referrerPolicyFor } from "../lib/seo";
 
 interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
@@ -23,10 +23,12 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const indexable = isIndexableRequest(url);
+    const referrer = referrerPolicyFor(url.pathname);
     const finish = (response: Response): Response => {
-      if (indexable) return response;
+      if (indexable && !referrer) return response;
       const headers = new Headers(response.headers);
-      headers.set("X-Robots-Tag", "noindex, nofollow");
+      if (!indexable) headers.set("X-Robots-Tag", "noindex, nofollow");
+      if (referrer) headers.set("Referrer-Policy", referrer);
       return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     };
 

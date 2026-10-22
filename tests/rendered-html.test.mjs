@@ -211,11 +211,26 @@ test("keeps canonical URLs fixed and prevents preview and private-page indexing"
   assert.match(productionHtml, /name="robots" content="index, follow"/);
   assertRouteUrls(productionHtml, "/models", "https://powerchampion.ai");
 
-  for (const path of ["/console", "/account", "/admin", "/login", "/register", "/chat", "/agents/build"]) {
+  for (const path of ["/console", "/account", "/admin", "/login", "/register", "/chat", "/agents/build", "/studio", "/studio/new", "/studio/credits", "/studio/p/p0123456789abcdef"]) {
     const response = await request(path, "powerchampion.ai", undefined, "https://powerchampion.ai");
     assert.equal(response.headers.get("X-Robots-Tag"), "noindex, nofollow", path);
     assert.match(await response.text(), /name="robots" content="noindex, nofollow"/, path);
   }
+});
+
+test("studio pages send a same-origin referrer policy so their POSTs keep an Origin", async () => {
+  for (const path of ["/studio", "/studio/new", "/studio/credits", "/studio/p/p0123456789abcdef"]) {
+    const response = await request(path, "powerchampion.ai", undefined, "https://powerchampion.ai");
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get("Referrer-Policy"), "same-origin", path);
+    const html = await response.text();
+    assert.match(html, /<meta name="referrer" content="same-origin"/, path);
+    assert.doesNotMatch(html, /no-referrer/, path);
+  }
+  const other = await request("/account", "powerchampion.ai", undefined, "https://powerchampion.ai");
+  assert.equal(other.headers.get("Referrer-Policy"), null);
+  const bad = await request("/studio/p/bad.id", "powerchampion.ai", undefined, "https://powerchampion.ai");
+  assert.equal(bad.status, 404);
 });
 
 test("measures public pages only, and only when the operator turns it on", async () => {
@@ -230,7 +245,7 @@ test("measures public pages only, and only when the operator turns it on", async
     assert.match(publicPage, beacon);
     assert.match(publicPage, /data-cf-beacon=/);
     assert.ok(publicPage.includes(token), "the beacon carries the operator's site token");
-    for (const path of ["/account", "/admin", "/login", "/register"]) {
+    for (const path of ["/account", "/admin", "/login", "/register", "/studio", "/studio/p/p0123456789abcdef"]) {
       const privatePage = await (await request(path, "powerchampion.ai", undefined, "https://powerchampion.ai")).text();
       assert.doesNotMatch(privatePage, beacon, `${path} is not measured`);
     }

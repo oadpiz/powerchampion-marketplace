@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { isIndexableRequest, languageForPath } from "./lib/seo";
+import { isIndexableRequest, languageForPath, referrerPolicyFor } from "./lib/seo";
 
 /** Compute request context from the URL, never from caller-supplied locale headers. */
 export function middleware(request: NextRequest) {
@@ -10,6 +10,8 @@ export function middleware(request: NextRequest) {
   requestHeaders.set("x-pc-indexable", String(indexable));
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   if (!indexable) response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  const referrer = referrerPolicyFor(url.pathname);
+  if (referrer) response.headers.set("Referrer-Policy", referrer);
   return response;
 }
 
