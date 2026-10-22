@@ -9,7 +9,7 @@ import {
   portalRequest,
   type PortalUser,
 } from "../lib/portal-client";
-import { AccountVoice, useVoiceSummary, type VoiceSub } from "./account-voice";
+import { AccountVoice, VoiceStart, useVoiceSummary, type VoiceSub } from "./account-voice";
 import { useLocale } from "./locale-provider";
 
 type Section = "overview" | "keys" | "usage" | "credits" | "security" | "ssh-key" | "voice";
@@ -535,6 +535,7 @@ export function AccountPortal({
         section === "overview" &&
         "keyCount" in data && (
           <>
+            {voice.status === "ready" && <VoiceStart summary={voice.summary} zh={zh} />}
             <div className="portal-grid">
               <div className="portal-panel portal-stat">
                 <p>{zh ? "API 金鑰" : "API keys"}</p>

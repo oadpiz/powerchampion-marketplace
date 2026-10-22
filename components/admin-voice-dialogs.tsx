@@ -270,15 +270,30 @@ export function OpenStoreDialog({ onClose, onOpened }: { onClose: () => void; on
 }
 
 /** The only place the temporary password is shown; it lives in props until "I have given it to the store". */
+/** Where the store signs in: the sign-in page that goes straight to the phone agent once signed in. */
+export const VOICE_SIGN_IN_PATH = "/login?next=/account/voice";
+
 export function StoreOpenedDialog({ opened, onClose }: { opened: OpenedStore; onClose: () => void }) {
   const zh = useLocale().locale === "zh";
   const [copied, setCopied] = useState<"idle" | "copied" | "error">("idle");
+  const [linkCopied, setLinkCopied] = useState<"idle" | "copied" | "error">("idle");
+  // The address the operator is using is the portal the store signs in to (verifier finding 2026-10-22: the hint
+  // only said "powerchampion.ai", and the store then landed on the API-key overview).
+  const signInUrl = (typeof window === "undefined" ? "" : window.location.origin) + VOICE_SIGN_IN_PATH;
   async function copy() {
     try {
       await navigator.clipboard.writeText(opened.temporaryPassword);
       setCopied("copied");
     } catch {
       setCopied("error");
+    }
+  }
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(signInUrl);
+      setLinkCopied("copied");
+    } catch {
+      setLinkCopied("error");
     }
   }
   return (
@@ -309,8 +324,26 @@ export function StoreOpenedDialog({ opened, onClose }: { opened: OpenedStore; on
       )}
       <p className="portal-hint">
         {zh
-          ? "請透過私下管道交給店家，並請對方：1) 用這組 email 與臨時密碼登入 powerchampion.ai；2) 到「安全性」變更密碼；3) 到「電話客服」完成設定並試打。"
-          : "Give it to the store privately and ask them to: 1) sign in at powerchampion.ai with this email and the temporary password; 2) change the password under Security; 3) finish setup under Phone agent and try a call."}
+          ? "請透過私下管道交給店家，連同下面這個登入網址（登入後按「前往工作區」會直接到電話客服）："
+          : "Give it to the store privately, with this sign-in address (after sign-in, \"Open workspace\" goes straight to the phone agent):"}
+      </p>
+      <p>
+        <code data-voice-sign-in="">{signInUrl}</code>
+      </p>
+      <div className="portal-actions">
+        <button type="button" className="portal-button-secondary" onClick={() => void copyLink()}>
+          {linkCopied === "copied" ? (zh ? "已複製網址" : "Address copied") : zh ? "複製登入網址" : "Copy sign-in address"}
+        </button>
+      </div>
+      {linkCopied === "error" && (
+        <p className="portal-error" role="alert">
+          {zh ? "無法自動複製，請手動選取上方網址。" : "Copy is unavailable; select the address above manually."}
+        </p>
+      )}
+      <p className="portal-hint">
+        {zh
+          ? "請對方：1) 打開這個網址，用這組 email 與臨時密碼登入；2) 依畫面提示到「安全性」變更密碼；3) 回到「電話客服」完成設定並試打一通。網站第一次打開是英文，右上角可以切換成「繁中」。"
+          : "Ask them to: 1) open this address and sign in with this email and the temporary password; 2) change the password under Security when asked; 3) go back to Phone agent, finish the setup and try a call. The site opens in English the first time; the language switch at the top right changes it to 繁中."}
       </p>
     </AdminDialog>
   );

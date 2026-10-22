@@ -72,6 +72,26 @@ describe("account phone agent tab", () => {
     await screen.findByText("API keys", { selector: "p" });
     expect(await navLabels()).toEqual(["Overview", "API keys", "Usage", "Credit requests", "Security"]);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(document.querySelector("[data-voice-start]")).toBeNull();
+  });
+
+  // Verifier finding 2026-10-22: a store's first sign-in landed on the API-key overview with nothing pointing at
+  // the phone agent, the sixth tab.
+  it.each([
+    [{}, { passwordChangeRequired: true }, /^First, replace the temporary password/, ["Change the temporary password", "Open the phone agent setup"]],
+    [{ currentVersion: null, hasUnpublishedChanges: true }, {}, /^Finish the setup and add your questions/, ["Open the phone agent setup"]],
+    [{ currentVersion: 3 }, {}, /^Version 3 is applied/, ["Open the phone agent setup"]],
+  ])("puts the phone agent first on the overview of a store account (%j, %j)", async (store, account, text, links) => {
+    stubPortal({ "GET /session": () => ({ user: customer }), "GET /overview": () => overview, "GET /me/voice": () => summary(store, account) });
+    wrap(<AccountPortal section="overview" />);
+    const card = await screen.findByRole("region", { name: "Phone agent: 晴光牙醫診所" });
+    expect(within(card).getByText(text)).toBeVisible();
+    expect(within(card).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual(
+      links.map((name) => [name, name.startsWith("Change") ? "/account/security" : "/account/voice"]),
+    );
+    // It comes before the API-key figures.
+    const keys = screen.getByText("API keys", { selector: "p" });
+    expect(card.compareDocumentPosition(keys) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("appears after Security and before SSH key when GET /me/voice answers 200", async () => {
