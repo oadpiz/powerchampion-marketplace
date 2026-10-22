@@ -41,9 +41,10 @@ export function PricingCalculator() {
       outputPerMillion: model.outputPerMillion,
     });
 
+  const isVideo = model.categories.includes("video");
   const mediaNote = locale === "en"
-    ? `${model.name} is billed per ${model.categories.includes("audio") ? "minute of audio" : "image"} at ${currencyFormatter.format(model.inputPerMillion)} each — see the rates table below.`
-    : `${model.name} 以每${model.categories.includes("audio") ? "分鐘音訊" : "張圖片"}計費，單價 ${currencyFormatter.format(model.inputPerMillion)} — 見下方費率表。`;
+    ? `${model.name} is billed per ${isVideo ? "second of video" : model.categories.includes("audio") ? "minute of audio" : "image"} at ${currencyFormatter.format(model.inputPerMillion)} each — see the rates table below.`
+    : `${model.name} 以每${isVideo ? "秒影片" : model.categories.includes("audio") ? "分鐘音訊" : "張圖片"}計費，單價 ${currencyFormatter.format(model.inputPerMillion)} — 見下方費率表。`;
   const tokenNote = locale === "en"
     ? "Estimate runs in your browser using the published model catalog rates."
     : "估算在你的瀏覽器內執行，採用模型目錄已刊登的費率。";

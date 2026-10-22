@@ -16,6 +16,7 @@ const categories: ModelCategory[] = [
   "vision",
   "image",
   "audio",
+  "video",
   "embedding",
   "general",
   "multilingual",
@@ -25,8 +26,9 @@ function formatRate(rate: number) {
   return `$${rate.toFixed(2)}`;
 }
 
-function getBillingMode(model: ModelDefinition): "token" | "image" | "audio" {
+function getBillingMode(model: ModelDefinition): "token" | "image" | "audio" | "video" {
   if (model.categories.includes("image")) return "image";
+  if (model.categories.includes("video")) return "video";
   if (model.categories.includes("audio") || model.id.includes("whisper") || model.id.includes("indextts2")) return "audio";
   return "token";
 }
@@ -46,6 +48,7 @@ export function ModelMarketplace() {
     vision: copy.models.vision,
     image: copy.models.image,
     audio: copy.models.audio,
+    video: copy.models.video,
     embedding: copy.models.embedding,
   };
   const speedLabels: Record<ModelDefinition["speed"], string> = {
@@ -134,6 +137,17 @@ export function ModelMarketplace() {
                         <dl className="marketplace-summary-fact">
                           <dt>{copy.models.input}</dt>
                           <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perImage}</span></dd>
+                        </dl>
+                        <dl className="marketplace-summary-fact marketplace-summary-fact-placeholder" aria-hidden="true"><dt> </dt><dd> </dd></dl>
+                      </>
+                    );
+                  }
+                  if (billingMode === "video") {
+                    return (
+                      <>
+                        <dl className="marketplace-summary-fact">
+                          <dt>{copy.models.input}</dt>
+                          <dd>{formatRate(model.inputPerMillion)} <span className="marketplace-rate-unit">{copy.shared.perSecond}</span></dd>
                         </dl>
                         <dl className="marketplace-summary-fact marketplace-summary-fact-placeholder" aria-hidden="true"><dt> </dt><dd> </dd></dl>
                       </>

@@ -17,7 +17,7 @@ export const API_BASE_URL = "https://b300.powerchampion.ai/v1";
 export const GATEWAY_URL = "https://b300.powerchampion.ai";
 export const SUPPORT_EMAIL = "info@powerchampion.org";
 
-/** All nine public models, in the order the guide lists them. */
+/** The nine models in the live-status tables, in the order the guide lists them. The video model is documented in its own section. */
 export const API_REFERENCE_MODEL_IDS = [
   "glm-5.2-fp8",
   "glm-5.3-flash-uncensored",
@@ -94,6 +94,7 @@ type SampleText = {
   rerankQuery: string;
   rerankDocs: [string, string, string];
   imagePrompt: string;
+  videoPrompt: string;
   redeemCode: string;
   retryPrompt: string;
 };
@@ -112,6 +113,7 @@ const SAMPLES_ZH: SampleText = {
   rerankQuery: "如何申請退款",
   rerankDocs: ["退款需於 7 天內申請", "運費依重量計算", "會員可累積點數"],
   imagePrompt: "晨光下的九份老街，寫實攝影風格",
+  videoPrompt: "一隻紅狐在清晨的新雪中行走",
   redeemCode: "<兌換碼>",
   retryPrompt: "你好",
 };
@@ -130,6 +132,7 @@ const SAMPLES_EN: SampleText = {
   rerankQuery: "How do I request a refund?",
   rerankDocs: ["Refunds must be requested within 7 days", "Shipping is charged by weight", "Members earn points"],
   imagePrompt: "Jiufen Old Street in morning light, photorealistic",
+  videoPrompt: "A red fox walks through fresh snow at dawn",
   redeemCode: "<redeem code>",
   retryPrompt: "Hello",
 };
@@ -305,6 +308,57 @@ with open("jiufen.png", "wb") as f:
   "usage": { "prompt_tokens": 0, "completion_tokens": 1000, "total_tokens": 1000 }
 }`,
 
+    curlVideo: `curl ${API_BASE_URL}/videos \\
+  -H "Authorization: Bearer $PC_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "wan2.2-ti2v-5b-720p",
+    "prompt": "${t.videoPrompt}",
+    "seconds": 5
+  }'`,
+
+    videoSubmitResponse: `{
+  "id": "0f3c…",
+  "object": "video.job",
+  "status": "queued",
+  "model": "wan2.2-ti2v-5b-720p",
+  "mode": "t2v",
+  "seconds": 5,
+  "estimated_cost_usd": "0.25",
+  "expires_at": null,
+  "created_at": 1760000000.0
+}`,
+
+    bashVideoFlow: `JOB=$(curl -s ${API_BASE_URL}/videos \\
+  -H "Authorization: Bearer $PC_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"model":"wan2.2-ti2v-5b-720p","prompt":"${t.videoPrompt}","seconds":5}' \\
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+
+while :; do
+  S=$(curl -s -H "Authorization: Bearer $PC_API_KEY" ${API_BASE_URL}/videos/$JOB \\
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
+  echo "$S"; case "$S" in succeeded|failed|cancelled|expired) break;; esac; sleep 5
+done
+
+curl -s -o out.mp4 -H "Authorization: Bearer $PC_API_KEY" ${API_BASE_URL}/videos/$JOB/content`,
+
+    videoStatusResponse: `{
+  "id": "0f3c…",
+  "object": "video.job",
+  "model": "wan2.2-ti2v-5b-720p",
+  "status": "succeeded",
+  "progress": 1.0,
+  "mode": "t2v",
+  "seconds": 5,
+  "output_seconds": 5.041667,
+  "cost_usd": "0.252090",
+  "error": null,
+  "content_url": "/v1/videos/0f3c…/content",
+  "expires_at": 1760086400.0,
+  "created_at": 1760000000.0,
+  "finished_at": 1760000300.0
+}`,
+
     // The speech and transcription samples stay in Chinese in both languages:
     // they show Chinese audio in and out, which is what the guide documents.
     curlSpeech: `curl ${API_BASE_URL}/audio/speech \\
@@ -410,7 +464,7 @@ const ZH: ApiReferenceCopy = {
       id: "overview",
       title: "1. 概覽",
       blocks: [
-        { kind: "p", text: "Power Champion API 提供與 OpenAI 相容的 HTTPS 介面，用一把金鑰就能呼叫對話、視覺、向量、重排序、圖片生成、語音合成與語音辨識。既有的 OpenAI SDK 只要更換 `base_url` 與金鑰即可使用。" },
+        { kind: "p", text: "Power Champion API 提供與 OpenAI 相容的 HTTPS 介面，用一把金鑰就能呼叫對話、視覺、向量、重排序、圖片生成、影片生成、語音合成與語音辨識。既有的 OpenAI SDK 只要更換 `base_url` 與金鑰即可使用。" },
         {
           kind: "table",
           label: "服務基本資訊",
@@ -438,6 +492,7 @@ const ZH: ApiReferenceCopy = {
             ["文字向量", "`POST /v1/embeddings`", "bge-m3"],
             ["文件重排序", "`POST /v1/rerank`", "bge-reranker-v2-m3"],
             ["圖片生成", "`POST /v1/images/generations`", "flux-schnell、chroma1-hd"],
+            ["影片生成", "`POST /v1/videos`（非同步任務）", "wan2.2-ti2v-5b-720p"],
             ["語音合成", "`POST /v1/audio/speech`", "indextts2"],
             ["語音辨識", "`POST /v1/audio/transcriptions`", "whisper-large-v3"],
           ],
@@ -464,7 +519,7 @@ const ZH: ApiReferenceCopy = {
           kind: "ol",
           items: [
             `**取得金鑰**：寄信至 ${MAIL} 申請。金鑰以 \`sk-b300-\` 開頭，由我們簽發後寄給你；平台只保存雜湊值，無法找回，請妥善保存。`,
-            "**儲值**：購買儲值包後會收到兌換碼，用 `POST /v1/redeem` 入帳（見[第 9 節](#billing)）。",
+            "**儲值**：購買儲值包後會收到兌換碼，用 `POST /v1/redeem` 入帳（見[第 10 節](#billing)）。",
             "**設定環境變數**：",
           ],
         },
@@ -562,6 +617,16 @@ const ZH: ApiReferenceCopy = {
             { id: "whisper-large-v3", cells: ["語音辨識，中文輸出台灣繁體", "每分鐘音訊", "約 US$0.01"] },
           ],
         },
+        { kind: "h3", id: "models-video", text: "影片模型" },
+        {
+          kind: "table",
+          label: "影片模型",
+          head: ["模型 id", "用途", "計價單位", "價格"],
+          rows: [
+            ["wan2.2-ti2v-5b-720p", "文生影片、圖生影片，1280×704、24 fps，1–10 秒", "每輸出秒", "US$0.05"],
+          ],
+        },
+        { kind: "p", text: "影片模型是否已上架以 `GET /v1/models` 為準（`output_modalities` 含 `video`）。用法與計價見[第 9 節](#video)。" },
         { kind: "h3", id: "availability", text: "可用性" },
         { kind: "p", text: `模型可能因維護或負載暫時離線。呼叫前請查 \`GET ${STATUS_JSON}\`（不需金鑰），\`ready\` 為 \`true\` 的模型才可用。用你的金鑰呼叫 \`GET /v1/models\`，可以取得該金鑰能用的模型與每 token 價格。` },
         { kind: "code", label: "bash", code: ZH_CODE.curlModels },
@@ -753,8 +818,106 @@ const ZH: ApiReferenceCopy = {
       ],
     },
     {
+      id: "video",
+      title: "9. 影片生成 API",
+      blocks: [
+        { kind: "p", text: "`POST /v1/videos` 依文字（或文字加一張圖片）生成 MP4 影片。影片生成需要時間，所以採非同步任務：先提交任務，輪詢狀態，完成後下載。認證與其他端點相同，使用同一把金鑰。" },
+        { kind: "h3", id: "video-models", text: "目前提供的模型" },
+        {
+          kind: "table",
+          label: "影片模型",
+          head: ["模型 id", "輸入", "輸出", "長度"],
+          rows: [
+            ["`wan2.2-ti2v-5b-720p`", "文字，或文字加一張圖片", "MP4，1280×704，24 fps", "1–10 秒"],
+          ],
+        },
+        { kind: "note", text: "模型是否已上架以 `GET /v1/models` 為準（`output_modalities` 含 `video`）。解析度與幀率固定，無法在請求中指定；請求若帶了未列於下表的欄位（例如 `resolution`），會回 400。" },
+        { kind: "h3", id: "video-flow", text: "流程" },
+        { kind: "ol", items: [
+          "`POST /v1/videos`：提交任務，回 `202` 與任務 `id`（狀態 `queued`）。",
+          "`GET /v1/videos/{id}`：輪詢狀態，建議每 5 秒一次，直到 `succeeded`、`failed`、`cancelled` 或 `expired`。",
+          "`GET /v1/videos/{id}/content`：`succeeded` 後下載 MP4。",
+        ] },
+        { kind: "h3", id: "video-params", text: "請求參數" },
+        {
+          kind: "table",
+          label: "影片生成請求參數",
+          head: ["參數", "類型", "必填", "說明"],
+          rows: [
+            ["`model`", "string", "是", "`wan2.2-ti2v-5b-720p`"],
+            ["`prompt`", "string", "是", "畫面描述，非空，最長 2000 字元"],
+            ["`negative_prompt`", "string", "否", "最長 500 字元。目前後端尚未套用此欄位（接受但忽略）"],
+            ["`image`", "string", "否", "起始畫面圖片，base64，可帶 `data:image/png;base64,` 這類 data URL 前綴；解碼後 ≤ 6,000,000 bytes，超過回 413。有帶圖片即為圖生影片，沒帶為文生影片"],
+            ["`seconds`", "integer", "否", "JSON 整數 1–10，預設 5。`5.0`、`\"5\"`、`true` 都會被拒絕"],
+            ["`seed`", "integer", "否", "0–4294967295；省略則隨機"],
+          ],
+        },
+        { kind: "h3", id: "video-example", text: "範例" },
+        { kind: "code", label: "bash", code: ZH_CODE.curlVideo },
+        { kind: "p", text: "成功回 `202`：" },
+        { kind: "code", label: "json", code: ZH_CODE.videoSubmitResponse },
+        { kind: "p", text: "完整流程（提交、輪詢、下載）：" },
+        { kind: "code", label: "bash", code: ZH_CODE.bashVideoFlow },
+        { kind: "h3", id: "video-status", text: "查詢狀態與任務狀態" },
+        { kind: "code", label: "json", code: ZH_CODE.videoStatusResponse },
+        {
+          kind: "table",
+          label: "影片任務狀態",
+          head: ["status", "意思"],
+          rows: [
+            ["`queued`", "已受理，排隊中（內部尚在預留餘額的短暫階段也顯示為 `queued`）"],
+            ["`processing`", "生成中；`progress` 為 0–1 的進度"],
+            ["`succeeded`", "生成完成，可下載，`content_url` 非空；`cost_usd` 在結算完成前為 `null`（通常數秒內出現），之後為已結算金額"],
+            ["`failed`", "失敗或逾時（單一任務上限 30 分鐘）；`error` 說明原因，預留已釋放，不收費"],
+            ["`cancelled`", "已取消，不收費"],
+            ["`expired`", "影片已過保存期，下載回 410"],
+          ],
+        },
+        { kind: "p", text: "`expires_at` 與 `finished_at` 為 Unix 時間戳（秒）。任務過期後約 7 天內仍查得到 `expired` 狀態，之後任務紀錄刪除，查詢回 404。" },
+        { kind: "h3", id: "video-billing", text: "計價與結算" },
+        {
+          kind: "ul",
+          items: [
+            "每輸出 1 秒影片 **US$0.05**。",
+            "依**實際產出長度**結算，上限為請求秒數的 1.1 倍。實際長度可能略長於請求（幀數 ＝ 秒數 × fps ＋ 1，5 秒 → 121 幀 ≈ 5.04 秒，約 US$0.252）。",
+            "提交時先預留「請求秒數 × 1.1」的餘額（例如 5 秒 → 預留 5.5 秒 ＝ US$0.275），完成後依實際長度結算並退回差額。",
+            "任務失敗、逾時或在排隊中取消，預留全數釋放，不收費。",
+            "結算金額在任務完成後出現於 `cost_usd`；提交時回傳的 `estimated_cost_usd` 是「請求秒數 × 單價」的預估值。",
+          ],
+        },
+        { kind: "h3", id: "video-download", text: "下載與取消" },
+        {
+          kind: "ul",
+          items: [
+            "`GET /v1/videos/{id}/content` 成功回 `200`，`Content-Type: video/mp4`，串流傳輸。支援 HTTP `Range`：帶 `Range: bytes=…` 回 `206`（範圍不合法回 `416`），可續傳。",
+            "完成後至少 24 小時內可下載，實際期限以任務物件的 `expires_at` 為準。尚未完成回 409；已過期回 410（約 7 天後任務紀錄刪除，改回 404）。",
+            "`DELETE /v1/videos/{id}` 只能取消 `queued` 的任務，取消後不收費，回 `{\"id\": \"…\", \"status\": \"cancelled\"}`。已在 `processing` 或已結束的任務回 409；剛提交、仍在受理中的任務也可能回 409，稍後重試即可。影片後端暫時無法連線時回 502，任務狀態不變，可以重試取消。",
+          ],
+        },
+        { kind: "h3", id: "video-errors", text: "影片端點的錯誤" },
+        {
+          kind: "table",
+          label: "影片端點的錯誤",
+          head: ["狀態碼", "情況"],
+          rows: [
+            ["400", "欄位驗證失敗：未知欄位、`prompt` 為空或過長、`seconds` 不是 1–10 的整數、`seed` 超出範圍、`image` 不是合法 base64，或模型不接受圖片輸入"],
+            ["401", "缺少或無效的金鑰"],
+            ["402", "預付餘額不足以預留本次最壞情況金額（請求秒數 × 1.1），或餘額已用盡，請儲值"],
+            ["404", "模型不存在、未上架或不是影片模型；任務 ID 不存在（其他金鑰的任務也回 404），或任務已過期超過約 7 天、紀錄已刪除"],
+            ["409", "狀態不允許此操作：下載尚未完成的任務、取消非 `queued` 的任務"],
+            ["410", "影片已過期"],
+            ["413", "`image` 解碼後超過 6,000,000 bytes"],
+            ["429", "容量已滿（`code` 為 `capacity`，帶 `Retry-After: 15`）、同一金鑰同時進行中的影片任務已達 4 個、超過每分鐘請求上限，或當日額度用盡；有 `Retry-After` 標頭時請依其稍後重試（當日額度用盡的 429 沒有此標頭，需等 00:00 UTC 重置）"],
+            ["502", "下載或取消時後端回應異常；稍後重試"],
+            ["503", "後端暫時無法接受任務（本次沒有扣款）、模型維護中，或影片後端暫時無法連線，稍後重試"],
+          ],
+        },
+        { kind: "p", text: "提交遇到 429 或 503 時，沒有任何餘額被扣除，可以直接重新提交。" },
+      ],
+    },
+    {
       id: "billing",
-      title: "9. 帳務：儲值、餘額與用量",
+      title: "10. 帳務：儲值、餘額與用量",
       blocks: [
         { kind: "p", text: "平台採預付制：先儲值，每次請求完成後依實際用量扣款，餘額用完時回 402。後端錯誤、驗證錯誤等失敗的請求不扣款；非串流請求在回應送達前中斷連線也不扣款。串流已開始傳送後才中斷，已產生的 token 仍會計費。" },
         { kind: "h3", id: "credit-packs", text: "儲值包" },
@@ -810,12 +973,13 @@ const ZH: ApiReferenceCopy = {
             ["語音辨識", "每秒 50 token × US$3.33／百萬", "每分鐘約 US$0.01"],
           ],
         },
+        { kind: "note", text: "影片生成不套用上表的 token 換算：依實際輸出秒數計價，提交時先預留、完成後結算並退回差額，規則見[第 9 節](#video-billing)。" },
         { kind: "p", text: "精度為 10⁻⁹ 美元。扣款發生在回應完成後，所以最後一筆請求可能讓餘額略為負數。" },
       ],
     },
     {
       id: "rate-limits",
-      title: "10. 限流與配額",
+      title: "11. 限流與配額",
       blocks: [
         { kind: "p", text: "每把金鑰有四種限制，另外每個模型有整體容量上限。你的金鑰實際設定以簽發時的約定為準，可向我們查詢；平台不提供 `X-RateLimit-*` 標頭。" },
         {
@@ -845,7 +1009,7 @@ const ZH: ApiReferenceCopy = {
     },
     {
       id: "errors",
-      title: "11. 錯誤處理",
+      title: "12. 錯誤處理",
       blocks: [
         { kind: "p", text: "平台錯誤採 OpenAI 格式，只有 429、502、503 值得重試，其他狀態碼請先修正請求。" },
         { kind: "h3", id: "error-format", text: "錯誤格式" },
@@ -918,7 +1082,7 @@ const ZH: ApiReferenceCopy = {
     },
     {
       id: "best-practices",
-      title: "12. 最佳實務與安全建議",
+      title: "13. 最佳實務與安全建議",
       blocks: [
         { kind: "h3", id: "performance", text: "效能" },
         {
@@ -964,7 +1128,7 @@ const ZH: ApiReferenceCopy = {
     },
     {
       id: "appendix",
-      title: "13. 附錄",
+      title: "14. 附錄",
       blocks: [
         { kind: "h3", id: "endpoint-index", text: "A. 端點總表" },
         {
@@ -980,6 +1144,10 @@ const ZH: ApiReferenceCopy = {
             ["POST", "`/v1/images/generations`、`/v1/images`", "圖片生成", "是"],
             ["POST", "`/v1/audio/speech`", "語音合成", "是"],
             ["POST", "`/v1/audio/transcriptions`", "語音辨識", "是"],
+            ["POST", "`/v1/videos`", "提交影片生成任務", "是"],
+            ["GET", "`/v1/videos/{id}`", "查詢影片任務狀態", "是"],
+            ["GET", "`/v1/videos/{id}/content`", "下載影片（MP4）", "是"],
+            ["DELETE", "`/v1/videos/{id}`", "取消排隊中的影片任務", "是"],
             ["GET", "`/v1/personas/{persona_id}`", "讀取角色設定", "是"],
             ["POST", "`/v1/redeem`", "兌換儲值碼", "是"],
             ["GET", "`/dashboard/billing/subscription`", "查詢餘額", "是"],
@@ -993,7 +1161,6 @@ const ZH: ApiReferenceCopy = {
         {
           kind: "ul",
           items: [
-            "影片生成。",
             "OpenAI Responses API、Assistants、Files、Batches、Moderations。",
             "語音翻譯 `/v1/audio/translations`、即時語音（Realtime / WebSocket）。",
             "單一模型查詢 `/v1/models/{id}`。",
@@ -1052,7 +1219,7 @@ const EN: ApiReferenceCopy = {
       id: "overview",
       title: "1. Overview",
       blocks: [
-        { kind: "p", text: "The Power Champion API is an OpenAI-compatible HTTPS interface. One key gives you chat, vision, embeddings, reranking, image generation, text to speech and speech recognition. Existing OpenAI SDKs work once you change the `base_url` and the key." },
+        { kind: "p", text: "The Power Champion API is an OpenAI-compatible HTTPS interface. One key gives you chat, vision, embeddings, reranking, image generation, video generation, text to speech and speech recognition. Existing OpenAI SDKs work once you change the `base_url` and the key." },
         {
           kind: "table",
           label: "Service details",
@@ -1080,6 +1247,7 @@ const EN: ApiReferenceCopy = {
             ["Text embeddings", "`POST /v1/embeddings`", "bge-m3"],
             ["Document reranking", "`POST /v1/rerank`", "bge-reranker-v2-m3"],
             ["Image generation", "`POST /v1/images/generations`", "flux-schnell, chroma1-hd"],
+            ["Video generation", "`POST /v1/videos` (asynchronous job)", "wan2.2-ti2v-5b-720p"],
             ["Text to speech", "`POST /v1/audio/speech`", "indextts2"],
             ["Speech recognition", "`POST /v1/audio/transcriptions`", "whisper-large-v3"],
           ],
@@ -1106,7 +1274,7 @@ const EN: ApiReferenceCopy = {
           kind: "ol",
           items: [
             `**Get a key**: email ${MAIL} to apply. Keys start with \`sk-b300-\` and are issued by our team and sent to you. The platform stores only a hash, so a key cannot be recovered — keep it safe.`,
-            "**Add credit**: when you buy a credit pack you receive a redeem code. Apply it with `POST /v1/redeem` (see [section 9](#billing)).",
+            "**Add credit**: when you buy a credit pack you receive a redeem code. Apply it with `POST /v1/redeem` (see [section 10](#billing)).",
             "**Set the environment variable**:",
           ],
         },
@@ -1204,6 +1372,16 @@ const EN: ApiReferenceCopy = {
             { id: "whisper-large-v3", cells: ["Speech recognition; Chinese output in Traditional Chinese (Taiwan)", "Per minute of audio", "About US$0.01"] },
           ],
         },
+        { kind: "h3", id: "models-video", text: "Video models" },
+        {
+          kind: "table",
+          label: "Video models",
+          head: ["Model id", "Use", "Billing unit", "Price"],
+          rows: [
+            ["wan2.2-ti2v-5b-720p", "Text-to-video and image-to-video, 1280×704 at 24 fps, 1–10 seconds", "Per output second", "US$0.05"],
+          ],
+        },
+        { kind: "p", text: "Whether a video model is listed is defined by `GET /v1/models` (`output_modalities` contains `video`). Usage and billing are in [section 9](#video)." },
         { kind: "h3", id: "availability", text: "Availability" },
         { kind: "p", text: `A model can go offline temporarily for maintenance or under load. Before calling one, check \`GET ${STATUS_JSON}\` (no key needed): only models whose \`ready\` is \`true\` are available. Calling \`GET /v1/models\` with your key returns the models that key can use and their per-token prices.` },
         { kind: "code", label: "bash", code: EN_CODE.curlModels },
@@ -1395,8 +1573,106 @@ const EN: ApiReferenceCopy = {
       ],
     },
     {
+      id: "video",
+      title: "9. Video generation API",
+      blocks: [
+        { kind: "p", text: "`POST /v1/videos` generates an MP4 video from text, or from text plus one image. Video generation takes time, so it is an asynchronous job: submit the job, poll its status, then download the result. Authentication is the same as for every other endpoint: one key." },
+        { kind: "h3", id: "video-models", text: "Available model" },
+        {
+          kind: "table",
+          label: "Video models",
+          head: ["Model id", "Input", "Output", "Length"],
+          rows: [
+            ["`wan2.2-ti2v-5b-720p`", "Text, or text plus one image", "MP4, 1280×704, 24 fps", "1–10 seconds"],
+          ],
+        },
+        { kind: "note", text: "Whether the model is listed is defined by `GET /v1/models` (`output_modalities` contains `video`). Resolution and frame rate are fixed and cannot be set in the request; a request that includes a field not in the table below (for example `resolution`) returns 400." },
+        { kind: "h3", id: "video-flow", text: "Flow" },
+        { kind: "ol", items: [
+          "`POST /v1/videos`: submit the job. Returns `202` with the job `id` (status `queued`).",
+          "`GET /v1/videos/{id}`: poll the status, about every 5 seconds, until it is `succeeded`, `failed`, `cancelled` or `expired`.",
+          "`GET /v1/videos/{id}/content`: once `succeeded`, download the MP4.",
+        ] },
+        { kind: "h3", id: "video-params", text: "Request parameters" },
+        {
+          kind: "table",
+          label: "Video generation request parameters",
+          head: ["Parameter", "Type", "Required", "Description"],
+          rows: [
+            ["`model`", "string", "Yes", "`wan2.2-ti2v-5b-720p`"],
+            ["`prompt`", "string", "Yes", "Description of the video; non-empty, up to 2000 characters"],
+            ["`negative_prompt`", "string", "No", "Up to 500 characters. The backend does not apply this field yet (accepted but ignored)"],
+            ["`image`", "string", "No", "Starting frame as base64; a data URL prefix such as `data:image/png;base64,` is allowed. At most 6,000,000 bytes after decoding, otherwise 413. With an image the job is image-to-video; without one it is text-to-video"],
+            ["`seconds`", "integer", "No", "A JSON integer from 1 to 10, default 5. `5.0`, `\"5\"` and `true` are rejected"],
+            ["`seed`", "integer", "No", "0–4294967295; random if omitted"],
+          ],
+        },
+        { kind: "h3", id: "video-example", text: "Example" },
+        { kind: "code", label: "bash", code: EN_CODE.curlVideo },
+        { kind: "p", text: "Success returns `202`:" },
+        { kind: "code", label: "json", code: EN_CODE.videoSubmitResponse },
+        { kind: "p", text: "The complete flow (submit, poll, download):" },
+        { kind: "code", label: "bash", code: EN_CODE.bashVideoFlow },
+        { kind: "h3", id: "video-status", text: "Checking a job and job statuses" },
+        { kind: "code", label: "json", code: EN_CODE.videoStatusResponse },
+        {
+          kind: "table",
+          label: "Video job statuses",
+          head: ["status", "Meaning"],
+          rows: [
+            ["`queued`", "Accepted and waiting (the brief stage in which the balance is still being reserved also shows as `queued`)"],
+            ["`processing`", "Generating; `progress` runs from 0 to 1"],
+            ["`succeeded`", "Finished and ready to download; `content_url` is set. `cost_usd` is `null` until settlement completes (usually within seconds), then holds the settled amount"],
+            ["`failed`", "Failed or timed out (a single job is limited to 30 minutes); `error` gives the reason, the reservation is released, and nothing is charged"],
+            ["`cancelled`", "Cancelled; nothing is charged"],
+            ["`expired`", "The retention period has passed; downloading returns 410"],
+          ],
+        },
+        { kind: "p", text: "`expires_at` and `finished_at` are Unix timestamps in seconds. About 7 days after a job expires its record is deleted and lookups return 404; until then the `expired` status can still be read." },
+        { kind: "h3", id: "video-billing", text: "Pricing and settlement" },
+        {
+          kind: "ul",
+          items: [
+            "**US$0.05** per second of output video.",
+            "Billed on the **actual output length**, capped at 1.1 times the requested seconds. The actual length can be slightly longer than requested (frames = seconds × fps + 1, so 5 seconds → 121 frames ≈ 5.04 seconds, about US$0.252).",
+            "At submission, balance for the requested seconds × 1.1 is reserved (for example 5 seconds → 5.5 seconds = US$0.275). On completion the job is settled on the actual length and the difference is refunded.",
+            "If a job fails, times out, or is cancelled while queued, the whole reservation is released and nothing is charged.",
+            "The settled amount appears in `cost_usd` after completion; the `estimated_cost_usd` returned at submission is requested seconds × the unit price.",
+          ],
+        },
+        { kind: "h3", id: "video-download", text: "Download and cancel" },
+        {
+          kind: "ul",
+          items: [
+            "`GET /v1/videos/{id}/content` returns `200` with `Content-Type: video/mp4`, streamed. HTTP `Range` is supported: `Range: bytes=…` returns `206` (an invalid range returns `416`), so downloads can resume.",
+            "A finished video can be downloaded for at least 24 hours; the exact deadline is the job's `expires_at`. An unfinished job returns 409; an expired one returns 410 (404 once the record is deleted about 7 days later).",
+            "`DELETE /v1/videos/{id}` cancels only `queued` jobs, with no charge, and returns `{\"id\": \"…\", \"status\": \"cancelled\"}`. A job that is `processing` or already finished returns 409; a job that has only just been submitted and is still being accepted can also return 409, so retry shortly. If the video backend is temporarily unreachable it returns 502 and the job is unchanged, so you can retry the cancel.",
+          ],
+        },
+        { kind: "h3", id: "video-errors", text: "Errors on the video endpoints" },
+        {
+          kind: "table",
+          label: "Errors on the video endpoints",
+          head: ["Status", "Case"],
+          rows: [
+            ["400", "Field validation failed: an unknown field, an empty or over-long `prompt`, `seconds` that is not an integer from 1 to 10, `seed` out of range, `image` that is not valid base64, or a model that does not accept images"],
+            ["401", "Missing or invalid key"],
+            ["402", "Prepaid balance cannot cover the worst-case reservation (requested seconds × 1.1), or the balance is exhausted; top up"],
+            ["404", "The model does not exist, is not listed, or is not a video model; the job ID does not exist (another key's job also returns 404), or the job expired more than about 7 days ago and its record is deleted"],
+            ["409", "The state does not allow the operation: downloading an unfinished job, or cancelling a job that is not `queued`"],
+            ["410", "The video has expired"],
+            ["413", "`image` is larger than 6,000,000 bytes after decoding"],
+            ["429", "Capacity is full (`code` is `capacity`, with `Retry-After: 15`), the key already has 4 video jobs in progress, the per-minute request limit was exceeded, or the daily quota is used up. When `Retry-After` is present, retry after that time; the daily-quota 429 has no such header and resets at 00:00 UTC"],
+            ["502", "The backend responded abnormally during a download or cancel; retry later"],
+            ["503", "The backend cannot accept jobs right now (nothing was charged), the model is under maintenance, or the video backend is temporarily unreachable; retry later"],
+          ],
+        },
+        { kind: "p", text: "When a submission gets 429 or 503, no balance was deducted and you can simply submit again." },
+      ],
+    },
+    {
       id: "billing",
-      title: "9. Billing: credit, balance and usage",
+      title: "10. Billing: credit, balance and usage",
       blocks: [
         { kind: "p", text: "The platform is prepaid: you add credit first, and each request is charged for its actual usage once it completes. When the balance runs out, requests return 402. Failed requests, such as backend or validation errors, are not charged, and neither is a non-streaming request whose connection drops before the response arrives. If a stream is interrupted after it has started sending, the tokens already generated are still billed." },
         { kind: "h3", id: "credit-packs", text: "Credit packs" },
@@ -1452,12 +1728,13 @@ const EN: ApiReferenceCopy = {
             ["Speech recognition", "50 tokens per second × US$3.33 / 1M", "About US$0.01 per minute"],
           ],
         },
+        { kind: "note", text: "Video generation does not use the token conversion above: it is priced per second of output video, reserved at submission and settled on completion with the difference refunded. See [section 9](#video-billing)." },
         { kind: "p", text: "Precision is 10⁻⁹ USD. Charges are applied after the response completes, so the last request can leave the balance slightly negative." },
       ],
     },
     {
       id: "rate-limits",
-      title: "10. Rate limits and quotas",
+      title: "11. Rate limits and quotas",
       blocks: [
         { kind: "p", text: "Each key has four limits, and each model also has an overall capacity limit. The actual settings for your key are those agreed when it was issued — ask us if you need them. The platform does not send `X-RateLimit-*` headers." },
         {
@@ -1487,7 +1764,7 @@ const EN: ApiReferenceCopy = {
     },
     {
       id: "errors",
-      title: "11. Error handling",
+      title: "12. Error handling",
       blocks: [
         { kind: "p", text: "Errors use the OpenAI format. Only 429, 502 and 503 are worth retrying; for any other status code, fix the request first." },
         { kind: "h3", id: "error-format", text: "Error format" },
@@ -1560,7 +1837,7 @@ const EN: ApiReferenceCopy = {
     },
     {
       id: "best-practices",
-      title: "12. Best practices and security",
+      title: "13. Best practices and security",
       blocks: [
         { kind: "h3", id: "performance", text: "Performance" },
         {
@@ -1606,7 +1883,7 @@ const EN: ApiReferenceCopy = {
     },
     {
       id: "appendix",
-      title: "13. Appendix",
+      title: "14. Appendix",
       blocks: [
         { kind: "h3", id: "endpoint-index", text: "A. Endpoint index" },
         {
@@ -1622,6 +1899,10 @@ const EN: ApiReferenceCopy = {
             ["POST", "`/v1/images/generations`, `/v1/images`", "Image generation", "Yes"],
             ["POST", "`/v1/audio/speech`", "Text to speech", "Yes"],
             ["POST", "`/v1/audio/transcriptions`", "Speech recognition", "Yes"],
+            ["POST", "`/v1/videos`", "Submit a video generation job", "Yes"],
+            ["GET", "`/v1/videos/{id}`", "Check a video job", "Yes"],
+            ["GET", "`/v1/videos/{id}/content`", "Download the video (MP4)", "Yes"],
+            ["DELETE", "`/v1/videos/{id}`", "Cancel a queued video job", "Yes"],
             ["GET", "`/v1/personas/{persona_id}`", "Read a persona", "Yes"],
             ["POST", "`/v1/redeem`", "Redeem a credit code", "Yes"],
             ["GET", "`/dashboard/billing/subscription`", "Check balance", "Yes"],
@@ -1635,7 +1916,6 @@ const EN: ApiReferenceCopy = {
         {
           kind: "ul",
           items: [
-            "Video generation.",
             "OpenAI Responses API, Assistants, Files, Batches, Moderations.",
             "Audio translation `/v1/audio/translations` and realtime speech (Realtime / WebSocket).",
             "Single-model lookup `/v1/models/{id}`.",

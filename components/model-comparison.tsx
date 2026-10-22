@@ -27,6 +27,7 @@ export function ModelComparison() {
     output: "250000",
     images: "100",
     minutes: "60",
+    seconds: "60",
   });
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
@@ -61,6 +62,11 @@ export function ModelComparison() {
       label: zh ? "音訊分鐘" : "Audio minutes",
       show: kinds.has("audio"),
     },
+    {
+      id: "seconds",
+      label: zh ? "影片秒數" : "Seconds of video",
+      show: kinds.has("video"),
+    },
   ] as const;
   async function shareComparison() {
     const url = new URL("/compare", window.location.origin);
@@ -82,9 +88,13 @@ export function ModelComparison() {
         ? zh
           ? "每分鐘音訊"
           : "per audio minute"
-        : zh
-          ? "每百萬輸入 Token"
-          : "per 1M input tokens";
+        : kind === "video"
+          ? zh
+            ? "每秒影片"
+            : "per second of video"
+          : zh
+            ? "每百萬輸入 Token"
+            : "per 1M input tokens";
 
   return (
     <main id="main-content" className="platform-page comparison-page">
@@ -244,9 +254,13 @@ export function ModelComparison() {
                               ? zh
                                 ? "依音訊分鐘"
                                 : "Based on audio minutes"
-                              : zh
-                                ? "依輸入與輸出 Token"
-                                : "Based on input & output tokens"}
+                              : billingKind(model) === "video"
+                                ? zh
+                                  ? "依影片秒數"
+                                  : "Based on seconds of video"
+                                : zh
+                                  ? "依輸入與輸出 Token"
+                                  : "Based on input & output tokens"}
                         </small>
                       </td>
                     );

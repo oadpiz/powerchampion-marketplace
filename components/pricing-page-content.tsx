@@ -72,8 +72,8 @@ export function PricingPageContent() {
         </div>
         <p className="pricing-billing-copy">
           {locale === "en"
-            ? "Text models bill per million input and output tokens at the published rates below. Image models bill per generated image; audio models bill per minute of audio. The estimator applies the same rates locally in your browser."
-            : "文字模型依每百萬輸入/輸出 Token 以已刊登費率計費；影像模型依每張生成圖片計費；音訊模型依每分鐘音訊計費。估算器會在你的瀏覽器中以相同費率計算。"}
+            ? "Text models bill per million input and output tokens at the published rates below. Image models bill per generated image; audio models bill per minute of audio; video models bill per second of output video. The estimator applies the same rates locally in your browser."
+            : "文字模型依每百萬輸入/輸出 Token 以已刊登費率計費；影像模型依每張生成圖片計費；音訊模型依每分鐘音訊計費；影片模型依每秒輸出影片計費。估算器會在你的瀏覽器中以相同費率計算。"}
         </p>
       </section>
 
@@ -112,7 +112,9 @@ export function PricingPageContent() {
             </thead>
             <tbody>
               {MODEL_CATALOG.map((model) => {
-                const isPerUse = model.categories.includes("image") || model.id.includes("whisper") || model.id.includes("indextts2");
+                const isVideo = model.categories.includes("video");
+                const isAudio = model.id.includes("whisper") || model.id.includes("indextts2");
+                const isPerUse = model.categories.includes("image") || isAudio || isVideo;
                 return (
                   <tr className="rate-table-row" key={model.id}>
                     <td>{model.name}</td>
@@ -120,8 +122,8 @@ export function PricingPageContent() {
                       <td colSpan={2}>
                         <strong>{formatRate(model.inputPerMillion)}</strong>{" "}
                         {locale === "en"
-                          ? `per ${model.id.includes("whisper") || model.id.includes("indextts2") ? "minute of audio" : "image"}`
-                          : `每${model.id.includes("whisper") || model.id.includes("indextts2") ? "分鐘音訊" : "張圖片"}`}
+                          ? `per ${isVideo ? "second of video" : isAudio ? "minute of audio" : "image"}`
+                          : `每${isVideo ? "秒影片" : isAudio ? "分鐘音訊" : "張圖片"}`}
                       </td>
                     ) : (
                       <>

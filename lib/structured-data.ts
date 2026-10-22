@@ -24,7 +24,14 @@ export function faqPageJsonLd(path: string, entries: readonly FaqSource[]) {
 function offer(model: ModelDefinition) {
   const perImage = model.categories.includes("image");
   const perMinute = model.categories.includes("audio");
-  const unitText = perImage ? "image" : perMinute ? "minute of audio" : "1M input tokens";
+  const perSecond = model.categories.includes("video");
+  const unitText = perImage
+    ? "image"
+    : perMinute
+      ? "minute of audio"
+      : perSecond
+        ? "second of video"
+        : "1M input tokens";
   return {
     "@type": "Offer",
     url: `${SITE_ORIGIN}/models/${model.id}`,
