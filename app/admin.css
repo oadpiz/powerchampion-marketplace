@@ -42,6 +42,7 @@
 .portal-badge.admin-keys-badge-low { margin-top: 4px; border-color: #5e4a26; color: #e8c27a; }
 .portal-badge.admin-keys-badge-empty { margin-top: 4px; border-color: #60423d; color: #f0a493; }
 .portal-badge.admin-keys-badge-active { border-color: #3d5a3a; color: #b9f36b; }
+.portal-badge.admin-keys-badge-internal { margin-top: 4px; border-color: #3a4f6b; color: #9cc7f5; }
 .admin-keys-table td .portal-badge + .portal-badge { margin-left: 6px; }
 .admin-keys-row-low > td { background: rgb(232 194 122 / 6%); }
 .admin-keys-row-empty > td { background: rgb(240 164 147 / 8%); }

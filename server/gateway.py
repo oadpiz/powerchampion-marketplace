@@ -128,21 +128,28 @@ class GatewayAdapter:
             raise GatewayError("invalid_identifier")
         return key_id
 
-    async def create_key(self, label, prepaid_usd, limits=None):
+    async def create_key(self, label, prepaid_usd, limits=None, cost_only=False):
+        """cost_only (D-V8): an internal key billed at GPU cost. Sent only when asked for; the result's
+        cost_only is True only when the gateway confirmed it (a gateway without the flag ignores it)."""
         amount = Decimal(str(prepaid_usd))
         if amount < 0:
             raise ValueError("prepaid_usd must be >= 0")
+        if not isinstance(cost_only, bool):
+            raise ValueError("cost_only must be a bool")
         payload = {"label": label, "prepaid_usd": float(amount),
                    "daily_token_limit": self.settings.gateway_daily_token_limit,
                    "rpm": self.settings.gateway_rpm, "max_inflight": self.settings.gateway_max_inflight}
         payload.update(_limit_payload(limits))
+        if cost_only:
+            payload["cost_only"] = True
         value = await self._request("POST", "/api/keys", payload)
         secret, key_id = value.get("key"), value.get("key_id")
         if not isinstance(secret, str) or not re.fullmatch(r"[\x21-\x7e]{8,512}", secret) or not isinstance(key_id, str) or not KEY_ID.fullmatch(key_id):
             raise GatewayError("invalid_response")
         balance = value.get("balance_nano_usd")
         return {"key_id": key_id, "prefix": secret[:16], "secret": secret,
-                "balance_nano_usd": balance if isinstance(balance, int) and not isinstance(balance, bool) else None}
+                "balance_nano_usd": balance if isinstance(balance, int) and not isinstance(balance, bool) else None,
+                "cost_only": cost_only and value.get("cost_only") is True}
 
     async def set_key_disabled(self, key_id, disabled):
         value = await self._request("POST", "/api/keys/" + self._key_id(key_id) + "/disable", {"disabled": bool(disabled)})
@@ -157,6 +164,15 @@ class GatewayAdapter:
         if not payload:
             raise ValueError("no limits given")
         value = await self._request("POST", "/api/keys/" + self._key_id(key_id) + "/limits", payload)
+        if value.get("ok") is not True:
+            raise GatewayError("invalid_response")
+
+    async def set_cost_only(self, key_id, cost_only):
+        """Bill a key at GPU cost (True) or list price (False). The gateway's limits route takes the flag
+        on its own and keeps the key's limits; it accepts only a JSON boolean."""
+        if not isinstance(cost_only, bool):
+            raise ValueError("cost_only must be a bool")
+        value = await self._request("POST", "/api/keys/" + self._key_id(key_id) + "/limits", {"cost_only": cost_only})
         if value.get("ok") is not True:
             raise GatewayError("invalid_response")
 

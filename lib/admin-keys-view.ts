@@ -15,6 +15,8 @@ export type KeyLike = {
   disabledAt: string | number | null;
   expiresAt: string | number | null;
   owner: KeyOwner | null;
+  /** Internal key billed at GPU cost instead of list price (gateway cost_only, D-V8). */
+  costOnly?: boolean;
 };
 
 /** Prepaid keys below this balance (USD) are flagged as low. */
@@ -23,8 +25,8 @@ export const LOW_BALANCE_USD = 5;
 /** Customer filter value for keys that belong to no customer account. */
 export const NO_OWNER = "none";
 
-export type StatusFilter = "all" | "active" | "disabled" | "low";
-export const STATUS_FILTERS: StatusFilter[] = ["all", "active", "disabled", "low"];
+export type StatusFilter = "all" | "active" | "disabled" | "low" | "internal";
+export const STATUS_FILTERS: StatusFilter[] = ["all", "active", "disabled", "low", "internal"];
 
 export type KeyFilters = { query: string; customer: string; status: StatusFilter };
 export const EMPTY_FILTERS: KeyFilters = { query: "", customer: "", status: "all" };
@@ -66,6 +68,7 @@ export function matchesStatus(key: KeyLike, status: StatusFilter): boolean {
   if (status === "active") return !isDisabled(key);
   if (status === "disabled") return isDisabled(key);
   if (status === "low") return isLowBalance(key);
+  if (status === "internal") return key.costOnly === true;
   return true;
 }
 
@@ -87,6 +90,7 @@ export function statusCounts(keys: KeyLike[]): Record<StatusFilter, number> {
     active: keys.filter((key) => matchesStatus(key, "active")).length,
     disabled: keys.filter((key) => matchesStatus(key, "disabled")).length,
     low: keys.filter((key) => matchesStatus(key, "low")).length,
+    internal: keys.filter((key) => matchesStatus(key, "internal")).length,
   };
 }
 

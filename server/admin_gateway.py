@@ -14,6 +14,15 @@ from .support import (PREFIX, body_json, fail, gateway_error_code, gateway_fail,
                       limits_from, owner_json, owners_by_gateway_key_id, text_value, usd_amount, usd_from_nano)
 
 
+def cost_only_from(body, default):
+    """The admin's costOnly field: absent gives the default, anything but a JSON boolean is refused."""
+    if "costOnly" not in body:
+        return default
+    if not isinstance(body["costOnly"], bool):
+        fail("invalid_input", "costOnly must be true or false.", 422)
+    return body["costOnly"]
+
+
 def attach_admin_gateway(application, ctx):
     @application.post(PREFIX + "/admin/customers/{user_id}/keys")
     async def admin_issue_key(user_id: str, request: Request):
@@ -30,6 +39,7 @@ def attach_admin_gateway(application, ctx):
         except (InvalidOperation, ValueError):
             fail("invalid_input", "Enter a prepaid amount above 0 USD with at most two decimals.", 422)
         limits = limits_from(body)
+        cost_only = cost_only_from(body, False)
         with ctx.store.connect() as con:
             target = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
         if not target:
@@ -39,10 +49,11 @@ def attach_admin_gateway(application, ctx):
         if target["role"] != "customer":
             fail("target_not_customer", "Keys can only be issued to customer accounts.", 409)
         ctx.require_gateway()
-        row, created = await ctx.provision_key(user_id, label, prepaid, limits, admin["id"], "admin.key_issued")
+        row, created = await ctx.provision_key(user_id, label, prepaid, limits, admin["id"], "admin.key_issued", cost_only=cost_only)
         balance = created.get("balance_nano_usd")
         balance_usd = f"{Decimal(balance) / Decimal(10**9):.2f}" if isinstance(balance, int) else f"{prepaid:.2f}"
-        return JSONResponse({"key": key_json(row), "secret": created["secret"], "balanceUsd": balance_usd}, status_code=201)
+        return JSONResponse({"key": key_json(row), "secret": created["secret"], "balanceUsd": balance_usd,
+                             "costOnly": created.get("cost_only") is True}, status_code=201)
 
     @application.get(PREFIX + "/admin/keys")
     async def admin_keys(request: Request):
@@ -188,7 +199,14 @@ def attach_admin_gateway(application, ctx):
     async def admin_key_limits(key_id: str, request: Request):
         admin = ctx.current_user(request, admin=True)
         gateway_key_id(key_id)
-        limits = limits_from(await body_json(request))
+        body = await body_json(request)
+        limits = limits_from(body)
+        cost_only = cost_only_from(body, None)
+        if cost_only is not None:
+            if limits:
+                # One change per request, so a failure never leaves half of it applied.
+                fail("invalid_input", "Change the limits and the cost-price setting separately.", 422)
+            return await set_cost_only(admin, key_id, cost_only)
         if not limits:
             fail("invalid_input", "Give at least one limit to change.", 422)
         ctx.require_gateway()
@@ -199,6 +217,30 @@ def attach_admin_gateway(application, ctx):
         with ctx.store.connect() as con:
             ctx.store.audit(con, "admin.key_limits", admin["id"], key_id)
         return {"ok": True}
+
+    async def set_cost_only(admin, key_id, cost_only):
+        """D-V8: bill an internal key at GPU cost (not revenue), or back at list price. The current value is
+        read first so the audit row has before and after, and so an unchanged value sends nothing."""
+        ctx.require_gateway()
+        try:
+            listing = await ctx.gateway.list_keys()
+        except GatewayError as error:
+            gateway_fail(error)
+        item = next((k for k in listing["keys"] if k.get("key_id") == key_id), None)
+        if item is None:
+            fail("key_not_found", "Key not found.", 404)
+        if not isinstance(item.get("cost_only"), bool):
+            # A gateway from before cost_only would accept the flag and silently ignore it.
+            fail("gateway_unsupported", "The gateway does not support cost-price keys yet.", 409)
+        before = item["cost_only"]
+        if before == cost_only:
+            return {"ok": True, "costOnly": cost_only, "changed": False}
+        try:
+            await ctx.gateway.set_cost_only(key_id, cost_only)
+        except GatewayError as error:
+            gateway_fail(error)
+        ctx.audit("admin.key_cost_only", admin, key_id, {"before": before, "after": cost_only})
+        return {"ok": True, "costOnly": cost_only, "changed": True}
 
     @application.post(PREFIX + "/admin/keys/{key_id}/balance")
     async def admin_key_balance(key_id: str, request: Request):

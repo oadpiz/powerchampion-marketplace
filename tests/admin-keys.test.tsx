@@ -71,7 +71,7 @@ describe("admin keys view helpers", () => {
     expect(balanceLevel("0")).toBe("empty");
     expect(balanceLevel("4.99")).toBe("low");
     expect(balanceLevel("5")).toBe("ok");
-    expect(statusCounts(listing.keys)).toEqual({ all: 4, active: 3, disabled: 1, low: 2 });
+    expect(statusCounts(listing.keys)).toEqual({ all: 4, active: 3, disabled: 1, low: 2, internal: 0 });
   });
 
   it("keeps filters in the query string alongside unrelated parameters", () => {
@@ -297,5 +297,204 @@ describe("admin keys row actions", () => {
       path: "/admin/customers/cust-9/keys",
       body: { label: "Acme production", prepaidUsd: 10 },
     });
+  });
+});
+
+describe("admin keys internal cost price (cost_only)", () => {
+  const internal = key("gk-5", { label: "Ops internal", prefix: "pc-live-eeee", costOnly: true });
+  const withInternal = { ...listing, keys: [...listing.keys, internal] };
+
+  it("tags cost-price keys and filters them by the status chips, kept in the URL", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/admin/keys");
+    adminFetch({ "GET /admin/keys": withInternal });
+    wrap(<AdminPortal section="keys" />);
+    await screen.findByText("Ops internal");
+    const tagged = rows().find((row) => within(row).queryByText("Ops internal"))!;
+    expect(within(tagged).getByText("Internal · cost price")).toBeVisible();
+    expect(within(rows()[0]).queryByText("Internal · cost price")).not.toBeInTheDocument();
+
+    const statuses = screen.getByRole("group", { name: "Filter by status" });
+    const chip = within(statuses).getByRole("button", { name: /Internal · cost price/ });
+    expect(chip).toHaveTextContent("1");
+    await user.click(chip);
+    expect(rowLabels()).toEqual(["Ops internal"]);
+    expect(new URLSearchParams(window.location.search).get("status")).toBe("internal");
+    expect(statusCounts(withInternal.keys).internal).toBe(1);
+    expect(matchesFilters(internal, { query: "", customer: "", status: "internal" })).toBe(true);
+    expect(matchesFilters(acme, { query: "", customer: "", status: "internal" })).toBe(false);
+  });
+
+  it("shows the Traditional Chinese tag and actions", async () => {
+    localStorage.setItem("pc-locale", "zh");
+    window.history.replaceState({}, "", "/admin/keys");
+    adminFetch({ "GET /admin/keys": withInternal });
+    wrap(<AdminPortal section="keys" />);
+    const table = await screen.findByRole("table", { name: "客戶的 API 金鑰" });
+    const tagged = within(table).getAllByRole("row").find((row) => within(row).queryByText("Ops internal"))!;
+    expect(within(tagged).getByText("內部・成本價")).toBeVisible();
+    expect(within(tagged).getByRole("button", { name: "把「Ops internal」改回牌價" })).toHaveTextContent("改回牌價");
+    const acmeRow = within(table).getAllByRole("row").find((row) => within(row).queryByText("Acme production"))!;
+    expect(within(acmeRow).getByRole("button", { name: "把「Acme production」設為內部成本價" })).toHaveTextContent("設為內部成本價");
+  });
+
+  it("turns cost price on only after the confirmation, with the exact request, then reloads", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/keys": listing,
+      "POST /admin/keys/gk-4/limits": { ok: true, costOnly: true, changed: true },
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Charge “Internal” at internal cost price" }));
+    let dialog = await screen.findByRole("dialog", { name: "Charge “Internal” at internal cost price?" });
+    expect(dialog).toHaveTextContent("charged at GPU cost and does not count as revenue");
+    expect(dialog).toHaveTextContent("Use this only for the company's own internal keys.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Charge “Internal” at internal cost price" }));
+    dialog = await screen.findByRole("dialog");
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Charge at cost price" }));
+    expect(await screen.findByText("“Internal” is now charged at internal cost price.")).toBeVisible();
+    expect(calls.filter((call) => call.method === "POST")).toEqual([
+      { method: "POST", path: "/admin/keys/gk-4/limits", body: { costOnly: true } },
+    ]);
+    await waitFor(() => expect(calls.filter((call) => call.path === "/admin/keys").length).toBe(2));
+  });
+
+  it("turns cost price off with the reverse explanation", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/keys": withInternal,
+      "POST /admin/keys/gk-5/limits": { ok: true, costOnly: false, changed: true },
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Switch “Ops internal” back to list price" }));
+    const dialog = await screen.findByRole("dialog", { name: "Switch “Ops internal” back to list price?" });
+    expect(dialog).toHaveTextContent("charged at list price and counts as revenue");
+    // The key belongs to a customer account, so the dialog says so.
+    expect(dialog).toHaveTextContent("owner@example.com");
+    await user.click(within(dialog).getByRole("button", { name: "Switch to list price" }));
+    expect(await screen.findByText("“Ops internal” is now charged at list price.")).toBeVisible();
+    expect(calls.find((call) => call.method === "POST")).toEqual({
+      method: "POST",
+      path: "/admin/keys/gk-5/limits",
+      body: { costOnly: false },
+    });
+  });
+
+  it("warns that a customer-owned key is not an internal key", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("pc-locale", "zh");
+    window.history.replaceState({}, "", "/admin/keys");
+    adminFetch({ "GET /admin/keys": listing });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "把「Acme production」設為內部成本價" }));
+    const dialog = await screen.findByRole("dialog", { name: "把「Acme production」設為內部成本價？" });
+    expect(dialog).toHaveTextContent("這把金鑰之後的用量會照 GPU 成本扣款，不算營收；只給公司內部用的金鑰使用。");
+    expect(dialog).toHaveTextContent("Owner（owner@example.com）");
+  });
+
+  it("explains when the gateway is too old for cost price", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/keys": listing,
+      "POST /admin/keys/gk-1/limits": () => Response.json({ error: "gateway_unsupported", detail: "x" }, { status: 409 }),
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Charge “Acme production” at internal cost price" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Charge at cost price" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("The gateway does not support internal cost-price keys yet.");
+  });
+
+  for (const status of [409, 503]) {
+    it(`shows a clear error and keeps the tag unchanged when the gateway answers ${status}`, async () => {
+      const user = userEvent.setup();
+      const calls = adminFetch({
+        "GET /admin/keys": withInternal,
+        "POST /admin/keys/gk-5/limits": () =>
+          status === 409
+            ? Response.json({ error: "gateway_rejected", detail: "cost_only must be true or false." }, { status })
+            : Response.json({ error: "gateway_unavailable" }, { status }),
+      });
+      wrap(<AdminPortal section="keys" />);
+      await user.click(await screen.findByRole("button", { name: "Switch “Ops internal” back to list price" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Switch to list price" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        status === 409 ? "cost_only must be true or false." : "The API gateway is unavailable right now.",
+      );
+      // Nothing changed: the dialog stays open, no reload, the tag is still there.
+      expect(screen.getByRole("dialog")).toBeVisible();
+      expect(calls.filter((call) => call.path === "/admin/keys").length).toBe(1);
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      const tagged = rows().find((row) => within(row).queryByText("Ops internal"))!;
+      expect(within(tagged).getByText("Internal · cost price")).toBeVisible();
+      expect(screen.queryByText(/is now charged at/)).not.toBeInTheDocument();
+    });
+  }
+
+  it("issues a key at cost price only when the box is ticked, with the warning shown", async () => {
+    const user = userEvent.setup();
+    const calls = adminFetch({
+      "GET /admin/keys": listing,
+      "GET /admin/customers": {
+        customers: [
+          { id: "cust-9", email: "owner@example.com", name: "Owner", role: "customer", status: "active", createdAt: 1, keyCount: 2 },
+        ],
+      },
+      "POST /admin/customers/cust-9/keys": Response.json(
+        { key: { id: "pk-8", label: "Ops", prefix: "pc-live-eeee", gatewayKeyId: "gk-8" }, secret: "pc-live-new-secret", balanceUsd: "10", costOnly: true },
+        { status: 201 },
+      ),
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Issue key for a customer" }));
+    const dialog = await screen.findByRole("dialog", { name: "Issue a key for a customer" });
+    await within(dialog).findByRole("option", { name: /owner@example.com/ });
+    const box = within(dialog).getByRole("checkbox", { name: /Internal key: charge at GPU cost/ });
+    expect(box).not.toBeChecked();
+    expect(dialog).not.toHaveTextContent("does not count as revenue");
+    await user.click(box);
+    expect(dialog).toHaveTextContent("charged at GPU cost and does not count as revenue");
+    await user.selectOptions(within(dialog).getByLabelText("Customer"), "cust-9");
+    await user.type(within(dialog).getByLabelText("Label"), "Ops");
+    fireEvent.change(within(dialog).getByLabelText("Prepaid amount (USD)"), { target: { value: "10" } });
+    await user.click(within(dialog).getByRole("button", { name: "Issue key" }));
+    expect(await screen.findByText("pc-live-new-secret")).toBeVisible();
+    expect(calls.find((call) => call.method === "POST")).toEqual({
+      method: "POST",
+      path: "/admin/customers/cust-9/keys",
+      body: { label: "Ops", prepaidUsd: 10, costOnly: true },
+    });
+  });
+
+  it("says so when the gateway issued the key without confirming cost price", async () => {
+    const user = userEvent.setup();
+    adminFetch({
+      "GET /admin/keys": listing,
+      "GET /admin/customers": {
+        customers: [
+          { id: "cust-9", email: "owner@example.com", name: "Owner", role: "customer", status: "active", createdAt: 1, keyCount: 2 },
+        ],
+      },
+      "POST /admin/customers/cust-9/keys": Response.json(
+        { key: { id: "pk-8", label: "Ops", prefix: "pc-live-eeee", gatewayKeyId: "gk-8" }, secret: "pc-live-new-secret", balanceUsd: "10", costOnly: false },
+        { status: 201 },
+      ),
+    });
+    wrap(<AdminPortal section="keys" />);
+    await user.click(await screen.findByRole("button", { name: "Issue key for a customer" }));
+    const dialog = await screen.findByRole("dialog", { name: "Issue a key for a customer" });
+    await within(dialog).findByRole("option", { name: /owner@example.com/ });
+    await user.click(within(dialog).getByRole("checkbox", { name: /Internal key: charge at GPU cost/ }));
+    await user.selectOptions(within(dialog).getByLabelText("Customer"), "cust-9");
+    await user.type(within(dialog).getByLabelText("Label"), "Ops");
+    fireEvent.change(within(dialog).getByLabelText("Prepaid amount (USD)"), { target: { value: "10" } });
+    await user.click(within(dialog).getByRole("button", { name: "Issue key" }));
+    expect(await screen.findByText("pc-live-new-secret")).toBeVisible();
+    expect(await screen.findByText(/did not confirm the cost price/)).toBeVisible();
   });
 });
