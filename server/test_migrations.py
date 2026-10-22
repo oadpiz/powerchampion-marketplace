@@ -16,7 +16,7 @@ EXPECTED_TABLES = {
 }
 VOICE_TABLES = {"voice_stores", "voice_store_hours", "voice_store_closures", "voice_faqs", "voice_config_versions", "voice_numbers"}
 EXPECTED_TABLES = EXPECTED_TABLES | VOICE_TABLES
-HEAD = "0007_voice_core"
+HEAD = "0008_audit_action_index"
 
 
 class MigrationTests(unittest.TestCase):
@@ -46,7 +46,8 @@ class MigrationTests(unittest.TestCase):
             names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'")}
         # 13 legacy indexes + alloc_nodes_engineer (0003) + 5 studio indexes (0005)
         # + voice_faqs_store, voice_numbers_number (0007)
-        self.assertEqual(len(names), 21, names)
+        # + audit_events_action_target_time (0008)
+        self.assertEqual(len(names), 22, names)
         self.assertLessEqual({"ux_studio_ops_active", "ix_studio_ops_state", "ix_studio_ops_user_state",
                               "ix_studio_projects_user_created", "ix_studio_ledger_user_created"}, names)
 
@@ -257,6 +258,39 @@ class MigrationTests(unittest.TestCase):
             for table in sorted(VOICE_TABLES):
                 self.assertEqual(con.execute('SELECT COUNT(*) FROM "' + table + '"').fetchone()[0], 0, table)
         self.assertEqual(self._snapshot(store, others), before)
+
+    def _audit_indexes(self, store):
+        with store.connect() as con:
+            if self.db.backend == "sqlite":
+                rows = con.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='audit_events' "
+                                   "AND name NOT LIKE 'sqlite_%'").fetchall()
+            else:
+                rows = con.execute("SELECT indexname FROM pg_indexes WHERE schemaname='public' AND tablename='audit_events' "
+                                   "AND indexname NOT LIKE '%_pkey'").fetchall()
+            return sorted(r[0] for r in rows)
+
+    def test_audit_action_index_upgrade_and_downgrade(self):
+        from server.store import Store
+        store = Store(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        self.assertEqual(self._audit_indexes(store), ["audit_events_action_target_time"])
+        with store.connect() as con:
+            for i in range(3):
+                store.audit(con, "voice.published", None, "s" * 32, {"version": i + 1})
+            if self.db.backend == "sqlite":
+                plan = " ".join(str(r[-1]) for r in con.execute(
+                    "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM audit_events WHERE action=? AND target_id=? AND created_at>?",
+                    ("voice.published", "s" * 32, 0)).fetchall())
+                self.assertIn("audit_events_action_target_time", plan)
+        before = self._snapshot(store, {"audit_events"})
+        downgrade_to(self.db.url, "0007_voice_core")
+        self.assertEqual(self._versions(store), ["0007_voice_core"])
+        self.assertEqual(self._audit_indexes(store), [])
+        self.assertEqual(self._snapshot(store, {"audit_events"}), before)
+        upgrade_to_head(self.db.url)
+        self.assertEqual(self._versions(store), [HEAD])
+        self.assertEqual(self._audit_indexes(store), ["audit_events_action_target_time"])
+        self.assertEqual(self._snapshot(store, {"audit_events"}), before)
 
     def test_percent_in_url_does_not_break_config(self):
         if self.db.backend != "sqlite":
