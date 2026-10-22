@@ -377,6 +377,7 @@ b300-grafana-tunnel → Grafana（b300-31）→ Prometheus、annotations（b300-
 規格在 shortvideo-agent 的 `docs/studio-spec.md`（v3、§12、§13.2）。S2 只有後端與 BFF 白名單，畫面是 S3、Compose 服務是 S4；**在 S4 之前生產環境沒有 shortvideo-api，所以 `/studio/*` 一律回 503 `studio_unconfigured`**。
 
 - **設定**：portal 需要 `PC_STUDIO_AGENT_URL`、`SHORTVIDEO_SERVICE_TOKEN`、`SHORTVIDEO_GRANT_SECRET`、`SHORTVIDEO_QUOTE_SECRET`（後三者與 shortvideo-api 相同；token 不可等於任一個 secret）。少一個就整個 studio 503。四個值只放 Dokploy 的 Environment，不寫進 compose。
+- **Demo 模式（只開給名單）**：Dokploy Environment 設 `PC_STUDIO_ALLOWED_EMAILS=a@example.com,b@example.com`（逗號分隔，前後空白與大小寫不影響），重新部署 portal 後只有名單上的帳號與所有管理員能用 `/studio`；其他登入帳號在每個 studio 路由都回 403 `studio_not_open`，畫面顯示跟未接 agent 時一樣的「影片工作室尚未開放」，帳戶頁頂端也不顯示「影片工作室 ↗」按鈕（`GET /session` 的 `studio_access`）。發點數等管理員路由不受影響，可以先發點數再把人加進名單。設為空或不設＝對所有登入帳號開放（原行為）。
 - **點數**：1 點＝NT$1 牌價。`POST /api/portal/admin/studio/credits/grant` `{user_id, credits, note?, plan?, period_end?}`（管理員限定，寫稽核 `admin.studio_credits_grant`；負數＝扣回，稽核 `admin.studio_credits_expire`，不能扣到可用餘額以下）。`plan` 是 `creator|merchant|agency`，決定 agent 端每日花費上限；第一次發點數沒給就用 `creator`。月初重置目前手動。
 - **用量**：`GET /api/portal/admin/studio/usage?month=YYYY-MM`：每位使用者的扣點／退點（portal 帳本）對照 agent 的牌價成本與 GPU 秒數。`est_gpu_usd` 是估算（D-V8 之前閘道仍以牌價計費）。agent 連不到時仍回 portal 的部分，`agent_status` 不是 `ok`。
 - **扣點流程**：報價（agent 簽章）→ portal 本地驗章 → 一個資料庫交易裡預扣（同時檢查冪等鍵、每個專案 1 個、每人 2 個進行中的工作、餘額）→ 送 agent。agent 回 4xx 立即退點；逾時或 5xx 進 `unknown`，由每 10 秒的 sweeper 向 agent 查詢後結算。portal 在預扣後當掉：120 秒後 agent 仍查無此工作就退點。失敗的工作只收已產出的部分（`produced_credits`）。

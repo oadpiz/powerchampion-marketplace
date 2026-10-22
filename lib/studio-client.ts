@@ -316,8 +316,9 @@ export function draftPriceLabel(price: number | undefined, locale: Locale): stri
   return locale === "zh" ? `${credits} 點` : `${credits} credits`;
 }
 
+/** The studio is not open for this account: no agent yet (503 studio_unconfigured) or demo mode without this account (403 studio_not_open). */
 export function isStudioUnconfigured(error: unknown): boolean {
-  return error instanceof PortalError && error.code === "studio_unconfigured";
+  return error instanceof PortalError && (error.code === "studio_unconfigured" || error.code === "studio_not_open");
 }
 
 /** A title the portal accepts: trimmed, 1 to TITLE_MAX characters, no control characters. */

@@ -231,9 +231,13 @@ class Studio:
     def now(self):
         return int(self.clock())
 
-    def require(self):
+    def require(self, user):
+        """The guard on every customer /studio/* route, after sign-in: the agent is connected, and in demo
+        mode (PC_STUDIO_ALLOWED_EMAILS) the user is listed or an admin. The UI shows both as 「尚未開放」."""
         if not self.agent.configured:
             fail("studio_unconfigured", "The video studio is not connected yet.", 503)
+        if not self.settings.studio_allows(user):
+            fail("studio_not_open", "The video studio is not open for this account yet.", 403)
 
     async def call(self, name, *args):
         """An agent call in the threadpool (the client is synchronous); errors become portal errors."""
@@ -692,7 +696,7 @@ def attach_studio(application, ctx, agent=None):
     @application.get(S + "/templates")
     async def studio_templates(request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         data = await studio.call("templates", user["id"])
         items = data.get("items")
         if not isinstance(items, list):
@@ -704,7 +708,7 @@ def attach_studio(application, ctx, agent=None):
     @application.get(S + "/projects")
     async def studio_projects(request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         raw_limit = request.query_params.get("limit")
         if raw_limit is None:
             limit = LIST_DEFAULT
@@ -766,7 +770,7 @@ def attach_studio(application, ctx, agent=None):
     @application.post(S + "/projects")
     async def studio_create_project(request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         body = await body_json(request)
         key = _idempotency(body)
         template_id, aspect, inputs = body.get("template_id"), body.get("aspect"), body.get("inputs")
@@ -806,7 +810,7 @@ def attach_studio(application, ctx, agent=None):
     @application.post(S + "/uploads")
     async def studio_upload(request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         body = await body_json(request)
         purpose, content_type, size, project_id = body.get("purpose"), body.get("content_type"), body.get("bytes"), body.get("project_id")
         if purpose not in UPLOAD_PURPOSES or not isinstance(content_type, str) or not CONTENT_TYPE.fullmatch(content_type):
@@ -828,7 +832,7 @@ def attach_studio(application, ctx, agent=None):
     @application.get(S + "/projects/{project_id}")
     async def studio_project(project_id: str, request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         studio.owned_project(user["id"], project_id)
         active = studio.active_op(project_id)
         if active:
@@ -843,7 +847,7 @@ def attach_studio(application, ctx, agent=None):
 
     async def _edit(request, project_id, call, *args, body=None):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         if body is None:
             body = await body_json(request)
         studio.owned_project(user["id"], project_id)
@@ -856,7 +860,7 @@ def attach_studio(application, ctx, agent=None):
     @application.post(S + "/projects/{project_id}/settings")
     async def studio_settings(project_id: str, request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         body = await body_json(request)
         if user["role"] != "admin" and body.get("voice") in studio.internal_voices:
             fail("studio_voice_not_allowed", "That voice is for internal tests only.", 403)
@@ -874,14 +878,14 @@ def attach_studio(application, ctx, agent=None):
     @application.post(S + "/projects/{project_id}/shots/{index}/edit")
     async def studio_edit_shot(project_id: str, index: str, request: Request):
         if not SHOT_INDEX.fullmatch(index):
-            current_user(request)
+            studio.require(current_user(request))
             fail("studio_not_found", PASS_THROUGH["studio_not_found"][1], 404)
         return await _edit(request, project_id, "edit_shot", int(index))
 
     @application.post(S + "/projects/{project_id}/quote")
     async def studio_quote(project_id: str, request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         body = await body_json(request)
         op_type = body.get("type")
         if not isinstance(op_type, str) or not OP_TYPE.fullmatch(op_type):
@@ -902,7 +906,7 @@ def attach_studio(application, ctx, agent=None):
     @application.post(S + "/projects/{project_id}/ops")
     async def studio_submit(project_id: str, request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         body = await body_json(request)
         key = _idempotency(body)
         existing = studio.find_op(user["id"], key)
@@ -920,7 +924,7 @@ def attach_studio(application, ctx, agent=None):
     @application.get(S + "/projects/{project_id}/ops/{op_id}")
     async def studio_op(project_id: str, op_id: str, request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         studio.owned_project(user["id"], project_id)
         op = studio.op(op_id) if ID.fullmatch(op_id) else None
         if not op or op["user_id"] != user["id"] or op["project_id"] != project_id:
@@ -934,19 +938,19 @@ def attach_studio(application, ctx, agent=None):
     @application.post(S + "/projects/{project_id}/delete")
     async def studio_delete(project_id: str, request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         return await run_in_threadpool(studio.delete_project, user["id"], project_id)
 
     @application.post(S + "/projects/{project_id}/restore")
     async def studio_restore(project_id: str, request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         return await run_in_threadpool(studio.restore_project, user["id"], project_id)
 
     @application.get(S + "/credits")
     async def studio_credits(request: Request):
         user = current_user(request)
-        studio.require()
+        studio.require(user)
         return studio.credits_json(user["id"])
 
     # -- admin ---------------------------------------------------------------------------------------
