@@ -15,7 +15,7 @@ import {
   OUTCOME_LABEL,
   REVIEW_LABEL_COPY,
 } from "../components/admin-voice-quality-labels";
-import { ENTRIES, HANDOFF_REASONS, METER_REASONS, OUTCOMES, hasPhoneNumber } from "../lib/voice-calls";
+import { ENTRIES, HANDOFF_REASONS, METER_REASONS, OUTCOMES, callTime, hasPhoneNumber } from "../lib/voice-calls";
 import {
   AUTO_FLAGS,
   DEGRADE_REASONS,
@@ -77,8 +77,8 @@ const ID = { clinic: "a".repeat(32), formula: "b".repeat(32) };
 const ADMIN = { id: hex(7), email: "ops@powerchampion.example", name: "Ops", role: "admin" };
 const fail = (status: number, error: string, detail = "The request was rejected.") => Response.json({ error, detail }, { status });
 const epoch = (iso: string) => Math.floor(Date.parse(iso) / 1000);
-/** The page's own Taipei time format (en-US); the tests also check the hour moved by +8. */
-const taipei = (iso: string) => new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Taipei", dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+/** The page's Taipei time format: the store pages' 24-hour one, with the year (en); the tests also check the +8 hours. */
+const taipei = (iso: string) => callTime(iso, false);
 const T1 = taipei("2026-10-21T01:15:02Z");
 const taipeiMonth = (iso: string) => new Date(Date.parse(iso) + 8 * 3_600_000).toISOString().slice(0, 7);
 
@@ -158,7 +158,8 @@ function mockCall(n: number, overrides: Partial<MockCall>): MockCall {
     aiSpeechSeconds: 12.3,
     callSpeechSeconds: 12.3,
     metrics: { reply_p50_ms: 820, reply_p95_ms: 1430, barge_ins: 1, fillers: 2, talk_overs: 0, no_responses: null },
-    message: { outcome: "none", final: true, speechSeconds: 0, recordingSeconds: 0, callbackConfirmed: false, callbackVia: null, recordingSaved: false, recordingDeclined: false },
+    // recordingSaved is what content.hasRecording reports (the backend derives both from recording_saved).
+    message: { outcome: "none", final: true, speechSeconds: 0, recordingSeconds: 0, callbackConfirmed: false, callbackVia: null, recordingSaved: true, recordingDeclined: false },
     mismatch: [],
     retention: { snapshotDays: 30, reportedDays: null, transcriptUntil: "2027-01-19T01:15:02Z", recordingUntil: "2026-11-20T01:15:02Z", detailUntil: "2027-11-25T01:15:02Z" },
     meterRule: "q5-draft-1",
@@ -469,7 +470,7 @@ describe("admin phone agent: quality list (A9)", () => {
     const rows = bodyRows(table);
     // Newest first; c4 (reviewed, unflagged) is not in the default view.
     expect(rows).toHaveLength(4);
-    expect(T1).toMatch(/^Oct 21, 2026, 9:15\sAM$/); // 01:15 UTC is 9:15 in Taipei
+    expect(T1).toBe("Oct 21, 2026, 09:15"); // 01:15 UTC is 09:15 in Taipei, 24-hour like the store pages
     expect(within(rows[1]).getByRole("rowheader").textContent).toBe(T1);
     // The call ID a store quotes (the id's first 8) is its own column (fix round).
     expect(cellTexts(rows[1])[0]).toBe(hex(1001).slice(0, 8));
@@ -638,6 +639,9 @@ describe("admin phone agent: call drawer and review (A10, A11)", () => {
     const facts = await within(drawer()).findByText(/^Call ID /);
     expect(facts.textContent).toBe(`Call ID ${hex(1001).slice(0, 8)} · Line call ID 1797815702.101 · Number +886227001001 (Customer line) · Entry Phone line`);
     const text = drawer().textContent ?? "";
+    // 24-hour Taipei times like the store pages, with seconds where calls can share a minute.
+    expect(text).toContain("Started Oct 21, 2026, 09:15:02 · Answered Oct 21, 2026, 09:15:02 · Ended Oct 21, 2026, 09:17:41");
+    expect(text).toContain("Transcript until Jan 19, 2027 · Recording until Nov 20, 2026 · Record until Nov 25, 2027");
     expect(text).toContain("Settings v3 (sha 0123abcd) · Notice d1");
     expect(text).toContain("Caller spoke: 12.3 s with the AI, 12.3 s in total · 6 turns · reply p50 820 ms / p95 1430 ms · barge-ins 1 · fillers 2 · talk-overs 0 · no responses —");
     expect(text).toContain(`Orchestrator ${taipei("2026-10-21T01:17:45Z")} · Records not received`);
@@ -653,7 +657,8 @@ describe("admin phone agent: call drawer and review (A10, A11)", () => {
   it("shows a pending message result, a mismatch and the fallback reason", async () => {
     const backend = new QualityBackend();
     const c5 = backend.calls[4];
-    c5.message = { ...c5.message, final: false };
+    // A pending records report is all zero (§3.4), so nothing was recorded yet either.
+    c5.message = { ...c5.message, final: false, recordingSaved: false };
     c5.mismatch = ["ended_at"];
     c5.configVersion = null;
     const user = await openQuality(backend);
@@ -664,7 +669,28 @@ describe("admin phone agent: call drawer and review (A10, A11)", () => {
     expect(text).toContain("The message result has not arrived yet.");
     expect(text).toContain("Fields that disagree: ended_at");
     expect(text).toContain("No AI settings used · Notice d1");
-    expect(text).toContain("Fallback · Fallback: TTS");
+    // Fix round: the result is said once, and a pending message shows no zero counts beside "not arrived yet".
+    expect(text).toContain("ResultFallback: TTS");
+    expect(text).not.toContain("Fallback · Fallback");
+    expect(text).toContain("MessageThe message result has not arrived yet.");
+    expect(text).not.toMatch(/No message \(0 s of speech/);
+    // No recording kept: no "Recording until" date beside "There is no recording".
+    expect(text).toContain("Transcript until Jan 19, 2027 · Recording: none · Record until");
+  });
+
+  it("names a handoff once and gives the recording date only when one was kept", async () => {
+    const backend = new QualityBackend();
+    const c1 = backend.calls[0];
+    Object.assign(c1, { outcome: "handoff", handoff: true, handoffReason: "requested" });
+    c1.message = { ...c1.message, recordingSaved: true };
+    const user = await openQuality(backend);
+    await callsTable();
+    await user.click(document.getElementById(`voice-quality-open-${c1.id}`)!);
+    await within(drawer()).findByText(/^Call ID /);
+    const text = drawer().textContent ?? "";
+    expect(text).toContain("ResultHanded off: The caller asked");
+    expect(text).not.toContain("Handed off · Handed off");
+    expect(text).toMatch(/Transcript until [A-Z][a-z]{2} \d+, \d{4} · Recording until [A-Z][a-z]{2} \d+, \d{4} · Record until/);
   });
 
   it("checks the review like the backend before sending and sends nothing it would refuse", async () => {
@@ -715,6 +741,8 @@ describe("admin phone agent: call drawer and review (A10, A11)", () => {
     expect(backend.calls[0].review?.status).toBe("done");
     const row = document.getElementById(`voice-quality-open-${hex(1001)}`)!.closest("tr")!;
     expect(cellTexts(row).slice(5, 7)).toEqual(["2", "Reviewed"]);
+    // Fix round: focus does not fall to <body> while the button is disabled; it is back on "Save review".
+    await waitFor(() => expect(document.activeElement).toBe(within(form).getByRole("button", { name: "Save review" })));
     expect(countsText()).toBe("Store flags to review: 0 · Auto flags to review: 3");
     expect(within(form).getByText(/^Saved \(ops@powerchampion\.example, /)).toBeVisible();
     await user.click(within(form).getByRole("button", { name: "Save review" }));
@@ -1057,6 +1085,8 @@ describe("admin phone agent: quality tab in Chinese", () => {
     expect(countsText()).toBe("店家標記待審 1・自動標記待審 3");
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["時間", "通話編號", "店家", "入口", "結果", "標記", "分數", "狀態", "動作"]);
     expect(cellTexts(bodyRows(table)[3]).slice(1, 5)).toEqual(["（號碼不在表上）", "市話", "已回答", "號碼不在表上"]);
+    // The store pages' 24-hour Taipei time, with the year (fix round; was 「2026年10月21日 上午9:15」).
+    expect(within(bodyRows(table)[1]).getByRole("rowheader").textContent).toBe("2026 年 10 月 21 日 09:15");
     expect([...(screen.getByLabelText("標記") as HTMLSelectElement).options].map((option) => option.text)).toEqual([
       "有標記（店家或自動）", "店家標記", "自動標記", "沒有標記", "全部",
     ]);
@@ -1066,6 +1096,7 @@ describe("admin phone agent: quality tab in Chinese", () => {
     expect(within(form).getByRole("group", { name: "分數（1 很差～5 很好）" })).toBeVisible();
     expect(within(form).getByText("只寫判斷與處理，不要貼逐字稿、客人電話或姓名。")).toBeVisible();
     expect(drawer().textContent).toContain(`通話編號 ${hex(1001).slice(0, 8)}・線路通話 ID 1797815702.101・號碼 +886227001001（客戶線）・入口 市話`);
+    expect(drawer().textContent).toContain("開始 2026 年 10 月 21 日 09:15:02・接起 2026 年 10 月 21 日 09:15:02・結束 2026 年 10 月 21 日 09:17:41");
     expect(drawer().textContent).toContain("店家在");
     expect(screen.getByRole("heading", { level: 2, name: "盲聽紀錄" })).toBeVisible();
   });

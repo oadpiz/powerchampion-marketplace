@@ -213,8 +213,13 @@ describe("call content", () => {
       expect(read.url).not.toContain(token.slice(0, 20));
       expect(read.init).toMatchObject({ method: "GET", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", cache: "no-store" });
     }
+    // The heading names the summary once; its text follows, then the callback number and the message.
     const summary = screen.getByRole("heading", { level: 4, name: "Summary" }).nextElementSibling as HTMLElement;
-    expect([...summary.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual(["客人詢問洗牙價格。", "0912345678", "請回電確認時間"]);
+    expect(summary.tagName).toBe("P");
+    expect(summary.textContent).toBe("客人詢問洗牙價格。");
+    const rest = summary.nextElementSibling as HTMLElement;
+    expect([...rest.querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["Callback number", "Message"]);
+    expect([...rest.querySelectorAll("dd")].map((dd) => dd.textContent)).toEqual(["0912345678", "請回電確認時間"]);
     const lines = within(screen.getByRole("list")).getAllByRole("listitem").map((item) => item.textContent);
     expect(lines).toEqual(["AI 0:00 您好，這裡是晴光牙醫診所。", "Caller 0:03 請問洗牙多少錢？", "System 1:05 通話結束"]);
     // The token is never put on the page.
@@ -228,7 +233,9 @@ describe("call content", () => {
     await user.click(await screen.findByRole("button", { name: "查看內容" }));
     expect(await screen.findByRole("heading", { level: 4, name: "逐字稿" })).toBeVisible();
     const summary = screen.getByRole("heading", { level: 4, name: "摘要" }).nextElementSibling as HTMLElement;
-    expect([...summary.querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["摘要", "回電號碼", "留言內容"]);
+    // Fix round: "摘要" is the heading only, not also the first row's label.
+    expect(screen.getAllByText("摘要")).toHaveLength(1);
+    expect([...(summary.nextElementSibling as HTMLElement).querySelectorAll("dt")].map((dt) => dt.textContent)).toEqual(["回電號碼", "留言內容"]);
     expect(screen.getAllByRole("listitem").map((item) => item.querySelector("strong")?.textContent)).toEqual(["AI", "客人", "系統"]);
   });
 
