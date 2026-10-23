@@ -307,6 +307,152 @@ describe("portal service boundary", () => {
     expect(fetchMock).toHaveBeenCalledTimes(get.length + post.length);
   });
 
+  it("proxies only the phone agent routes it knows, by method", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    const id = "c".repeat(32);
+    const get = ["/me/voice", "/me/voice/setup", "/me/voice/faqs", "/me/voice/preview",
+      "/admin/voice/stores", "/admin/voice/numbers", `/admin/voice/stores/${id}`];
+    const post = ["/me/voice/setup", "/me/voice/faqs", "/me/voice/faqs/import", "/me/voice/faqs/from-template", "/me/voice/publish",
+      "/me/voice/try", `/me/voice/faqs/${id}`, "/admin/voice/stores", "/admin/voice/numbers", `/admin/voice/stores/${id}/status`,
+      `/admin/voice/numbers/${id}`];
+    const del = [`/me/voice/faqs/${id}`, `/admin/voice/numbers/${id}`];
+    for (const path of get) expect((await GET(request(path))).status, path).toBe(200);
+    for (const path of post) expect((await POST(request(path, "POST", {}))).status, path).toBe(200);
+    for (const path of del) expect((await DELETE(request(path, "DELETE"))).status, path).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => [call[1].method, call[0]])).toEqual([
+      ...get.map((path) => ["GET", path]), ...post.map((path) => ["POST", path]), ...del.map((path) => ["DELETE", path]),
+    ].map(([method, path]) => [method, `http://127.0.0.1:3020/api/portal${path}`]));
+    const calls = fetchMock.mock.calls.length;
+    // /voice-runtime is the edge hosts' API: it must never be reachable through the browser boundary.
+    // (A bare "%2e%2e" segment is a dot segment to the URL parser, which resolves it before the proxy sees the path.)
+    // Phase 2 (phase2-contract §3.1): the portal's runtime routes are reached only through /api/voice-runtime/*.
+    const blocked = ["/voice-runtime/config", "/voice-runtime/stores", "/voice/runtime/config", "/voice/runtime/calls",
+      "/voice/runtime/config?number=0227001001", "/voice/runtime", "/me/voice/faqs/../x", "/me/voice/faqs/%2e%2e%2fsetup",
+      "/me/voice/faqs/..%2fsetup", "/me/voice/faqs/%2E%2E%5Csetup", `/me/voice/faqs/${"A".repeat(32)}`, `/me/voice/faqs/${"c".repeat(31)}`, `/me/voice/faqs/${id}/extra`,
+      "/me/voice/x", "/me/voices", "/me/voice/", "/me/voice/faqs/import/x", "/admin/voice", "/admin/voice/x",
+      `/admin/voice/stores/${id}/delete`, `/admin/voice/numbers/${id}/status`, `/admin/voice/stores/${id}%2fstatus`, "/admin/voice/stores/not-hex"];
+    for (const path of blocked) {
+      expect((await GET(request(path))).status, path).toBe(404);
+      expect((await POST(request(path, "POST", {}))).status, path).toBe(404);
+      expect((await DELETE(request(path, "DELETE"))).status, path).toBe(404);
+    }
+    // Right shape, wrong method.
+    expect((await DELETE(request("/me/voice/setup", "DELETE"))).status).toBe(404);
+    expect((await GET(request("/me/voice/try"))).status).toBe(404);
+    expect((await GET(request("/me/voice/publish"))).status).toBe(404);
+    expect((await GET(request("/me/voice/faqs/import"))).status).toBe(404);
+    expect((await GET(request(`/me/voice/faqs/${id}`))).status).toBe(404);
+    expect((await POST(request("/me/voice", "POST", {}))).status).toBe(404);
+    expect((await POST(request("/me/voice/preview", "POST", {}))).status).toBe(404);
+    expect((await GET(request(`/admin/voice/stores/${id}/status`))).status).toBe(404);
+    expect((await GET(request(`/admin/voice/numbers/${id}`))).status).toBe(404);
+    expect((await DELETE(request(`/admin/voice/stores/${id}`, "DELETE"))).status).toBe(404);
+    expect((await POST(request("/me/voice/setup", "POST", {}, { origin: "https://foreign.example" }))).status).toBe(403);
+    expect(fetchMock).toHaveBeenCalledTimes(calls);
+  });
+
+  it("proxies the phase 2 call record, quality and listening routes, by method (phase2-contract §10.1)", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    const id = "e".repeat(32);
+    const get = ["/me/voice/calls", `/me/voice/calls/${id}`, "/admin/voice/quality/calls", "/admin/voice/quality/listening",
+      `/admin/voice/quality/calls/${id}`];
+    const post = [`/me/voice/calls/${id}/flag`, `/me/voice/calls/${id}/content-link`, `/admin/voice/quality/calls/${id}/review`,
+      `/admin/voice/quality/calls/${id}/content-link`, "/admin/voice/quality/listening", `/admin/voice/quality/listening/${id}`];
+    // M18 (§16.2): DELETE /me/voice/calls/<id> deletes the call's recording and text.
+    const del = [`/me/voice/calls/${id}/flag`, `/admin/voice/quality/listening/${id}`, `/me/voice/calls/${id}`];
+    for (const path of get) expect((await GET(request(path))).status, path).toBe(200);
+    for (const path of post) expect((await POST(request(path, "POST", {}))).status, path).toBe(200);
+    for (const path of del) expect((await DELETE(request(path, "DELETE"))).status, path).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => [call[1].method, call[0]])).toEqual([
+      ...get.map((path) => ["GET", path]), ...post.map((path) => ["POST", path]), ...del.map((path) => ["DELETE", path]),
+    ].map(([method, path]) => [method, `http://127.0.0.1:3020/api/portal${path}`]));
+    const calls = fetchMock.mock.calls.length;
+    // Any method: the runtime routes, malformed ids, extra segments and the calls collection itself for writes.
+    const blocked = ["/voice/runtime/config", "/voice/runtime/calls", "/me/voice/calls/ABC", `/me/voice/calls/${id.toUpperCase()}`,
+      `/me/voice/calls/${id}/x`, `/me/voice/calls/${"e".repeat(31)}`, "/me/voice/calls/", `/me/voice/calls/${id}/flag/x`,
+      `/me/voice/calls/..%2f${id}`, `/me/voice/calls/%2e%2e%2fsetup`, "/admin/voice/quality", "/admin/voice/quality/x",
+      `/admin/voice/quality/calls/${id}/x`, `/admin/voice/quality/calls/${id}/flag`, `/admin/voice/quality/listening/${id}/x`,
+      "/admin/voice/quality/listening/not-hex", `/me/voice/quality/calls/${id}`, `/admin/voice/calls/${id}`];
+    for (const path of blocked) {
+      expect((await GET(request(path))).status, path).toBe(404);
+      expect((await POST(request(path, "POST", {}))).status, path).toBe(404);
+      expect((await DELETE(request(path, "DELETE"))).status, path).toBe(404);
+    }
+    // Right shape, wrong method.
+    const wrongMethod: [typeof GET, string, string][] = [
+      [GET, "GET", `/me/voice/calls/${id}/content-link`], [GET, "GET", `/me/voice/calls/${id}/flag`], [DELETE, "DELETE", "/me/voice/calls"],
+      [POST, "POST", "/me/voice/calls"], [POST, "POST", `/me/voice/calls/${id}`], [DELETE, "DELETE", `/me/voice/calls/${id}/content-link`],
+      [GET, "GET", `/admin/voice/quality/calls/${id}/review`], [GET, "GET", `/admin/voice/quality/calls/${id}/content-link`],
+      [POST, "POST", "/admin/voice/quality/calls"], [POST, "POST", `/admin/voice/quality/calls/${id}`],
+      [DELETE, "DELETE", `/admin/voice/quality/calls/${id}`], [DELETE, "DELETE", `/admin/voice/quality/calls/${id}/review`],
+      [GET, "GET", `/admin/voice/quality/listening/${id}`], [DELETE, "DELETE", "/admin/voice/quality/listening"],
+    ];
+    for (const [handler, method, path] of wrongMethod) {
+      expect((await handler(request(path, method, method === "GET" ? undefined : {}))).status, `${method} ${path}`).toBe(404);
+    }
+    expect((await POST(request(`/me/voice/calls/${id}/flag`, "POST", {}, { origin: "https://foreign.example" }))).status).toBe(403);
+    expect((await DELETE(request(`/me/voice/calls/${id}/flag`, "DELETE", undefined, { origin: "https://foreign.example" }))).status).toBe(403);
+    expect((await DELETE(request(`/me/voice/calls/${id}`, "DELETE", undefined, { origin: "https://foreign.example" }))).status).toBe(403);
+    expect(fetchMock).toHaveBeenCalledTimes(calls);
+  });
+
+  it("forwards only the checked call record and quality filters (phase2-contract §10.1)", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    const id = "f".repeat(32);
+    const before = `1797815702-${"a".repeat(32)}`;
+    const forwarded = [
+      // Unlisted parameters (foo, store on M13, flagged on A9) never reach the portal.
+      ["/me/voice/calls?foo=1", "/me/voice/calls"],
+      [`/me/voice/calls?month=2026-12&outcome=not_answered&flagged=1&before=${before}&store=${id}&foo=1`,
+        `/me/voice/calls?month=2026-12&outcome=not_answered&before=${before}&flagged=1`],
+      [`/admin/voice/quality/calls?store=${id}&flag=none&reviewed=all&month=2026-01&outcome=unknown&entry=try&before=${before}&flagged=1&foo=1`,
+        `/admin/voice/quality/calls?month=2026-01&outcome=unknown&before=${before}&store=${id}&flag=none&reviewed=all&entry=try`],
+      ["/admin/voice/quality/calls?flag=any&reviewed=0", "/admin/voice/quality/calls?flag=any&reviewed=0"],
+      // A9 `ref`: the call ID a store quotes (fix round); M13 does not take it.
+      ["/admin/voice/quality/calls?ref=77a7b240&flag=all", "/admin/voice/quality/calls?flag=all&ref=77a7b240"],
+      ["/me/voice/calls?ref=77a7b240", "/me/voice/calls"],
+      // M14, A10 and A13 take no query at all.
+      [`/me/voice/calls/${id}?month=2026-12`, `/me/voice/calls/${id}`],
+      [`/admin/voice/quality/calls/${id}?store=${id}`, `/admin/voice/quality/calls/${id}`],
+      ["/admin/voice/quality/listening?month=2026-12", "/admin/voice/quality/listening"],
+    ];
+    for (const [path] of forwarded) expect((await GET(request(path))).status, path).toBe(200);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual(forwarded.map(([, path]) => `http://127.0.0.1:3020/api/portal${path}`));
+    const refused = ["/me/voice/calls?month=2026-13", "/me/voice/calls?month=2026-1", "/me/voice/calls?month=", "/me/voice/calls?outcome=answer",
+      "/me/voice/calls?outcome=ANSWERED", "/me/voice/calls?flagged=0", "/me/voice/calls?flagged=true", `/me/voice/calls?before=179781570-${id}`,
+      `/me/voice/calls?before=1797815702-${id.toUpperCase()}`, "/me/voice/calls?before=1797815702", "/admin/voice/quality/calls?store=ABC",
+      `/admin/voice/quality/calls?store=${id}x`, "/admin/voice/quality/calls?flag=flagged", "/admin/voice/quality/calls?reviewed=2",
+      "/admin/voice/quality/calls?entry=sip", "/admin/voice/quality/calls?month=2026-00", "/admin/voice/quality/calls?outcome=",
+      `/admin/voice/quality/calls?before=${before}x`, "/admin/voice/quality/calls?ref=77A7B240", "/admin/voice/quality/calls?ref=77a7b24",
+      "/admin/voice/quality/calls?ref=77a7b2400", "/admin/voice/quality/calls?ref=77a7b24%25"];
+    for (const path of refused) {
+      const response = await GET(request(path));
+      expect(response.status, path).toBe(400);
+      expect((await response.json()).error, path).toBe("invalid_input");
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(forwarded.length);
+  });
+
+  it("allows 192 KiB only for the phone agent CSV import", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    // JSON.stringify adds 14 bytes around the padding ({"padding":"…"}); 196608 bytes is the exact ceiling.
+    expect((await POST(request("/me/voice/faqs/import", "POST", { padding: "x".repeat(196608 - 14) }))).status).toBe(200);
+    expect((await POST(request("/me/voice/faqs/import", "POST", { padding: "x".repeat(196608 - 13) }))).status).toBe(413);
+    expect((await POST(request("/me/voice/faqs/import", "POST", { csv: "問題,答案\n".repeat(9000) }))).status).toBe(200);
+    for (const path of ["/me/voice/faqs", "/me/voice/setup", `/me/voice/faqs/${"d".repeat(32)}`, "/admin/voice/stores"]) {
+      expect((await POST(request(path, "POST", { padding: "x".repeat(65536) }))).status, path).toBe(413);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("proxies the read-only engineers overview as one exact GET without a query", async () => {
     vi.stubEnv("PC_PORTAL_ORIGIN", "");
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json({ engineers: [] })));

@@ -1,12 +1,14 @@
-"""Local administrator bootstrap and operator-assisted account recovery.
+"""Local administrator bootstrap, operator-assisted account recovery and the phone agent's retention run.
 
 Passwords are read from a hidden prompt or a server-only environment variable;
 they must never be supplied as command-line arguments or printed.
 """
 import argparse
 import getpass
+import json
 import os
 import sys
+import time
 
 from .security import digest_token, normalize_email, password_hash, validate_password
 from .settings import Settings
@@ -45,13 +47,21 @@ def main(argv=None):
     create.add_argument("--name", default="Administrator")
     reset = commands.add_parser("reset-password", help="Reset a customer's or administrator's password and revoke all sessions")
     reset.add_argument("--email", required=True)
+    commands.add_parser("voice-retention", help="Run the phone agent's retention schedule once (phase2-contract §16.4, §16.5)")
     args = parser.parse_args(argv)
     try:
-        store = Store(Settings.from_env().resolved_database_url)
+        settings = Settings.from_env()
+        store = Store(settings.resolved_database_url)
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 1
     try:
+        if args.command == "voice-retention":
+            from .voice_retention import sweep
+
+            # Counts only: never a call id, number or note.
+            print(json.dumps(sweep(store, int(time.time()), settings.voice_call_retention_days), sort_keys=True))
+            return 0
         if args.command == "create-admin":
             store.create_user(args.email, args.name, read_password("PC_PORTAL_ADMIN_PASSWORD"), role="admin")
             print("Administrator created. Sign in through the portal.")

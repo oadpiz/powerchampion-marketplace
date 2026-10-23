@@ -100,4 +100,38 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(compose.match(/^\s+PC_STUDIO_ALLOWED_EMAILS\s*:/gm)).toHaveLength(1);
     expect(website).not.toMatch(/PC_STUDIO_ALLOWED_EMAILS/);
   });
+
+  it("wires the phone agent's runtime token from the environment only, empty by default (fail closed)", () => {
+    // phase2-contract §1.7: `:-` (not `:?`) so a deploy without it still starts; the routes then answer 503.
+    expect(portal).toMatch(/^\s+PC_VOICE_RUNTIME_TOKEN:\s*\$\{PC_VOICE_RUNTIME_TOKEN:-\}\s*$/m);
+    expect(compose).not.toMatch(/^\s+PC_VOICE_RUNTIME_TOKEN\s*:\s*(?!\$\{PC_VOICE_RUNTIME_TOKEN:-\}\s*$)\S/m);
+    expect(website).not.toMatch(/PC_VOICE_RUNTIME_TOKEN/);
+    expect(portal).toMatch(/^\s+PC_VOICE_ENABLED:\s*\$\{PC_VOICE_ENABLED:-0\}\s*$/m);
+  });
+
+  it("wires the content-link URL and secret into the portal only, empty by default (phase2-contract §1.7: 3 lines)", () => {
+    // Without them in the compose file, setting them in Dokploy at step ⑨ would not reach the container: M17/A12 stay 503.
+    for (const name of ["PC_VOICE_RUNTIME_TOKEN", "PC_VOICE_MEDIA_URL", "PC_VOICE_MEDIA_SECRET"]) {
+      expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-\\}\\s*$`, "m"));
+      expect(compose).not.toMatch(new RegExp(`^\\s+${name}\\s*:\\s*(?!\\$\\{${name}:-\\}\\s*$)\\S`, "m"));
+      expect(website).not.toMatch(new RegExp(name));
+    }
+  });
+
+  it("wires PC_VOICE_CALL_RETENTION_DAYS into the portal only, 1825 days (5 years) by default (§16.5)", () => {
+    // The portal refuses to start on a value outside 90-3660; `:-1825` keeps an unset or empty variable at the default.
+    const name = "PC_VOICE_CALL_RETENTION_DAYS";
+    expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-1825\\}\\s*$`, "m"));
+    expect(compose).not.toMatch(new RegExp(`^\\s+${name}\\s*:\\s*(?!\\$\\{${name}:-1825\\}\\s*$)\\S`, "m"));
+    expect(website).not.toMatch(new RegExp(name));
+  });
+
+  it("wires PC_VOICE_A6_RC_VERSION into the portal only, empty by default, so AI answers stay off until A6 meters them (§15)", () => {
+    // Fix round: R1 answers answer_mode "ai" only when this is at least 4. An empty default is what keeps production
+    // on message_only; a `:-4` default, a `:?` or a literal value here would turn AI answers on without a decision.
+    const name = "PC_VOICE_A6_RC_VERSION";
+    expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-\\}\\s*$`, "m"));
+    expect(compose).not.toMatch(new RegExp(`^\\s+${name}\\s*:\\s*(?!\\$\\{${name}:-\\}\\s*$)\\S`, "m"));
+    expect(website).not.toMatch(new RegExp(name));
+  });
 });

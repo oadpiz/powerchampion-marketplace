@@ -92,6 +92,19 @@ services:
       # Demo mode: comma-separated emails that may use the studio (admins always may).
       # Empty or unset = open to every signed-in account; others get 「尚未開放」.
       PC_STUDIO_ALLOWED_EMAILS: ${PC_STUDIO_ALLOWED_EMAILS:-}
+      # 語音功能預設關；秘密只在 Dokploy 設，不寫在這個檔
+      PC_VOICE_ENABLED: ${PC_VOICE_ENABLED:-0}
+      PC_VOICE_TRY_SECRET: ${PC_VOICE_TRY_SECRET:-}
+      PC_VOICE_TRY_URL: ${PC_VOICE_TRY_URL:-}
+      PC_VOICE_RUNTIME_TOKEN: ${PC_VOICE_RUNTIME_TOKEN:-}
+      # 查看通話內容（M17、A12）：P2-3 台灣主機端點好了才在 Dokploy 設；沒設時回 503、明細頁「查看內容」停用
+      PC_VOICE_MEDIA_URL: ${PC_VOICE_MEDIA_URL:-}
+      PC_VOICE_MEDIA_SECRET: ${PC_VOICE_MEDIA_SECRET:-}
+      # A6 的紀錄約定版本（RC）。A6 做完 RC v4（AI 接聽的則數、AI 只回答免推播）、上線並核對則數之後才設成 4；
+      # 沒設或小於 4 時 runtime 一律回 answer_mode message_only，不會有任何一家店的 AI 回答
+      PC_VOICE_A6_RC_VERSION: ${PC_VOICE_A6_RC_VERSION:-}
+      # 通話計費與中繼資料（voice_calls）保存天數：預設 1825（5 年）【待律師】；90～3660 以外的值會讓 portal 起不來
+      PC_VOICE_CALL_RETENTION_DAYS: ${PC_VOICE_CALL_RETENTION_DAYS:-1825}
     volumes:
       - portal-data:/data
     # No ports, no Traefik labels and not on dokploy-network: only the website

@@ -9,9 +9,10 @@ import {
   portalRequest,
   type PortalUser,
 } from "../lib/portal-client";
+import { AccountVoice, VoiceStart, useVoiceSummary, type VoiceSub } from "./account-voice";
 import { useLocale } from "./locale-provider";
 
-type Section = "overview" | "keys" | "usage" | "credits" | "security" | "ssh-key";
+type Section = "overview" | "keys" | "usage" | "credits" | "security" | "ssh-key" | "voice";
 type Key = {
   id: string;
   label: string;
@@ -102,6 +103,8 @@ const NAV: { section: Section; href: string; en: string; zh: string }[] = [
     zh: "儲值申請",
   },
   { section: "security", href: "/account/security", en: "Security", zh: "安全性" },
+  // Shown only when GET /me/voice succeeds (we opened a phone agent store for this account).
+  { section: "voice", href: "/account/voice", en: "Phone agent", zh: "電話客服" },
   // Shown only when GET /me/engineer succeeds (an administrator linked this account).
   { section: "ssh-key", href: "/account/ssh-key", en: "SSH key", zh: "SSH 公鑰" },
 ];
@@ -135,7 +138,16 @@ function statusText(value: string, zh: boolean) {
   return known[value]?.[zh ? 1 : 0] ?? value;
 }
 
-export function AccountPortal({ section = "overview" }: { section?: Section }) {
+export function AccountPortal({
+  section = "overview",
+  voiceSub,
+  voiceCallId,
+}: {
+  section?: Section;
+  voiceSub?: VoiceSub;
+  /** /account/voice/calls/<id> (phase2-contract §10.2); the page has already checked it is 32 lowercase hex. */
+  voiceCallId?: string;
+}) {
   const { locale } = useLocale();
   const zh = locale === "zh";
   const [user, setUser] = useState<PortalUser | null>(null);
@@ -179,7 +191,9 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
   const mutationController = useRef<AbortController | null>(null);
   const mutationBusy = useRef(false);
   const currentPath =
-    NAV.find((item) => item.section === section)?.href ?? "/account";
+    section === "voice" && voiceSub
+      ? `/account/voice/${voiceSub}${voiceSub === "calls" && voiceCallId ? `/${voiceCallId}` : ""}`
+      : NAV.find((item) => item.section === section)?.href ?? "/account";
   const heading =
     NAV.find((item) => item.section === section)?.[locale] ?? "Overview";
 
@@ -196,7 +210,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
         if (controller.signal.aborted) return;
         setUser(session.user);
         setStudioAccess(session.studio_access !== false);
-        if (section === "security" || section === "ssh-key") return;
+        if (section === "security" || section === "ssh-key" || section === "voice") return;
         const path =
           section === "overview"
             ? "/overview"
@@ -255,6 +269,8 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
     void loadEngineer();
     return () => controller.abort();
   }, [userId, refresh]);
+  // Loaded after /me/engineer so the existing request order is unchanged.
+  const voice = useVoiceSummary(userId, refresh);
 
   useEffect(() => {
     if (!revokeKey || !dialog.current) return;
@@ -371,6 +387,8 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
       setNewPassword("");
       setConfirmPassword("");
       setPasswordChanged(true);
+      // A phone agent store's pages lock while the temporary password is unchanged; re-read M1 so they unlock.
+      voice.reload();
     }
   }
 
@@ -468,8 +486,10 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
       >
         {NAV.filter(
           (item) =>
-            item.section !== "ssh-key" ||
-            (user !== null && engineerStatus === "linked"),
+            (item.section !== "ssh-key" ||
+              (user !== null && engineerStatus === "linked")) &&
+            (item.section !== "voice" ||
+              (user !== null && voice.status === "ready")),
         ).map((item) => (
           <Link
             key={item.section}
@@ -524,6 +544,7 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
         section === "overview" &&
         "keyCount" in data && (
           <>
+            {voice.status === "ready" && <VoiceStart summary={voice.summary} zh={zh} />}
             <div className="portal-grid">
               <div className="portal-panel portal-stat">
                 <p>{zh ? "API 金鑰" : "API keys"}</p>
@@ -1203,6 +1224,10 @@ export function AccountPortal({ section = "overview" }: { section?: Section }) {
             </>
           )}
         </>
+      )}
+
+      {!loading && !error && user && section === "voice" && (
+        <AccountVoice sub={voiceSub} callId={voiceCallId} state={voice} onReload={voice.reload} />
       )}
 
       {revokeKey && (

@@ -1,0 +1,389 @@
+/**
+ * Phone agent call records (phase 2): the enums and API shapes the store's "Calls" page (/account/voice/calls, P2-2)
+ * and the operators' "Quality" tab (/admin/voice, P2-6, see lib/voice-quality.ts) share. Shapes follow
+ * phase2-contract.md §6 (M13-M17), §16 (M18) and the backend's JSON (server/voice_calls.py call_item, call_detail,
+ * content_json, store_flag_json); the backend is authoritative.
+ *
+ * Each enum is written as `export const NAME = [...] as const;` on purpose: server/test_voice_calls_sync.py reads
+ * this file and fails when a list differs from the backend's (LESSONS 2026-10-21). Give label tables the matching
+ * `Record<…, …>` type so a new value cannot be left without copy.
+ */
+
+/** §3.5 result classes (voice_calls.outcome). */
+export const OUTCOMES = ["answered", "message", "handoff", "degraded", "not_answered", "hangup_early", "no_speech", "error", "unknown"] as const;
+/** How the call came in: phone line, web call, internal softphone, test call. */
+export const ENTRIES = ["pstn", "webrtc", "softphone", "try"] as const;
+/** §12.2: why a call is or is not billable (A6 metering.py names). */
+export const METER_REASONS = [
+  "ai_speech",
+  "message",
+  "callback",
+  "try",
+  "unknown_line",
+  "non_customer_line",
+  "channel_not_billable",
+  "not_answered",
+  "no_message_record",
+  "processing_error",
+  "notice_hangup",
+  "no_speech",
+  "short_speech",
+  "callback_unconfirmed",
+] as const;
+export const HANDOFF_REASONS = ["requested", "no_answer", "no_ai_question", "urgent", "complaint"] as const;
+export const CALLER_KINDS = ["mobile", "landline", "hidden", "web", "unknown"] as const;
+/** M15: phase 2 has one kind of store flag. */
+export const FLAG_KINDS = ["wrong_answer"] as const;
+/**
+ * M14 content.state: none (nothing kept), expired (past every retention date), available; deleted (the store deleted
+ * the call's recording and text, M18) only reaches operators (A10): the store no longer finds the call.
+ */
+export const CONTENT_STATES = ["none", "expired", "available", "deleted"] as const;
+/** What a content link (M17, A12) can open on the Taiwan host. */
+export const MEDIA_KINDS = ["recording", "summary", "transcript"] as const;
+
+export type CallOutcome = (typeof OUTCOMES)[number];
+export type CallEntry = (typeof ENTRIES)[number];
+export type MeterReason = (typeof METER_REASONS)[number];
+export type HandoffReason = (typeof HANDOFF_REASONS)[number];
+export type CallerKind = (typeof CALLER_KINDS)[number];
+export type FlagKind = (typeof FLAG_KINDS)[number];
+export type ContentState = (typeof CONTENT_STATES)[number];
+export type MediaKind = (typeof MEDIA_KINDS)[number];
+
+/** CallItem (§6). `durationSeconds` is null when the hang-up time is unknown; `caller.tail` is null once expired. */
+export type CallItem = {
+  id: string;
+  ref: string;
+  startedAt: string;
+  durationSeconds: number | null;
+  entry: CallEntry;
+  caller: { tail: string | null; kind: CallerKind };
+  outcome: CallOutcome;
+  hasMessage: boolean;
+  handoff: boolean;
+  urgent: boolean;
+  degraded: boolean;
+  flagged: boolean;
+  meterUnits: 0 | 1;
+  meterReason: MeterReason;
+};
+
+/** M13 `limits`; read them from the response, never hard-code them. `callDetailDays` is PC_VOICE_CALL_RETENTION_DAYS. */
+export type CallLimits = { callsPageSize: number; flagNoteChars: number; callDetailDays: number };
+
+/**
+ * M13 GET /me/voice/calls. `summary` covers `month` only; `next` is the `before` cursor of the next page or null.
+ * `summary.total`, `byOutcome` and `meterUnits` still count calls the store deleted (they are still billed, §16.2);
+ * `deleted` says how many, `flagged` counts only calls still on the list.
+ */
+export type CallList = {
+  calls: CallItem[];
+  next: string | null;
+  summary: {
+    month: string;
+    total: number;
+    byOutcome: Record<CallOutcome, number>;
+    meterUnits: number;
+    flagged: number;
+    deleted: number;
+  };
+  limits: CallLimits;
+};
+
+/** M13 filters as the BFF forwards them (app/api/portal/[...path]/route.ts checks each one). */
+export type CallListQuery = { month?: string; outcome?: CallOutcome; flagged?: "1"; before?: string };
+
+/** M14 content (also A10). */
+export type CallContent = {
+  expected: boolean;
+  hasRecording: boolean;
+  transcriptUntil: string | null;
+  recordingUntil: string | null;
+  state: ContentState;
+  linkAvailable: boolean;
+};
+
+/** The store's own flag (M14, M15). `reviewed` is true once an operator finished a review; scores stay hidden. */
+export type CallFlag = { kind: FlagKind; note: string; flaggedAt: string; reviewed: boolean };
+
+/** M14 GET /me/voice/calls/{id}. */
+export type CallDetail = {
+  call: CallItem & {
+    answeredAt: string | null;
+    endedAt: string | null;
+    configVersion: number | null;
+    handoffReason: HandoffReason | null;
+    callbackConfirmed: boolean;
+    messageSeconds: number;
+    recordingSeconds: number;
+  };
+  content: CallContent;
+  flag: CallFlag | null;
+};
+
+/** M15 body. `note` is one line, at most `limits.flagNoteChars`, and must not hold a phone number. */
+export type CallFlagInput = { kind: FlagKind; note?: string };
+/** M15 answer. */
+export type CallFlagResult = { changed: boolean; flag: CallFlag };
+/** M16 answer. */
+export type CallUnflagResult = { changed: boolean };
+/** M18 DELETE /me/voice/calls/{id} answer: `changed` is false when the store had deleted it already (§16.2). */
+export type CallDeleteResult = { changed: boolean; deletedAt: string };
+
+/**
+ * M17 and A12 answer. The token is a secret for 5 minutes: send it only as `Authorization: Bearer …` to the URLs
+ * here, and never put it in a URL, a log or an error message (§6.5, §8.3).
+ */
+export type ContentLink = {
+  media: {
+    token: string;
+    expiresAt: string;
+    kinds: MediaKind[];
+    urls: Partial<Record<MediaKind, string>>;
+  };
+};
+
+// ---------------------------------------------------------------- copy and checks shared by the pages (P2-2)
+
+/** One string in both site languages (phase2-contract §11 writes every string as { zh, en }). */
+export type CallCopy = { en: string; zh: string };
+
+/** §11.1 result names (also the result filter's options). */
+export const OUTCOME_LABELS: Record<CallOutcome, CallCopy> = {
+  answered: { en: "Answered", zh: "已回答" },
+  message: { en: "Message", zh: "留言" },
+  handoff: { en: "Handed off", zh: "轉真人" },
+  degraded: { en: "Fallback", zh: "降級" },
+  not_answered: { en: "Not connected", zh: "未接通" },
+  hangup_early: { en: "Hung up early", zh: "開頭就掛斷" },
+  no_speech: { en: "No speech", zh: "沒有說話" },
+  error: { en: "Failed", zh: "處理失敗" },
+  unknown: { en: "Pending", zh: "待補紀錄" },
+};
+
+/** §11.2 "Entry". */
+export const ENTRY_LABELS: Record<CallEntry, CallCopy> = {
+  pstn: { en: "Phone line", zh: "市話" },
+  webrtc: { en: "Web call", zh: "網頁通話" },
+  softphone: { en: "Internal softphone", zh: "內部軟電話" },
+  try: { en: "Test call", zh: "試打" },
+};
+
+/** §12.2: the basis of a billable call, or why a call is not billed. */
+export const METER_REASON_LABELS: Record<MeterReason, CallCopy> = {
+  ai_speech: { en: "AI answered and the caller spoke for 3 seconds or more", zh: "AI 接聽，客人說話滿 3 秒" },
+  message: { en: "A message was left", zh: "有留言" },
+  callback: { en: "A callback number was left", zh: "留下回電號碼" },
+  try: { en: "Test calls are free", zh: "試打不計費" },
+  unknown_line: { en: "Number not in the number table", zh: "號碼不在號碼表" },
+  non_customer_line: { en: "Demo or test number", zh: "示範或測試號碼" },
+  channel_not_billable: { en: "Web calls are not billed", zh: "網頁通話不計費" },
+  not_answered: { en: "Not answered by the system", zh: "系統沒有接起" },
+  no_message_record: { en: "No message record", zh: "沒有留言紀錄" },
+  processing_error: { en: "Processing failed", zh: "處理失敗" },
+  notice_hangup: { en: "Hung up during the notice", zh: "告知語中掛斷" },
+  no_speech: { en: "The caller did not speak", zh: "客人沒有說話" },
+  short_speech: { en: "Less than 3 seconds of speech", zh: "說話不足 3 秒" },
+  callback_unconfirmed: { en: "Callback number not confirmed", zh: "回電號碼沒有確認" },
+};
+
+/**
+ * §11.2 "Handed off: {reason}". The contract names the field but gives no copy for its 5 values; these follow the
+ * reasons' meaning in RC (requested by the caller, AI had no answer, a question the AI may not answer, urgent words,
+ * a complaint).
+ */
+export const HANDOFF_REASON_LABELS: Record<HandoffReason, CallCopy> = {
+  requested: { en: "the caller asked for a person", zh: "客人要求找真人" },
+  no_answer: { en: "the AI had no answer", zh: "AI 答不出來" },
+  no_ai_question: { en: "a question the AI is set not to answer", zh: "問到設定成不讓 AI 回答的題目" },
+  urgent: { en: "urgent words were heard", zh: "聽到緊急字眼" },
+  complaint: { en: "the caller complained", zh: "客人抱怨" },
+};
+
+/** A voice_calls.id (M14-M17 path): 32 lowercase hex. */
+export const CALL_ROW_ID = /^[a-f0-9]{32}$/;
+/** M13 `before` / `next`: the 10-digit started_at, "-", the id. */
+export const CALL_CURSOR = /^\d{10}-[a-f0-9]{32}$/;
+
+/** §1.5 `flagNoteChars`. M14 carries no `limits`, so one call's page uses this; M13's `limits` wins on the list. */
+export const FLAG_NOTE_CHARS_DEFAULT = 100;
+
+/**
+ * §6.3 phone-number check (amended in the phase 2 fix rounds), the backend's voice_calls.has_phone_number: the note is
+ * first put in a comparable form (phoneText: NFKC, so full-width digits, brackets and commas become ASCII; invisible
+ * characters dropped; Chinese numerals read as digits). Then the numbers that are not phone numbers are set aside
+ * (phoneMask: a date written 2026/10/22, 2026.10.22 or 2026-10-22, an IPv4 address, a version number after
+ * v/ver/version/build/版本, an amount grouped 10,000,000). Then 8 or more digits that only separators split are a
+ * phone number: whitespace and - . / ( ) and a few dots and dashes split digits one by one (PHONE_LIKE); a comma (or
+ * the ideographic comma) also splits groups of two or more digits, but only when it touches digits on both sides, so
+ * "0912,345,678" is a number while "1,2,3,4,5,6,7,8" and "35,000, 42,000" are not (PHONE_GROUPED). Digits are counted,
+ * not characters, so "10/22 14:30" is not one. Eight digits with no separator ("20261022") stay a number: a Taiwan
+ * landline without its area code looks the same. The whitespace class is Python's str.isspace() set written out,
+ * because JavaScript's \s differs (it has U+FEFF, Python has U+001C-U+001F and U+0085). No lookbehind (older Safari
+ * rejects it): every mask pattern starts with a group for the character before, which is kept.
+ * tests/support/phone-like-vectors.json is run through both sides.
+ */
+const PY_SPACE = "\\t\\n\\v\\f\\r\\u001c-\\u001f \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+const PHONE_SEPARATORS = "\\-./()\\u30fb\\u2027\\u00b7\\u2010\\u2011\\u2013\\u2014";
+export const PHONE_LIKE = new RegExp(`[0-9](?:[${PY_SPACE}${PHONE_SEPARATORS}]*[0-9]){7,}`);
+const PHONE_GROUPED = new RegExp(`[0-9]{2,}(?:(?:[${PY_SPACE}${PHONE_SEPARATORS}]+|[,\\u3001])[0-9]{2,})+`, "g");
+const PHONE_DIGITS = 8;
+const PHONE_INVISIBLE = /[\u200b-\u200f\u2060\u061c\ufeff\u00ad]/g;
+const DAY = "(?:0?[1-9]|[12][0-9]|3[01])";
+const MONTH = "(?:0?[1-9]|1[0-2])";
+const OCTET = "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])";
+const FIRST_OCTET = "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)";
+/** A comma-grouped amount: a first group of 1-3 digits without a leading zero, then groups of exactly 3. */
+const PHONE_AMOUNT = /(^|[^0-9,.])([1-9][0-9]{0,2}(?:,[0-9]{3}){2,})(?![0-9]|,[0-9])/g;
+const PHONE_MASKS: RegExp[] = [
+  // 2026/10/22, 2026.10.22, 2026-10-22 (years 1900-2099), then 22/10/2026 and 10-22-2026
+  new RegExp(`(^|[^0-9])((?:19|20)[0-9]{2}[-./]${MONTH}[-./]${DAY})(?![0-9])`, "g"),
+  new RegExp(`(^|[^0-9])(${DAY}[-./]${DAY}[-./](?:19|20)[0-9]{2})(?![0-9])`, "g"),
+  // an IPv4 address (no leading zeros, first octet not 0) that is not part of a longer dotted number
+  new RegExp(`(^|[^0-9.])(${FIRST_OCTET}(?:\\.${OCTET}){3})(?![0-9]|\\.[0-9])`, "g"),
+  // v1.2.3.4, ver. 20.11.0.123456, version 2026.10.22.1, build 7.8.9, 版本 3.2.1.4 (three or more groups, none with a
+  // leading zero, so "v0912.345.678" is still a number)
+  /(^|[^0-9A-Za-z])((?:v|ver\.?|version|build|版本|版)[ ]?(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2,})(?![0-9])/gi,
+];
+/** A masked span becomes "|": neither a digit nor a separator, so it cannot join two numbers. */
+const PHONE_MASK_FILLER = "|";
+/** Chinese numerals read as digits, grouped by digit (the backend's PHONE_NUMERALS; never two zipped strings). */
+export const PHONE_NUMERALS: Record<string, string> = {
+  "0": "零〇○洞",
+  "1": "一壹么幺",
+  "2": "二貳兩",
+  "3": "三參叁",
+  "4": "四肆",
+  "5": "五伍",
+  "6": "六陸",
+  "7": "七柒",
+  "8": "八捌",
+  "9": "九玖",
+};
+const NUMERAL_DIGIT = new Map(Object.entries(PHONE_NUMERALS).flatMap(([digit, chars]) => [...chars].map((char) => [char, digit] as const)));
+/** The comparable form of a note (only for matching; the note is sent as typed). */
+export const phoneText = (text: string) =>
+  [...text.normalize("NFKC").replace(PHONE_INVISIBLE, "")].map((char) => NUMERAL_DIGIT.get(char) ?? char).join("");
+/** `text` (already through phoneText) with dates, IPv4 addresses, version numbers and comma-grouped amounts set aside. */
+export const phoneMask = (text: string) => {
+  // 912,345,678 is nine digits starting with 9: a Taiwan mobile number without its 0, written with commas.
+  let masked = text.replace(PHONE_AMOUNT, (whole: string, before: string, amount: string) =>
+    /^9[0-9]{8}$/.test(amount.replace(/,/g, "")) ? whole : before + PHONE_MASK_FILLER,
+  );
+  for (const pattern of PHONE_MASKS) masked = masked.replace(pattern, (_whole: string, before: string) => before + PHONE_MASK_FILLER);
+  return masked;
+};
+export const hasPhoneNumber = (text: string) => {
+  const compared = phoneMask(phoneText(text));
+  if (PHONE_LIKE.test(compared)) return true;
+  for (const run of compared.matchAll(PHONE_GROUPED)) if ((run[0].match(/[0-9]/g) ?? []).length >= PHONE_DIGITS) return true;
+  return false;
+};
+
+/** The Taiwan host's error codes a page can get back (§8.3). */
+export const MEDIA_ERRORS = [
+  "media_token_invalid",
+  "media_token_expired",
+  "media_forbidden",
+  "media_expired",
+  "media_not_ready",
+  "media_not_found",
+] as const;
+export type MediaError = (typeof MEDIA_ERRORS)[number];
+
+/** §8.3 transcript answer (the minimum shape; the Taiwan host may add fields). */
+export type MediaTranscript = { call_id: string; segments: { speaker: "caller" | "ai" | "system"; start_ms: number; text: string }[] };
+/** §8.3 summary answer; the callback number and the message text exist only here, never in portal. */
+export type MediaSummary = {
+  call_id: string;
+  summary: string;
+  callback_number: string | null;
+  message_text: string | null;
+  urgent: boolean;
+};
+
+// ---------------------------------------------------------------- Taipei time and display text (§11)
+
+/** Taipei is fixed UTC+8 (phase 1 contract §10 item 15); no time-zone database is needed. */
+const TAIPEI_MS = 8 * 3600 * 1000;
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const short = (month: number) => MONTHS_EN[month - 1].slice(0, 3);
+
+export type TaipeiParts = { year: number; month: number; day: number; hour: string; minute: string; second: string };
+
+/** The Taipei wall-clock parts of an ISO time; null when it does not parse. */
+export function taipeiParts(value: string | null | undefined): TaipeiParts | null {
+  if (!value) return null;
+  const epoch = Date.parse(value);
+  if (Number.isNaN(epoch)) return null;
+  const local = new Date(epoch + TAIPEI_MS);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return {
+    year: local.getUTCFullYear(),
+    month: local.getUTCMonth() + 1,
+    day: local.getUTCDate(),
+    hour: two(local.getUTCHours()),
+    minute: two(local.getUTCMinutes()),
+    second: two(local.getUTCSeconds()),
+  };
+}
+
+/** The Taipei month (YYYY-MM) of an epoch in milliseconds: M13's `month`. */
+export function taipeiMonth(epochMs: number): string {
+  const local = new Date(epochMs + TAIPEI_MS);
+  return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** YYYY-MM moved by whole months. */
+export function shiftMonth(month: string, delta: number): string {
+  const [year, number] = month.split("-").map(Number);
+  const index = year * 12 + (number - 1) + delta;
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}`;
+}
+
+/** §11.1 "{YYYY} 年 {M} 月" / "{Month} {YYYY}". */
+export function monthLabel(month: string, zh: boolean): string {
+  const [year, number] = month.split("-").map(Number);
+  return zh ? `${year} 年 ${number} 月` : `${MONTHS_EN[number - 1]} ${year}`;
+}
+
+/**
+ * A Taipei date and 24-hour time; the store list leaves the year out (the month is the filter). "—" when it does not
+ * parse. The operators' Quality tab uses the same format, with seconds where several calls share a minute.
+ */
+export function callTime(value: string | null, zh: boolean, withYear = true, withSeconds = false): string {
+  const parts = taipeiParts(value);
+  if (!parts) return "—";
+  const time = `${parts.hour}:${parts.minute}${withSeconds ? `:${parts.second}` : ""}`;
+  if (zh) return `${withYear ? `${parts.year} 年 ` : ""}${parts.month} 月 ${parts.day} 日 ${time}`;
+  return `${short(parts.month)} ${parts.day}${withYear ? `, ${parts.year}` : ""}, ${time}`;
+}
+
+/** A Taipei calendar date ("until" dates, §11.2). */
+export function dateText(value: string | null, zh: boolean): string {
+  const parts = taipeiParts(value);
+  if (!parts) return "—";
+  return zh ? `${parts.year} 年 ${parts.month} 月 ${parts.day} 日` : `${short(parts.month)} ${parts.day}, ${parts.year}`;
+}
+
+/** §11.1 "{m} 分 {s} 秒" / "{m}m {s}s"; "—" when the hang-up time is unknown (null). */
+export function durationText(seconds: number | null, zh: boolean): string {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return "—";
+  const whole = Math.floor(seconds);
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  return zh ? `${minutes} 分 ${rest} 秒` : `${minutes}m ${rest}s`;
+}
+
+/** §11.1 "Caller": a test call, a web call, a hidden number, or the last 3 digits with the line type; "—" without them. */
+export function callerText(call: Pick<CallItem, "entry" | "caller">, zh: boolean): string {
+  const { tail, kind } = call.caller;
+  if (call.entry === "try") return zh ? "試打" : "Test call";
+  if (call.entry === "webrtc" || kind === "web") return zh ? "網頁通話" : "Web call";
+  if (kind === "hidden") return zh ? "未顯示號碼" : "Number hidden";
+  if (!tail) return "—";
+  if (kind === "mobile") return zh ? `尾碼 ${tail}（手機）` : `Ends in ${tail} (mobile)`;
+  if (kind === "landline") return zh ? `尾碼 ${tail}（市話）` : `Ends in ${tail} (landline)`;
+  return zh ? `尾碼 ${tail}` : `Ends in ${tail}`;
+}

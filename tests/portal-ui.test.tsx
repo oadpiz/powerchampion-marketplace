@@ -63,6 +63,23 @@ describe("account portal", () => {
     expect(safeAccountReturn("/account/ssh-key")).toBe("/account/ssh-key");
     expect(safeAccountReturn("/account/ssh-key/extra")).toBe("/account");
     expect(safeAccountReturn("/account/ssh-keys")).toBe("/account");
+    expect(safeAccountReturn("/account/voice")).toBe("/account/voice");
+    expect(safeAccountReturn("/account/voice/setup")).toBe("/account/voice/setup");
+    expect(safeAccountReturn("/account/voice/faq")).toBe("/account/voice/faq");
+    expect(safeAccountReturn("/account/voice/try")).toBe("/account/voice/try");
+    expect(safeAccountReturn("/account/voice/x")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/faqs")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/setup/x")).toBe("/account");
+    // Phase 2 call records (phase2-contract §10.2): the list and one call, by its 32 lowercase hex id.
+    expect(safeAccountReturn("/account/voice/calls")).toBe("/account/voice/calls");
+    expect(safeAccountReturn("/account/voice/calls/a1b2c3d4e5f60718293a4b5c6d7e8f90")).toBe("/account/voice/calls/a1b2c3d4e5f60718293a4b5c6d7e8f90");
+    expect(safeAccountReturn("/account/voice/calls/A1B2C3D4E5F60718293A4B5C6D7E8F90")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/calls/a1b2c3d4")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/calls/a1b2c3d4e5f60718293a4b5c6d7e8f90/x")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/calls/")).toBe("/account");
+    expect(safeAccountReturn("/account/voice/try/a1b2c3d4e5f60718293a4b5c6d7e8f90")).toBe("/account");
+    expect(safeAccountReturn("/admin/voice")).toBe("/admin/voice");
+    expect(safeAccountReturn("/admin/voice/x")).toBe("/account");
     expect(safeAccountReturn("/tasks")).toBe("/tasks");
     expect(safeAccountReturn(`/tasks?agent=${"d".repeat(32)}`)).toBe(`/tasks?agent=${"d".repeat(32)}`);
     expect(safeAccountReturn("/tasks?starter=analysis")).toBe("/tasks?starter=analysis");
@@ -1162,6 +1179,7 @@ describe("admin navigation for gateway sections", () => {
     ["/admin/gateway", "Gateway"],
     ["/admin/allocation", "Node allocation"],
     ["/admin/engineers", "Engineers"],
+    ["/admin/voice", "Phone agent"],
   ])("marks %s as the current section", (pathname, name) => {
     wrap(<AdminShell pathname={pathname}><p>content</p></AdminShell>);
     expect(screen.getByRole("link", { name })).toHaveAttribute("aria-current", "page");
@@ -1169,6 +1187,6 @@ describe("admin navigation for gateway sections", () => {
     const labels = within(screen.getByRole("navigation", { name: /administration/i }))
       .getAllByRole("link")
       .map((link) => link.textContent);
-    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Credit requests", "Video studio", "Audit log"]);
+    expect(labels).toEqual(["Overview", "Customers", "API keys", "Redeem codes", "Usage", "Gateway", "Personas", "Node allocation", "Engineers", "Phone agent", "Credit requests", "Video studio", "Audit log"]);
   });
 });

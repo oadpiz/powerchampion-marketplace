@@ -7,6 +7,50 @@ from typing import Tuple
 from urllib.parse import urlsplit
 from cryptography.fernet import Fernet
 
+VOICE_TRY_SECRET_MIN = 32
+# The A6 records contract version (RC) the Taiwan host's billing runs; phone-agent AI answers need RC v4 (phase2-contract
+# §15). Only whole numbers count: anything else (a typo, "4.1", "v4") is "not there yet".
+VOICE_A6_RC_VERSION = re.compile(r"[0-9]{1,4}")
+VOICE_A6_RC_REQUIRED = 4
+VOICE_TRY_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+# PC_VOICE_CALL_RETENTION_DAYS (phase2-contract §16.5): how long the portal keeps a call's billing and metadata row
+# (voice_calls: times, lengths, result, meter). 5 years by default, pending the lawyer's answer. Never under 400 days:
+# the monthly billing reconciliation compares up to 13 months back (§9), so a shorter value would delete rows it still
+# needs; it is also longer than the 90 days a call's content is kept, so a row never goes before its content's
+# deletion is queued. At most 3660 days (10 years).
+VOICE_CALL_RETENTION_DAYS_DEFAULT = 1825
+VOICE_CALL_RETENTION_DAYS_MIN = 400
+VOICE_CALL_RETENTION_DAYS_MAX = 3660
+
+
+def voice_call_retention_days(text):
+    """PC_VOICE_CALL_RETENTION_DAYS as an int: unset or empty is the default; anything but a whole number of days in
+    range stops the portal from starting (a wrong value would delete billing rows early or keep caller data too long)."""
+    text = (text or "").strip()
+    if not text:
+        return VOICE_CALL_RETENTION_DAYS_DEFAULT
+    if not re.fullmatch(r"[0-9]{1,5}", text):
+        raise ValueError("PC_VOICE_CALL_RETENTION_DAYS must be a whole number of days from %d to %d"
+                         % (VOICE_CALL_RETENTION_DAYS_MIN, VOICE_CALL_RETENTION_DAYS_MAX))
+    return int(text)
+
+
+def voice_try_origin(url):
+    """The origin of a valid try URL, or "" (never raises: a bad value must not stop the service)."""
+    try:
+        parsed = urlsplit(url)
+        parsed.port  # ValueError for a malformed or out-of-range port
+    except ValueError:
+        return ""
+    host = parsed.hostname or ""
+    if "@" in parsed.netloc or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
+        return ""
+    if not (re.fullmatch(r"[a-z0-9.-]+", host) or host == "::1"):
+        return ""
+    if parsed.scheme == "https" or (parsed.scheme == "http" and host in VOICE_TRY_LOCAL_HOSTS):
+        return parsed.scheme + "://" + parsed.netloc.lower()
+    return ""
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -48,6 +92,23 @@ class Settings:
     # Demo mode (PC_STUDIO_ALLOWED_EMAILS): when non-empty, only these accounts (and admins) may use the
     # customer /studio/* routes; everyone else gets 403 studio_not_open. Empty = open to every signed-in user.
     studio_allowed_emails: Tuple[str, ...] = ()
+    # AI phone agent (語音電話客服): off by default. A missing or malformed try secret/URL never stops
+    # the service from starting; it only makes "try a call" answer 503 (see voice_try_available).
+    voice_enabled: bool = False
+    voice_try_secret: str = field(default="", repr=False)
+    voice_try_url: str = ""
+    # Phase 2 (phase2-contract §1.7). The runtime token is what b300-23 and the Taiwan host send to
+    # /api/voice-runtime/*; shorter than 32 characters (besides surrounding spaces) or unset makes those routes
+    # answer 503 (fail closed). The media URL and secret sign content links to the Taiwan host; unset makes those
+    # routes answer 503 and the call page's content.linkAvailable false. None of them stops the service starting.
+    voice_runtime_token: str = field(default="", repr=False)
+    voice_media_url: str = ""
+    voice_media_secret: str = field(default="", repr=False)
+    # PC_VOICE_A6_RC_VERSION: the RC version A6 meters with. Until it is at least 4 (A6 counts AI-answered calls by Q5
+    # and does not bill a call whose only push is missing), R1 never answers answer_mode "ai" (phase2-contract §15).
+    voice_a6_rc_version: str = ""
+    # PC_VOICE_CALL_RETENTION_DAYS: see VOICE_CALL_RETENTION_DAYS_DEFAULT (checked in __post_init__).
+    voice_call_retention_days: int = VOICE_CALL_RETENTION_DAYS_DEFAULT
 
     def __post_init__(self):
         emails = self.studio_allowed_emails
@@ -68,6 +129,10 @@ class Settings:
             raise ValueError("Trial request limits must be nonnegative globally and positive per session")
         if self.database_url and not self.database_url.startswith(("sqlite:///", "postgres://", "postgresql://", "postgresql+psycopg://")):
             raise ValueError("PC_PORTAL_DATABASE_URL must be a sqlite:/// or postgresql:// (or postgres://) URL")
+        if (isinstance(self.voice_call_retention_days, bool) or not isinstance(self.voice_call_retention_days, int)
+                or not VOICE_CALL_RETENTION_DAYS_MIN <= self.voice_call_retention_days <= VOICE_CALL_RETENTION_DAYS_MAX):
+            raise ValueError("PC_VOICE_CALL_RETENTION_DAYS must be a whole number of days from %d to %d"
+                             % (VOICE_CALL_RETENTION_DAYS_MIN, VOICE_CALL_RETENTION_DAYS_MAX))
         if self.grafana_url:
             grafana = urlsplit(self.grafana_url)
             if grafana.scheme != "https" or not grafana.hostname or grafana.username or grafana.password or grafana.query or grafana.fragment or grafana.path not in ("", "/"):
@@ -120,6 +185,39 @@ class Settings:
         except (ValueError, UnicodeError):
             return False
 
+    @property
+    def voice_try_origin(self):
+        """PC_VOICE_TRY_URL as scheme://host[:port]; "" unless it is an HTTPS origin (plain HTTP only for localhost)."""
+        return voice_try_origin(self.voice_try_url)
+
+    @property
+    def voice_try_available(self):
+        """Tickets can be issued: the shared secret has at least 32 characters besides surrounding spaces (it is still
+        used exactly as written, like the demo reads it) and the try URL is valid."""
+        return len(self.voice_try_secret.strip()) >= VOICE_TRY_SECRET_MIN and bool(self.voice_try_origin)
+
+    @property
+    def voice_runtime_configured(self):
+        """The runtime token has at least 32 characters besides surrounding spaces (§1.1 step 2)."""
+        return len(self.voice_runtime_token.strip()) >= VOICE_TRY_SECRET_MIN
+
+    @property
+    def voice_a6_ready(self):
+        """A6 meters AI-answered calls (RC v4 or later). Unset, empty or not a whole number is False (fail closed)."""
+        text = str(self.voice_a6_rc_version).strip()
+        return bool(VOICE_A6_RC_VERSION.fullmatch(text)) and int(text) >= VOICE_A6_RC_REQUIRED
+
+    @property
+    def voice_media_origin(self):
+        """PC_VOICE_MEDIA_URL as scheme://host[:port], checked like PC_VOICE_TRY_URL; "" when not valid."""
+        return voice_try_origin(self.voice_media_url)
+
+    @property
+    def voice_media_available(self):
+        """Content links can be signed: a media secret of at least 32 characters (used exactly as written, like the
+        try secret) and a valid media URL."""
+        return len(self.voice_media_secret.strip()) >= VOICE_TRY_SECRET_MIN and bool(self.voice_media_origin)
+
     @classmethod
     def from_env(cls):
         origins = tuple(origin.strip().rstrip("/") for origin in os.environ.get("PC_PORTAL_ALLOWED_ORIGINS", "http://localhost:3010,https://powerchampion.ai").split(",") if origin.strip())
@@ -154,4 +252,12 @@ class Settings:
             studio_internal_voices=tuple(v.strip() for v in os.environ.get("PC_STUDIO_INTERNAL_VOICES", "tw_ref,test").split(",") if v.strip()),
             studio_drafts_per_day=int(os.environ.get("PC_STUDIO_DRAFTS_PER_DAY", "30")),
             studio_allowed_emails=os.environ.get("PC_STUDIO_ALLOWED_EMAILS", ""),
+            voice_enabled=os.environ.get("PC_VOICE_ENABLED", "0") == "1",
+            voice_try_secret=os.environ.get("PC_VOICE_TRY_SECRET", ""),
+            voice_try_url=os.environ.get("PC_VOICE_TRY_URL", "").strip(),
+            voice_runtime_token=os.environ.get("PC_VOICE_RUNTIME_TOKEN", ""),
+            voice_media_url=os.environ.get("PC_VOICE_MEDIA_URL", "").strip(),
+            voice_media_secret=os.environ.get("PC_VOICE_MEDIA_SECRET", ""),
+            voice_a6_rc_version=os.environ.get("PC_VOICE_A6_RC_VERSION", "").strip(),
+            voice_call_retention_days=voice_call_retention_days(os.environ.get("PC_VOICE_CALL_RETENTION_DAYS")),
         )

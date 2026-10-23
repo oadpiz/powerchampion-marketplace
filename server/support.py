@@ -39,7 +39,8 @@ async def body_json(request, maximum=65536):
         body.extend(chunk)
     try:
         value = json.loads(body)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        # RecursionError: ~40 KiB of "[[[[..." nests deeper than the parser's stack; a bad request, not a 500.
         fail("invalid_input", "Enter valid request details.")
     if not isinstance(value, dict):
         fail("invalid_input", "Enter valid request details.")
