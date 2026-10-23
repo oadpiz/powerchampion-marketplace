@@ -119,7 +119,7 @@ describe("Dokploy deployment behind Traefik", () => {
   });
 
   it("wires PC_VOICE_CALL_RETENTION_DAYS into the portal only, 1825 days (5 years) by default (§16.5)", () => {
-    // The portal refuses to start on a value outside 90-3660; `:-1825` keeps an unset or empty variable at the default.
+    // The portal refuses to start on a value outside 400-3660; `:-1825` keeps an unset or empty variable at the default.
     const name = "PC_VOICE_CALL_RETENTION_DAYS";
     expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-1825\\}\\s*$`, "m"));
     expect(compose).not.toMatch(new RegExp(`^\\s+${name}\\s*:\\s*(?!\\$\\{${name}:-1825\\}\\s*$)\\S`, "m"));
