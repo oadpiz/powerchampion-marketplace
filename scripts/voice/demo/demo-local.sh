@@ -2,25 +2,34 @@
 # One-command local demo of the phone agent portal (merchant pages + operator pages), loopback only.
 #
 #   scripts/voice/demo/demo-local.sh start    start backend + frontend + the try-page stand-in, seed the demo data, print URLs
-#   scripts/voice/demo/demo-local.sh stop     stop only the processes this demo started (recorded PIDs), free the ports
+#   scripts/voice/demo/demo-local.sh stop     stop only the processes this demo started (the PIDs in its PID files)
 #   scripts/voice/demo/demo-local.sh reset    stop, delete the demo database and credentials, start and seed again
-#   scripts/voice/demo/demo-local.sh status   show whether the demo is running
+#   scripts/voice/demo/demo-local.sh status   show whether the processes in the PID files are running
 #
 # Ports: backend 3920, frontend 3921, try-page stand-in 3922 (VOICE_DEMO_BACKEND_PORT / _FRONTEND_PORT / _TRY_PORT);
 # the smoke (scripts/voice/run-local.sh) uses 3910/3911/8097, so both can run side by side.
-# Run directory (database, PIDs, logs): $VOICE_DEMO_DIR, else $TMPDIR/pc-voice-demo. It must be outside the repository.
+# Run directory (database, PIDs, logs): $VOICE_DEMO_DIR, else $TMPDIR/pc-voice-demo2 (not the first kit's
+# pc-voice-demo: that database has the older migration chain). It must be outside the repository.
 # The sign-in accounts and their passwords are written only to $VOICE_DEMO_CREDENTIALS (default
-# $VOICE_DEMO_DIR/demo-credentials.txt, mode 600); this script never prints a password.
+# $VOICE_DEMO_DIR/demo-credentials.txt, mode 600); this script never prints a password. The calls the walkthrough
+# points at (the one to delete live, the one deleted already) are in $VOICE_DEMO_DIR/demo-plan.txt.
 # Python: $VOICE_PYTHON, else the shared venv next to the worktrees (.worktrees/.venv-voice-p1), else python3.
 # Node: node_modules in the repository (vinext).
 #
-# Services start the way scripts/voice/run-local.sh starts them (same environment, test-only secrets, PID files and
-# .dev.vars marker, so scripts/voice/stop-local.sh understands them), with one difference: PC_VOICE_TRY_URL points
-# at try_stub.py on 3922, so the "試打一通" button opens a page that explains there is no voice host here, not a dead
-# one. If run-local.sh changes its environment, change start_services below to match.
+# Services start the way scripts/voice/run-local.sh starts them (same test-only secrets, PID files and .dev.vars
+# marker, so scripts/voice/stop-local.sh understands them), with these differences, all toward production's defaults
+# (docker-compose.dokploy.yml):
+#   - PC_VOICE_TRY_URL points at try_stub.py on 3922, so the "試打一通" button opens a page that explains there is no
+#     voice host here, not a dead one;
+#   - PC_VOICE_A6_RC_VERSION is empty (run-local.sh sets 4): R1 never answers "ai"; AI answering stays off (Q12);
+#   - PC_VOICE_MEDIA_URL and PC_VOICE_MEDIA_SECRET are empty: there is no media host, so call pages say viewing the
+#     content is not open yet instead of offering a "查看內容" button that would open a dead page;
+#   - PC_VOICE_CALL_RETENTION_DAYS is empty (the default, 1825 days), and the settings a shell might carry over
+#     (PC_PORTAL_DATABASE_URL, PC_PORTAL_ENV, the studio's) are cleared, so the backend uses the demo's SQLite file.
+# If run-local.sh changes its environment, change start_services below to match.
 #
 # Nothing here talks to production: the gateway origin is https://gateway.invalid, Grafana is off, and the secrets
-# are test-only values. The data is fake. AI answering stays off for both stores (Q12).
+# are test-only values. The data is fake.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -29,7 +38,7 @@ STOP_LOCAL="$W/scripts/voice/stop-local.sh"
 
 # Hand common.sh (run-local.sh's shared settings) our run directory and ports; it validates the directory.
 T="${TMPDIR:-/tmp}"
-export VOICE_SMOKE_DIR="${VOICE_DEMO_DIR:-${T%/}/pc-voice-demo}"
+export VOICE_SMOKE_DIR="${VOICE_DEMO_DIR:-${T%/}/pc-voice-demo2}"
 export VOICE_SMOKE_BACKEND_PORT="${VOICE_DEMO_BACKEND_PORT:-3920}"
 export VOICE_SMOKE_FRONTEND_PORT="${VOICE_DEMO_FRONTEND_PORT:-3921}"
 . "$W/scripts/voice/common.sh"
@@ -101,6 +110,8 @@ start_services() {
   printf '%s\nPC_PORTAL_ORIGIN=http://127.0.0.1:%s\n' "$MARKER" "$BACKEND_PORT" > "$W/.dev.vars"
 
   export PC_PORTAL_DB="$S/db/portal.sqlite3"
+  export PC_PORTAL_DATABASE_URL=
+  export PC_PORTAL_ENV=
   export PC_PORTAL_ALLOWED_ORIGINS="http://127.0.0.1:$FRONTEND_PORT,http://localhost:$FRONTEND_PORT"
   export PC_PORTAL_SECURE_COOKIES=0
   export PC_GATEWAY_ORIGIN=https://gateway.invalid
@@ -111,8 +122,12 @@ start_services() {
   export PC_VOICE_TRY_SECRET=test-only-not-a-secret-0000000000
   export PC_VOICE_TRY_URL="http://127.0.0.1:$TRY_PORT/"
   export PC_VOICE_RUNTIME_TOKEN=test-only-runtime-token-0000000000
-  export PC_VOICE_MEDIA_URL=http://127.0.0.1:8098
-  export PC_VOICE_MEDIA_SECRET=test-only-not-a-secret-0000000000
+  # Production's defaults (see the header): no media host, A6 RC not set (AI answering off), default call retention.
+  export PC_VOICE_MEDIA_URL=
+  export PC_VOICE_MEDIA_SECRET=
+  export PC_VOICE_A6_RC_VERSION=
+  export PC_VOICE_CALL_RETENTION_DAYS=
+  export PC_STUDIO_AGENT_URL= SHORTVIDEO_SERVICE_TOKEN= SHORTVIDEO_GRANT_SECRET= SHORTVIDEO_QUOTE_SECRET= PC_STUDIO_SWEEPER=0
   export PC_VOICE_ENABLED=1
 
   cd "$W"
@@ -157,10 +172,13 @@ do_start() {
   "$PY" "$HERE/seed_demo.py"
   echo
   echo "Demo ready in $((SECONDS - began)) s."
-  echo "  Open     http://127.0.0.1:$FRONTEND_PORT/login"
-  echo "  Accounts $CREDENTIALS  (mode 600; the three sign-ins are in it)"
-  echo "  Script   portal-demo-walkthrough.md (3-minute screen-share script)"
-  echo "  Stop     scripts/voice/demo/demo-local.sh stop"
+  echo "  Operator  http://127.0.0.1:$FRONTEND_PORT/login   admin@portal-demo.test"
+  echo "  Store     http://localhost:$FRONTEND_PORT/login   owner-clinic@portal-demo.test (or owner-cram@portal-demo.test)"
+  echo "  Passwords $CREDENTIALS  (mode 600; the three sign-ins are in it)"
+  echo "  Calls     $S/demo-plan.txt  (the call to delete live, the one deleted already, today's AI calls)"
+  echo "  Script    portal-demo-walkthrough.md (3-minute screen-share script)"
+  echo "  Status    scripts/voice/demo/demo-local.sh status"
+  echo "  Stop      scripts/voice/demo/demo-local.sh stop"
 }
 
 do_stop() {
@@ -178,19 +196,33 @@ do_stop() {
 
 do_reset() {
   do_stop
-  rm -f "$S/db/portal.sqlite3" "$S/db/portal.sqlite3-wal" "$S/db/portal.sqlite3-shm" "$S/db/smoke-secrets.json" "$CREDENTIALS"
-  echo "demo database and credentials deleted"
+  rm -f "$S/db/portal.sqlite3" "$S/db/portal.sqlite3-wal" "$S/db/portal.sqlite3-shm" "$S/db/smoke-secrets.json" "$CREDENTIALS" \
+    "$S/demo-plan.txt" "$S/demo-plan.json"
+  echo "demo database, credentials and call plan deleted"
   do_start
 }
 
-do_status() {
-  local name pid
+do_status() {  # only the PIDs in the PID files: is each still running, still ours, and what does its group listen on
+  local name pid expect command ports
+  echo "run directory $S"
   for name in backend frontend trystub; do
-    pid=""
-    [ -f "$S/pids/local-$name.pid" ] && pid="$(cat "$S/pids/local-$name.pid")"
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo "$name: running (pid $pid)"; else echo "$name: not running"; fi
+    case "$name" in
+      backend) expect="uvicorn server.app:app" ;;
+      frontend) expect="vinext" ;;
+      trystub) expect="try_stub.py" ;;
+    esac
+    if [ ! -f "$S/pids/local-$name.pid" ]; then echo "$name: not running (no pid file)"; continue; fi
+    pid="$(cat "$S/pids/local-$name.pid")"
+    if ! kill -0 "$pid" 2>/dev/null; then echo "$name: not running (pid $pid has exited)"; continue; fi
+    command=$(ps -o command= -p "$pid")
+    case "$command" in
+      *"$expect"*) ;;
+      *) echo "$name: pid $pid is now '$command', not ours"; continue ;;
+    esac
+    # The process group start_services created for this PID (set -m): vinext listens through its children.
+    ports=$(lsof -nP -a -g "$pid" -iTCP -sTCP:LISTEN -Fn 2>/dev/null | sed -n 's/^n.*:\([0-9][0-9]*\)$/\1/p' | sort -u | tr '\n' ' ' || true)
+    echo "$name: running (pid $pid; listening on ${ports:-nothing yet})"
   done
-  lsof -nP -iTCP:"$BACKEND_PORT" -iTCP:"$FRONTEND_PORT" -iTCP:"$TRY_PORT" -sTCP:LISTEN 2>/dev/null || true
 }
 
 [ $# -eq 1 ] || usage
