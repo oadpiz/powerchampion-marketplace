@@ -96,7 +96,7 @@ scripts/voice/stop-local.sh
 - The portal's retention schedule (phase2-contract §16.4, §16.5) runs a minute after
   start and then hourly while `PC_VOICE_ENABLED=1`; `python -m server.manage
   voice-retention` runs it once and prints the counts. `PC_VOICE_CALL_RETENTION_DAYS`
-  (90-3660, default 1825) is how long a call's billing row is kept.
+  (400-3660, default 1825) is how long a call's billing row is kept.
 
 ## Dependency audit status
 

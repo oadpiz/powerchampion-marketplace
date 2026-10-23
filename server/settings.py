@@ -14,11 +14,12 @@ VOICE_A6_RC_VERSION = re.compile(r"[0-9]{1,4}")
 VOICE_A6_RC_REQUIRED = 4
 VOICE_TRY_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 # PC_VOICE_CALL_RETENTION_DAYS (phase2-contract §16.5): how long the portal keeps a call's billing and metadata row
-# (voice_calls: times, lengths, result, meter). 5 years by default, pending the lawyer's answer. Never under 90 days:
-# a call's content (recordings, transcripts and summaries, on the Taiwan host) is kept up to 90 days, and its row must
-# not go before the content's deletion is queued. At most 3660 days (10 years).
+# (voice_calls: times, lengths, result, meter). 5 years by default, pending the lawyer's answer. Never under 400 days:
+# the monthly billing reconciliation compares up to 13 months back (§9), so a shorter value would delete rows it still
+# needs; it is also longer than the 90 days a call's content is kept, so a row never goes before its content's
+# deletion is queued. At most 3660 days (10 years).
 VOICE_CALL_RETENTION_DAYS_DEFAULT = 1825
-VOICE_CALL_RETENTION_DAYS_MIN = 90
+VOICE_CALL_RETENTION_DAYS_MIN = 400
 VOICE_CALL_RETENTION_DAYS_MAX = 3660
 
 
