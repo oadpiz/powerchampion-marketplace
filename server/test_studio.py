@@ -26,6 +26,7 @@ AGENT_SIGNING = next((p / _SIGNING for p in Path(__file__).resolve().parents if 
 
 class StudioCase(PortalCase):
     sweeper = False
+    allowed_emails = ""  # PC_STUDIO_ALLOWED_EMAILS; empty = the studio is open to every signed-in user
 
     def setUp(self):
         import tempfile
@@ -34,7 +35,8 @@ class StudioCase(PortalCase):
         self.directory = tempfile.TemporaryDirectory()
         self.now = T0
         self.settings = Settings(db_path=fresh_database(self.directory.name), allowed_origins=(ORIGIN,),
-                                 studio_sweeper=self.sweeper, studio_sweep_interval=0.05, **studio_settings())
+                                 studio_sweeper=self.sweeper, studio_sweep_interval=0.05, studio_allowed_emails=self.allowed_emails,
+                                 **studio_settings())
         self.agent = FakeStudioAgent(clock=lambda: self.now)
         # Drafts are free in production (StudioOwnerDecisionTests); the money tests keep a paid draft so
         # every create also exercises reserve, settle and refund.
@@ -195,6 +197,69 @@ class StudioConfigTests(PortalCase):
             self.assertNotIn("g" * 20, repr(settings))
             os.environ["PC_STUDIO_SWEEPER"] = "0"
             self.assertFalse(Settings.from_env().studio_sweeper)
+
+
+class StudioAllowlistTests(StudioCase):
+    """Demo mode: PC_STUDIO_ALLOWED_EMAILS limits the customer /studio/* routes to listed accounts and admins."""
+    allowed_emails = " Maker@Example.TEST , ,demo@example.test,"
+    gets = ["/studio/templates", "/studio/projects", "/studio/projects?deleted=1", "/studio/credits", "/studio/projects/p1", "/studio/projects/p1/ops/o1"]
+    posts = ["/studio/projects", "/studio/uploads", "/studio/projects/p1/settings", "/studio/projects/p1/shots/1/edit", "/studio/projects/p1/shots/x/edit",
+             "/studio/projects/p1/quote", "/studio/projects/p1/ops", "/studio/projects/p1/delete", "/studio/projects/p1/restore"]
+
+    def test_the_list_is_trimmed_lowercased_and_drops_empty_entries(self):
+        self.assertEqual(self.settings.studio_allowed_emails, ("maker@example.test", "demo@example.test"))
+        self.assertEqual(Settings(studio_allowed_emails="").studio_allowed_emails, ())
+        self.assertEqual(Settings(studio_allowed_emails=" , ").studio_allowed_emails, ())
+        self.assertEqual(Settings().studio_allowed_emails, ())
+
+    def test_a_listed_user_can_use_the_studio(self):
+        client = self.client()
+        self.register(client, "MAKER@example.test")  # stored lowercased; the list entry was mixed case
+        self.assertEqual(client.get(BASE + "/studio/credits").status_code, 200)
+        pid = self.drafted(client)
+        self.assertEqual(client.get(BASE + "/studio/projects/" + pid).status_code, 200)
+        self.assertIs(client.get(BASE + "/session").json()["studio_access"], True)
+
+    def test_an_unlisted_customer_gets_studio_not_open_on_every_route(self):
+        customer, user_id = self.customer("someone@example.test")
+        anonymous = self.client()
+        for path in self.gets:
+            self.assertEqual(anonymous.get(BASE + path).status_code, 401, path)
+            response = customer.get(BASE + path)
+            self.assertEqual((response.status_code, response.json()["error"]), (403, "studio_not_open"), path)
+        for path in self.posts:
+            self.assertEqual(self.post(anonymous, path, {}).status_code, 401, path)
+            response = self.post(customer, path, {"idempotency_key": "abcdefgh"})
+            self.assertEqual((response.status_code, response.json()["error"]), (403, "studio_not_open"), path)
+        self.assertIs(customer.get(BASE + "/session").json()["studio_access"], False)
+        self.assertEqual([c for c in self.agent.calls if c[1] == user_id], [])  # nothing reached the agent
+        # The admin can still grant credits to an unlisted account (e.g. ahead of opening it).
+        self.assertEqual(self.grant(user_id, 10)["balance"], 10)
+
+    def test_an_admin_can_always_use_the_studio(self):
+        admin = self.admin_client()  # admin@example.test is not on the list
+        self.assertEqual(admin.get(BASE + "/studio/credits").status_code, 200)
+        self.assertEqual(admin.get(BASE + "/studio/templates").status_code, 200)
+        self.assertIs(admin.get(BASE + "/session").json()["studio_access"], True)
+
+    def test_an_empty_list_leaves_the_studio_open(self):
+        import os
+        from unittest import mock
+        for value in ("", "  ", " , "):
+            with mock.patch.dict(os.environ, {"PC_STUDIO_ALLOWED_EMAILS": value}):
+                self.assertEqual(Settings.from_env().studio_allowed_emails, (), repr(value))
+        with mock.patch.dict(os.environ, {"PC_STUDIO_ALLOWED_EMAILS": " A@x.test,b@X.test "}):
+            self.assertEqual(Settings.from_env().studio_allowed_emails, ("a@x.test", "b@x.test"))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PC_STUDIO_ALLOWED_EMAILS", None)
+            self.assertEqual(Settings.from_env().studio_allowed_emails, ())
+
+
+class StudioOpenByDefaultTests(StudioCase):
+    def test_without_a_list_every_signed_in_user_can_use_the_studio(self):
+        client, _ = self.customer("anyone@example.test")
+        self.assertEqual(client.get(BASE + "/studio/credits").status_code, 200)
+        self.assertIs(client.get(BASE + "/session").json()["studio_access"], True)
 
 
 class StudioFlowTests(StudioCase):

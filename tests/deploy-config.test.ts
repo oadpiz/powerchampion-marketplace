@@ -94,4 +94,10 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(portal).toMatch(/^\s+PC_STUDIO_MEDIA_ORIGIN:\s*\$\{PC_STUDIO_MEDIA_ORIGIN:-\}\s*$/m);
     expect(website).not.toMatch(/SHORTVIDEO_|PC_STUDIO_/);
   });
+
+  it("passes the optional studio demo allowlist to the portal only, empty (studio open to all) when unset", () => {
+    expect(portal).toMatch(/^\s+PC_STUDIO_ALLOWED_EMAILS:\s*\$\{PC_STUDIO_ALLOWED_EMAILS:-\}\s*$/m);
+    expect(compose.match(/^\s+PC_STUDIO_ALLOWED_EMAILS\s*:/gm)).toHaveLength(1);
+    expect(website).not.toMatch(/PC_STUDIO_ALLOWED_EMAILS/);
+  });
 });

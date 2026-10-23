@@ -247,3 +247,43 @@ describe("where /studio is linked", () => {
     expect(await screen.findByRole("link", { name: /影片工作室/ })).toHaveAttribute("href", "/studio");
   });
 });
+
+describe("demo mode (PC_STUDIO_ALLOWED_EMAILS)", () => {
+  it("shows an unlisted account the same not-open state and asks for nothing else", async () => {
+    window.history.replaceState({}, "", "/studio");
+    const calls = studioFetch({ "GET /studio/credits": fail(403, "studio_not_open") });
+    inFrame(<StudioHome />);
+    expect(await screen.findByRole("heading", { name: "影片工作室尚未開放" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await waitFor(() => expect(calls.map((call) => call.path)).toEqual(["/session", "/studio/credits"]));
+    expect(screen.queryByRole("link", { name: "可用點數" })).not.toBeInTheDocument();
+  });
+
+  const signedIn = (studio_access?: boolean) =>
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(url.endsWith("/session")
+        ? Response.json({ user: { id: "u1", email: "a@example.com", name: "A", role: "customer" }, ...(studio_access === undefined ? {} : { studio_access }) })
+        : Response.json({ month: "2026-09", rows: [], source: "unconfigured", updatedAt: null }))));
+
+  it("offers the account-header studio button only to allowed accounts", async () => {
+    signedIn(false);
+    const hidden = render(
+      <LocaleProvider>
+        <AccountPortal section="usage" />
+      </LocaleProvider>,
+    );
+    expect(await screen.findByRole("link", { name: /智能體任務/ })).toBeInTheDocument();
+    expect(hidden.container.querySelector('a[href^="/studio"]')).toBeNull();
+    hidden.unmount();
+    for (const access of [true, undefined]) {
+      signedIn(access);
+      const shown = render(
+        <LocaleProvider>
+          <AccountPortal section="usage" />
+        </LocaleProvider>,
+      );
+      expect(await screen.findByRole("link", { name: /影片工作室/ })).toHaveAttribute("href", "/studio");
+      shown.unmount();
+    }
+  });
+});
