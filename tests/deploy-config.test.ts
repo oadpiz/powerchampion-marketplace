@@ -83,7 +83,8 @@ describe("Dokploy deployment behind Traefik", () => {
   });
 
   it("passes the video studio settings to the portal from the environment only", () => {
-    // S2 adds env passthrough only: the shortvideo services (and the agent URL default) arrive in S4.
+    // Optional on purpose: the agent is a separate compose app, and unset values only make /studio
+    // answer 503 studio_unconfigured, so they can never block this stack's deploy.
     for (const name of ["PC_STUDIO_AGENT_URL", "SHORTVIDEO_SERVICE_TOKEN", "SHORTVIDEO_GRANT_SECRET", "SHORTVIDEO_QUOTE_SECRET"]) {
       expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-\\}\\s*$`, "m"));
       // A literal value must never be committed, and no other service gets the secrets.
@@ -91,6 +92,7 @@ describe("Dokploy deployment behind Traefik", () => {
     }
     expect(portal).toMatch(/^\s+PC_STUDIO_SWEEPER:\s*\$\{PC_STUDIO_SWEEPER:-1\}\s*$/m);
     expect(portal).toMatch(/^\s+PC_STUDIO_INTERNAL_VOICES:\s*\$\{PC_STUDIO_INTERNAL_VOICES:-tw_ref,test\}\s*$/m);
+    expect(portal).toMatch(/^\s+PC_STUDIO_DRAFTS_PER_DAY:\s*\$\{PC_STUDIO_DRAFTS_PER_DAY:-30\}\s*$/m);
     expect(portal).toMatch(/^\s+PC_STUDIO_MEDIA_ORIGIN:\s*\$\{PC_STUDIO_MEDIA_ORIGIN:-\}\s*$/m);
     expect(website).not.toMatch(/SHORTVIDEO_|PC_STUDIO_/);
   });
@@ -133,5 +135,34 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(portal).toMatch(new RegExp(`^\\s+${name}:\\s*\\$\\{${name}:-\\}\\s*$`, "m"));
     expect(compose).not.toMatch(new RegExp(`^\\s+${name}\\s*:\\s*(?!\\$\\{${name}:-\\}\\s*$)\\S`, "m"));
     expect(website).not.toMatch(new RegExp(name));
+  });
+});
+
+/** Network names of one service (configuration text only; comment lines are blank). */
+function networks(text: string): string[] {
+  const block = text.match(/^ {4}networks:[ \t]*\n((?:(?: {6}- .*|[ \t]*)\n)+)/m);
+  return block ? [...block[1].matchAll(/^ {6}- ([a-z0-9-]+)\s*$/gm)].map((m) => m[1]) : [];
+}
+
+describe("Video studio agent link (S4, studio-spec 2.1, 12.1)", () => {
+  const website = service("powerchampion-marketplace");
+  const portal = service("powerchampion-portal");
+  const db = service("powerchampion-db");
+
+  it("joins the portal, and only the portal, to the external studio-internal network", () => {
+    expect(networks(portal)).toEqual(["default", "studio-internal"]);
+    expect(networks(website)).not.toContain("studio-internal");
+    expect(networks(db)).toEqual(["default"]);
+    expect(compose).toMatch(/^networks:\s*\n(?:.*\n)*?\s{2}studio-internal:\s*\n\s{4}external:\s*true\s*$/m);
+  });
+
+  it("keeps the shortvideo services out of this stack", () => {
+    // They live in the agent repo (docker-compose.studio.yml), so studio settings cannot block this deploy.
+    expect(compose).not.toMatch(/^\s{2}shortvideo-(api|media):/m);
+    expect(compose).not.toMatch(/SHORTVIDEO_MEDIA_KEY|B300_API_KEY|shortvideo-(data|uploads)/);
+  });
+
+  it("never requires a studio variable", () => {
+    expect(compose).not.toMatch(/\$\{(?:PC_STUDIO_[A-Z_]+|SHORTVIDEO_[A-Z_]+|STUDIO_[A-Z_]+):\?/);
   });
 });
