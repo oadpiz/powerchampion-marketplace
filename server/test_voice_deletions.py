@@ -8,7 +8,9 @@ import hashlib
 import json
 import threading
 import time
+import types
 import unittest
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
@@ -18,7 +20,7 @@ from server import voice_runtime as vr
 from server import voice_store as vs
 from server.settings import Settings
 from server.test_voice_call_routes import OTHER_ID, CallRoutesCase
-from server.test_voice_runtime import NOT_FOUND, TOKEN, orchestrator, records
+from server.test_voice_runtime import NOT_FOUND, TOKEN, assert_no_private_field, fields, orchestrator, records
 from server.testsupport import BASE, ORIGIN, PASSWORD, rows
 
 DAY = 86400
@@ -261,6 +263,33 @@ class RuntimeDeletionTests(DeletionCase):
             ids.append(row_id)
         return ids
 
+    def assert_ids_only(self, body, row_id):
+        """R3 has exactly the fields §16.3 lists, and none of them is or holds the store's id, the owner's id or email,
+        the portal's id of the call or the caller's last digits. The request id is random hex: its format is checked,
+        and it is not searched for 3 digits it may hold by chance (assert_no_private_field)."""
+        self.assertEqual(set(body), {"schema", "deletions", "cursor", "more"})
+        self.assertRegex(body["cursor"], r"^[0-9]{1,18}$")
+        for item in body["deletions"]:
+            self.assertEqual(set(item), {"id", "call_id", "kinds"})
+            self.assertRegex(item["id"], r"^[a-f0-9]{32}$")
+            self.assertTrue(set(item["kinds"]) <= set(ALL_KINDS), item["kinds"])
+        assert_no_private_field(self, fields(body), (self.store_id, self.owner_id, row_id, "678", "owner@clinic.example"))
+
+    def test_a_request_id_that_holds_the_callers_digits_is_still_ids_only(self):
+        # CI failed once: the check looked for "678" anywhere in the JSON text, and the random request id held it.
+        forced = "e678917b2380" + "4678" + "0" * 16
+        with mock.patch.object(vrt, "uuid", types.SimpleNamespace(uuid4=lambda: uuid.UUID(forced))):
+            row_id = self.deleted()[0]
+        body = self.ok(self.pull())
+        self.assertEqual([item["id"] for item in body["deletions"]], [forced])
+        self.assertIn("678", json.dumps(body))  # what the old whole-body check failed on
+        self.assert_ids_only(body, row_id)
+        # The field check still finds the digits where they must not be.
+        with self.assertRaises(AssertionError):
+            self.assert_ids_only(dict(body, cursor="678"), row_id)
+        with self.assertRaises(AssertionError):
+            self.assert_ids_only(dict(body, deletions=[dict(body["deletions"][0], call_id="1797815702.678")]), row_id)
+
     def test_gate_switch_token_and_rate_limit(self):
         self.deleted()
         [request] = self.requests()
@@ -289,9 +318,7 @@ class RuntimeDeletionTests(DeletionCase):
         body = self.ok(self.pull())
         self.assertEqual(body, {"schema": "voice.deletions/v1", "cursor": str(request["seq"]), "more": False,
                                 "deletions": [{"id": request["id"], "call_id": self.row(row_id)["call_id"], "kinds": ALL_KINDS}]})
-        text = json.dumps(body)
-        for private in (self.store_id, self.owner_id, row_id, "678", "owner@clinic.example"):
-            self.assertNotIn(private, text)
+        self.assert_ids_only(body, row_id)
         # Acknowledged requests are no longer listed.
         self.ok(self.ack(request["id"]))
         self.assertEqual(self.ok(self.pull())["deletions"], [])

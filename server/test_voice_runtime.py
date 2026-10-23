@@ -4,6 +4,7 @@ Runs on SQLite, or on Postgres when PC_PORTAL_TEST_DATABASE_URL is set (scripts/
 import asyncio
 import hashlib
 import json
+import re
 import tempfile
 import threading
 import time
@@ -38,6 +39,56 @@ ZERO = dict(vc.ZERO_MESSAGE)
 
 def at(epoch_seconds):
     return datetime.fromtimestamp(epoch_seconds, TAIPEI).isoformat()
+
+
+# A random value the portal makes: uuid4().hex ids, nonces, sha256 digests. Phone numbers have at most 15 digits.
+RANDOM_HEX = re.compile(r"[0-9a-f]{16,}")
+
+
+def fields(value, path=()):
+    """(path, value) for every key, string and number inside `value`. Stored JSON text (a report) is parsed, so each
+    field is seen on its own."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        value = bytes(value).decode("utf-8", "replace")
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            parsed = None
+        if not isinstance(parsed, (dict, list)):
+            yield path, value
+            return
+        value = parsed
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield path + ("<key>",), key
+            yield from fields(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from fields(item, path + (index,))
+    elif value is not None and not isinstance(value, bool):
+        yield path, value
+
+
+def stored_fields(store):
+    """fields() of every stored value, each path starting with (table, column)."""
+    for table in store.db.table_names():
+        for row in rows(store, table):
+            for column, value in row.items():
+                yield from fields(value, (table, column))
+
+
+def assert_no_private_field(case, items, private):
+    """No field is or holds a private value. Checked field by field, never by one substring test over a whole body or
+    dump: a random 32-hex id holds a given 3 digits about once in 140 (CI failed once on a deletion request id with
+    the caller's "678" in it) and epoch seconds hold any 8 digits on some day. So a short value is not looked for
+    inside random hex (callers check those fields' format) and numbers are compared whole."""
+    for path, value in items:
+        for secret in private:
+            if not isinstance(value, str):
+                case.assertNotEqual(str(value), secret, path)
+            elif len(secret) >= 16 or not RANDOM_HEX.fullmatch(value):
+                case.assertNotIn(secret, value, path)
 
 
 def orchestrator(now=None, call_id="1797815702.118", started=None, **changes):
@@ -511,9 +562,7 @@ class ReportTests(VoiceCallsCase):
         self.assertEqual(self.ok(self.report(final))["result"], "updated")
         row = self.call("1797815702.140")
         self.assertEqual((row["dialed"], json.loads(row["report_records"])["dialed"], row["mismatch"]), ("******5678", "******5678", "[]"))
-        for form in ("0912345678", "+886912345678", "912345678", "12345678"):
-            with self.subTest(form=form):
-                self.assertNotIn(form, database_text(self.store))
+        assert_no_private_field(self, stored_fields(self.store), ("0912345678", "+886912345678", "912345678", "12345678"))
         # Not a mobile number, or a mobile number that is the store's line: kept as sent.
         self.assertEqual(self.ok(self.report(orchestrator(now, call_id="1797815702.141", dialed="0227009999")), 201)["meter_reason"], "unknown_line")
         self.assertEqual(self.call("1797815702.141")["dialed"], "+886227009999")
