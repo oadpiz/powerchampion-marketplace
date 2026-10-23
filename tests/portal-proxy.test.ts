@@ -677,4 +677,14 @@ describe("video studio routes", () => {
     const other = await GET(request("/overview"));
     expect((await other.json()).error).toBe("service_unavailable");
   });
+
+  it("passes the demo-mode 403 studio_not_open through, so an unlisted account sees the not-open state", async () => {
+    vi.stubEnv("PC_PORTAL_ORIGIN", "");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(() =>
+      Promise.resolve(Response.json({ error: "studio_not_open", detail: "The video studio is not open for this account yet." }, { status: 403 }))));
+    for (const response of [await GET(request("/studio/credits")), await POST(request("/studio/projects", "POST", {}))]) {
+      expect(response.status).toBe(403);
+      expect((await response.json()).error).toBe("studio_not_open");
+    }
+  });
 });

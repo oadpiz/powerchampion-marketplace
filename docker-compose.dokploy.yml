@@ -89,6 +89,9 @@ services:
       PC_STUDIO_SWEEPER: ${PC_STUDIO_SWEEPER:-1}
       PC_STUDIO_INTERNAL_VOICES: ${PC_STUDIO_INTERNAL_VOICES:-tw_ref,test}
       PC_STUDIO_MEDIA_ORIGIN: ${PC_STUDIO_MEDIA_ORIGIN:-}
+      # Demo mode: comma-separated emails that may use the studio (admins always may).
+      # Empty or unset = open to every signed-in account; others get 「尚未開放」.
+      PC_STUDIO_ALLOWED_EMAILS: ${PC_STUDIO_ALLOWED_EMAILS:-}
       # 語音功能預設關；秘密只在 Dokploy 設，不寫在這個檔
       PC_VOICE_ENABLED: ${PC_VOICE_ENABLED:-0}
       PC_VOICE_TRY_SECRET: ${PC_VOICE_TRY_SECRET:-}

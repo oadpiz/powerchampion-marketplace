@@ -89,6 +89,9 @@ class Settings:
     studio_media_origin: str = ""
     # Drafts are free (owner decision Q3), so each user may start this many per Asia/Taipei day.
     studio_drafts_per_day: int = 30
+    # Demo mode (PC_STUDIO_ALLOWED_EMAILS): when non-empty, only these accounts (and admins) may use the
+    # customer /studio/* routes; everyone else gets 403 studio_not_open. Empty = open to every signed-in user.
+    studio_allowed_emails: Tuple[str, ...] = ()
     # AI phone agent (語音電話客服): off by default. A missing or malformed try secret/URL never stops
     # the service from starting; it only makes "try a call" answer 503 (see voice_try_available).
     voice_enabled: bool = False
@@ -108,6 +111,11 @@ class Settings:
     voice_call_retention_days: int = VOICE_CALL_RETENTION_DAYS_DEFAULT
 
     def __post_init__(self):
+        emails = self.studio_allowed_emails
+        if isinstance(emails, str):
+            emails = emails.split(",")
+        cleaned = tuple(dict.fromkeys(e.strip().lower() for e in emails if isinstance(e, str) and e.strip()))
+        object.__setattr__(self, "studio_allowed_emails", cleaned)
         parsed = urlsplit(self.gateway_origin)
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
             raise ValueError("PC_GATEWAY_ORIGIN must be an HTTPS origin without credentials, path or query")
@@ -149,6 +157,12 @@ class Settings:
         if self.db_path.startswith(("sqlite:///", "postgres://", "postgresql://", "postgresql+psycopg://")):
             return self.db_path
         return "sqlite:///" + self.db_path
+
+    def studio_allows(self, user):
+        """Demo mode: may this signed-in user use the customer studio routes? Admins always may."""
+        if not self.studio_allowed_emails or user.get("role") == "admin":
+            return True
+        return str(user.get("email") or "").strip().lower() in self.studio_allowed_emails
 
     @property
     def studio_configured(self):
@@ -237,6 +251,7 @@ class Settings:
             studio_media_origin=os.environ.get("PC_STUDIO_MEDIA_ORIGIN", "").strip().rstrip("/"),
             studio_internal_voices=tuple(v.strip() for v in os.environ.get("PC_STUDIO_INTERNAL_VOICES", "tw_ref,test").split(",") if v.strip()),
             studio_drafts_per_day=int(os.environ.get("PC_STUDIO_DRAFTS_PER_DAY", "30")),
+            studio_allowed_emails=os.environ.get("PC_STUDIO_ALLOWED_EMAILS", ""),
             voice_enabled=os.environ.get("PC_VOICE_ENABLED", "0") == "1",
             voice_try_secret=os.environ.get("PC_VOICE_TRY_SECRET", ""),
             voice_try_url=os.environ.get("PC_VOICE_TRY_URL", "").strip(),

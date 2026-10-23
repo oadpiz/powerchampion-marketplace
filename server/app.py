@@ -180,7 +180,9 @@ def create_app(settings=None, gateway=None, chat_transport=None, runtime_model=N
 
     @application.get(PREFIX + "/session")
     async def session(request: Request):
-        return {"user": current_user(request)}
+        user = current_user(request)
+        # Whether the account header offers the video studio (demo mode: PC_STUDIO_ALLOWED_EMAILS).
+        return {"user": user, "studio_access": settings.studio_allows(user)}
 
     @application.post(PREFIX + "/auth/logout")
     async def logout(request: Request):

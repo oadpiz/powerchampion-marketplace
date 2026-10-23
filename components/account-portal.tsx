@@ -151,6 +151,8 @@ export function AccountPortal({
   const { locale } = useLocale();
   const zh = locale === "zh";
   const [user, setUser] = useState<PortalUser | null>(null);
+  // Demo mode (PC_STUDIO_ALLOWED_EMAILS): the session says whether this account may use the studio; absent means yes.
+  const [studioAccess, setStudioAccess] = useState(true);
   const [data, setData] = useState<Overview | Keys | Usage | Credits | null>(
     null,
   );
@@ -202,11 +204,12 @@ export function AccountPortal({
       setError(null);
       setData(null);
       try {
-        const session = await portalRequest<{ user: PortalUser }>("/session", {
+        const session = await portalRequest<{ user: PortalUser; studio_access?: boolean }>("/session", {
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
         setUser(session.user);
+        setStudioAccess(session.studio_access !== false);
         if (section === "security" || section === "ssh-key" || section === "voice") return;
         const path =
           section === "overview"
@@ -460,7 +463,7 @@ export function AccountPortal({
         </div>
         <div className="portal-actions">
           {user && <Link className="portal-button-secondary" href="/tasks">{zh ? "智能體任務" : "Agent tasks"} ↗</Link>}
-          {user && <Link className="portal-button-secondary" href="/studio">{zh ? "影片工作室" : "Video studio"} ↗</Link>}
+          {user && studioAccess && <Link className="portal-button-secondary" href="/studio">{zh ? "影片工作室" : "Video studio"} ↗</Link>}
           {user?.role === "admin" && (
             <Link className="portal-button-secondary" href="/admin">
               {zh ? "管理後台" : "Administration"} ↗

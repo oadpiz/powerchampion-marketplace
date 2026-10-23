@@ -95,6 +95,12 @@ describe("Dokploy deployment behind Traefik", () => {
     expect(website).not.toMatch(/SHORTVIDEO_|PC_STUDIO_/);
   });
 
+  it("passes the optional studio demo allowlist to the portal only, empty (studio open to all) when unset", () => {
+    expect(portal).toMatch(/^\s+PC_STUDIO_ALLOWED_EMAILS:\s*\$\{PC_STUDIO_ALLOWED_EMAILS:-\}\s*$/m);
+    expect(compose.match(/^\s+PC_STUDIO_ALLOWED_EMAILS\s*:/gm)).toHaveLength(1);
+    expect(website).not.toMatch(/PC_STUDIO_ALLOWED_EMAILS/);
+  });
+
   it("wires the phone agent's runtime token from the environment only, empty by default (fail closed)", () => {
     // phase2-contract §1.7: `:-` (not `:?`) so a deploy without it still starts; the routes then answer 503.
     expect(portal).toMatch(/^\s+PC_VOICE_RUNTIME_TOKEN:\s*\$\{PC_VOICE_RUNTIME_TOKEN:-\}\s*$/m);
