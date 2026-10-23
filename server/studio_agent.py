@@ -93,8 +93,8 @@ class StudioAgent:
         return self._request("POST", "/internal/v1/uploads", owner, body)
 
     def get_upload(self, owner, upload_id):
-        """The upload's record, including the sha256 the media host computed from the PUT body.
-        Needs the agent's GET /internal/v1/uploads/{upload_id}; until then a plain 404 (the caller copes)."""
+        """The upload's record, including the sha256 the media host computed from the PUT body
+        (the agent's GET /internal/v1/uploads/{upload_id}, v10). An older agent answers a plain 404; the caller copes."""
         return self._request("GET", "/internal/v1/uploads/" + _id(upload_id), owner)
 
     def create_project(self, owner, body):

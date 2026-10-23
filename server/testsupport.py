@@ -401,6 +401,8 @@ class FakeStudioAgent:
         self._enter("create_upload", owner)
         if body.get("project_id") is not None:
             self._project(owner, body["project_id"])
+        if body.get("purpose") == "lifestyle_image" and body.get("rights_confirmed") is not True:
+            raise self.AgentError("rejected", 400, "studio_rights_required")  # like the agent (v10)
         upload_id = "u_" + secrets.token_hex(6)
         self.uploads[upload_id] = dict(body, owner=owner)
         return {"upload_id": upload_id, "put_url": "https://media.test/media/upload/" + secrets.token_hex(8), "expires_at": int(self.clock()) + 900}
@@ -423,7 +425,8 @@ class FakeStudioAgent:
     def create_project(self, owner, body):
         self._enter("create_project", owner)
         self.created.append(dict(body))
-        for upload_id in (body.get("inputs") or {}).get("image_ids") or []:
+        inputs = body.get("inputs") or {}
+        for upload_id in (inputs.get("image_ids") or []) + (inputs.get("lifestyle_ids") or []):
             self._owned_upload(owner, upload_id)
         pid = body["project_id"]
         if pid in self.projects:

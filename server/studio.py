@@ -91,9 +91,14 @@ MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 SHOT_INDEX = re.compile(r"^[0-9]{1,3}$")
 SIG = re.compile(r"^[0-9a-f]{64}$")
 ERROR_CODE = re.compile(r"^[a-z0-9_]{1,64}$")
-UPLOAD_PURPOSES = ("input_image", "shot_image", "music", "character_ref")
-# Product photos: the ticket needs rights_confirmed (the 「我擁有或已取得這張商品照片的使用權」 checkbox).
-RIGHTS_PURPOSES = ("input_image", "shot_image")
+UPLOAD_PURPOSES = ("input_image", "shot_image", "music", "character_ref", "lifestyle_image")
+# Uploaded before the project exists and attached at creation (inputs.image_ids, inputs.lifestyle_ids).
+PRE_PROJECT_PURPOSES = ("input_image", "lifestyle_image")
+# Photos that need the seller's rights declaration with the ticket (rights_confirmed: true, else 400
+# studio_rights_required): product photos (「我擁有或已取得這張商品照片的使用權，並同意用於產生影片。」) and lifestyle
+# photos (「我擁有或已取得這張情境照的使用權，照片中的人物（若有）已同意使用。」). One checkbox per declaration; the
+# purpose recorded in the audit row says which statement it was. Music has its own checkbox (music_rights_confirmed).
+RIGHTS_PURPOSES = ("input_image", "shot_image", "lifestyle_image")
 # Op types that never synthesise narration (draft writes the script; add_aspect draws stills; export composes).
 VOICELESS_OPS = ("draft", "add_aspect", "export")
 UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # the agent enforces 10 MB (music 20 MB) exactly
@@ -110,6 +115,8 @@ PASS_THROUGH = {
     "studio_invalid_input": (400, "Check the details and try again."),
     "studio_daily_cap": (429, "The daily limit for video generation has been reached. Try again tomorrow."),
     "studio_too_large": (413, "The request is too large."),
+    "studio_rights_required": (400, "Confirm that you own or have the rights to use this photo (for a lifestyle photo, also that "
+                                    "the people in it, if any, agreed to its use)."),
 }
 
 
@@ -645,7 +652,7 @@ class Studio:
             except asyncio.TimeoutError:
                 pass
 
-    # -- product photo rights ---------------------------------------------------------------------
+    # -- upload rights (product and lifestyle photos) ---------------------------------------------
 
     def declare_upload(self, user_id, upload_id, purpose, content_type, size, project_id):
         """The rights checkbox, as sent with the ticket: kept as an audit row until the upload is first used."""
@@ -660,15 +667,16 @@ class Studio:
         try:
             doc = self.agent.get_upload(user_id, upload_id)
         except AgentError as error:
-            # Expected until the agent has GET /internal/v1/uploads/{id}: the record is written without the hash.
+            # An agent without GET /internal/v1/uploads/{id} (before v10): the record is written without the hash.
             log.info("studio: no sha256 for upload %s (%s %s %s)", upload_id, error.kind, error.status, error.code)
             return None
         value = doc.get("sha256") if isinstance(doc, dict) else None
         return value if isinstance(value, str) and SIG.fullmatch(value) else None
 
     def confirm_rights(self, user_id, upload_ids, project_id, via):
-        """On an upload's first reference (project create with image_ids, a shot edit with image_upload_id), after
-        the agent accepted it: write studio.upload_rights_confirmed with the declared ticket and the file's sha256."""
+        """On an upload's first reference (project create with image_ids or lifestyle_ids, a shot edit with
+        image_upload_id), after the agent accepted it: write studio.upload_rights_confirmed once per upload, with the
+        declared ticket and the file's sha256."""
         for upload_id in dict.fromkeys(u for u in upload_ids if isinstance(u, str) and u):
             with self.store.connect() as con:
                 if con.execute("SELECT 1 FROM audit_events WHERE action='studio.upload_rights_confirmed' AND target_id=?", (upload_id,)).fetchone():
@@ -837,9 +845,9 @@ def attach_studio(application, ctx, agent=None):
             if error.kind == "rejected":
                 studio.drop_unused_project(user["id"], project_id)
             agent_fail(error)
-        image_ids = inputs.get("image_ids")
-        if isinstance(image_ids, list) and image_ids:
-            await run_in_threadpool(studio.confirm_rights, user["id"], image_ids, project_id, "project_create")
+        rights_ids = [u for key in ("image_ids", "lifestyle_ids") if isinstance(inputs.get(key), list) for u in inputs[key]]
+        if rights_ids:
+            await run_in_threadpool(studio.confirm_rights, user["id"], rights_ids, project_id, "project_create")
         try:
             raw = await studio.call("quote", user["id"], project_id, {"type": "draft"})
             try:
@@ -868,11 +876,13 @@ def attach_studio(application, ctx, agent=None):
             _invalid("Choose a file to upload.")
         if size > UPLOAD_MAX_BYTES:
             fail("studio_too_large", "The file is too large.", 413)
-        if (purpose == "input_image") != (project_id is None):
+        if (purpose in PRE_PROJECT_PURPOSES) != (project_id is None):
             _invalid("Product images are uploaded before the project exists; other files need a project.")
         if purpose in RIGHTS_PURPOSES and body.get("rights_confirmed") is not True:
-            fail("studio_rights_required", "Confirm that you own or have the rights to use this product photo.", 400)
+            fail("studio_rights_required", PASS_THROUGH["studio_rights_required"][1], 400)
         payload = {"purpose": purpose, "content_type": content_type, "bytes": size}
+        if purpose in RIGHTS_PURPOSES:
+            payload["rights_confirmed"] = True
         if project_id is not None:
             studio.owned_project(user["id"], project_id)
             payload["project_id"] = project_id

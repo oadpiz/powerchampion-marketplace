@@ -24,6 +24,8 @@ export type JsonSchema = {
   "x-require-one-of"?: string[];
   "x-enum-labels"?: Record<string, Localized>;
   "x-internal-values"?: string[];
+  /** A short hint under the field (e.g. the lifestyle-photo step). */
+  "x-hint"?: Localized;
 };
 
 export type OpSpec = { type: string; label?: Localized; target_kind?: "shot" | "aspect" | "character" | null };
@@ -117,6 +119,18 @@ export type StudioProject = {
   total_seconds?: number | null;
   style?: string | null;
   updated_at?: number;
+  /** Seller lifestyle photos and what their checks found (only when the project has some). */
+  lifestyle?: LifestyleStatus[];
+};
+
+/** One lifestyle photo of a project: usable, not_used (with reasons), pending (checked by the next draft) or missing. */
+export type LifestyleStatus = {
+  upload_id: string;
+  status: "usable" | "not_used" | "pending" | "missing" | string;
+  reasons: string[];
+  warnings?: string[];
+  same_product?: boolean | null;
+  thumb_url?: string | null;
 };
 
 export type Quote = {
@@ -244,20 +258,45 @@ export function downloadUrl(url: string): string {
 
 // ---------------------------------------------------------------------------------------------- uploads
 
-export type UploadPurpose = "input_image" | "shot_image" | "music" | "character_ref";
-/** Product photos: the upload field asks for the rights checkbox first (server: 400 studio_rights_required). */
-export const RIGHTS_PURPOSES: readonly UploadPurpose[] = ["input_image", "shot_image"];
+export type UploadPurpose = "input_image" | "shot_image" | "music" | "character_ref" | "lifestyle_image";
+/** Photos that need the seller's rights declaration before the ticket (server: 400 studio_rights_required). Music has
+ * its own checkbox in the project settings (music_rights_confirmed); character references are not in this list. */
+export const RIGHTS_PURPOSES: readonly UploadPurpose[] = ["input_image", "shot_image", "lifestyle_image"];
+/** Lifestyle photos: every photo needs its own tick (one file at a time, the box clears after each upload). */
+export const RIGHTS_PER_PHOTO: readonly UploadPurpose[] = ["lifestyle_image"];
+const PRODUCT_RIGHTS_TEXT: [string, string] = [
+  "我擁有或已取得這張商品照片的使用權，並同意用於產生影片。",
+  "I own or have obtained the rights to use this product photo, and agree to its use to generate videos.",
+];
+export const LIFESTYLE_RIGHTS_TEXT: [string, string] = [
+  "我擁有或已取得這張情境照的使用權，照片中的人物（若有）已同意使用。",
+  "I own or have obtained the rights to use this lifestyle photo, and the people in it (if any) agreed to its use.",
+];
+/** The statement next to the rights checkbox: one mechanism, the wording depends on the kind of photo. */
+export function rightsText(purpose: UploadPurpose, locale: Locale): string {
+  return (purpose === "lifestyle_image" ? LIFESTYLE_RIGHTS_TEXT : PRODUCT_RIGHTS_TEXT)[locale === "zh" ? 0 : 1];
+}
+export const LIFESTYLE_HINT: [string, string] = [
+  "放一張商品在使用場景中的照片，影片會更像真的開箱。",
+  "Add a photo of the product where it is used: the video will look more like a real unboxing.",
+];
 export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export const AUDIO_TYPES = ["audio/mpeg", "audio/mp4", "audio/wav"];
 const LIMITS: Record<UploadPurpose, number> = {
   input_image: 10_000_000,
   shot_image: 10_000_000,
   character_ref: 10_000_000,
+  lifestyle_image: 10_000_000,
   music: 20_000_000,
 };
 
 export class UploadError extends Error {
-  constructor(public readonly reason: "type" | "size" | "put" | "rights", message: string) {
+  constructor(
+    public readonly reason: "type" | "size" | "put" | "rights",
+    message: string,
+    /** For "rights": the kind of photo, so the message quotes the right statement. */
+    public readonly purpose?: UploadPurpose,
+  ) {
     super(message);
     this.name = "UploadError";
   }
@@ -280,14 +319,15 @@ export async function uploadFile(
   const type = file.type === "audio/x-wav" ? "audio/wav" : file.type === "audio/x-m4a" ? "audio/mp4" : file.type;
   if (!types.includes(type)) throw new UploadError("type", "unsupported type");
   if (file.size < 1 || file.size > LIMITS[purpose]) throw new UploadError("size", "too large");
-  // Product photos need the user's rights declaration (the checkbox in the upload field); the portal refuses the ticket without it.
-  if (RIGHTS_PURPOSES.includes(purpose) && options.rightsConfirmed !== true) throw new UploadError("rights", "rights not confirmed");
+  // Product and lifestyle photos need the seller's rights declaration (the checkbox in the upload field); the portal refuses the ticket without it.
+  const rights = RIGHTS_PURPOSES.includes(purpose);
+  if (rights && options.rightsConfirmed !== true) throw new UploadError("rights", "rights not confirmed", purpose);
   const ticket = await portalRequest<{ upload_id: string; put_url: string; expires_at: number }>(`${S}/uploads`, json({
     purpose,
     content_type: type,
     bytes: file.size,
     ...(projectId ? { project_id: projectId } : {}),
-    ...(RIGHTS_PURPOSES.includes(purpose) ? { rights_confirmed: true } : {}),
+    ...(rights ? { rights_confirmed: true } : {}),
   }));
   if (!mediaUrl(ticket.put_url)) throw new UploadError("put", "unexpected upload host");
   // The browser sets Content-Length from the File; the URL is signed and single use. No cookies go to the media host.
@@ -347,7 +387,10 @@ export function studioErrorText(error: unknown, locale: Locale): string {
       return zh ? "不支援這種檔案格式。圖片請用 PNG、JPEG 或 WebP；音樂請用 MP3、M4A 或 WAV。" : "That file type is not supported. Use PNG, JPEG or WebP images, or MP3, M4A or WAV music.";
     if (error.reason === "size")
       return zh ? "檔案太大：圖片上限 10 MB，音樂上限 20 MB。" : "The file is too large: images up to 10 MB, music up to 20 MB.";
-    if (error.reason === "rights") return zh ? "請先勾選「我擁有或已取得這張商品照片的使用權，並同意用於產生影片。」再上傳。" : "Tick “I own or have obtained the rights to use this product photo” before uploading.";
+    if (error.reason === "rights") {
+      const text = rightsText(error.purpose ?? "input_image", locale);
+      return zh ? `請先勾選「${text}」再上傳。` : `Tick “${text}” before uploading.`;
+    }
     return zh ? "檔案上傳失敗，請重新選擇檔案再試一次。" : "The upload failed. Choose the file again and retry.";
   }
   if (error instanceof PortalError && STUDIO_ERRORS[error.code]) return STUDIO_ERRORS[error.code][zh ? 0 : 1];

@@ -30,6 +30,7 @@ import { AdminDialog } from "./admin-dialog";
 import { useLocale } from "./locale-provider";
 import { DraftLimitText, DraftsLeft, TopUpLinks } from "./studio-help";
 import { ProjectSettings, ShotInspector } from "./studio-inspector";
+import { LifestyleChecks } from "./studio-lifestyle";
 import { useStudio } from "./studio-shell";
 import { useStudioProject } from "./use-studio-project";
 
@@ -413,6 +414,7 @@ export function StudioEditor({ projectId }: { projectId: string }) {
             : "No licensed voice is available yet, and this video uses an internal test voice. In the project settings, switch the voice to “No voiceover (subtitles only)” to generate pictures."}
         </p>
       )}
+      <LifestyleChecks items={project?.lifestyle} zh={zh} />
       {error !== null &&
         (pollStopped ? (
           <p className="portal-error" role="alert">

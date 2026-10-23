@@ -5,8 +5,12 @@ import {
   acceptFor,
   enumOptions,
   fieldLabel,
+  LIFESTYLE_HINT,
+  localized,
   narrationFit,
+  RIGHTS_PER_PHOTO,
   RIGHTS_PURPOSES,
+  rightsText,
   schemaTypes,
   studioErrorText,
   uploadFile,
@@ -180,10 +184,13 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
   const ids = multiple ? (Array.isArray(value) ? (value as string[]) : []) : typeof value === "string" ? [value] : [];
   const max = multiple ? (schema.maxItems ?? 5) : 1;
   const image = purpose !== "music";
-  // Product photos: the rights checkbox comes first; the file picker stays disabled until it is ticked.
+  // Product and lifestyle photos: the rights checkbox comes first; the file picker stays disabled until it is ticked.
+  // Lifestyle photos need a tick for every photo: one file at a time, and the box is cleared after each upload.
   const needsRights = RIGHTS_PURPOSES.includes(purpose);
+  const perPhoto = RIGHTS_PER_PHOTO.includes(purpose);
   const [rights, setRights] = useState(false);
   const blocked = needsRights && !rights;
+  const hint = schema["x-hint"] ? localized(schema["x-hint"], locale) : purpose === "lifestyle_image" ? LIFESTYLE_HINT[zh ? 0 : 1] : "";
 
   const busy = pending > 0;
   useEffect(() => onBusy?.(busy), [busy, onBusy]);
@@ -200,14 +207,22 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
     if (!files?.length) return;
     setUploadError(null);
     if (blocked) {
-      setUploadError(studioErrorText(new UploadError("rights", "rights not confirmed"), locale));
+      setUploadError(studioErrorText(new UploadError("rights", "rights not confirmed", purpose), locale));
       if (input.current) input.current.value = "";
       return;
     }
-    const room = multiple ? max - ids.length : 1;
+    const room = perPhoto ? Math.min(1, max - ids.length) : multiple ? max - ids.length : 1;
     const chosen = Array.from(files).slice(0, Math.max(0, room));
     if (chosen.length < files.length)
-      setUploadError(zh ? `最多 ${max} 個檔案，多的沒有上傳。` : `Up to ${max} files; the rest were not uploaded.`);
+      setUploadError(
+        perPhoto
+          ? zh
+            ? "每張情境照都要先勾選使用權，一次上傳一張。"
+            : "Each lifestyle photo needs its own rights checkbox: upload one at a time."
+          : zh
+            ? `最多 ${max} 個檔案，多的沒有上傳。`
+            : `Up to ${max} files; the rest were not uploaded.`,
+      );
     let next = multiple ? [...ids] : [];
     setPending((count) => count + chosen.length);
     for (const file of chosen) {
@@ -227,6 +242,7 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
         setPending((count) => count - 1);
       }
     }
+    if (perPhoto) setRights(false); // the next photo needs its own declaration
     if (input.current) input.current.value = "";
   }
 
@@ -271,22 +287,21 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
               className="sr-only"
               type="file"
               accept={acceptFor(purpose)}
-              multiple={multiple}
+              multiple={multiple && !perPhoto}
               disabled={disabled || pending > 0 || blocked}
               onChange={(event) => void choose(event.target.files)}
             />
           </label>
         )}
       </div>
-      {needsRights && (
-        <label className="studio-upload-rights">
-          <input type="checkbox" checked={rights} disabled={disabled} onChange={(event) => setRights(event.target.checked)} />
-          <span>
-            {zh
-              ? "我擁有或已取得這張商品照片的使用權，並同意用於產生影片。"
-              : "I own or have obtained the rights to use this product photo, and agree to its use to generate videos."}
-          </span>
-        </label>
+      {hint && <span className="studio-field-hint">{hint}</span>}
+      {needsRights && (!perPhoto || ids.length < max) && (
+        <UploadRightsCheckbox
+          text={rightsText(purpose, locale)}
+          checked={rights}
+          disabled={disabled || pending > 0}
+          onChange={setRights}
+        />
       )}
       <span className="studio-field-hint">
         {image ? (zh ? "PNG、JPEG 或 WebP，每張 10 MB 以內。" : "PNG, JPEG or WebP, up to 10 MB each.") : zh ? "MP3、M4A 或 WAV，20 MB 以內。" : "MP3, M4A or WAV, up to 20 MB."}
@@ -297,5 +312,25 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
         </span>
       )}
     </div>
+  );
+}
+
+/** The seller's rights declaration for one photo upload (product or lifestyle); the statement depends on the photo. */
+export function UploadRightsCheckbox({
+  text,
+  checked,
+  disabled,
+  onChange,
+}: {
+  text: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="studio-upload-rights">
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
+      <span>{text}</span>
+    </label>
   );
 }

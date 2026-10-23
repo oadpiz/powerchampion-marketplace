@@ -699,6 +699,27 @@
   margin-top: 4px;
   flex: none;
 }
+.studio-lifestyle-checks {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+.studio-lifestyle-checks li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.studio-lifestyle-checks img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex: none;
+}
 .studio-upload-drop:has(input:focus-visible) {
   outline: 2px solid var(--focus, #c2aa7d);
   outline-offset: 3px;

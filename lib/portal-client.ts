@@ -64,7 +64,8 @@ const STUDIO_CODE_TEXT: Record<string, [string, string]> = {
   // Demo mode (PC_STUDIO_ALLOWED_EMAILS): this account is not on the list yet; shown exactly like studio_unconfigured.
   studio_not_open: ["影片工作室尚未開放，開放後即可使用。如需提前試用，請聯絡我們。", "The video studio is not open yet. Contact us if you would like early access."],
   studio_unavailable: ["影片服務暫時無法連線，請稍後再試。", "The video service is unreachable right now. Try again in a moment."],
-  studio_rights_required: ["請先勾選「我擁有或已取得這張商品照片的使用權，並同意用於產生影片。」再上傳。", "Tick “I own or have obtained the rights to use this product photo” before uploading."],
+  // Product and lifestyle photos share one declaration; the upload field shows the exact statement next to its checkbox.
+  studio_rights_required: ["請先勾選照片的使用權聲明再上傳。", "Tick the photo rights statement before uploading."],
   studio_insufficient_credits: ["點數不足，無法執行這個步驟。", "You do not have enough credits for this step."],
   studio_busy: ["這支影片正在處理中，請等目前的步驟完成後再試。", "This video is busy. Wait for the current step to finish."],
   studio_needs_render: ["有鏡頭尚未產生，請先「產生全部」。", "Some shots are not generated yet. Generate them first."],
