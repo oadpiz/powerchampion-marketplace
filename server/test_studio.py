@@ -1371,5 +1371,56 @@ class StudioAgentClientTests(unittest.TestCase):
         self.assertEqual(caught.exception.kind, "unconfigured")
 
 
+class StudioLifestylePhotoTests(StudioCase):
+    """Seller lifestyle photos (shortvideo-agent docs/design/seller-lifestyle-photos.md): each upload needs the rights
+    checkbox (400 studio_rights_required, before any agent call), the ticket is audited as studio.upload_declared and
+    the first accepted use (project create with inputs.lifestyle_ids) as studio.upload_rights_confirmed with the sha256."""
+
+    LIFE = {"purpose": "lifestyle_image", "content_type": "image/jpeg", "bytes": 4000}
+
+    def test_without_the_checkbox_it_is_400_and_the_agent_is_not_called(self):
+        client, _user_id = self.customer()
+        for extra in ({}, {"rights_confirmed": False}, {"rights_confirmed": "true"}, {"rights_confirmed": 1}):
+            response = self.post(client, "/studio/uploads", dict(self.LIFE, **extra))
+            self.assertEqual((response.status_code, response.json()["error"]), (400, "studio_rights_required"), extra)
+        self.assertEqual([c for c in self.agent.calls if c[0] == "create_upload"], [])
+        self.assertEqual(self.audit("studio.upload_declared"), [])
+
+    def test_lifestyle_photos_are_uploaded_before_the_project(self):
+        client, _user_id = self.customer()
+        response = self.post(client, "/studio/uploads", dict(self.LIFE, rights_confirmed=True, project_id="p1"))
+        self.assertEqual(response.status_code, 400)
+
+    def test_the_checkbox_is_audited_and_confirmed_with_the_sha256_on_first_use(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 100)
+        response = self.post(client, "/studio/uploads", dict(self.LIFE, rights_confirmed=True))
+        self.assertEqual(response.status_code, 201, response.text)
+        upload_id = response.json()["upload_id"]
+        self.assertTrue(self.agent.uploads[upload_id]["rights_confirmed"])  # the agent checks it too
+        declared = self.audit("studio.upload_declared")
+        self.assertEqual([(e["actor_id"], e["target_id"]) for e in declared], [(user_id, upload_id)])
+        self.assertEqual(json.loads(declared[0]["details"])["purpose"], "lifestyle_image")
+        body = {"template_id": "ecommerce", "aspect": "9:16", "inputs": {"topic": "tea", "lifestyle_ids": [upload_id]}}
+        key = self.key()
+        first = self.post(client, "/studio/projects", dict(body, idempotency_key=key))
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(self.post(client, "/studio/projects", dict(body, idempotency_key=key)).status_code, 200)
+        confirmed = self.audit("studio.upload_rights_confirmed")
+        self.assertEqual(len(confirmed), 1)  # once per upload, also on a replay
+        details = json.loads(confirmed[0]["details"])
+        self.assertEqual(details["sha256"], self.agent.uploads[upload_id]["sha256"])
+        self.assertEqual((details["upload_id"], details["purpose"], details["via"], details["project_id"]),
+                         (upload_id, "lifestyle_image", "project_create", first.json()["id"]))
+        self.assertEqual(details["bytes"], 4000)
+
+    def test_product_photos_keep_their_current_flow(self):
+        client, _user_id = self.customer()
+        response = self.post(client, "/studio/uploads", {"purpose": "input_image", "content_type": "image/png", "bytes": 1000})
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertNotIn("rights_confirmed", self.agent.uploads[response.json()["upload_id"]])
+        self.assertEqual(self.audit("studio.upload_declared"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

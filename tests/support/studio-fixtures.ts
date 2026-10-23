@@ -48,6 +48,25 @@ export const template: StudioTemplate = {
   },
 };
 
+/** The template with the optional lifestyle-photo step after the product photos (as the agent sends it, v10). */
+export const lifestyleTemplate: StudioTemplate = {
+  ...template,
+  input_schema: {
+    ...template.input_schema,
+    properties: {
+      ...template.input_schema.properties,
+      lifestyle_ids: {
+        type: "array",
+        maxItems: 3,
+        items: { type: "string" },
+        "x-upload-purpose": "lifestyle_image",
+        title: { zh: "情境照（選填，建議 1～3 張）", en: "Lifestyle photos (optional, 1-3 recommended)" },
+        "x-hint": { zh: "放一張商品在使用場景中的照片，影片會更像真的開箱。", en: "Add a photo of the product where it is used." },
+      },
+    },
+  },
+};
+
 const media = (key: string) => `https://studio-media.test/media/a/${key}?exp=1&sig=${"0".repeat(64)}`;
 
 export function project(overrides: Partial<StudioProject> = {}): StudioProject {

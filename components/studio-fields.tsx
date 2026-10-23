@@ -5,10 +5,15 @@ import {
   acceptFor,
   enumOptions,
   fieldLabel,
+  LIFESTYLE_HINT,
+  LIFESTYLE_RIGHTS_TEXT,
+  localized,
   narrationFit,
+  RIGHTS_PURPOSES,
   schemaTypes,
   studioErrorText,
   uploadFile,
+  UploadError,
   type JsonSchema,
   type UploadPurpose,
 } from "../lib/studio-client";
@@ -178,6 +183,12 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
   const ids = multiple ? (Array.isArray(value) ? (value as string[]) : []) : typeof value === "string" ? [value] : [];
   const max = multiple ? (schema.maxItems ?? 5) : 1;
   const image = purpose !== "music";
+  // Lifestyle photos: each photo needs its own rights checkbox. The file picker stays disabled until it is ticked,
+  // takes one file, and the box is cleared again after every upload.
+  const needsRights = RIGHTS_PURPOSES.includes(purpose);
+  const [rights, setRights] = useState(false);
+  const blocked = needsRights && !rights;
+  const hint = schema["x-hint"] ? localized(schema["x-hint"], locale) : needsRights ? LIFESTYLE_HINT[zh ? 0 : 1] : "";
 
   const busy = pending > 0;
   useEffect(() => onBusy?.(busy), [busy, onBusy]);
@@ -193,15 +204,28 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
   async function choose(files: FileList | null) {
     if (!files?.length) return;
     setUploadError(null);
-    const room = multiple ? max - ids.length : 1;
+    if (blocked) {
+      setUploadError(studioErrorText(new UploadError("rights", "rights not confirmed"), locale));
+      if (input.current) input.current.value = "";
+      return;
+    }
+    const room = needsRights ? Math.min(1, max - ids.length) : multiple ? max - ids.length : 1;
     const chosen = Array.from(files).slice(0, Math.max(0, room));
     if (chosen.length < files.length)
-      setUploadError(zh ? `最多 ${max} 個檔案，多的沒有上傳。` : `Up to ${max} files; the rest were not uploaded.`);
+      setUploadError(
+        needsRights
+          ? zh
+            ? "每張情境照都要先勾選使用權，一次上傳一張。"
+            : "Each lifestyle photo needs its own rights checkbox: upload one at a time."
+          : zh
+            ? `最多 ${max} 個檔案，多的沒有上傳。`
+            : `Up to ${max} files; the rest were not uploaded.`,
+      );
     let next = multiple ? [...ids] : [];
     setPending((count) => count + chosen.length);
     for (const file of chosen) {
       try {
-        const uploadId = await uploadFile(file, purpose, projectId);
+        const uploadId = await uploadFile(file, purpose, projectId, undefined, { rightsConfirmed: needsRights && rights });
         if (image && typeof URL.createObjectURL === "function") {
           const url = URL.createObjectURL(file);
           setPreviews((current) => ({ ...current, [uploadId]: url }));
@@ -216,6 +240,7 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
         setPending((count) => count - 1);
       }
     }
+    if (needsRights) setRights(false); // the next photo needs its own declaration
     if (input.current) input.current.value = "";
   }
 
@@ -252,7 +277,7 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
           </div>
         ))}
         {ids.length < max && (
-          <label className="studio-upload-drop" htmlFor={inputId} aria-disabled={disabled || pending > 0}>
+          <label className="studio-upload-drop" htmlFor={inputId} aria-disabled={disabled || pending > 0 || blocked}>
             {pending > 0 ? (zh ? "上傳中…" : "Uploading…") : image ? (zh ? "選擇圖片" : "Choose image") : zh ? "選擇音樂檔" : "Choose music"}
             <input
               ref={input}
@@ -260,13 +285,20 @@ function UploadField({ name, schema, value, onChange, disabled, error, projectId
               className="sr-only"
               type="file"
               accept={acceptFor(purpose)}
-              multiple={multiple}
-              disabled={disabled || pending > 0}
+              multiple={multiple && !needsRights}
+              disabled={disabled || pending > 0 || blocked}
               onChange={(event) => void choose(event.target.files)}
             />
           </label>
         )}
       </div>
+      {hint && <span className="studio-field-hint">{hint}</span>}
+      {needsRights && ids.length < max && (
+        <label className="studio-upload-rights">
+          <input type="checkbox" checked={rights} disabled={disabled || pending > 0} onChange={(event) => setRights(event.target.checked)} />
+          <span>{LIFESTYLE_RIGHTS_TEXT[zh ? 0 : 1]}</span>
+        </label>
+      )}
       <span className="studio-field-hint">
         {image ? (zh ? "PNG、JPEG 或 WebP，每張 10 MB 以內。" : "PNG, JPEG or WebP, up to 10 MB each.") : zh ? "MP3、M4A 或 WAV，20 MB 以內。" : "MP3, M4A or WAV, up to 20 MB."}
       </span>

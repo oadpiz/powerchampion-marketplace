@@ -397,9 +397,19 @@ class FakeStudioAgent:
         self._enter("create_upload", owner)
         if body.get("project_id") is not None:
             self._project(owner, body["project_id"])
+        if body.get("purpose") == "lifestyle_image" and body.get("rights_confirmed") is not True:
+            raise self.AgentError("rejected", 400, "studio_rights_required")  # like the agent (v10)
         upload_id = "u_" + secrets.token_hex(6)
-        self.uploads[upload_id] = dict(body, owner=owner)
+        self.uploads[upload_id] = dict(body, owner=owner, sha256=hashlib.sha256(upload_id.encode()).hexdigest())
         return {"upload_id": upload_id, "put_url": "https://media.test/media/upload/" + secrets.token_hex(8), "expires_at": int(self.clock()) + 900}
+
+    def get_upload(self, owner, upload_id):
+        self._enter("get_upload", owner)
+        up = self.uploads.get(upload_id)
+        if up is None or up["owner"] != owner:
+            raise self._missing()
+        return {"upload_id": upload_id, "purpose": up.get("purpose"), "project_id": up.get("project_id"),
+                "content_type": up.get("content_type"), "bytes": up.get("bytes"), "sha256": up["sha256"], "status": "ready"}
 
     def create_project(self, owner, body):
         self._enter("create_project", owner)

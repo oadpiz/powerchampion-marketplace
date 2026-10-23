@@ -91,7 +91,12 @@ MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 SHOT_INDEX = re.compile(r"^[0-9]{1,3}$")
 SIG = re.compile(r"^[0-9a-f]{64}$")
 ERROR_CODE = re.compile(r"^[a-z0-9_]{1,64}$")
-UPLOAD_PURPOSES = ("input_image", "shot_image", "music", "character_ref")
+UPLOAD_PURPOSES = ("input_image", "shot_image", "music", "character_ref", "lifestyle_image")
+# Uploaded before the project exists and attached at creation (inputs.image_ids, inputs.lifestyle_ids).
+PRE_PROJECT_PURPOSES = ("input_image", "lifestyle_image")
+# Seller lifestyle photos: the ticket needs rights_confirmed (the checkbox
+# 「我擁有或已取得這張情境照的使用權，照片中的人物（若有）已同意使用。」), else 400 studio_rights_required.
+RIGHTS_PURPOSES = ("lifestyle_image",)
 # Op types that never synthesise narration (draft writes the script; add_aspect draws stills; export composes).
 VOICELESS_OPS = ("draft", "add_aspect", "export")
 UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # the agent enforces 10 MB (music 20 MB) exactly
@@ -108,6 +113,7 @@ PASS_THROUGH = {
     "studio_invalid_input": (400, "Check the details and try again."),
     "studio_daily_cap": (429, "The daily limit for video generation has been reached. Try again tomorrow."),
     "studio_too_large": (413, "The request is too large."),
+    "studio_rights_required": (400, "Confirm that you own or have the rights to use this lifestyle photo."),
 }
 
 
@@ -643,6 +649,48 @@ class Studio:
             except asyncio.TimeoutError:
                 pass
 
+    # -- upload rights (lifestyle photos) ---------------------------------------------------------
+
+    def declare_upload(self, user_id, upload_id, purpose, content_type, size, project_id):
+        """The rights checkbox, as sent with the ticket: kept as an audit row until the upload is first used."""
+        if not isinstance(upload_id, str) or not upload_id:
+            return
+        with self.store.connect() as con:
+            self.store.audit(con, "studio.upload_declared", user_id, upload_id,
+                             {"purpose": purpose, "content_type": content_type, "bytes": size, "project_id": project_id,
+                              "rights_confirmed": True, "at": self.now()})
+
+    def _upload_sha256(self, user_id, upload_id):
+        try:
+            doc = self.agent.get_upload(user_id, upload_id)
+        except AgentError as error:
+            log.info("studio: no sha256 for upload %s (%s %s %s)", upload_id, error.kind, error.status, error.code)
+            return None
+        value = doc.get("sha256") if isinstance(doc, dict) else None
+        return value if isinstance(value, str) and SIG.fullmatch(value) else None
+
+    def confirm_rights(self, user_id, upload_ids, project_id, via):
+        """On an upload's first reference that the agent accepted (project create with lifestyle_ids): write
+        studio.upload_rights_confirmed once per upload, with the declared ticket and the file's sha256."""
+        for upload_id in dict.fromkeys(u for u in upload_ids if isinstance(u, str) and u):
+            with self.store.connect() as con:
+                if con.execute("SELECT 1 FROM audit_events WHERE action='studio.upload_rights_confirmed' AND target_id=?", (upload_id,)).fetchone():
+                    continue
+                declared = con.execute("SELECT details FROM audit_events WHERE action='studio.upload_declared' AND actor_id=? AND target_id=? "
+                                       "ORDER BY created_at DESC LIMIT 1", (user_id, upload_id)).fetchone()
+            if not declared:
+                log.warning("studio: upload %s was used without a rights declaration", upload_id)
+                continue
+            ticket = json.loads(declared["details"])
+            sha256 = self._upload_sha256(user_id, upload_id)
+            with self.store.connect() as con:
+                if con.execute("SELECT 1 FROM audit_events WHERE action='studio.upload_rights_confirmed' AND target_id=?", (upload_id,)).fetchone():
+                    continue
+                self.store.audit(con, "studio.upload_rights_confirmed", user_id, upload_id,
+                                 {"upload_id": upload_id, "purpose": ticket.get("purpose"), "content_type": ticket.get("content_type"),
+                                  "bytes": ticket.get("bytes"), "sha256": sha256, "declared_at": ticket.get("at"),
+                                  "confirmed_at": self.now(), "project_id": project_id, "via": via})
+
     # -- JSON shapes ------------------------------------------------------------------------------
 
     @staticmethod
@@ -791,6 +839,9 @@ def attach_studio(application, ctx, agent=None):
             if error.kind == "rejected":
                 studio.drop_unused_project(user["id"], project_id)
             agent_fail(error)
+        lifestyle_ids = inputs.get("lifestyle_ids")
+        if isinstance(lifestyle_ids, list) and lifestyle_ids:
+            await run_in_threadpool(studio.confirm_rights, user["id"], lifestyle_ids, project_id, "project_create")
         try:
             raw = await studio.call("quote", user["id"], project_id, {"type": "draft"})
             try:
@@ -819,14 +870,21 @@ def attach_studio(application, ctx, agent=None):
             _invalid("Choose a file to upload.")
         if size > UPLOAD_MAX_BYTES:
             fail("studio_too_large", "The file is too large.", 413)
-        if (purpose == "input_image") != (project_id is None):
+        if (purpose in PRE_PROJECT_PURPOSES) != (project_id is None):
             _invalid("Product images are uploaded before the project exists; other files need a project.")
+        if purpose in RIGHTS_PURPOSES and body.get("rights_confirmed") is not True:
+            fail("studio_rights_required", "Confirm that you own or have the rights to use this lifestyle photo, and that the "
+                                           "people in it (if any) agreed.", 400)
         payload = {"purpose": purpose, "content_type": content_type, "bytes": size}
+        if purpose in RIGHTS_PURPOSES:
+            payload["rights_confirmed"] = True
         if project_id is not None:
             studio.owned_project(user["id"], project_id)
             payload["project_id"] = project_id
         studio.consume(user["id"], "upload")
         data = await studio.call("create_upload", user["id"], payload)
+        if purpose in RIGHTS_PURPOSES:
+            await run_in_threadpool(studio.declare_upload, user["id"], data.get("upload_id"), purpose, content_type, size, project_id)
         return JSONResponse({"upload_id": data.get("upload_id"), "put_url": data.get("put_url"), "expires_at": data.get("expires_at")}, status_code=201)
 
     @application.get(S + "/projects/{project_id}")
