@@ -56,10 +56,10 @@ describe("lifestyle photo step", () => {
   it("comes after the product photos, optional, with the hint text", async () => {
     const calls = lifestyleRoutes();
     inFrame(<StudioNew navigate={() => {}} />);
-    const step = await screen.findByRole("group", { name: /情境照（選填，建議 1～3 張）/ });
+    const step = await screen.findByRole("group", { name: /情境照（至少 2 張，最多 3 張）/ });
     const product = screen.getByRole("group", { name: /商品圖片/ });
     expect(product.compareDocumentPosition(step) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(step).getByText("放一張商品在使用場景中的照片，影片會更像真的開箱。")).toBeInTheDocument();
+    expect(within(step).getByText("每個商品至少要 3 張照片：1 張商品照，加上 2 張以上商品放在真實使用場景中的實拍照（廚房、書桌、車內，或正在使用中）。只有一張商品照時，影片會像在播一張圖。")).toBeInTheDocument();
     expect(within(step).getByText("（最多 3 張）")).toBeInTheDocument();
     // optional: a topic alone still creates the project, without lifestyle_ids
     await userEvent.type(screen.getByLabelText("主題"), "保溫杯");

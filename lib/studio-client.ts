@@ -277,8 +277,8 @@ export function rightsText(purpose: UploadPurpose, locale: Locale): string {
   return (purpose === "lifestyle_image" ? LIFESTYLE_RIGHTS_TEXT : PRODUCT_RIGHTS_TEXT)[locale === "zh" ? 0 : 1];
 }
 export const LIFESTYLE_HINT: [string, string] = [
-  "放一張商品在使用場景中的照片，影片會更像真的開箱。",
-  "Add a photo of the product where it is used: the video will look more like a real unboxing.",
+  "每個商品至少要 3 張照片：1 張商品照，加上 2 張以上商品放在真實使用場景中的實拍照（廚房、書桌、車內，或正在使用中）。只有一張商品照時，影片會像在播一張圖。",
+  "Each product needs at least 3 photos: 1 product shot plus 2 or more real photos of the product where it is used (kitchen, desk, car, or in use). With a single product photo the video looks like a slideshow of one picture.",
 ];
 export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export const AUDIO_TYPES = ["audio/mpeg", "audio/mp4", "audio/wav"];
