@@ -108,6 +108,24 @@ describe("lifestyle photo step", () => {
     expect((created?.body as { inputs: Record<string, unknown> }).inputs.lifestyle_ids).toEqual(["u_life2"]);
   });
 
+  it("a failed create clears the lifestyle photos too and asks for a fresh upload", async () => {
+    const calls = lifestyleRoutes({ "POST /studio/projects": () => fail(503, "service_unavailable") });
+    inFrame(<StudioNew navigate={() => {}} />);
+    const step = await screen.findByRole("group", { name: /情境照/ });
+    await userEvent.click(within(step).getByRole("checkbox", { name: RIGHTS }));
+    await userEvent.upload(within(step).getByLabelText("選擇圖片"), photo("kitchen.jpg"));
+    expect(await within(step).findByRole("img", { name: "已上傳的圖片 1" })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("主題"), "保溫杯");
+    await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
+    await userEvent.click(await screen.findByRole("button", { name: "仍要繼續" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("請重新上傳商品圖片（和情境照）");
+    expect(within(step).queryByRole("img", { name: "已上傳的圖片 1" })).not.toBeInTheDocument();
+    const posts = calls.filter((call) => call.method === "POST" && call.path === "/studio/projects");
+    expect(posts).toHaveLength(1);
+    expect((posts[0].body as { inputs: Record<string, unknown> }).inputs.lifestyle_ids).toEqual(["u_life1"]);
+  });
+
   it("product photos use the same checkbox, with the product photo statement", async () => {
     const calls = lifestyleRoutes({
       "PUT https://studio-media.test/media/upload/tok1": () => Response.json({ upload_id: "u_life1" }, { status: 201 }),

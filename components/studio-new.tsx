@@ -141,11 +141,14 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
       setSubmitError(cause);
       setSubmitting(false);
       refreshCredits(); // a 402 usually means the balance shown was out of date
-      const images = values.image_ids;
-      if (Array.isArray(images) && images.length > 0) {
-        // The server ties the project, and the images attached to it, to this key. A retry with other inputs needs
-        // a new key, and the old images cannot follow it: clear them and ask for a fresh upload.
-        setValues((current) => ({ ...current, image_ids: [] }));
+      const attached = ["image_ids", "lifestyle_ids"].filter((key) => {
+        const ids = values[key];
+        return Array.isArray(ids) && ids.length > 0;
+      });
+      if (attached.length > 0) {
+        // The server ties the project, and the photos attached to it (product and lifestyle), to this key. A retry
+        // with other inputs needs a new key, and the old photos cannot follow it: clear them and ask for a fresh upload.
+        setValues((current) => ({ ...current, ...Object.fromEntries(attached.map((key) => [key, []])) }));
         setIdempotencyKey(newIdempotencyKey());
         setReupload(true);
       }
@@ -301,8 +304,8 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
                     : studioErrorText(submitError, locale)}
                 {reupload &&
                   (zh
-                    ? " 這次建立沒有完成，已上傳的圖片綁定在那次嘗試上，請重新上傳商品圖片後再送出。"
-                    : " This attempt did not finish and the uploaded images stay tied to it. Upload the product images again, then retry.")}
+                    ? " 這次建立沒有完成，已上傳的圖片綁定在那次嘗試上，請重新上傳商品圖片（和情境照）後再送出。"
+                    : " This attempt did not finish and the uploaded images stay tied to it. Upload the product images (and lifestyle photos) again, then retry.")}
                 {insufficient && <TopUpLinks zh={zh} />}
               </p>
             )}
