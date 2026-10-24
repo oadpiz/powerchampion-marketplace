@@ -1,7 +1,12 @@
 """Admin Engineers overview: roster from the allocation tables joined with the gateway's engineer activity."""
+import base64
 import dataclasses
+import hashlib
+import itertools
 import json
 import unittest
+import uuid
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -56,7 +61,24 @@ def walk_keys(value):
             yield from walk_keys(item)
 
 
-class EngineersRouteTests(PortalCase):
+def walk_values(value, path=()):
+    """(path, value) for every value that is not a dict or a list."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from walk_values(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from walk_values(item, path + (index,))
+    else:
+        yield path, value
+
+
+def key_fingerprint(key):
+    """The OpenSSH SHA256 fingerprint of a public key line, worked out here rather than by the portal."""
+    return "SHA256:" + base64.b64encode(hashlib.sha256(base64.b64decode(key.split(" ")[1])).digest()).decode().rstrip("=")
+
+
+class EngineersCase(PortalCase):
     def setUp(self):
         super().setUp()
         self.admin_client = self.admin()
@@ -75,6 +97,26 @@ class EngineersRouteTests(PortalCase):
     def engineer_id(self, username):
         return next(e["id"] for e in self.allocation()["engineers"] if e["username"] == username)
 
+    def assert_no_field_holds(self, body, needles, keys=()):
+        """No key or value in the body is or holds a needle. Checked field by field, never by one substring test over
+        the JSON text: an engineer's id is a random uuid4 hex (one of the five held "fe80" in 10 of 3000 runs) and a key
+        fingerprint is random base64 (it holds "vllm" about once in 400,000). Those two fields are checked by value
+        instead: the id is the roster's id, the fingerprint is the one worked out from a key in `keys` (or None)."""
+        roster = {e["username"]: e["id"] for e in self.allocation()["engineers"]}
+        fingerprints = [None] + [key_fingerprint(key) for key in keys]
+        for engineer in body["engineers"]:
+            self.assertRegex(engineer["id"], r"^[0-9a-f]{32}$")
+            self.assertEqual(engineer["id"], roster[engineer["username"]])
+            self.assertIn(engineer["keyFingerprint"], fingerprints)
+        for path, value in walk_values(body):
+            if path[0] == "engineers" and path[2:] in (("id",), ("keyFingerprint",)):
+                continue
+            for needle in needles:
+                self.assertNotIn(needle, str(value), path)
+        for name in walk_keys(body):
+            for needle in needles:
+                self.assertNotIn(needle, name)
+
     def set_key(self, username, key):
         r = self.post(self.admin_client, "/admin/allocation/engineers/" + self.engineer_id(username), {"sshPubkey": key})
         self.assertEqual(r.status_code, 200, r.text)
@@ -84,6 +126,8 @@ class EngineersRouteTests(PortalCase):
         r = self.post(self.admin_client, "/admin/allocation/export/mark", {"revision": revision})
         self.assertEqual(r.status_code, 200, r.text)
 
+
+class EngineersRouteTests(EngineersCase):
     def test_requires_admin(self):
         customer = self.client()
         self.register(customer, "customer@example.test")
@@ -348,11 +392,10 @@ class EngineersRouteTests(PortalCase):
             deploys=[deploy(1, "eng1", login="justin", email="justin@oadpiz.com", avatarUrl="https://x", data={"cmd": "rm -rf /"},
                             token="glsa_secret")])
         self.gateway.activity_value = leaky
-        response = self.admin_client.get(BASE + "/admin/engineers")
-        body, text = response.json(), response.text
-        for needle in (key.split(" ")[1], "justin-laptop", "@oadpiz.com", "sshPubkey", "172.16.10", "203.0.113.7", "serve.py", "vllm",
-                       "sk-secret", "glsa_", "rm -rf", "b300-11.internal"):
-            self.assertNotIn(needle, text)
+        body = self.get()
+        self.assertEqual(self.engineer(body, "justin")["keyFingerprint"], key_fingerprint(key))
+        self.assert_no_field_holds(body, (key.split(" ")[1], "justin-laptop", "@oadpiz.com", "sshPubkey", "172.16.10", "203.0.113.7",
+                                          "serve.py", "vllm", "sk-secret", "glsa_", "rm -rf", "b300-11.internal"), keys=(key,))
         for name in walk_keys(body):
             self.assertFalse(any(part in name.lower() for part in FORBIDDEN_KEY_PARTS), name)
             self.assertNotIn(name, ("pid", "instance", "job", "login", "avatarUrl", "data"))
@@ -374,8 +417,7 @@ class EngineersRouteTests(PortalCase):
         self.assertEqual((newest["model"], newest["text"]), ("Qwen/Qwen3-8B:fp8", "[redacted]"))
         self.assertEqual(older["model"], None)
         self.assertEqual(older["text"], "vllm serve [redacted] on [address] via [address] [redacted] at 12:30:45")
-        for needle in ("sk-abc", "10.0.0.1", "10.1.2.3", "fe80", "xyz", "glsa_"):
-            self.assertNotIn(needle, json.dumps(body))
+        self.assert_no_field_holds(body, ("sk-abc", "10.0.0.1", "10.1.2.3", "fe80", "xyz", "glsa_"))
 
     def test_deploy_text_is_one_plain_line(self):
         self.gateway.activity_value = activity(deploys=[deploy(1, "eng1", text="first line\x1b[31m‮\nrelay detail: 172.16.10.11")])
@@ -394,6 +436,29 @@ class EngineersRouteTests(PortalCase):
         body = client.get(BASE + "/admin/engineers").json()
         self.assertTrue(all(e["grafanaUrl"] is None for e in body["engineers"]))
         self.assertEqual(_grafana_url("https://g.example.test/", "a b&c"), "https://g.example.test/d/b300-engineers?var-engineer=a%20b%26c&from=now-24h&to=now")
+
+
+class ForcedEngineerIdTests(EngineersCase):
+    """Every engineer id holds "fe80", as one of the five random uuid4 ids did in 10 of 3000 runs (the old check looked
+    for "fe80" anywhere in the JSON text and failed then)."""
+
+    def setUp(self):
+        ids = ("fe80%028x" % n for n in itertools.count(1))
+        with mock.patch("uuid.uuid4", lambda: uuid.UUID(next(ids))):
+            super().setUp()
+
+    def test_ids_that_hold_fe80_pass_and_a_leaked_address_is_still_found(self):
+        EngineersRouteTests.test_deploy_text_and_model_never_carry_addresses_or_secrets(self)
+        body = self.get()
+        self.assertTrue(all(e["id"].startswith("fe80") for e in body["engineers"]), [e["id"] for e in body["engineers"]])
+        self.assertIn("fe80", json.dumps(body))  # what the old check over the JSON text failed on
+        # The field check still finds the address in any other field, and an id that is not the roster's.
+        justin = self.engineer(body, "justin")
+        leaked = dict(justin, deploys=[dict(justin["deploys"][0], user="justin@fe80::1:2")])
+        with self.assertRaises(AssertionError):
+            self.assert_no_field_holds(dict(body, engineers=[leaked]), ("fe80",))
+        with self.assertRaises(AssertionError):
+            self.assert_no_field_holds(dict(body, engineers=[dict(justin, id="fe80" + "0" * 28)]), ("fe80",))
 
 
 class ComposeTests(unittest.TestCase):

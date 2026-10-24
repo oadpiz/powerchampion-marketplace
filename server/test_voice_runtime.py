@@ -4,6 +4,7 @@ Runs on SQLite, or on Postgres when PC_PORTAL_TEST_DATABASE_URL is set (scripts/
 import asyncio
 import hashlib
 import json
+import re
 import tempfile
 import threading
 import time
@@ -11,6 +12,7 @@ import types
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from unittest import mock
 
 import httpx
@@ -34,10 +36,75 @@ TEST_NUMBER = "+886227001002"
 AI = {"answered": True, "speech_ms": 41250, "turns": 6, "handoff": None, "auto_flags": [], "degraded": None,
       "metrics": {"reply_p50_ms": 1480, "reply_p95_ms": 1910, "barge_ins": 1, "fillers": 0, "talk_overs": 0, "no_responses": 0}}
 ZERO = dict(vc.ZERO_MESSAGE)
+# The caller's mobile number in the forms a store must not keep (only its last 4 digits may stay).
+MOBILE_FORMS = ("0912345678", "+886912345678", "912345678", "12345678")
 
 
 def at(epoch_seconds):
     return datetime.fromtimestamp(epoch_seconds, TAIPEI).isoformat()
+
+
+# A random value the portal makes: a uuid4().hex id (32 hex) or a sha256 digest (64 hex). It holds an a-f letter (32
+# random hex characters are all digits about once in 3 million), so a run of digits is never taken for one.
+RANDOM_HEX = re.compile(r"(?=[0-9]*[a-f])(?:[0-9a-f]{32}|[0-9a-f]{64})")
+
+
+def number_text(value):
+    """A stored number as it is written without its decimals when it has none: 912345678.0 is "912345678"."""
+    try:
+        if value == int(value):
+            value = int(value)
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return str(value)
+
+
+def fields(value, path=()):
+    """(path, value) for every key, string and number inside `value`. Stored JSON text (a report) is parsed, so each
+    field is seen on its own."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        value = bytes(value).decode("utf-8", "replace")
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            parsed = None
+        if not isinstance(parsed, (dict, list)):
+            yield path, value
+            return
+        value = parsed
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield path + ("<key>",), key
+            yield from fields(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from fields(item, path + (index,))
+    elif value is not None and not isinstance(value, bool):
+        yield path, value
+
+
+def stored_fields(store):
+    """fields() of every stored value, each path starting with (table, column)."""
+    for table in store.db.table_names():
+        for row in rows(store, table):
+            for column, value in row.items():
+                yield from fields(value, (table, column))
+
+
+def assert_no_private_field(case, items, private):
+    """No field is or holds a private value. Checked field by field, never by one substring test over a whole body or
+    dump: a random 32-hex id holds a given 3 digits about once in 140 (CI failed once on a deletion request id with
+    the caller's "678" in it) and epoch seconds hold any 8 digits on some day (1812345678 is 2027-06-07). So a short
+    value is not looked for inside a random id or digest (callers check those fields' format), and a number is compared
+    whole: a number has no + and no leading 0, so it is compared with the value without them too (the full number
+    stored as the number 886912345678, or 912345678.0)."""
+    for path, value in items:
+        for secret in private:
+            if not isinstance(value, str):
+                case.assertNotIn(number_text(value), {secret, secret.lstrip("+").lstrip("0")}, path)
+            elif len(secret) >= 16 or not RANDOM_HEX.fullmatch(value):
+                case.assertNotIn(secret, value, path)
 
 
 def orchestrator(now=None, call_id="1797815702.118", started=None, **changes):
@@ -511,9 +578,7 @@ class ReportTests(VoiceCallsCase):
         self.assertEqual(self.ok(self.report(final))["result"], "updated")
         row = self.call("1797815702.140")
         self.assertEqual((row["dialed"], json.loads(row["report_records"])["dialed"], row["mismatch"]), ("******5678", "******5678", "[]"))
-        for form in ("0912345678", "+886912345678", "912345678", "12345678"):
-            with self.subTest(form=form):
-                self.assertNotIn(form, database_text(self.store))
+        assert_no_private_field(self, stored_fields(self.store), MOBILE_FORMS)
         # Not a mobile number, or a mobile number that is the store's line: kept as sent.
         self.assertEqual(self.ok(self.report(orchestrator(now, call_id="1797815702.141", dialed="0227009999")), 201)["meter_reason"], "unknown_line")
         self.assertEqual(self.call("1797815702.141")["dialed"], "+886227009999")
@@ -990,6 +1055,29 @@ class PureRuleTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIsNone(vc.masked_dialed(value))
         self.assertIsNone(vc.normalize_number("******5678"))
+
+
+class PrivateFieldCheckTests(unittest.TestCase):
+    """assert_no_private_field finds the caller's number in every form a store could keep it in, and does not fail on
+    a random id, a digest or a timestamp that holds some of its digits by chance."""
+
+    def check(self, value):
+        assert_no_private_field(self, fields(value, ("t", "c")), MOBILE_FORMS)
+
+    def test_finds_the_number_in_any_form(self):
+        for value in ("0912345678", "+886912345678", "886912345678", "call 0912345678 back", '{"a": ["0912345678"]}',
+                      b"0912345678", {"0912345678": 1}, 912345678, 886912345678, 912345678.0, 886912345678.0,
+                      Decimal("886912345678"), '{"dialed": 886912345678}', "[912345678.0]",
+                      # Hex letters or a long digit run around the number do not make it a random id.
+                      "0912345678abcdef", "17978157021400912345678", "1797815702" + "0912345678" + "0" * 12):
+            with self.subTest(value=value), self.assertRaises(AssertionError):
+                self.check(value)
+
+    def test_a_random_id_digest_or_timestamp_holding_its_digits_passes(self):
+        for value in ("a12345678" + "0" * 23, "e678917b2380" + "4" + "0912345678" + "0" * 9,
+                      "f" * 10 + "0912345678" + "0" * 44, 1812345678, 1812345678.5, 41250):
+            with self.subTest(value=value):
+                self.check(value)
 
 
 if __name__ == "__main__":

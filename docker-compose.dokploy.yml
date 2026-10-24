@@ -103,7 +103,7 @@ services:
       # A6 的紀錄約定版本（RC）。A6 做完 RC v4（AI 接聽的則數、AI 只回答免推播）、上線並核對則數之後才設成 4；
       # 沒設或小於 4 時 runtime 一律回 answer_mode message_only，不會有任何一家店的 AI 回答
       PC_VOICE_A6_RC_VERSION: ${PC_VOICE_A6_RC_VERSION:-}
-      # 通話計費與中繼資料（voice_calls）保存天數：預設 1825（5 年）【待律師】；90～3660 以外的值會讓 portal 起不來
+      # 通話計費與中繼資料（voice_calls）保存天數：預設 1825（5 年）【待律師】；400～3660 以外的值會讓 portal 起不來
       PC_VOICE_CALL_RETENTION_DAYS: ${PC_VOICE_CALL_RETENTION_DAYS:-1825}
     volumes:
       - portal-data:/data
