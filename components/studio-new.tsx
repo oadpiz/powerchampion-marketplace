@@ -7,14 +7,18 @@ import {
   draftPriceLabel,
   aspectLabel,
   cleanInputs,
+  lifestyleCount,
   localized,
   newIdempotencyKey,
+  RECOMMENDED_MIN_LIFESTYLE,
+  rememberCreateWarnings,
   schemaDefaults,
   studioApi,
   studioErrorText,
   validateInputs,
   type StudioTemplate,
 } from "../lib/studio-client";
+import { AdminDialog } from "./admin-dialog";
 import { useLocale } from "./locale-provider";
 import { DraftLimitText, DraftsLeft, TopUpLinks } from "./studio-help";
 import { SchemaField } from "./studio-fields";
@@ -40,6 +44,8 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
   const [busyFields, setBusyFields] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<unknown>(null);
+  // Fewer than 2 lifestyle photos: ask before sending (soft requirement; the create is not blocked).
+  const [confirmFew, setConfirmFew] = useState<number | null>(null);
   // A create that failed after the agent attached the product images to its project: they must be uploaded again.
   const [reupload, setReupload] = useState(false);
   // One key per filled-in form: a double click or a retry after a lost response creates one project.
@@ -108,6 +114,16 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
     const found = validateInputs(template.input_schema, values, locale);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
+    const lifestyle = lifestyleCount(template.input_schema, values);
+    if (lifestyle !== null && lifestyle < RECOMMENDED_MIN_LIFESTYLE) {
+      setConfirmFew(lifestyle); // 「回去補照片」 closes it and keeps everything filled in
+      return;
+    }
+    await send();
+  }
+
+  async function send() {
+    if (!template || submitting || uploading) return;
     setSubmitting(true);
     setSubmitError(null);
     setReupload(false);
@@ -118,6 +134,7 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
         aspect,
         idempotency_key: idempotencyKey,
       });
+      rememberCreateWarnings(created.id, created.warnings); // the editor shows them once
       refreshCredits();
       go(`/studio/p/${created.id}`);
     } catch (cause) {
@@ -316,6 +333,24 @@ export function StudioNew({ navigate: go }: { navigate: (href: string) => void }
             {draftsLeft !== undefined && draftsLeft > 0 && <DraftsLeft remaining={draftsLeft} zh={zh} />}
           </div>
         </form>
+      )}
+      {confirmFew !== null && (
+        <AdminDialog
+          title={zh ? "影片可能像在播一張圖，仍要繼續？" : "The video may look like a slideshow of one picture. Continue anyway?"}
+          confirmLabel={zh ? "仍要繼續" : "Continue anyway"}
+          cancelLabel={zh ? "回去補照片" : "Go back and add photos"}
+          onClose={() => setConfirmFew(null)}
+          onConfirm={() => {
+            setConfirmFew(null);
+            void send();
+          }}
+        >
+          <p data-testid="few-lifestyle-confirm">
+            {zh
+              ? `目前有 ${confirmFew} 張情境照。建議每個商品至少 3 張照片：1 張商品照、2 張情境照（商品放在真實使用場景裡的實拍照）。`
+              : `You added ${confirmFew} lifestyle photo${confirmFew === 1 ? "" : "s"}. Each product should have at least 3 photos: 1 product shot and 2 lifestyle shots (real photos of the product where it is used).`}
+          </p>
+        </AdminDialog>
       )}
     </>
   );

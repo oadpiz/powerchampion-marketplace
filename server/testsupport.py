@@ -350,6 +350,9 @@ class FakeStudioAgent:
         # = the agent has no GET /internal/v1/uploads/{id} yet (a plain 404, no error code).
         self.upload_hashes = {}
         self.upload_lookup = True
+        # None = warnings like the agent (few_lifestyle_photos below 2 lifestyle photos); "omit" = an agent without the
+        # field; any other value = the create reply's `warnings` as given (a malformed reply).
+        self.create_warnings = None
 
     def _enter(self, name, owner=None):
         try:
@@ -432,14 +435,25 @@ class FakeStudioAgent:
         if pid in self.projects:
             if self.projects[pid]["owner"] != owner:
                 raise self.AgentError("rejected", 409, "studio_conflict")
-            return self.doc(pid)
+            return self._with_warnings(self.doc(pid), self.projects[pid]["inputs"])
         if body.get("inputs", {}).get("topic") == "BLOCKED":
             raise self.AgentError("rejected", 400, "studio_invalid_input")
         now = self.clock()
         self.projects[pid] = {"owner": owner, "template_id": body["template_id"], "aspect": body["aspect"], "inputs": body["inputs"],
                               "title": body["inputs"].get("topic"), "status": "empty", "rev": 0, "shots": 0, "rendered": False,
                               "settings": {"voice": "none", "subtitles": True}, "created_at": now, "updated_at": now}
-        return self.doc(pid)
+        return self._with_warnings(self.doc(pid), body["inputs"])
+
+    def _with_warnings(self, doc, inputs):
+        """Like the agent (shortvideo/studio/service.py create_warnings): the ecommerce template takes lifestyle photos,
+        fewer than 2 (0 too) add few_lifestyle_photos; the project is created either way."""
+        if self.create_warnings == "omit":  # an agent from before the field
+            return doc
+        if self.create_warnings is not None:
+            return dict(doc, warnings=self.create_warnings)
+        n = len(inputs.get("lifestyle_ids") or [])
+        return dict(doc, warnings=[] if n >= 2 else [{"code": "few_lifestyle_photos", "message_zh": f"情境照只有 {n} 張，建議至少 2 張。", "message_en": f"Only {n} lifestyle photos.",
+                 "lifestyle_count": n, "recommended_min": 2}])
 
     def get_project(self, owner, pid):
         self._enter("get_project", owner)

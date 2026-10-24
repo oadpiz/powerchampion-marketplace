@@ -129,6 +129,13 @@ def _mark_internal_voices(template, internal):
     return template
 
 
+def create_warnings(doc):
+    """The agent create response's `warnings` (a list of objects such as few_lifestyle_photos), passed on as they are.
+    Anything that is not a list of objects (an older agent without the field, a malformed reply) becomes []."""
+    warnings = doc.get("warnings") if isinstance(doc, dict) else None
+    return [w for w in warnings if isinstance(w, dict)] if isinstance(warnings, list) else []
+
+
 def agent_fail(error):
     """Turn an AgentError into the portal's error response."""
     if error.kind == "unconfigured":
@@ -839,8 +846,8 @@ def attach_studio(application, ctx, agent=None):
         project_id = "p" + hashlib.sha256((user["id"] + "\n" + key).encode("utf-8")).hexdigest()[:31]
         studio.claim_project(user["id"], project_id, template_id)  # rate limit: checked and reserved before any await
         try:
-            await run_in_threadpool(studio.agent.create_project, user["id"],
-                                    {"project_id": project_id, "template_id": template_id, "inputs": inputs, "aspect": aspect})
+            created_doc = await run_in_threadpool(studio.agent.create_project, user["id"],
+                                                  {"project_id": project_id, "template_id": template_id, "inputs": inputs, "aspect": aspect})
         except AgentError as error:
             if error.kind == "rejected":
                 studio.drop_unused_project(user["id"], project_id)
@@ -862,7 +869,10 @@ def attach_studio(application, ctx, agent=None):
             studio.drop_unused_project(user["id"], project_id)
             raise
         result = await studio.submit_async(op, quote) if created else {"op_id": op["op_id"], "state": op["state"]}
-        return JSONResponse({"id": project_id, "op_id": result["op_id"], "status": "drafting", "state": result["state"]}, status_code=201)
+        # The agent's create warnings (e.g. few_lifestyle_photos: fewer than 2 lifestyle photos) are passed on as they are;
+        # they never block the create. A replay of the same key (200 above) does not repeat them.
+        return JSONResponse({"id": project_id, "op_id": result["op_id"], "status": "drafting", "state": result["state"],
+                             "warnings": create_warnings(created_doc)}, status_code=201)
 
     @application.post(S + "/uploads")
     async def studio_upload(request: Request):

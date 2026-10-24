@@ -61,9 +61,10 @@ describe("lifestyle photo step", () => {
     expect(product.compareDocumentPosition(step) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(step).getByText("每個商品至少要 3 張照片：1 張商品照，加上 2 張以上商品放在真實使用場景中的實拍照（廚房、書桌、車內，或正在使用中）。只有一張商品照時，影片會像在播一張圖。")).toBeInTheDocument();
     expect(within(step).getByText("（最多 3 張）")).toBeInTheDocument();
-    // optional: a topic alone still creates the project, without lifestyle_ids
+    // optional: a topic alone still creates the project, without lifestyle_ids (after the few-photos confirmation)
     await userEvent.type(screen.getByLabelText("主題"), "保溫杯");
     await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
+    await userEvent.click(await screen.findByRole("button", { name: "仍要繼續" }));
     await waitFor(() => expect(calls.some((call) => call.method === "POST" && call.path === "/studio/projects")).toBe(true));
     const created = calls.find((call) => call.method === "POST" && call.path === "/studio/projects");
     expect((created?.body as { inputs: Record<string, unknown> }).inputs).not.toHaveProperty("lifestyle_ids");
@@ -101,6 +102,7 @@ describe("lifestyle photo step", () => {
 
     await userEvent.type(screen.getByLabelText("主題"), "保溫杯");
     await userEvent.click(screen.getByRole("button", { name: "產生分鏡（免費）" }));
+    await userEvent.click(await screen.findByRole("button", { name: "仍要繼續" })); // one lifestyle photo: asks first
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/studio/p/pnew"));
     const created = calls.find((call) => call.method === "POST" && call.path === "/studio/projects");
     expect((created?.body as { inputs: Record<string, unknown> }).inputs.lifestyle_ids).toEqual(["u_life2"]);

@@ -133,6 +133,62 @@ export type LifestyleStatus = {
   thumb_url?: string | null;
 };
 
+/** A warning of the create response (passed on from the agent; never blocks the create). */
+export type CreateWarning = {
+  code: "few_lifestyle_photos" | string;
+  message_zh?: string;
+  message_en?: string;
+  lifestyle_count?: number;
+  recommended_min?: number;
+};
+
+/** 1 product photo + at least 2 lifestyle photos per product (soft: the form asks to confirm with fewer). */
+export const RECOMMENDED_MIN_LIFESTYLE = 2;
+
+/**
+ * Lifestyle photos in the form, or null when the template takes none (no lifestyle_image upload field).
+ * Below RECOMMENDED_MIN_LIFESTYLE the form asks the seller to confirm before it sends the create.
+ */
+export function lifestyleCount(schema: JsonSchema, values: Record<string, unknown>): number | null {
+  const entry = Object.entries(schema.properties ?? {}).find(
+    ([, field]) => field["x-upload-purpose"] === "lifestyle_image" || field.items?.["x-upload-purpose"] === "lifestyle_image",
+  );
+  if (!entry) return null;
+  const value = values[entry[0]];
+  return Array.isArray(value) ? value.length : 0;
+}
+
+/** The text of one create warning, in the page's language (the agent's own text, or a generic one). */
+export function createWarningText(warning: CreateWarning, locale: Locale): string {
+  const zh = locale === "zh";
+  const own = zh ? warning.message_zh : warning.message_en;
+  if (own) return own;
+  if (warning.code === "few_lifestyle_photos")
+    return zh
+      ? "情境照不到 2 張，影片可能像在播一張圖。建議每個商品至少 3 張照片：1 張商品照、2 張情境照。"
+      : "Fewer than 2 lifestyle photos: the video may look like a slideshow of one picture. Each product should have at least 3 photos: 1 product shot and 2 lifestyle shots.";
+  return zh ? "建立時有一則提醒。" : "The project was created with a warning.";
+}
+
+// The create response's warnings, kept in memory until the new project's page shows them once (the editor takes them).
+const pendingCreateWarnings = new Map<string, CreateWarning[]>();
+
+export function rememberCreateWarnings(projectId: string, warnings: CreateWarning[] | undefined): void {
+  const list = Array.isArray(warnings) ? warnings.filter((item) => item && typeof item === "object" && typeof item.code === "string") : [];
+  if (list.length) pendingCreateWarnings.set(projectId, list);
+  else pendingCreateWarnings.delete(projectId);
+}
+
+/** The warnings waiting for this project's page (pure: safe in a state initializer). */
+export function peekCreateWarnings(projectId: string): CreateWarning[] {
+  return pendingCreateWarnings.get(projectId) ?? [];
+}
+
+/** Drop them once the page has read them, so opening the project again does not repeat them. */
+export function forgetCreateWarnings(projectId: string): void {
+  pendingCreateWarnings.delete(projectId);
+}
+
 export type Quote = {
   quote_id: string;
   type: string;
@@ -199,7 +255,7 @@ export const studioApi = {
   project: (id: string, signal?: AbortSignal) => portalRequest<StudioProject>(`${S}/projects/${id}`, { signal }),
   credits: (signal?: AbortSignal) => portalRequest<StudioCredits>(`${S}/credits`, { signal }),
   create: (body: { template_id: string; inputs: Record<string, unknown>; aspect: string; idempotency_key: string }) =>
-    portalRequest<{ id: string; op_id: string; status: string; state: string }>(`${S}/projects`, json(body)),
+    portalRequest<{ id: string; op_id: string; status: string; state: string; warnings?: CreateWarning[] }>(`${S}/projects`, json(body)),
   settings: (id: string, body: Record<string, unknown>) => portalRequest<StudioProject>(`${S}/projects/${id}/settings`, json(body)),
   editShot: (id: string, index: number, body: Record<string, unknown>) =>
     portalRequest<StudioProject>(`${S}/projects/${id}/shots/${index}/edit`, json(body)),

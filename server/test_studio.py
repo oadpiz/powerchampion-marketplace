@@ -1679,6 +1679,53 @@ class StudioLifestylePhotoTests(StudioCase):
         self.assertEqual((refused.status_code, refused.json()["error"]), (404, "studio_not_found"))
         self.assertEqual(self.confirmed(), {})
 
+    def create_with_lifestyle(self, client, n_life):
+        photo = self.ticket(client, dict(self.PHOTO, rights_confirmed=True))
+        life = [self.ticket(client, dict(self.LIFE, rights_confirmed=True)) for _ in range(n_life)]
+        inputs = {"topic": "tea", "image_ids": [photo], **({"lifestyle_ids": life} if life else {})}
+        return self.post(client, "/studio/projects", {"template_id": "ecommerce", "aspect": "9:16", "idempotency_key": self.key(), "inputs": inputs})
+
+    def test_create_passes_the_agents_few_lifestyle_photos_warning_and_still_creates(self):
+        """Soft photo-count requirement (1 product photo + at least 2 lifestyle photos): fewer is a warning, not a 400."""
+        client, user_id = self.customer()
+        self.grant(user_id, 100)
+        for n_life in (0, 1, 2, 3):
+            response = self.create_with_lifestyle(client, n_life)
+            self.assertEqual(response.status_code, 201, response.text)
+            body = response.json()
+            self.assertEqual(set(body), {"id", "op_id", "status", "state", "warnings"})
+            self.assertEqual(self.ops()[body["op_id"]]["state"], "submitted")  # the draft runs either way
+            agent_warnings = self.agent._with_warnings({}, self.agent.projects[body["id"]]["inputs"])["warnings"]
+            self.assertEqual(body["warnings"], agent_warnings, n_life)  # passed on as they are
+            if n_life < 2:
+                self.assertEqual([(w["code"], w["lifestyle_count"], w["recommended_min"]) for w in body["warnings"]],
+                                 [("few_lifestyle_photos", n_life, 2)])
+            else:
+                self.assertEqual(body["warnings"], [])
+            self.agent.finish(body["op_id"])  # at most two active steps per customer
+            client.get(BASE + "/studio/projects/" + body["id"])  # lazy reconcile
+
+    def test_create_warnings_from_an_agent_without_the_field_or_malformed_are_an_empty_list(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 100)
+        for given, expected in (("omit", []), ("nope", []), ([{"code": "x"}, "junk", 3], [{"code": "x"}])):
+            self.agent.create_warnings = given
+            response = self.create(client)
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertEqual(response.json()["warnings"], expected, given)
+            self.agent.finish(response.json()["op_id"])
+            client.get(BASE + "/studio/projects/" + response.json()["id"])  # lazy reconcile
+
+    def test_a_create_replay_does_not_repeat_the_warnings(self):
+        client, user_id = self.customer()
+        self.grant(user_id, 100)
+        body = {"template_id": "ecommerce", "aspect": "9:16", "idempotency_key": self.key(), "inputs": {"topic": "tea"}}
+        first = self.post(client, "/studio/projects", body)
+        self.assertEqual([w["code"] for w in first.json()["warnings"]], ["few_lifestyle_photos"])
+        replay = self.post(client, "/studio/projects", body)
+        self.assertEqual(replay.status_code, 200)
+        self.assertNotIn("warnings", replay.json())
+
 
 if __name__ == "__main__":
     unittest.main()

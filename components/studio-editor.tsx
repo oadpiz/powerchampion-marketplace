@@ -6,6 +6,7 @@ import { PortalError } from "../lib/portal-client";
 import {
   draftPriceLabel,
   aspectLabel,
+  createWarningText,
   downloadUrl,
   isInternalVoice,
   isVideoUrl,
@@ -21,6 +22,9 @@ import {
   projectStatusLabel,
   studioApi,
   studioErrorText,
+  forgetCreateWarnings,
+  peekCreateWarnings,
+  type CreateWarning,
   type OpResult,
   type Quote,
   type StudioShot,
@@ -79,12 +83,21 @@ export function StudioEditor({ projectId }: { projectId: string }) {
   const [pending, setPending] = useState<Pending | null>(null);
   const [actionError, setActionError] = useState<unknown>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  // The create response's warnings (e.g. few_lifestyle_photos), shown once on the new project's page. Kept apart from
+  // `notice`, which the draft's "finished" message replaces.
+  const [created, setCreated] = useState<{ projectId: string; warnings: CreateWarning[] }>(() => ({
+    projectId,
+    warnings: peekCreateWarnings(projectId),
+  }));
+  const createWarnings = created.projectId === projectId ? created.warnings : [];
   const [quoting, setQuoting] = useState<string | null>(null);
   const watched = useRef<string | null>(null);
   const submitting = useRef(false);
   const [submitted, setSubmitted] = useState<string | null>(null);
   const ids = useId();
   const mediaRetry = useRef(0);
+
+  useEffect(() => forgetCreateWarnings(projectId), [projectId]); // shown once: opening the project again has none
 
   useEffect(() => {
     const controller = new AbortController();
@@ -372,6 +385,14 @@ export function StudioEditor({ projectId }: { projectId: string }) {
               : opStateLabel(project.active_op.state, locale)}
           </span>
           <small>{zh ? "處理中暫時不能編輯；完成後會自動更新，可以先離開此頁。" : "Editing is paused until it finishes. This page updates by itself; you can leave and come back."}</small>
+        </div>
+      )}
+      {createWarnings.length > 0 && (
+        <div className="studio-notice studio-notice-warn" role="status" data-testid="create-warnings">
+          <span>{createWarnings.map((warning) => createWarningText(warning, locale)).join(" ")}</span>
+          <button type="button" className="portal-text-button" onClick={() => setCreated({ projectId, warnings: [] })}>
+            {zh ? "關閉" : "Dismiss"}
+          </button>
         </div>
       )}
       {notice && (
