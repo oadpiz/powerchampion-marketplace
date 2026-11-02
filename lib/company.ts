@@ -64,10 +64,6 @@ export type CompanyContent = {
     founded: string;
     websiteBy: string;
   };
-  partners: {
-    title: string;
-    items: { name: string; description: string; phone: string; email: string; href: string }[];
-  };
   home: {
     heading: string;
     context: string;
@@ -201,12 +197,6 @@ export const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent> & Record<Loc
       founded: "Founded 2018 · Taipei City, Taiwan",
       websiteBy: "Website by 一點子創意工作室 (CatchATW)",
     },
-    partners: {
-      title: "Technology partners",
-      items: [
-        { name: "Albatron Technology Co. Ltd.", description: "Supermicro servers, NVIDIA GPU systems, and Micron storage solutions.", phone: "+886-2-8227-3277", email: "sales@albatron.com.tw", href: "https://www.albatron.com.tw" },
-      ],
-    },
     home: {
       heading: "Infrastructure context from counterparty disclosure",
       context: "Counterparty-reported expected contracted hosting capacity; not live or completed deployment.",
@@ -296,12 +286,6 @@ export const COMPANY_CONTENT: Record<CompanyLocale, CompanyContent> & Record<Loc
       title: "公司資訊",
       founded: "成立於 2018 · 台灣台北市",
       websiteBy: "網站由一點子創意工作室（CatchATW）製作",
-    },
-    partners: {
-      title: "技術合作夥伴",
-      items: [
-        { name: "Albatron Technology Co. Ltd.", description: "Supermicro 伺服器、NVIDIA GPU 系統與 Micron 儲存方案。", phone: "+886-2-8227-3277", email: "sales@albatron.com.tw", href: "https://www.albatron.com.tw" },
-      ],
     },
     home: {
       heading: "交易對手揭露的基礎設施脈絡",
