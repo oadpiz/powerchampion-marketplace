@@ -202,7 +202,7 @@ export function CompanyContent() {
         <p>{content.disclosure}</p>
       </section>
 
-      {/* Structured contact + identity + partners */}
+      {/* Structured contact + identity */}
       <section aria-labelledby="company-contact-title" className="company-contact-grid">
         <div className="contact-block">
           <h2 id="company-contact-title">{content.contact.title}</h2>
@@ -238,21 +238,6 @@ export function CompanyContent() {
               <dd>{content.identity.websiteBy}</dd>
             </div>
           </dl>
-        </div>
-
-        <div className="contact-block">
-          <h2>{content.partners.title}</h2>
-          {content.partners.items.map((partner, i) => (
-            <div key={i} className="partner-card">
-              <a href={partner.href} rel="noreferrer" target="_blank">{partner.name}</a>
-              <p>{partner.description}</p>
-              <p className="partner-contact">
-                <a href={`tel:${partner.phone.replace(/[-\s]/g, "")}`}>{partner.phone}</a>
-                {" · "}
-                <a href={`mailto:${partner.email}`}>{partner.email}</a>
-              </p>
-            </div>
-          ))}
         </div>
       </section>
 
