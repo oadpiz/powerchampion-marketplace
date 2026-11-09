@@ -1,0 +1,36 @@
+# Power Champion
+
+> Power Champion (https://powerchampion.ai) is an AI platform by Power Champion Investment Limited: one OpenAI-compatible API at b300.powerchampion.ai for open AI models covering text, vision, images, speech, and retrieval — with published API pricing, prepaid credits, integration tools, and dedicated NVIDIA HGX GPU infrastructure for enterprise AI workloads. Site languages: English, 繁體中文, 日本語, 한국어.
+
+## Company
+
+- Legal name: Power Champion Investment Limited — founded 2018, Taipei City, Taiwan
+- Address: 7F, No. 38-1, Section 1, Ren'ai Rd, Zhongzheng District, Taipei City 100, Taiwan
+- Tel: +886 2 2396 0605 · Email: info@powerchampion.org
+- Capacity context is counterparty-reported (Azio AI Holdings SEC Exhibit 99.1, July 9, 2026): expected initial hosting capacity of approximately 3.1 MW with potential expansion up to 12 MW. This does not state that Power Champion has completed deployment or owns a data centre.
+
+## API Platform
+
+- OpenAI-compatible API at b300.powerchampion.ai: chat, embeddings, image, and speech endpoints; prepaid balance, one key, pay per use.
+- [Model catalog](https://powerchampion.ai/models): open AI models for text, vision, images, speech, and retrieval with published API rates.
+- [Pricing](https://powerchampion.ai/pricing): published API rates for tokens, images, and audio, with prepaid credit options and a workload cost calculator.
+- [API playground](https://powerchampion.ai/playground): test model API requests with your own key and inspect responses and token usage.
+- [Console](https://powerchampion.ai/console): check your prepaid API balance with your key.
+- [Integrations](https://powerchampion.ai/integrations): model-specific Python, JavaScript, and cURL examples.
+- [Docs](https://powerchampion.ai/docs) · [API reference](https://powerchampion.ai/docs/api)
+- [Platform](https://powerchampion.ai/platform) · [Compare models](https://powerchampion.ai/compare) · [Service status](https://powerchampion.ai/status)
+
+## AI Agents
+
+- [Agent platform](https://powerchampion.ai/agent-platform): turn CSV data, proposals and meeting notes into editable Word reports, decision briefs and action lists.
+- [AI assistants & custom agent services](https://powerchampion.ai/agents): instruction-based assistants for support, research, content, and coding; custom agents built around company knowledge, systems, and workflows.
+
+## GPU Infrastructure
+
+- [Dedicated GPU infrastructure](https://powerchampion.ai/infrastructure): dedicated NVIDIA HGX GPU capacity (H100/H200, HGX H200, L40S/A100) on NVIDIA HGX reference architecture with 400G/800G InfiniBand networking, bare-metal deployments, isolated enterprise clusters, and custom IDC deployment.
+- Services: serverless GPU compute, always-on GPU instances, S3-compatible storage, model training, enterprise clusters.
+
+## About
+
+- [Company](https://powerchampion.ai/company) · [Contact](https://powerchampion.ai/contact) · [FAQ](https://powerchampion.ai/faq)
+- [Trust & service policies](https://powerchampion.ai/trust) · [Terms](https://powerchampion.ai/terms) · [Privacy](https://powerchampion.ai/privacy) · [Data retention](https://powerchampion.ai/data-retention)

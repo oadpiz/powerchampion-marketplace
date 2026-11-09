@@ -25,11 +25,39 @@
 
 # Content signals
 search: yes
-ai-input: no
-ai-train: no
+ai-input: yes
+ai-train: yes
 
 # Standard crawl rules. Private pages also return noindex; robots is not access control.
 User-agent: *
+Allow: /
+
+# AI crawlers and retrieval bots (AIEO): explicitly allowed.
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
 Allow: /
 
 # Sitemap
