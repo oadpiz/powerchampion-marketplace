@@ -1,0 +1,83 @@
+# Power Champion — full platform reference for LLMs
+
+> Extended version of https://powerchampion.ai/llms.txt. Power Champion (https://powerchampion.ai) is an AI platform by Power Champion Investment Limited: one OpenAI-compatible API at b300.powerchampion.ai for open AI models covering text, vision, images, speech, video, and retrieval — with published API pricing, prepaid credits, integration tools, and dedicated NVIDIA HGX GPU infrastructure for enterprise AI workloads. All prices are published catalog rates in USD.
+
+## Company
+
+- Legal name: Power Champion Investment Limited — founded 2018, Taipei City, Taiwan
+- Address: 7F, No. 38-1, Section 1, Ren'ai Rd, Zhongzheng District, Taipei City 100, Taiwan
+- Tel: +886 2 2396 0605 · Email: info@powerchampion.org
+- Site languages: English, 繁體中文, 日本語, 한국어
+
+## Model catalog and published rates
+
+Rates below mirror the tables on https://powerchampion.ai/pricing. Text models bill per million input and output tokens; image models bill per generated image; audio models bill per minute of audio; video models bill per second of output video. Actual charges follow measured usage; the live gateway catalog (https://b300.powerchampion.ai/catalog.json) stays the authority.
+
+### Text and multimodal models (per 1M tokens)
+
+- [GLM 5.2 FP8](https://powerchampion.ai/models/glm-5.2-fp8) (`glm-5.2-fp8`) — reasoning, coding, multilingual — input $0.93 / output $3.00 — 131K context
+- [GLM 5.3 Flash Uncensored](https://powerchampion.ai/models/glm-5.3-flash-uncensored) (`glm-5.3-flash-uncensored`) — reasoning, general — input $0.30 / output $1.00 — 33K context
+- [Qwen3-VL 30B](https://powerchampion.ai/models/qwen3-vl-30b) (`qwen3-vl-30b`) — vision, multilingual — input $0.30 / output $1.20 — 33K context
+
+### Embedding and reranking models (per 1M tokens)
+
+- [BGE-M3](https://powerchampion.ai/models/bge-m3) (`bge-m3`) — multilingual embeddings — $0.02 — 8K context
+- [BGE Reranker v2-m3](https://powerchampion.ai/models/bge-reranker-v2-m3) (`bge-reranker-v2-m3`) — reranking — $0.02 — 8K context
+
+### Image models (per generated image)
+
+- [Flux Schnell](https://powerchampion.ai/models/flux-schnell) (`flux-schnell`) — PNG image generation from text — $0.01 per image
+- [Chroma1 HD](https://powerchampion.ai/models/chroma1-hd) (`chroma1-hd`) — high-definition image generation — $0.01 per image
+
+### Audio models (per minute of audio)
+
+- [Whisper Large v3](https://powerchampion.ai/models/whisper-large-v3) (`whisper-large-v3`) — speech recognition / transcription — $0.01 per minute
+- [IndexTTS2](https://powerchampion.ai/models/indextts2) (`indextts2`) — text-to-speech synthesis — $0.03 per minute
+
+### Video models (per second of output video)
+
+- [Wan 2.2 TI2V-5B 720p](https://powerchampion.ai/models/wan2.2-ti2v-5b-720p) (`wan2.2-ti2v-5b-720p`) — text(-to-video) generation, 720p MP4 — $0.05 per second
+
+## Prepaid balance
+
+- One API key, pay per use; balance and usage are visible in the [console](https://powerchampion.ai/console) and via the billing endpoints.
+- Top-up packs (fulfilled manually with redeem codes): Starter US$10 → US$10.00 balance; Builder US$50 → US$52.50 (5% bonus); Scale US$200 → US$224.00 (12% bonus).
+- Redeem codes are applied with `POST /v1/redeem`.
+
+## API endpoints and capabilities
+
+Base URL: `https://b300.powerchampion.ai/v1` — OpenAI-compatible HTTPS API. Every `/v1/*` request authenticates with a Bearer key header. Live model readiness: `GET https://b300.powerchampion.ai/status.json` (no key required); model list and per-token prices for your key: `GET /v1/models`.
+
+The [API developer guide](https://powerchampion.ai/docs/api) (version 1.0, snapshot 2026-10-20) covers, in 14 sections:
+
+1. [Overview](https://powerchampion.ai/docs/api#overview) — what the platform serves and how the guide is organized
+2. [Quick start](https://powerchampion.ai/docs/api#quick-start) — first request in cURL, Python, JavaScript
+3. [Authentication and key management](https://powerchampion.ai/docs/api#auth) — Bearer keys, rotation, safety
+4. [Model catalog and pricing](https://powerchampion.ai/docs/api#models) — models table, prices, live status
+5. [Chat API](https://powerchampion.ai/docs/api#chat) — `POST /v1/chat/completions` for glm-5.2-fp8, glm-5.3-flash-uncensored, and vision with qwen3-vl-30b
+6. [Completions, embeddings and reranking APIs](https://powerchampion.ai/docs/api#text-apis) — `POST /v1/completions`, `POST /v1/embeddings` (bge-m3), `POST /v1/rerank` (bge-reranker-v2-m3)
+7. [Image generation API](https://powerchampion.ai/docs/api#images) — `POST /v1/images/generations` (also `/v1/images`) returns PNG as base64 — flux-schnell, chroma1-hd
+8. [Text-to-speech and speech recognition APIs](https://powerchampion.ai/docs/api#audio) — `POST /v1/audio/speech` (indextts2), `POST /v1/audio/transcriptions` (whisper-large-v3)
+9. [Video generation API](https://powerchampion.ai/docs/api#video) — `POST /v1/videos` asynchronous jobs: submit, poll, download — wan2.2-ti2v-5b-720p
+10. [Billing: credit, balance and usage](https://powerchampion.ai/docs/api#billing) — `POST /v1/redeem`, balance and usage endpoints
+11. [Rate limits and quotas](https://powerchampion.ai/docs/api#rate-limits)
+12. [Error handling](https://powerchampion.ai/docs/api#errors) — status codes and error bodies
+13. [Best practices and security](https://powerchampion.ai/docs/api#best-practices)
+14. [Appendix](https://powerchampion.ai/docs/api#appendix)
+
+## Tools and platform pages
+
+- [API playground](https://powerchampion.ai/playground): test model API requests with your own key and inspect responses and token usage.
+- [Integrations](https://powerchampion.ai/integrations): model-specific Python, JavaScript, and cURL examples.
+- [Model catalog](https://powerchampion.ai/models) · [Compare models](https://powerchampion.ai/compare) · [Pricing](https://powerchampion.ai/pricing) · [Console](https://powerchampion.ai/console) · [Service status](https://powerchampion.ai/status)
+- [Agent platform](https://powerchampion.ai/agent-platform): turn CSV data, proposals and meeting notes into editable Word reports, decision briefs and action lists.
+- [Dedicated GPU infrastructure](https://powerchampion.ai/infrastructure): dedicated NVIDIA HGX GPU capacity (H100/H200, HGX H200, L40S/A100) with 400G/800G InfiniBand networking, bare-metal deployments, isolated enterprise clusters, and custom IDC deployment.
+
+## Policies
+
+- [Trust & service policies](https://powerchampion.ai/trust) · [Terms](https://powerchampion.ai/terms) · [Privacy](https://powerchampion.ai/privacy) · [Data retention](https://powerchampion.ai/data-retention)
+- Capacity context is counterparty-reported (Azio AI Holdings SEC Exhibit 99.1, July 9, 2026): expected initial hosting capacity of approximately 3.1 MW with potential expansion up to 12 MW. This does not state that Power Champion has completed deployment or owns a data centre.
+
+## About this file
+
+- Summary version: https://powerchampion.ai/llms.txt

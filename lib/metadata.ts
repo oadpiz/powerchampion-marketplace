@@ -145,7 +145,7 @@ export function metadataForPage(
   const ogLocale = { en: "en_US", "zh-Hant": "zh_TW", ja: "ja_JP", ko: "ko_KR" }[language];
   const agentPage = pathname.endsWith("/agent-platform");
   // Fingerprint the public asset so CDN caches update with its contents.
-  const image = agentPage ? `${SITE_ORIGIN}/og-agents.png?v=ad72019e` : SOCIAL_IMAGE;
+  const image = agentPage ? `${SITE_ORIGIN}/og-agents.png?v=8dc9afa2` : SOCIAL_IMAGE;
   const imageAlt = agentPage ? "Power Champion Agents — Reports, analysis and action lists" : "Power Champion — model APIs and dedicated GPU infrastructure";
   return {
     title,

@@ -2,6 +2,8 @@
 
 > Power Champion (https://powerchampion.ai) is an AI platform by Power Champion Investment Limited: one OpenAI-compatible API at b300.powerchampion.ai for open AI models covering text, vision, images, speech, and retrieval — with published API pricing, prepaid credits, integration tools, and dedicated NVIDIA HGX GPU infrastructure for enterprise AI workloads. Site languages: English, 繁體中文, 日本語, 한국어.
 
+Optional: the extended reference with the full model catalog (rates per model), prepaid packs, and the 14-section API endpoint summary is at https://powerchampion.ai/llms-full.txt.
+
 ## Company
 
 - Legal name: Power Champion Investment Limited — founded 2018, Taipei City, Taiwan

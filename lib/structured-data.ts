@@ -1,5 +1,5 @@
 /** Schema.org descriptions of content that already exists on the page. */
-import type { ModelDefinition } from "./models";
+import { MODEL_CATALOG, type ModelDefinition } from "./models";
 import { SITE_ORIGIN } from "./seo";
 
 export type FaqSource = { question: string; answer: string };
@@ -44,6 +44,25 @@ function offer(model: ModelDefinition) {
       // Published catalog rate, not a quote or a live billing reading.
       valueAddedTaxIncluded: false,
     },
+  };
+}
+
+/** The full published rate card, mirroring the table the pricing page renders. */
+export function offerCatalogJsonLd(path: string) {
+  const url = new URL(path, SITE_ORIGIN).href;
+  return {
+    "@context": "https://schema.org",
+    "@type": "OfferCatalog",
+    "@id": `${url}#offer-catalog`,
+    url,
+    name: "Power Champion model API rate card",
+    numberOfItems: MODEL_CATALOG.length,
+    itemListElement: MODEL_CATALOG.map((model) => ({
+      "@type": "Offer",
+      name: `${model.name} API`,
+      itemOffered: { "@type": "Service", name: `${model.name} API`, url: `${SITE_ORIGIN}/models/${model.id}` },
+      ...offer(model),
+    })),
   };
 }
 
