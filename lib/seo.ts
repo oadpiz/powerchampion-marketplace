@@ -9,6 +9,7 @@ export const PUBLIC_ROUTES = [
   "/", "/agents", "/agent-platform", "/platform", "/models", "/compare", "/pricing", "/playground",
   "/integrations", "/docs", "/docs/api", "/infrastructure", "/company", "/contact",
   "/trust", "/status", "/faq", "/terms", "/privacy", "/data-retention",
+  "/alternative-to-openai", "/for-ai",
 ] as const;
 const PRIVATE_ROUTES = ["/chat", "/tasks", "/agents/build", "/account", "/admin", "/studio", "/login", "/register", "/console", "/api"];
 
