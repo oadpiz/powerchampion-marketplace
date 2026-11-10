@@ -721,42 +721,107 @@ test("the built server answers the phone agent runtime route itself, and the bro
   }
 });
 
-test("server-renders the full API developer guide", async () => {
+test("server-renders the API reference hub with a card per guide section", async () => {
   const response = await render("/docs/api");
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /<h1[^>]*>Power Champion API Developer Guide<\/h1>/);
   assert.match(html, /Version 1\.0 · 2026-10-20/);
   assert.equal((html.match(/<main[ >]/g) ?? []).length, 1);
-  assert.match(html, /aria-label="On this page"/);
-  const sections = [
-    ["overview", "1. Overview"],
-    ["quick-start", "2. Quick start"],
-    ["auth", "3. Authentication and key management"],
-    ["models", "4. Model catalog and pricing"],
-    ["chat", "5. Chat API"],
-    ["text-apis", "6. Completions, embeddings and reranking APIs"],
-    ["images", "7. Image generation API"],
-    ["audio", "8. Text-to-speech and speech recognition APIs"],
-    ["video", "9. Video generation API"],
-    ["billing", "10. Billing: credit, balance and usage"],
-    ["rate-limits", "11. Rate limits and quotas"],
-    ["errors", "12. Error handling"],
-    ["best-practices", "13. Best practices and security"],
-    ["appendix", "14. Appendix"],
+  assert.match(html, /aria-label="All sections"/);
+  // Every guide section is linked as its own citable /docs/api/<slug> page.
+  const cards = [
+    ["overview", "Overview"],
+    ["quick-start", "Quick start"],
+    ["authentication", "Authentication &amp; keys"],
+    ["models", "Models &amp; pricing"],
+    ["chat", "Chat API"],
+    ["embeddings", "Embeddings &amp; reranking"],
+    ["images", "Image generation"],
+    ["speech", "Speech (TTS &amp; STT)"],
+    ["video", "Video generation"],
+    ["billing", "Billing &amp; usage"],
+    ["rate-limits", "Rate limits"],
+    ["errors", "Error handling"],
+    ["best-practices", "Best practices"],
+    ["appendix", "Appendix"],
   ];
-  for (const [id, heading] of sections) {
-    assert.match(html, new RegExp(`<h2 id="${id}"[^>]*>${escaped(heading)}</h2>`), heading);
-    assert.match(html, new RegExp(`<a href="#${id}">${escaped(heading)}</a>`), `TOC: ${heading}`);
+  for (const [slug, cardTitle] of cards) {
+    assert.match(html, new RegExp(`<a href="/docs/api/${slug}">${escaped(cardTitle)}</a>`), slug);
   }
+  // The hub is an overview: the full manual now lives on the section pages.
+  assert.doesNotMatch(html, /<h2 id="chat"[^>]*>5\. Chat API<\/h2>/);
+  assert.doesNotMatch(html, /<h2 id="appendix"[^>]*>14\. Appendix<\/h2>/);
+});
+
+test("server-renders every guide section as its own page with metadata, breadcrumbs and a pager", async () => {
+  const pages = [
+    ["overview", "1. Overview", /Base URL|POST \/v1\/chat\/completions/],
+    ["quick-start", "2. Quick start", /pip install openai/],
+    ["authentication", "3. Authentication and key management", /sk-b300-/],
+    ["models", "4. Model catalog and pricing", /glm-5\.2-fp8/],
+    ["chat", "5. Chat API", /chat\.completion/],
+    ["embeddings", "6. Completions, embeddings and reranking APIs", /relevance_score/],
+    ["images", "7. Image generation API", /flux-schnell/],
+    ["speech", "8. Text-to-speech and speech recognition APIs", /up to 25 MB/],
+    ["video", "9. Video generation API", /POST \/v1\/videos/],
+    ["billing", "10. Billing: credit, balance and usage", /dashboard\/billing\/usage/],
+    ["rate-limits", "11. Rate limits and quotas", /Retry-After/],
+    ["errors", "12. Error handling", /Prepaid balance exhausted/],
+    ["best-practices", "13. Best practices and security", /Best practices/],
+    ["appendix", "14. Appendix", /Not currently supported/],
+  ];
+  for (const [slug, heading, content] of pages) {
+    const response = await render(`/docs/api/${slug}`);
+    assert.equal(response.status, 200, slug);
+    const html = await response.text();
+    assert.match(html, new RegExp(`<h1 id="[^"]+"[^>]*>${escaped(heading)}</h1>`), `${slug}: heading`);
+    assert.equal((html.match(/<main[ >]/g) ?? []).length, 1, `${slug}: one main`);
+    assert.match(html, new RegExp(`<link rel="canonical" href="https://powerchampion\\.ai/docs/api/${slug}"`), `${slug}: canonical`);
+    assert.match(html, /"@type":"BreadcrumbList"/, `${slug}: breadcrumb JSON-LD`);
+    assert.match(html, new RegExp(`"item":"https://powerchampion\\.ai/docs/api/${slug}"`), `${slug}: breadcrumb item`);
+    assert.match(html, content, `${slug}: section content`);
+    assert.match(html, /api-ref-pager/, `${slug}: pager`);
+    assert.doesNotMatch(html, /平台優化建議|勿對外|api-audit/, `${slug}: no internal-only content`);
+  }
+
+  // Spot-check keyword-optimized titles and the previous/next pager wiring.
+  const chat = await (await render("/docs/api/chat")).text();
+  assert.match(chat, /<title>Chat API — OpenAI-Compatible Chat Completions \| Power Champion<\/title>/);
+  assert.match(chat, /<a class="api-ref-pager-prev" href="\/docs\/api\/models" rel="prev">/);
+  assert.match(chat, /<a class="api-ref-pager-next" href="\/docs\/api\/embeddings" rel="next">/);
+
+  const errors = await (await render("/docs/api/errors")).text();
+  assert.match(errors, /<title>Error Handling — API Status Codes &amp; Fixes \| Power Champion<\/title>/);
+  assert.match(errors, /<h3 id="check-order"[^>]*>Check order<\/h3>/);
+  assert.match(errors, /RETRYABLE = \{429, 502, 503\}/);
+  assert.match(errors, /<a class="api-ref-pager-prev" href="\/docs\/api\/rate-limits" rel="prev">/);
+  assert.match(errors, /<a class="api-ref-pager-next" href="\/docs\/api\/best-practices" rel="next">/);
+
+  const modelsPage = await (await render("/docs/api/models")).text();
   for (const id of ["glm-5.2-fp8", "glm-5.3-flash-uncensored", "qwen3-vl-30b", "bge-m3", "bge-reranker-v2-m3", "flux-schnell", "chroma1-hd", "indextts2", "whisper-large-v3"]) {
-    assert.match(html, new RegExp(`<code>${escaped(id)}</code>`), id);
+    assert.match(modelsPage, new RegExp(`<code>${escaped(id)}</code>`), id);
   }
-  assert.match(html, /up to 25 MB/);
-  assert.match(html, /Prepaid balance exhausted/);
-  assert.match(html, /<h3 id="check-order"[^>]*>Check order<\/h3>/);
-  assert.match(html, /RETRYABLE = \{429, 502, 503\}/);
-  assert.doesNotMatch(html, /<li>Video generation\.<\/li>/);
-  assert.match(html, /POST \/v1\/videos/);
-  assert.doesNotMatch(html, /平台優化建議|勿對外|api-audit/);
+  const video = await (await render("/docs/api/video")).text();
+  assert.doesNotMatch(video, /<li>Video generation\.<\/li>/);
+
+  // The first page has no previous link; the last has no next link.
+  const overview = await (await render("/docs/api/overview")).text();
+  assert.doesNotMatch(overview, /api-ref-pager-prev/);
+  const appendix = await (await render("/docs/api/appendix")).text();
+  assert.doesNotMatch(appendix, /api-ref-pager-next/);
+
+  // Unknown sections are a 404, not a page.
+  assert.equal((await render("/docs/api/not-a-section")).status, 404);
+});
+
+test("serves keyword-optimized model landing titles and permanently redirects model aliases", async () => {
+  const glm = await (await render("/models/glm-5.2-fp8")).text();
+  assert.match(glm, /<title>GLM-5\.2 API — Pricing, Docs &amp; Quick Start \| Power Champion<\/title>/);
+  const qwen = await (await render("/models/qwen3-vl-30b")).text();
+  assert.match(qwen, /<title>Qwen3 VL API — Vision Model Pricing &amp; Integration \| Power Champion<\/title>/);
+  // The short keyword URL permanently redirects to the canonical model page.
+  const alias = await render("/models/glm-5.2");
+  assert.equal(alias.status, 308);
+  assert.equal(alias.headers.get("location"), "/models/glm-5.2-fp8");
 });

@@ -3,14 +3,24 @@
 import { Fragment, useState, type ReactNode } from "react";
 import {
   API_REFERENCE_COPY,
+  API_REFERENCE_NAV,
+  API_REFERENCE_PAGES,
+  apiReferenceSectionFor,
   type ApiReferenceBlock,
   type ApiReferenceCopy,
+  type ApiReferenceSection,
 } from "../lib/api-reference";
 import type { GatewayStatus } from "../lib/gateway-status";
 import { useLocale } from "./locale-provider";
 
 type Props = {
   gateway: GatewayStatus | null;
+  /**
+   * When set, render only the matching guide section as its own page
+   * (/docs/api/<slug>) with previous/next section navigation. Unset renders
+   * the complete guide, as used by the unit tests.
+   */
+  slug?: string;
 };
 
 const TOKEN = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
@@ -155,9 +165,81 @@ function Block({ block, copy, gateway }: { block: ApiReferenceBlock; copy: ApiRe
   }
 }
 
-export function ApiReferenceContent({ gateway }: Props) {
+function SectionBody({
+  section,
+  copy,
+  gateway,
+}: {
+  section: ApiReferenceSection;
+  copy: ApiReferenceCopy;
+  gateway: GatewayStatus | null;
+}) {
+  return (
+    <>
+      {section.blocks.map((block, index) => (
+        <Block block={block} copy={copy} gateway={gateway} key={`${section.id}-${index}`} />
+      ))}
+    </>
+  );
+}
+
+/** One guide section as a standalone page, with a previous/next pager. */
+function ApiSectionPage({
+  gateway,
+  slug,
+  copy,
+  locale,
+}: {
+  gateway: GatewayStatus | null;
+  slug: string;
+  copy: ApiReferenceCopy;
+  locale: keyof typeof API_REFERENCE_COPY;
+}) {
+  const index = API_REFERENCE_PAGES.findIndex((page) => page.slug === slug);
+  if (index === -1) return null;
+  const page = API_REFERENCE_PAGES[index];
+  const section = apiReferenceSectionFor(copy, page.sectionId);
+  const previous = index > 0 ? API_REFERENCE_PAGES[index - 1] : null;
+  const next = index < API_REFERENCE_PAGES.length - 1 ? API_REFERENCE_PAGES[index + 1] : null;
+  const nav = API_REFERENCE_NAV[locale];
+
+  return (
+    <main className="docs-page api-ref-page" id="main-content">
+      <section aria-labelledby={section.id} className="docs-intro">
+        <p className="eyebrow">{copy.kicker}</p>
+        <h1 id={section.id}>{section.title}</h1>
+        <p className="docs-notice">{copy.version}</p>
+        <p className="api-ref-back"><a href="/docs/api">← {nav.backToApiRef}</a></p>
+      </section>
+
+      <section aria-labelledby={section.id} className="docs-quick-start api-ref-section">
+        <SectionBody section={section} copy={copy} gateway={gateway} />
+      </section>
+
+      <nav aria-label={nav.pagerLabel} className="api-ref-pager">
+        {previous ? (
+          <a className="api-ref-pager-prev" href={`/docs/api/${previous.slug}`} rel="prev">
+            ← {nav.previous}: {previous.card[locale].title}
+          </a>
+        ) : <span aria-hidden="true" />}
+        <a href="/docs/api">{nav.allSections}</a>
+        {next ? (
+          <a className="api-ref-pager-next" href={`/docs/api/${next.slug}`} rel="next">
+            {nav.next}: {next.card[locale].title} →
+          </a>
+        ) : <span aria-hidden="true" />}
+      </nav>
+    </main>
+  );
+}
+
+export function ApiReferenceContent({ gateway, slug }: Props) {
   const { locale } = useLocale();
   const copy = API_REFERENCE_COPY[locale];
+
+  if (slug !== undefined) {
+    return <ApiSectionPage gateway={gateway} slug={slug} copy={copy} locale={locale} />;
+  }
 
   return (
     <main className="docs-page api-ref-page" id="main-content">
@@ -181,9 +263,7 @@ export function ApiReferenceContent({ gateway }: Props) {
       {copy.sections.map((section) => (
         <section aria-labelledby={section.id} className="docs-quick-start api-ref-section" key={section.id}>
           <h2 id={section.id}>{section.title}</h2>
-          {section.blocks.map((block, index) => (
-            <Block block={block} copy={copy} gateway={gateway} key={`${section.id}-${index}`} />
-          ))}
+          <SectionBody section={section} copy={copy} gateway={gateway} />
         </section>
       ))}
     </main>

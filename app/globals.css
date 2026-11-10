@@ -747,6 +747,15 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .api-ref-state { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: .1rem .55rem; font-size: .8125rem; white-space: nowrap; }
 .api-ref-state-online { border-color: var(--cyan); color: var(--ink); }
 .api-ref-table-note { color: var(--muted); font-size: .875rem; }
+.api-ref-hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 1rem; margin: 0; padding: 0; list-style: none; }
+.api-ref-hub-card { display: flex; flex-direction: column; gap: .5rem; border: 1px solid var(--line); border-radius: 10px; padding: 1.05rem 1.2rem; background: var(--surface-raised); }
+.api-ref-hub-card a { color: var(--ink); font-weight: 560; text-decoration: none; }
+.api-ref-hub-card a:hover { color: var(--cyan); text-decoration: underline; text-underline-offset: .25rem; }
+.api-ref-hub-card p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.6; }
+.api-ref-pager { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .75rem 1.5rem; margin-top: 4rem; border-top: 1px solid var(--line); padding-top: 1.4rem; }
+.api-ref-pager a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--cyan); text-underline-offset: .25rem; line-height: 1.6; }
+.api-ref-pager a:hover { color: var(--cyan); }
+.api-ref-pager-prev, .api-ref-pager-next { max-width: 40%; }
 
 .closing-cta { border-top: 1px solid var(--line); text-align: center; }
 .closing-cta .eyebrow { margin-bottom: 1.6rem; }

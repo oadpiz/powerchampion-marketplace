@@ -337,3 +337,32 @@ export function publishedRateLabel(model: ModelDefinition): string {
   if (model.outputPerMillion === 0) return `${amount} per 1M input tokens`;
   return `${amount} in / US$${model.outputPerMillion.toFixed(2)} out per 1M tokens`;
 }
+
+/**
+ * Keyword-optimized <title> overrides for per-model landing pages. Query
+ * patterns like "GLM-5.2 API" or "whisper api pricing" should match the title
+ * directly; other models keep the default "<Name> — API, pricing &
+ * capabilities" title.
+ */
+export const MODEL_SEO_TITLES: Record<string, string> = {
+  "glm-5.2-fp8": "GLM-5.2 API — Pricing, Docs & Quick Start | Power Champion",
+  "glm-5.3-flash-uncensored": "GLM-5.3 Flash API — Pricing & Integration | Power Champion",
+  "qwen3-vl-30b": "Qwen3 VL API — Vision Model Pricing & Integration | Power Champion",
+  "bge-m3": "BGE-M3 API — Embeddings Pricing & Integration | Power Champion",
+  "bge-reranker-v2-m3": "BGE-Reranker v2 API — Reranking Pricing & Integration | Power Champion",
+  "flux-schnell": "FLUX.1 [schnell] API — Image Generation Pricing | Power Champion",
+  "chroma1-hd": "Chroma1 HD API — Image Generation Pricing | Power Champion",
+  "indextts2": "IndexTTS-2 API — Text-to-Speech Pricing | Power Champion",
+  "whisper-large-v3": "Whisper Large V3 API — Speech-to-Text Pricing | Power Champion",
+  "wan2.2-ti2v-5b-720p": "Wan 2.2 TI2V API — Video Generation Pricing | Power Champion",
+};
+
+/**
+ * Short aliases that permanently redirect to the canonical model page, so the
+ * keyword URL (e.g. /models/glm-5.2) resolves without splitting link equity.
+ * Only aliases of models the gateway actually serves; never invented models.
+ */
+export const MODEL_PAGE_ALIASES: Record<string, string> = {
+  "glm-5.2": "glm-5.2-fp8",
+  "glm-5.3": "glm-5.3-flash-uncensored",
+};

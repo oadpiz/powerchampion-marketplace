@@ -7,7 +7,13 @@ export const LOCALIZED_SECTIONS = ["/", "/models", "/pricing", "/infrastructure"
 export type LocalizedSection = (typeof LOCALIZED_SECTIONS)[number];
 export const PUBLIC_ROUTES = [
   "/", "/agents", "/agent-platform", "/platform", "/models", "/compare", "/pricing", "/playground",
-  "/integrations", "/docs", "/docs/api", "/infrastructure", "/company", "/contact",
+  "/integrations", "/docs", "/docs/api",
+  // Per-section developer-guide pages: one citable URL per API topic.
+  "/docs/api/overview", "/docs/api/quick-start", "/docs/api/authentication", "/docs/api/models",
+  "/docs/api/chat", "/docs/api/embeddings", "/docs/api/images", "/docs/api/speech",
+  "/docs/api/video", "/docs/api/billing", "/docs/api/rate-limits", "/docs/api/errors",
+  "/docs/api/best-practices", "/docs/api/appendix",
+  "/infrastructure", "/company", "/contact",
   "/trust", "/status", "/faq", "/terms", "/privacy", "/data-retention",
   "/alternative-to-openai", "/for-ai",
 ] as const;

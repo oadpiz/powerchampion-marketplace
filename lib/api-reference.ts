@@ -1950,3 +1950,210 @@ const EN: ApiReferenceCopy = {
 };
 
 export const API_REFERENCE_COPY: Record<Locale, ApiReferenceCopy> = { en: EN, zh: ZH };
+
+/* ------------------------------------------------------------------ */
+/* Per-section pages (/docs/api/<slug>)                                */
+/* ------------------------------------------------------------------ */
+
+/** Hub-card strings for one sub-page, per locale. */
+export type ApiReferenceCard = { title: string; summary: string };
+
+/** One routable sub-page: a slug under /docs/api/ mapped to one guide section. */
+export type ApiReferencePage = {
+  /** URL segment under /docs/api/. */
+  slug: string;
+  /** The ApiReferenceSection.id this page renders, identical in both locales. */
+  sectionId: string;
+  /** Keyword-optimized <title> and meta description for the sub-page. */
+  title: string;
+  description: string;
+  card: Record<Locale, ApiReferenceCard>;
+};
+
+/**
+ * The 14 guide sections as independent, citable pages. Each has its own URL so
+ * answer engines can cite e.g. /docs/api/chat for "how to use the chat API"
+ * instead of the whole manual. Slugs use search keywords (embeddings, speech)
+ * where they differ from the internal section ids.
+ */
+export const API_REFERENCE_PAGES: readonly ApiReferencePage[] = [
+  {
+    slug: "overview",
+    sectionId: "overview",
+    title: "API Overview — OpenAI-Compatible Endpoints | Power Champion",
+    description: "Power Champion API overview: one OpenAI-compatible HTTPS endpoint for chat, vision, embeddings, reranking, image generation, video generation and speech. Base URL, protocol and conventions.",
+    card: {
+      en: { title: "Overview", summary: "Base URL, protocol, capabilities and document conventions for the OpenAI-compatible API." },
+      zh: { title: "概覽", summary: "與 OpenAI 相容 API 的 Base URL、傳輸協定、支援能力與文件慣例。" },
+    },
+  },
+  {
+    slug: "quick-start",
+    sectionId: "quick-start",
+    title: "API Quick Start — cURL, Python & JavaScript | Power Champion",
+    description: "Make your first Power Champion API request in three steps: request a key, set $PC_API_KEY, and call the chat endpoint with cURL, Python (openai SDK) or JavaScript.",
+    card: {
+      en: { title: "Quick start", summary: "Get a key, set $PC_API_KEY, and run your first chat request in cURL, Python or Node.js." },
+      zh: { title: "快速開始", summary: "取得金鑰、設定環境變數，用 cURL、Python 或 Node.js 送出第一個請求。" },
+    },
+  },
+  {
+    slug: "authentication",
+    sectionId: "auth",
+    title: "Authentication & API Keys — Bearer Token Guide | Power Champion",
+    description: "How Power Champion API keys work: the sk-b300- format, the Authorization: Bearer header, key safety rules, and what to do when a key is leaked.",
+    card: {
+      en: { title: "Authentication & keys", summary: "sk-b300- keys, the Bearer header, key safety rules and what to do if a key leaks." },
+      zh: { title: "驗證與金鑰", summary: "sk-b300- 金鑰、Bearer 標頭、金鑰安全規則與外洩時的處理方式。" },
+    },
+  },
+  {
+    slug: "models",
+    sectionId: "models",
+    title: "Model Catalog & API Pricing — GLM, Qwen, FLUX, Whisper | Power Champion",
+    description: "Published API pricing and live readiness for GLM-5.2, GLM-5.3 Flash, Qwen3-VL 30B, BGE-M3, BGE-Reranker-v2-m3, FLUX Schnell, Chroma1 HD, IndexTTS2 and Whisper large v3.",
+    card: {
+      en: { title: "Models & pricing", summary: "The nine live models with published rates, context windows and live readiness status." },
+      zh: { title: "模型與價格", summary: "九個上線模型的公開費率、上下文長度與即時狀態。" },
+    },
+  },
+  {
+    slug: "chat",
+    sectionId: "chat",
+    title: "Chat API — OpenAI-Compatible Chat Completions | Power Champion",
+    description: "POST /v1/chat/completions reference for Power Champion: streaming, vision input with Qwen3-VL, personas, parameters, pricing examples and code in cURL, Python and JavaScript.",
+    card: {
+      en: { title: "Chat API", summary: "Chat completions with GLM-5.2 and GLM-5.3 Flash: streaming, vision input, personas and parameters." },
+      zh: { title: "對話 API", summary: "GLM-5.2 與 GLM-5.3 Flash 的對話補全：串流、視覺輸入、角色與參數。" },
+    },
+  },
+  {
+    slug: "embeddings",
+    sectionId: "text-apis",
+    title: "Embeddings, Completions & Reranking API — BGE-M3 | Power Champion",
+    description: "POST /v1/embeddings with BGE-M3, POST /v1/completions and POST /v1/rerank with BGE-Reranker-v2-m3: parameters, response shapes, pricing and code examples.",
+    card: {
+      en: { title: "Embeddings & reranking", summary: "Text completions, BGE-M3 embeddings and BGE-Reranker-v2-m3 reranking endpoints." },
+      zh: { title: "向量與重排序", summary: "文字補全、BGE-M3 向量與 BGE-Reranker-v2-m3 重排序端點。" },
+    },
+  },
+  {
+    slug: "images",
+    sectionId: "images",
+    title: "Image Generation API — FLUX & Chroma1 | Power Champion",
+    description: "POST /v1/images/generations reference: generate images with FLUX Schnell and Chroma1 HD — prompt and size parameters, per-image pricing, and cURL, Python and JavaScript examples.",
+    card: {
+      en: { title: "Image generation", summary: "Generate images with FLUX Schnell and Chroma1 HD: parameters, sizes and per-image pricing." },
+      zh: { title: "圖片生成", summary: "用 FLUX Schnell 與 Chroma1 HD 生成圖片：參數、尺寸與單張計價。" },
+    },
+  },
+  {
+    slug: "speech",
+    sectionId: "audio",
+    title: "Speech API — Text-to-Speech & Transcription | Power Champion",
+    description: "POST /v1/audio/speech with IndexTTS2 and POST /v1/audio/transcriptions with Whisper large v3: voices, formats, the 25 MB upload limit, pricing and code examples.",
+    card: {
+      en: { title: "Speech (TTS & STT)", summary: "Text-to-speech with IndexTTS2 and transcription with Whisper large v3, including limits." },
+      zh: { title: "語音（合成與辨識）", summary: "IndexTTS2 語音合成與 Whisper large v3 語音辨識，含檔案限制。" },
+    },
+  },
+  {
+    slug: "video",
+    sectionId: "video",
+    title: "Video Generation API — Async Video Jobs | Power Champion",
+    description: "POST /v1/videos asynchronous jobs with wan2.2-ti2v-5b-720p: submit a job, poll its status, download the MP4, cancel while queued, and per-second pricing.",
+    card: {
+      en: { title: "Video generation", summary: "Asynchronous wan2.2-ti2v-5b-720p jobs: submit, poll, download the MP4 and cancel." },
+      zh: { title: "影片生成", summary: "wan2.2-ti2v-5b-720p 非同步任務：提交、查詢、下載 MP4 與取消。" },
+    },
+  },
+  {
+    slug: "billing",
+    sectionId: "billing",
+    title: "Billing & Usage — Prepaid Credits, Balance & Redeem | Power Champion",
+    description: "Prepaid billing for the Power Champion API: redeem credit codes with POST /v1/redeem, check balance and cumulative usage, and read nano-USD usage records.",
+    card: {
+      en: { title: "Billing & usage", summary: "Redeem codes, check balance and cumulative usage, and read nano-USD usage records." },
+      zh: { title: "帳務與用量", summary: "兌換儲值碼、查詢餘額與累計用量、解讀奈美元用量紀錄。" },
+    },
+  },
+  {
+    slug: "rate-limits",
+    sectionId: "rate-limits",
+    title: "Rate Limits & Quotas — 429, Retry-After | Power Champion",
+    description: "Power Champion API rate limits: per-key concurrency and requests-per-minute limits, daily token quotas, 429 responses, Retry-After headers and the 00:00 UTC quota reset.",
+    card: {
+      en: { title: "Rate limits", summary: "Per-key concurrency and RPM limits, daily token quotas and the UTC reset." },
+      zh: { title: "限流與配額", summary: "每金鑰並發與 RPM 上限、每日 Token 配額與 UTC 重置時間。" },
+    },
+  },
+  {
+    slug: "errors",
+    sectionId: "errors",
+    title: "Error Handling — API Status Codes & Fixes | Power Champion",
+    description: "Every Power Champion API error explained — 400, 401, 402, 403, 404, 429, 502, 503 — with response bodies, a check-order guide and which errors are safe to retry.",
+    card: {
+      en: { title: "Error handling", summary: "Error format, every status code, the 11-step check order and the retry-with-backoff example." },
+      zh: { title: "錯誤處理", summary: "錯誤格式、各狀態碼、11 步檢查順序與指數退避重試範例。" },
+    },
+  },
+  {
+    slug: "best-practices",
+    sectionId: "best-practices",
+    title: "API Best Practices & Security — Retries, Timeouts, Key Safety | Power Champion",
+    description: "Production guidance for the Power Champion API: API key safety, timeouts, exponential backoff retries, streaming error handling, prompt and cost control.",
+    card: {
+      en: { title: "Best practices", summary: "Key safety, timeouts, backoff, streaming errors, prompt and cost control for production." },
+      zh: { title: "最佳實務", summary: "金鑰安全、逾時、退避重試、串流錯誤處理與成本控制建議。" },
+    },
+  },
+  {
+    slug: "appendix",
+    sectionId: "appendix",
+    title: "API Appendix — Endpoint Summary & Support | Power Champion",
+    description: "Power Champion API appendix: the full endpoint summary, features not currently supported, service status links, support contacts and the developer guide changelog.",
+    card: {
+      en: { title: "Appendix", summary: "Endpoint summary, unsupported features, support contacts and the changelog." },
+      zh: { title: "附錄", summary: "端點總表、暫不支援的功能、支援管道與變更紀錄。" },
+    },
+  },
+];
+
+/** Resolve a /docs/api/<slug> URL segment to its page definition. */
+export function apiReferencePageForSlug(slug: string): ApiReferencePage | undefined {
+  return API_REFERENCE_PAGES.find((page) => page.slug === slug);
+}
+
+/** Pick one section out of a locale's guide. Both locales share section ids. */
+export function apiReferenceSectionFor(copy: ApiReferenceCopy, sectionId: string): ApiReferenceSection {
+  const section = copy.sections.find((entry) => entry.id === sectionId);
+  if (!section) throw new Error(`Unknown API reference section: ${sectionId}`);
+  return section;
+}
+
+/** Localized labels shared by the /docs/api hub and the per-section pages. */
+export const API_REFERENCE_NAV: Record<Locale, {
+  sectionsLabel: string;
+  backToApiRef: string;
+  pagerLabel: string;
+  previous: string;
+  next: string;
+  allSections: string;
+}> = {
+  en: {
+    sectionsLabel: "All sections",
+    backToApiRef: "Back to the API reference",
+    pagerLabel: "Section navigation",
+    previous: "Previous",
+    next: "Next",
+    allSections: "All sections",
+  },
+  zh: {
+    sectionsLabel: "所有章節",
+    backToApiRef: "回到 API 參考文件",
+    pagerLabel: "章節導覽",
+    previous: "上一頁",
+    next: "下一頁",
+    allSections: "所有章節",
+  },
+};
