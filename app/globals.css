@@ -204,6 +204,7 @@ table, [role="table"], dl, .proof-strip, .status-ledger { font-variant-numeric: 
 .site-footer { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; margin-top: auto; padding: 2.5rem 0; border-top: 1px solid var(--line); color: var(--muted); font-size: .875rem; }
 .site-footer nav { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; }
 .footer-locale-toggle { display: flex; flex: 0 0 auto; gap: .75rem; }
+.footer-credit { margin: 0; font-size: .8125rem; opacity: .8; }
 .footer-locale-toggle button { border: 0; padding: .35rem .25rem; min-height: 44px; display: inline-flex; align-items: center; background: transparent; color: var(--muted); cursor: pointer; }
 .footer-locale-toggle button[aria-pressed="true"] { color: var(--ink); text-decoration: underline; text-underline-offset: .25rem; }
 .footer-locale-toggle button:not([aria-pressed="true"]) { opacity: .5; }

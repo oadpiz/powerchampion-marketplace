@@ -432,6 +432,10 @@ export function SiteShell({ children }: { children: ReactNode }) {
               b300.powerchampion.ai<span aria-hidden="true">↗</span>
             </a>
           </div>
+          <p className="footer-credit">
+            Website by{" "}
+            <a href="https://dotwright.net">DotWright</a>
+          </p>
         </div>
         <div
           aria-label={copy.shared.language}
