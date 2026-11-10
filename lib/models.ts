@@ -326,3 +326,14 @@ export function filterModels(
     return categoryMatches && queryMatches;
   });
 }
+
+/** Published catalog rate for one model, stated in the unit it is billed in
+ *  (same convention as the pricing page and the OfferCatalog JSON-LD). */
+export function publishedRateLabel(model: ModelDefinition): string {
+  const amount = `US$${model.inputPerMillion.toFixed(2)}`;
+  if (model.categories.includes("image")) return `${amount} per image`;
+  if (model.categories.includes("audio")) return `${amount} per minute of audio`;
+  if (model.categories.includes("video")) return `${amount} per second of video`;
+  if (model.outputPerMillion === 0) return `${amount} per 1M input tokens`;
+  return `${amount} in / US$${model.outputPerMillion.toFixed(2)} out per 1M tokens`;
+}

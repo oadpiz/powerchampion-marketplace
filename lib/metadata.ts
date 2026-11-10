@@ -34,7 +34,9 @@ export type RoutePath =
   | "/faq"
   | "/terms"
   | "/privacy"
-  | "/data-retention";
+  | "/data-retention"
+  | "/alternative-to-openai"
+  | "/for-ai";
 
 const HOME_METADATA = {
   title: "Power Champion — One API. Every possibility.",
@@ -131,6 +133,14 @@ export const ROUTE_METADATA = {
   "/data-retention": {
     title: "Data retention | Power Champion",
     description: "How long the b300 gateway keeps usage metadata, and why prompt content is never persisted.",
+  },
+  "/alternative-to-openai": {
+    title: "OpenAI API Alternative | Power Champion — OpenAI-Compatible API with Transparent Pricing",
+    description: "Looking for an OpenAI API alternative? Power Champion offers an OpenAI-compatible API for open text, vision, image, speech, and retrieval models with published rates and prepaid credits.",
+  },
+  "/for-ai": {
+    title: "Power Champion — For AI Crawlers and Assistants",
+    description: "A plain-text summary of Power Champion for AI crawlers and assistants: company facts, model catalog with published rates, API endpoint summary, pricing, and quick-start examples.",
   },
 } satisfies Record<RoutePath, { title: string; description: string }>;
 
